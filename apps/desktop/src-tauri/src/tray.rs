@@ -24,9 +24,10 @@ mod item {
 }
 
 /// 8.6 / 原型 2.3 的状态行：端口取 ATB_READY 回来的生效值，不是硬编码 7788。
+/// 「运行中」的口径是 `Shared::service_up()`：进程活着**且**轮询读得通（10.4 的第三态）。
 fn status_text(app: &AppHandle) -> String {
   let shared = state::shared(app);
-  if shared.sidecar.is_running() {
+  if shared.service_up() {
     format!("● 运行中 (端口 {})", shared.sidecar.port())
   } else {
     "● 服务已停止".to_string()
@@ -176,29 +177,38 @@ fn quit(app: &AppHandle) {
 }
 
 /// 运行中 / 已停止切换：状态行文本、图标配色（原型 2.3 三态）与可用性。
+///
+/// 这里是 10.4 那三态**唯一**的落地点：`sidecar::spawn_monitor`（进程挂了）与
+/// `notify::poll_once`（进程活着但 HTTP 读不通）都只改自己那份事实、然后调本函数，
+/// 谁都不自己碰图标。两边都只在「事实变了」时调，所以重复设同一个态是幂等的。
 pub fn refresh(app: &AppHandle) {
   let shared = state::shared(app);
-  let running = shared.sidecar.is_running();
+  let up = shared.service_up();
   let text = status_text(app);
   {
     let guard = shared.menu.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(handles) = guard.as_ref() {
       let _ = handles.status.set_text(&text);
-      let _ = handles.open_board.set_enabled(running);
-      let _ = handles.copy_mcp.set_enabled(running);
+      let _ = handles.open_board.set_enabled(up);
+      let _ = handles.copy_mcp.set_enabled(up);
       // 「查看日志」在停止时更有用，所以不跟着禁用。
+      // 托盘左键与 Dock 图标点击走的是 `on_tray_icon_event`，不受这里禁用影响：
+      // 就算这一轮轮询把界面判成不可读，窗口照样点得开。
     }
   }
   if let Some(tray) = app.tray_by_id(TRAY_ID) {
-    if let Some(image) = tray_image(!running) {
+    if let Some(image) = tray_image(!up) {
       // 正常态用 macOS template 图（随菜单栏深浅自动配色），错误态保留红色。
-      let _ = tray.set_icon_with_as_template(Some(image), !running);
+      let _ = tray.set_icon_with_as_template(Some(image), !up);
     }
     let _ = tray.set_tooltip(Some(tooltip(app)));
   }
 }
 
-/// 原型 2.3：macOS 走 dock 角标，菜单栏图标标题同步（>99 → 99+）。
+/// 原型 2.3 / 10.4：macOS 走 dock 角标（`set_badge_count`），菜单栏图标标题同步（>99 → 99+）。
+/// 数字来源现在是 `notify` 那条 30 秒轮询线程（窗口隐藏时 WebView 定时器会被节流）；
+/// 前端 `tray_set_badge` 仍写同一个 `Shared::unread`，两处同源、不同时驱动。
+/// Windows 的对应实现是覆盖图标 `set_overlay_icon`（需要 .ico，见报告「偏差」），本期未接。
 pub fn set_badge(app: &AppHandle, count: u32) -> bool {
   let shared = state::shared(app);
   let title = if count == 0 {

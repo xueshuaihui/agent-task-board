@@ -3,6 +3,7 @@
 mod commands;
 mod conflict;
 mod diag;
+mod notify;
 mod paths;
 mod sidecar;
 mod state;
@@ -109,6 +110,10 @@ fn main() {
       // 用户把对话框关掉之后，至少还有「重启服务」可点。
       tray::build(&handle)?;
       tray::refresh(&handle);
+      // 10.4 的未读数轮询：住在主进程，因为窗口一隐藏 WebView 定时器就被节流，
+      // 角标会停在最后一次的值上。可以在 sidecar 就绪之前起——线程等的就是
+      // 「没在跑 → 在跑」那个边沿，就绪即刻补第一轮，之后每 30 秒一轮。
+      notify::spawn(handle.clone());
       let watch = handle.clone();
       std::thread::spawn(move || conflict::start_at_boot(&watch, finish_boot));
       Ok(())

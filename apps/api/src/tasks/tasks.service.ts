@@ -1,7 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, type Task } from '@prisma/client';
 import { ApiException, USER_COPY } from '../contract/errors';
-import { BOARD_COLUMNS, STATUS_LABEL, TAGS_MAX_PER_TASK, type TaskStatus } from '../contract/enums';
+import {
+  ARTIFACT_TYPES,
+  BOARD_COLUMNS,
+  REVIEW_CONCLUSIONS,
+  RUN_STATUS,
+  STATUS_LABEL,
+  TAGS_MAX_PER_TASK,
+  TRIGGER_TYPES,
+  isKnownEnum,
+  type TaskStatus,
+} from '../contract/enums';
 import {
   appliesToType,
   normalizeMultiSelect,
@@ -24,8 +34,12 @@ import type {
 } from '../contract/schemas';
 import { jsonFilterParts } from './json-filters';
 import type { RequestAuth } from '../auth/auth.scope';
+import { isArtifactMissing } from '../artifacts/artifact-storage';
+import { ArtifactsService } from '../artifacts/artifacts.service';
+import { reportUnknownEnumValue } from '../common/unknown-enum';
 import { AuditService } from '../infra/audit.service';
 import { EventsService } from '../infra/events.service';
+import { AppLogger } from '../infra/logger';
 import { PrismaService } from '../infra/prisma.service';
 import { SettingsService } from '../infra/settings.service';
 import { NotificationsService } from '../infra/notifications.service';
@@ -37,6 +51,7 @@ import {
   TASK_ROW_COLUMNS,
   toNumOrNull,
   type CardArtifact,
+  type RunArtifactDto,
   type TaskCardDto,
   type TaskDetailDto,
   type TaskRow,
@@ -79,6 +94,9 @@ export class TasksService {
     private readonly audit: AuditService,
     private readonly events: EventsService,
     private readonly notifications: NotificationsService,
+    /** 4.3.1 规则 4 / 验收 38：删除任务时产物目录由产物侧负责清（路径校验只有一份）。 */
+    private readonly artifacts: ArtifactsService,
+    private readonly logger: AppLogger,
   ) {}
 
   // ---------------------------------------------------------------- 写入
@@ -442,7 +460,7 @@ export class TasksService {
     return this.getCard(id);
   }
 
-  /** 4.3.1 规则 4：物理删除 + 级联产物文件；RUNNING 必须先强制停止。 */
+  /** 4.3.1 规则 4：物理删除 + 级联产物目录；RUNNING 必须先强制停止。 */
   async remove(id: string): Promise<{
     id: string;
     deleted_runs: number;
@@ -453,10 +471,6 @@ export class TasksService {
       throw new ApiException('TASK_RUNNING', '执行中的任务不可删除，请先强制停止');
     }
     const runCount = await this.prisma.taskRun.count({ where: { taskId: id } });
-    const artifactPaths = await this.prisma.artifact.findMany({
-      where: { taskId: id, type: { not: 'link' } },
-      select: { uri: true },
-    });
     const dependents = await this.unfinishedDependents(id);
 
     await this.prisma.$transaction(async (tx) => {
@@ -473,7 +487,18 @@ export class TasksService {
       );
     });
 
-    await this.deleteArtifactFiles(artifactPaths.map((row) => row.uri));
+    // 验收 38：删的是 `artifacts/{task_id}/` 整个目录，而不是逐条 uri 删文件——
+    // 上传半路失败留在目录里的残留（库里根本没有行）也必须一起带走。
+    // 此刻行已经级联删掉了，磁盘侧再失败也不该把这次删除整个报成 500：记 error 后继续。
+    try {
+      this.artifacts.cleanupTaskDir(id);
+    } catch (error) {
+      this.logger.error(
+        `任务 ${id} 的产物目录清理失败：${(error as Error).message}`,
+        undefined,
+        'tasks',
+      );
+    }
     const unblocked = await this.recomputeUnblocked(dependents);
     this.events.emit('task.deleted', { task_id: id, unblocked_ids: unblocked });
     return { id, deleted_runs: runCount, unblocked_ids: unblocked };
@@ -830,6 +855,17 @@ export class TasksService {
     const logCounts = await this.prisma.$queryRaw<{ run_id: string | null; count: number }[]>`
       SELECT run_id, COUNT(*) AS count FROM comments
       WHERE task_id = ${id} AND type = 'log' GROUP BY run_id`;
+    // 20.2 末段 / 验收 43：详情读路径碰到表外枚举值原样透传，但必须留下一条 error 日志。
+    for (const run of runs) {
+      this.noteEnum('task_runs', 'status', RUN_STATUS, run.status);
+      this.noteEnum('task_runs', 'trigger_type', TRIGGER_TYPES, run.triggerType);
+    }
+    for (const artifact of artifacts) {
+      this.noteEnum('artifacts', 'type', ARTIFACT_TYPES, artifact.type);
+    }
+    for (const review of reviews) {
+      this.noteEnum('reviews', 'conclusion', REVIEW_CONCLUSIONS, review.conclusion);
+    }
     return {
       items: runs.map((run) => ({
         id: run.id,
@@ -848,13 +884,15 @@ export class TasksService {
           Number(logCounts.find((row) => row.run_id === run.id)?.count ?? 0),
         artifacts: artifacts
           .filter((artifact) => artifact.runId === run.id)
-          .map((artifact) => ({
+          .map((artifact): RunArtifactDto => ({
             id: artifact.id,
             type: artifact.type,
             name: deriveArtifactName(parseJsonObject(artifact.metadata), artifact.uri, artifact.type),
             size_bytes: artifact.sizeBytes,
             mime_type: artifact.mimeType,
             created_at: toIso(artifact.createdAt),
+            // 验收 42：丢失标记在这里就要给到，列表层直接能标「已丢失」，不用点开预览框。
+            missing: isArtifactMissing(artifact.type, artifact.uri),
           })),
         review: (() => {
           const review = reviews.find((item) => item.runId === run.id);
@@ -1072,14 +1110,23 @@ export class TasksService {
     return Number(rows[0]?.count ?? 0);
   }
 
-  private async deleteArtifactFiles(uris: string[]): Promise<void> {
-    const { rm } = await import('node:fs/promises');
-    const path = await import('node:path');
-    const { paths } = await import('../common/paths');
-    for (const uri of uris) {
-      const absolute = path.resolve(paths.artifactsDir(), '..', uri);
-      await rm(absolute, { force: true, recursive: false }).catch(() => undefined);
-    }
+  /**
+   * 20.2 末段 / 验收 43：库里读到枚举表之外的值时**不改数据、不抛错**，原样透传给界面渲染
+   * 「未知（原值）」，服务端这边只补一条 error 日志。
+   */
+  private noteEnum(
+    table: string,
+    field: string,
+    allowed: readonly string[],
+    value: unknown,
+  ): void {
+    if (isKnownEnum(allowed, value)) return;
+    this.reportUnknownEnum(table, field, String(value));
+  }
+
+  /** 日志出口：措辞与「同一 (字段,值) 每进程只记一次」的去重都在 `reportUnknownEnumValue` 里。 */
+  private reportUnknownEnum(table: string, field: string, value: string): void {
+    reportUnknownEnumValue(table, field, value, this.logger);
   }
 
   private async loadFieldDefs(): Promise<Map<string, FieldDefLike & { showOnCard: number }>> {
@@ -1196,6 +1243,9 @@ export class TasksService {
             .filter((def) => custom[def.key] !== undefined)
             .map((def) => [def.key, custom[def.key]]),
         ),
+        // 20.2 末段 / 验收 43：`status_label` 查不到就是表外值，界面拿原值渲染「未知（原值）」，
+        // 服务端在这里补 error 日志。看板与列表每次刷新都会重读同一行，去重由上报器负责。
+        reportUnknownEnum: (table, field, value) => this.reportUnknownEnum(table, field, value),
       });
     });
   }

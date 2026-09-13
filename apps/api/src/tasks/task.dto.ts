@@ -1,4 +1,4 @@
-import { STATUS_LABEL, type TaskStatus } from '../contract/enums';
+import { STATUS_LABEL, type TaskStatus, type UnknownEnumReport } from '../contract/enums';
 import { toIso } from '../contract/time';
 
 /**
@@ -66,6 +66,23 @@ export interface CardArtifact {
   type: string;
   /** 20.7：不是数据库列，metadata.name 优先，否则取 uri 末段；link 无 name 时显示 host。 */
   name: string;
+}
+
+/**
+ * 详情抽屉「执行记录」里的产物行（13 章读取模型）。
+ *
+ * `missing` 是 20.2/9.3/验收 42 要求的「产物区显示已丢失」标记：库里有一行、磁盘上没有文件
+ * （备份不含产物目录，恢复后必然出现）。口径与产物元信息接口 `ArtifactMetaDto.missing` 同一条
+ * ——`isArtifactMissing()`。契约：**文件在 = false**；`link` 不占磁盘，恒为 false。
+ */
+export interface RunArtifactDto {
+  id: string;
+  type: string;
+  name: string;
+  size_bytes: number | null;
+  mime_type: string | null;
+  created_at: string | null;
+  missing: boolean;
 }
 
 export interface TaskCardDto {
@@ -143,6 +160,18 @@ export function deriveArtifactName(
   return last ?? uri;
 }
 
+/**
+ * `tasks.status` → 展示名。表外状态（历史库、手改数据）不给假标签也不抛：留空由界面按
+ * `未知（原值）` 渲染——回落成 BACKLOG 会把库里的手改值显示成「需求池」，那是凭空造出来的
+ * 第三个值（20.11）。同时把这条越界值经 `report` 交给服务端记 error 日志（20.2 末段、验收 43）。
+ */
+export function statusLabel(status: string, report?: UnknownEnumReport): string {
+  const label = STATUS_LABEL[status as TaskStatus];
+  if (label !== undefined) return label;
+  report?.('tasks', 'status', status);
+  return '';
+}
+
 /** tasks 行 + 聚合补充字段 → 卡片 DTO（20.7）。 */
 export function toCardDto(
   row: TaskRow,
@@ -150,6 +179,8 @@ export function toCardDto(
     blockedBy?: { id: string; title: string }[];
     artifacts?: CardArtifact[];
     cardFields?: Record<string, unknown>;
+    /** 读到 20.2 表外枚举值时的上报口；不传则本函数保持纯函数、无副作用。 */
+    reportUnknownEnum?: UnknownEnumReport;
   } = {},
 ): TaskCardDto {
   return {
@@ -160,9 +191,8 @@ export function toCardDto(
     tags: parseJsonArray(row.tags),
     pinned: row.pinned === 1,
     status: row.status as TaskStatus,
-    // 20.11：表外状态不给假标签。留空由界面按 `未知（原值）` 渲染——回落成 BACKLOG 会把
-    // 手改过的库显示成「需求池」，那是凭空造出来的第三个值。
-    status_label: STATUS_LABEL[row.status as TaskStatus] ?? '',
+    // 20.11：表外状态不给假标签，界面按 `未知（原值）` 渲染；服务端读路径同时记 error 日志。
+    status_label: statusLabel(row.status, extra.reportUnknownEnum),
     progress: toNumOrNull(row.progress),
     progress_msg: row.progress_msg ?? null,
     lease_expires_at: toIso(row.lease_expires_at),

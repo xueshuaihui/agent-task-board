@@ -19,6 +19,7 @@ import {
   buildArtifactUri,
   deriveArtifactType,
   extensionForType,
+  isArtifactMissing,
   isSafeIdSegment,
   mimeTypeFor,
   originalExtension,
@@ -196,7 +197,7 @@ export class ArtifactsService {
   async meta(id: string): Promise<ArtifactMetaDto> {
     const row = await this.resolveRow(id);
     const absolute = row.type === 'link' ? null : resolveArtifactFile(row.uri);
-    const missing = row.type !== 'link' && absolute === null;
+    const missing = isArtifactMissing(row.type, row.uri, absolute);
     const onDiskSize = absolute ? statSync(absolute).size : null;
     const preview = await this.previewFor(row, missing);
     return {
@@ -256,7 +257,11 @@ export class ArtifactsService {
     // 15 章硬约束 3：nosniff + Content-Disposition，Agent 上传的内容不能被当脚本执行。
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
-    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+    // 验收 17：图片要能在主窗口里内嵌显示。页面源是 `tauri://localhost`（开发态
+    // `http://127.0.0.1:5173`，见 common/origins.ts），相对的资源源 `http://127.0.0.1:<port>`
+    // 与它**都是跨源**，`same-origin` 会被网络层直接拦掉。跨源只放开「能不能被引用」这一件事，
+    // 能不能取到字节仍由一次性签名 URL / Authorization 决定，nosniff 与 CSP sandbox 一个不少。
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.setHeader(
       'Content-Disposition',
       contentDisposition(row.type === 'image' && kind === 'raw' ? 'inline' : 'attachment', name),

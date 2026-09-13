@@ -140,6 +140,19 @@ export function resolveArtifactFile(uri: string): string | null {
   return absolute;
 }
 
+/**
+ * 「已丢失」的单一口径（6.10.2 / 验收 42）：`link` 不占磁盘恒为 false，其余按解析后的
+ * 绝对路径判存在性。`absolute` 允许调用方把已经解析好的路径传进来（`meta()` 还要用它取大小），
+ * 目的只有一个：路径拼接与 `resolveArtifactFile` 全仓只有一份。
+ */
+export function isArtifactMissing(
+  type: string,
+  uri: string,
+  absolute: string | null = resolveArtifactFile(uri),
+): boolean {
+  return type !== 'link' && absolute === null;
+}
+
 export function artifactFileSize(absolute: string): number | null {
   try {
     const stats = lstatSync(absolute);
@@ -149,7 +162,7 @@ export function artifactFileSize(absolute: string): number | null {
   }
 }
 
-/** 相对路径以 `artifacts/` 开头，是因为 tasks 侧删除时按数据目录解析（见其 deleteArtifactFiles）。 */
+/** uri 是相对数据目录的路径、且固定以 `artifacts/` 开头（20.6）：读取侧按它反查绝对路径。 */
 export function buildArtifactUri(taskId: string, runId: string, artifactId: string, ext: string): string {
   return `artifacts/${taskId}/${runId}/${artifactId}.${ext}`;
 }

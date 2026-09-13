@@ -3,8 +3,14 @@ import { COPY } from '@/lib/copy';
 import { statusLabel } from '@/lib/labels';
 
 /**
- * 4.5 拖拽矩阵在前端的**唯一一份**实现：拖拽松手、键盘 `←`/`→`、卡片 `⋯` 菜单
- * （`card-menu.tsx`）与详情抽屉的按钮（`features/task-detail/actions.ts`）都只允许问这张表。
+ * 4.5 拖拽矩阵在前端的**唯一一份**实现：谁想要落点，都只能问这张表——
+ * - 拖拽松手 / 落点高亮：`dropStates()` 与 `dropVerdict()`（`features/board/index.tsx`）；
+ * - 键盘 `←`/`→`：`keyboardTargets()`（`features/board/model.ts`）；
+ * - 卡片 `⋯` 菜单：按列序问 `dropVerdict()`（`card-menu.tsx`）；
+ * - 详情抽屉底部按钮：`directTransitions()`（`features/task-detail/actions.ts`）；
+ * - 任务列表页行 `⋯` 菜单：`directTransitions()`（`features/task-list/index.tsx`
+ *   的 `allowedTransitions()`——这里原先自己抄过一份 ✅ 边，已删；别再写回来）。
+ *
  * 原型 3.3 / 3.7 的「不在前端另写一套规则」就是这条：别处不得再出现 `to:` 字面量。
  *
  * 单一来源是怎么成立的（三道编译期防线，不靠人对着表核）：
@@ -219,7 +225,10 @@ export function keyboardTargets(from: string, order: readonly TaskStatus[]): Tas
 const EMPTY_TRANSITIONS: readonly TransitionRule[] = [];
 
 /**
- * 某个源状态的全部 ✅ 直接流转（4.5 里 ✅ 的那几格），抽屉与卡片菜单共用的就是这一份。
+ * 某个源状态的全部 ✅ 直接流转（4.5 里 ✅ 的那几格），按 `DIRECT_TRANSITIONS` 的组内序返回
+ * （= 原型 4.9 主按钮在前）。详情抽屉的按钮（`task-detail/actions.ts`）与任务列表页行 `⋯`
+ * 菜单（`task-list/index.tsx` 的 `allowedTransitions`）读的都是这一份；卡片 `⋯` 菜单按列序问
+ * `dropVerdict()`，拿到的 `rule` 是**同一批对象**，只是读法不同。
  * 表外状态返回空数组 = 不给任何写入口（20.2 末段）。
  */
 export function directTransitions(from: string): readonly TransitionRule[] {

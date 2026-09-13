@@ -122,6 +122,17 @@ CK1=$(printf '%s' "$TSIGNED" | sed 's|/thumbnail?|/raw?|')
 CK2=$(printf '%s' "$SIGNED" | sed 's|/raw?|/thumbnail?|')
 ck "缩略图签名不能读 raw" "401" "$(code "http://127.0.0.1:${PORT}${CK1}")"
 ck "raw 签名不能读缩略图" "401" "$(code "http://127.0.0.1:${PORT}${CK2}")"
+# 验收 17：图片要在主窗口里内嵌显示。页面源（tauri://localhost 或 5173）与资源源
+# （127.0.0.1:端口）本来就跨源，CORP 给 same-origin 会被网络层直接拦掉。
+ck "raw 的 CORP 放行跨源引用" "cross-origin" \
+  "$(curl -s -o /dev/null -D - "$B/artifacts/$AID/raw" -H "$H" | tr -d '\r' | grep -i -F 'cross-origin-resource-policy:' | sed 's/^[^:]*: *//')"
+# 验收 42：`runs[].artifacts[]` 这一行自己就带 missing，界面不必点开预览框才知道文件没了。
+ck "产物行 missing 初值为 false" "false" \
+  "$(curl -s "$B/tasks/$CID/runs" -H "$H" | get 'j.items[0].artifacts[0].missing')"
+rm -f "${DIR}/${AURI}"
+ck "文件被删后列表即标已丢失" "true" \
+  "$(curl -s "$B/tasks/$CID/runs" -H "$H" | get 'j.items[0].artifacts[0].missing')"
+ck "已丢失产物的 raw 回 404" "404" "$(code $B/artifacts/$AID/raw -H "$H")"
 
 echo "== 5 审核与反馈（验收 8/9/10）=="
 ck "审核三字段必填" "422" "$(code -X POST $B/tasks/$CID/review -H "$H" -H "$J" -d '{"conclusion":"REJECT"}')"
@@ -203,7 +214,11 @@ echo "== 9 删除级联与契约校验（验收 38/43）=="
 RND=$(mk "运行中不许删" 1 '["language:objc"]'); ready $RND >/dev/null
 curl -s -X POST $B/tasks/claim -H "$JH" -H "$J" -d '{"capabilities":["language:objc"]}' >/dev/null
 ck "RUNNING 不许删除" "409" "$(code -X DELETE "$B/tasks/$RND" -H "$H")"
+# 验收 38：删的是整个 `artifacts/{task_id}/`，不是逐条 uri 删文件——上传半路失败留下的
+# 残留（库里根本没有这一行）也必须一起带走。
+mkdir -p "${DIR}/artifacts/${CID}/R-stray" && printf 'orphan' > "${DIR}/artifacts/${CID}/R-stray/stray.bin"
 ck "删除带 Run 与产物的任务" "true" "$(curl -s -X DELETE "$B/tasks/$CID" -H "$H" | get 'j.deleted_runs>0')"
+ck "任务产物目录整目录清除" "gone" "$([ -d "${DIR}/artifacts/${CID}" ] && echo present || echo gone)"
 ck "产物行随任务一起消失" "404" "$(code $B/artifacts/$AID -H "$H")"
 CID4=$(mk "枚举任务" 2 '["language:carbon"]')
 ck "非法转移目标 422" "422" "$(code -X POST $B/tasks/$CID4/transition -H "$H" -H "$J" -d '{"to":"DONE-ish"}')"

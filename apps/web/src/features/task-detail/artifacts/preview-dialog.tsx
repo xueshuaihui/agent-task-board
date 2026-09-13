@@ -19,6 +19,8 @@ import { downloadArtifact, useArtifactText } from './use-artifact-content';
  * 容器复用 `Dialog` 的 720px 档（1.5 只给了 560/720 两档宽度，预览器不新造第三档），
  * z-50 盖在抽屉（z-40）之上。判定顺序照 13 章 + 6.10.3：
  * 先看 `missing`（灰态、不给按钮），再看 `preview.enabled`（超大只给下载），最后才选渲染器。
+ * `missing` 有两个同口径来源：产物列表行带上来的 `target.missing`（验收 42：列表里就已标出）
+ * 与元信息接口的判定，前者让框打开即落灰态、不必等一次请求。
  *
  * `link` 是唯一的例外：它不占磁盘（20.6），服务端 `requireFile` 对它的 `/raw` 直接 404，
  * 所以整框**只有一个动作**——按 6.10.1 把 `uri` 交系统默认浏览器，footer 的下载不给它。
@@ -50,7 +52,8 @@ export function ArtifactPreviewDialog({ target, maxMb, onClose }: ArtifactPrevie
         // link 没有磁盘文件，`/raw` 会 404（服务端：「link 类型产物没有本地文件，请直接打开 uri」），
         // 给了就是一个只会报错的死按钮；4.5 明确不要这种按钮。
         // 判 `target.type` 就够：服务端 `previewFor` 只在 type 为 link 时才回 kind: 'link'。
-        target.type === 'link' ? null : (
+        // 同理，列表行已经标了 `missing` 的丢失文件也不给下载（`/raw` 回 404 ARTIFACT_LOST）。
+        target.type === 'link' || target.missing ? null : (
           <Button
             size="sm"
             icon={<Download className="size-3.5" />}
@@ -70,7 +73,9 @@ function PreviewBody({ target, maxMb }: { target: PreviewTarget; maxMb: number }
   const meta = useArtifactMeta(target.id);
   const decision = meta.data?.preview;
 
-  if (meta.data?.missing || decision?.reason === 'file_missing') {
+  // 行数据已经标了丢失就直接落灰态（验收 42 的同一条口径），不等 meta 回来；
+  // 后两条仍是兜底——从别的入口进来时只有服务端判定知道文件没了。
+  if (target.missing || meta.data?.missing || decision?.reason === 'file_missing') {
     return (
       <EmptyState
         className="border-border bg-bg-muted"

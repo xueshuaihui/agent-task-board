@@ -235,7 +235,13 @@ function RunCard({
           {run.artifacts.length > 0 ? (
             <SubLine>
               {run.artifacts.length} 个产物
-              {run.artifacts[0] ? `（${run.artifacts[0].name} ${formatBytes(run.artifacts[0].size_bytes)}）` : ''}
+              {/* 丢失的文件不报体积（`size_bytes` 是入库时的旧值，磁盘上已经没有文件了）；
+                  「已丢失」那句话由展开后的产物列表用共享常量给，这里不再写第二份文案。 */}
+              {run.artifacts[0]
+                ? `（${run.artifacts[0].name}${
+                    run.artifacts[0].missing ? '' : ` ${formatBytes(run.artifacts[0].size_bytes)}`
+                  }）`
+                : ''}
             </SubLine>
           ) : null}
         </div>

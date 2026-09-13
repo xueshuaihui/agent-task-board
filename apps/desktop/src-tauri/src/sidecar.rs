@@ -217,6 +217,13 @@ impl Sidecar {
     self.running.load(Ordering::Relaxed)
   }
 
+  /// 仅单测：别的模块要摆一个「进程活着 / 已经挂了」的事实来验自己的推导，
+  /// 但又不该为此真起一个进程。生产路径上只有 `start` / `fail` / `poll_exit` / `stop` 动这个位。
+  #[cfg(test)]
+  pub(crate) fn set_running_for_test(&self, value: bool) {
+    self.running.store(value, Ordering::SeqCst);
+  }
+
   pub fn version(&self) -> String {
     lock(&self.version).clone()
   }

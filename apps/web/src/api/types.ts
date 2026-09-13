@@ -290,6 +290,13 @@ export interface RunArtifact {
   size_bytes: number | null;
   mime_type: string | null;
   created_at: string | null;
+  /**
+   * 9.3 / 6.10.2 / 验收 42：库里有一行、磁盘上没有文件时为 true。
+   * 与后端 `RunArtifactDto.missing`（`apps/api/src/tasks/task.dto.ts`）同名同口径
+   * ——`artifact-storage.ts` 的 `isArtifactMissing()`，`link` 不占磁盘所以恒为 false。
+   * 产物列表据此**在行上**直接标「已丢失」，不必点开预览框才知道。
+   */
+  missing: boolean;
 }
 
 export interface TaskRun {

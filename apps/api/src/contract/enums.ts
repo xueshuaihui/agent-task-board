@@ -160,10 +160,16 @@ export const LOG_LINES_MAX = 5000;
 export const LOG_LINES_HEAD = 1000;
 export const LOG_LINES_TAIL = 4000;
 
-/** 读取到表外值时的展示兜底（20.2 末段）：不崩溃、原样透传、渲染「未知（原值）」。 */
-export function enumLabel<T extends string>(
-  map: Partial<Record<T, string>>,
-  value: T | string,
-): string {
-  return map[value as T] ?? `未知（${value}）`;
+/**
+ * 20.2 末段：值是否落在枚举表内。读路径用它决定要不要记 error 日志——
+ * 表外值（历史库、手改数据）不崩溃、原样透传，界面渲染「未知（原值）」。
+ */
+export function isKnownEnum<T extends string>(allowed: readonly T[], value: unknown): value is T {
+  return typeof value === 'string' && (allowed as readonly string[]).includes(value);
 }
+
+/**
+ * 表外枚举值的上报口（20.2 末段）。DTO 侧只做纯判定与透传，怎么记（error 日志、去重）
+ * 由 service 注入，这样 DTO 保持无副作用、可在单测里直接换 spy。
+ */
+export type UnknownEnumReport = (table: string, field: string, value: string) => void;

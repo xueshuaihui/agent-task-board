@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, ArchiveRestore, Eye, Gavel, MoreHorizontal, Pin, PinOff, Search, Undo2 } from 'lucide-react';
 import { api, errorMessage, qk, useApiMutation, useTaskList } from '@/api';
 import type { ListSortField, TaskListItem, TaskStatus } from '@/api/types';
+import { BOARD_COLUMN_ORDER } from '@/api/types';
 import { useRouteSearchParams } from '@/app/router';
 import { filtersFromSearch, toListQuery, useFilterStore } from '@/app/store/filters';
 import { useIsFlashed } from '@/app/store/flash';
@@ -23,6 +24,7 @@ import {
   TR,
 } from '@/components/ui';
 import type { MenuItem } from '@/components/ui';
+import { directTransitions } from '@/features/board/matrix';
 import { statusLabel } from '@/lib/labels';
 import {
   AgentCell,
@@ -439,7 +441,9 @@ function TaskRow({
 
 /**
  * 原型 3.8：`⋯` 与卡片是**同一份按状态生成的动作集**（4.3 操作表 + 4.5 矩阵），
- * 列表页不自立一套。这里只挂列表页能安全直发的三类：`✅` 流转、归档/恢复、置顶；
+ * 列表页不自立一套——✅ 的落点由矩阵的 `directTransitions()` 给（见文件末尾的
+ * `allowedTransitions()`），本页只负责措辞与图标。这里只挂列表页能安全直发的三类：
+ * `✅` 流转、归档/恢复、置顶；
  * 「强制停止」要二次确认、「删除」要先拿 run/下游计数（4.3.1 规则 4）、
  * 审核必须走 720px 表单（6.5 三字段必填），三者都由抽屉与审核表单承担，
  * 本页给的是入口（查看详情 / 审核 →），不是第二套实现。
@@ -536,12 +540,17 @@ function RowMenu({ row, onlyArchived, onAction, actionBusy }: RowMenuProps) {
   );
 }
 
-/** 4.5 矩阵里 `✅` 的边（`🔒` 要走表单、`❌` 由服务端拒绝，都不在这里代跑）。 */
+/**
+ * 4.5 矩阵里 `✅` 的那几格——**落点只有矩阵一份**（`features/board/matrix.ts`），
+ * 本页不再抄第二遍 `to:` 字面量。`🔒` 要走表单（强制停止/审核都在抽屉与审核表单里承担，
+ * 本页只给「查看详情 / 审核 →」入口）、`❌` 由服务端拒，两者都不进这个菜单，
+ * 所以矩阵的 ✅ 集合就是本页能安全直发的那一批。
+ * 顺序按看板列序（`BOARD_COLUMN_ORDER` = 4.1 六列序）排一遍，与卡片 `⋯` 菜单读到的顺序同源。
+ * 表外状态（20.2 末段）`directTransitions()` 返回空数组 = 一个写入口都不给。
+ */
 function allowedTransitions(status: string): TaskStatus[] {
-  if (status === 'BACKLOG') return ['READY'];
-  if (status === 'READY') return ['BACKLOG'];
-  if (status === 'FAILED') return ['BACKLOG', 'READY'];
-  return [];
+  const targets = new Set<TaskStatus>(directTransitions(status).map((rule) => rule.to));
+  return BOARD_COLUMN_ORDER.filter((to) => targets.has(to));
 }
 
 /** 空态文案判据（原型 3.8）：只看**列表查询真的带上去了**的条件，`view` 是看板预设、不算。 */

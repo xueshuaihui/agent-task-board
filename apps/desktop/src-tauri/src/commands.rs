@@ -140,7 +140,9 @@ fn system_info_snapshot(app_version: &str, shared: &state::Shared) -> SystemInfo
   }
 }
 
-/// 原型 2.3：未读角标由前端驱动（`unread_count` 与顶栏铃铛同源）。
+/// 原型 2.3 / 10.4：角标数字现在由主进程那条 30 秒轮询线程供给（`notify::poll_once`，
+/// 窗口隐藏时 WebView 定时器会被节流，所以不经前端）。这个命令保留：前端铃铛与托盘同源，
+/// 谁要是有更准的即时数字（例如刚点开一条通知），写的是同一个 `Shared::unread`。
 /// 返回布尔而不是 Err——`desktop.ts` 的 `call()` 一旦 reject，界面就是一次未捕获异常。
 #[tauri::command]
 pub fn tray_set_badge(app: AppHandle, count: u32) -> bool {
@@ -259,8 +261,9 @@ fn save_blocking(app: &AppHandle, filename: &str, contents: &str) -> String {
     .file()
     .set_title("导出文件")
     .set_file_name(&name)
+    // 17.2：CSV 双向是阶段二，阶段一的入口「不显示，而不是点了报错」——所以这里只留 JSON。
+    // 前端同理（`SHOW_CSV_EXPORT=false` 时那一行整体不渲染），两侧都得摆着同一个口径。
     .add_filter("JSON", &["json"])
-    .add_filter("CSV", &["csv"])
     .blocking_save_file()
   else {
     return String::new();

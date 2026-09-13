@@ -70,6 +70,11 @@ export interface PreviewTarget {
   name: string;
   type: string;
   size_bytes: number | null;
+  /**
+   * 列表行已经读到的 `missing`（6.10.2 / 验收 42）：带上后预览框不必等
+   * `GET /artifacts/:id` 就落灰态，footer 的下载也不再给。缺省时按元信息接口判定。
+   */
+  missing?: boolean;
 }
 
 /**

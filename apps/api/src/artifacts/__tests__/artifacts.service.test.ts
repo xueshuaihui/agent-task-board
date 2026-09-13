@@ -465,7 +465,9 @@ describe('资源读取（GET /artifacts/{id}/raw 与 /thumbnail）', () => {
     expect(headers.get('content-length')).toBe(String(payload.length));
     expect(headers.get('x-content-type-options')).toBe('nosniff');
     expect(headers.get('content-security-policy')).toBe("default-src 'none'; sandbox");
-    expect(headers.get('cross-origin-resource-policy')).toBe('same-origin');
+    // 验收 17：页面源（tauri://localhost / 127.0.0.1:5173）与资源源（127.0.0.1:<port>）必然跨源，
+    // same-origin 会把图片内嵌打死；改 cross-origin 后 nosniff 与 CSP sandbox 仍在原位。
+    expect(headers.get('cross-origin-resource-policy')).toBe('cross-origin');
     expect(headers.get('cache-control')).toBe('no-store');
     expect(headers.get('x-atb-artifact-type')).toBe('diff');
     // 非图片一律 attachment：Agent 上传的内容不能在浏览器里就地渲染。

@@ -11,7 +11,7 @@ import type { ApiErrorBody } from '@/api';
 import { desktop } from '@/app/desktop';
 import { COPY } from '@/lib/copy';
 import { hasPreviewer } from '../phase';
-import type { ArtifactMetaView, PreviewKind } from '../types';
+import type { ArtifactMetaView, ArtifactPreviewDecision, PreviewKind } from '../types';
 
 /**
  * 产物内容的读取（6.10.1、13 章「资源型端点例外」）。
@@ -26,8 +26,20 @@ export interface ArtifactActionInfo {
   /** `none` 只用于「产物文件已丢失」的灰态（13 章）。 */
   action: 'preview' | 'download' | 'open-link' | 'none';
   kind: PreviewKind | null;
-  /** 行尾的灰色说明（例如阶段二渲染器、超过上限）。 */
+  /** 行尾的灰色说明（例如阶段二渲染器、超过上限、已丢失）。 */
   note: string | null;
+}
+
+/**
+ * `resolveAction` 只读这两项，所以两个来源都能传：
+ * - `GET /artifacts/:id` 的元信息视图（`ArtifactMetaView` 结构上就是它的超集）；
+ * - `runs[].artifacts[]` 的行数据（只有 `missing`，没有 `preview`，13 章 / 验收 42）。
+ *
+ * 缺 `preview` 时下面的判定自动退回「按类型 + 体积」那条本地口径，与改动前行为一致。
+ */
+export interface ArtifactActionInput {
+  missing?: boolean;
+  preview?: ArtifactPreviewDecision | null;
 }
 
 /** 6.10.1 阶段一动作表：`link` 交系统浏览器，阶段二的四类与 `file` 只给下载。 */
@@ -35,7 +47,7 @@ export function resolveAction(
   type: string,
   sizeBytes: number | null | undefined,
   maxMb: number,
-  meta?: ArtifactMetaView | null,
+  meta?: ArtifactActionInput | null,
 ): ArtifactActionInfo {
   if (meta?.missing) {
     return { action: 'none', kind: null, note: COPY.artifactLost };
