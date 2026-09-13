@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+target/
+*.log
+.DS_Store
+.env
+.env.local
+coverage/
+apps/api/prisma/dev.db
+apps/api/prisma/*.db
+apps/api/prisma/*.db-journal
+.turbo/
+.vite/
+
+# TypeScript 增量构建缓存（不是源码）
+*.tsbuildinfo

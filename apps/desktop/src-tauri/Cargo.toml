@@ -1,0 +1,31 @@
+[package]
+name = "atb-desktop"
+version = "0.1.0"
+description = "Agent Task Board 桌面壳：Tauri 2 主窗口 + 托盘 + Node sidecar 托管（PRD 9.4）"
+edition = "2021"
+rust-version = "1.77"
+publish = false
+
+# 桌面壳不承载业务数据：所有读写走 sidecar 的 REST（9.4.2 边界原则），
+# 这里只有窗口、托盘、子进程与系统能力，因此依赖刻意保持最小。
+[dependencies]
+tauri = { version = "2.11", features = ["tray-icon", "image-png"] }
+tauri-plugin-single-instance = "2.4"
+tauri-plugin-dialog = "2.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+arboard = { version = "3.6", default-features = false }
+getrandom = "0.3"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[build-dependencies]
+tauri-build = { version = "2.6", features = [] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
+panic = "abort"

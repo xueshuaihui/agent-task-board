@@ -1,0 +1,35 @@
+import type { HTMLAttributes, ReactNode } from 'react';
+import { cn } from '@/lib/cn';
+
+export interface CardProps extends HTMLAttributes<HTMLDivElement> {
+  children: ReactNode;
+  /** 1.4：卡片默认 `shadow-card`，悬停 `shadow-card-hover`（1.6 的 120ms ease-out）。 */
+  hoverable?: boolean;
+}
+
+export function Card({ className, hoverable, children, ...rest }: CardProps) {
+  return (
+    <div
+      className={cn(
+        'rounded-card border border-border bg-bg-surface shadow-card',
+        hoverable && 'transition-shadow duration-120 ease-out hover:shadow-card-hover',
+        className,
+      )}
+      {...rest}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function CardHeader({ className, children }: { className?: string; children: ReactNode }) {
+  return (
+    <div className={cn('flex h-11 items-center gap-2 border-b border-border px-4', className)}>
+      {children}
+    </div>
+  );
+}
+
+export function CardBody({ className, children }: { className?: string; children: ReactNode }) {
+  return <div className={cn('p-4', className)}>{children}</div>;
+}

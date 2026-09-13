@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-window",
+  "description": "主窗口能力。只给 core:default：自定义命令（tray_set_badge / open_external / clipboard_write / window_hide / window_show / open_log_dir / system_info / open_dir / save_text_file）由 invoke_handler 注册，不受 ACL 约束；dialog / single-instance 两个插件只在 Rust 侧调用，故意不授予 JS 权限，避免 WebView 直接弹原生对话框。数据读写一律走 sidecar 的 REST（PRD 9.4.2 边界原则）。",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

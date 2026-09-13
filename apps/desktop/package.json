@@ -1,0 +1,12 @@
+{
+  "name": "@atb/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent Task Board 桌面壳（Tauri 2 + Rust）。桌面能力全在 Rust 侧，因此这里刻意没有任何依赖，也不引入新的 npm 依赖。",
+  "scripts": {
+    "check": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo check --manifest-path src-tauri/Cargo.toml",
+    "test": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo test --manifest-path src-tauri/Cargo.toml",
+    "dev": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo run --manifest-path src-tauri/Cargo.toml",
+    "build": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo build --release --manifest-path src-tauri/Cargo.toml"
+  }
+}

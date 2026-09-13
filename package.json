@@ -1,0 +1,34 @@
+{
+  "name": "agent-task-board",
+  "version": "0.1.0",
+  "private": true,
+  "description": "本地桌面任务看板：人建任务，Agent 经 MCP/REST 认领执行，结果强制人工审核",
+  "workspaces": [
+    "apps/api",
+    "apps/web",
+    "apps/desktop"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev:api": "npm run start:dev -w @atb/api",
+    "dev:web": "npm run dev -w @atb/web",
+    "build": "npm run build -w @atb/api && npm run build -w @atb/web",
+    "typecheck": "npm run typecheck -w @atb/api && npm run typecheck -w @atb/web",
+    "test": "npm run test -w @atb/api",
+    "prisma": "npm run prisma -w @atb/api",
+    "db:migrate": "npm run db:migrate -w @atb/api",
+    "desktop:sidecar": "npm run build -w @atb/api && npm run build -w @atb/web",
+    "desktop:check": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "desktop:test": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "desktop:dev": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo run --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "desktop:build": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo build --release --manifest-path apps/desktop/src-tauri/Cargo.toml"
+  },
+  "allowScripts": {
+    "prisma@6.19.3": true,
+    "@prisma/engines@6.19.3": true,
+    "@prisma/client@6.19.3": true,
+    "esbuild@0.25.12": true
+  }
+}

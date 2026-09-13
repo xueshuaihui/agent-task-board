@@ -1,0 +1,2 @@
+# Prisma 迁移锁：本项目的 SQLite 方言声明
+provider = "sqlite"

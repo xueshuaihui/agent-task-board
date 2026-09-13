@@ -1,0 +1,41 @@
+{
+  "name": "@atb/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Node sidecar：SQLite + REST + MCP + WebSocket，仅监听 127.0.0.1",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "start:dev": "nest start --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prisma": "node scripts/db.mjs",
+    "db:deploy": "node scripts/db.mjs migrate deploy"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@nestjs/common": "^11.1.0",
+    "@nestjs/core": "^11.1.0",
+    "@nestjs/platform-express": "^11.1.0",
+    "@prisma/client": "^6.19.3",
+    "multer": "^2.2.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0",
+    "ws": "^8.21.3",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.24",
+    "@nestjs/schematics": "^11.1.0",
+    "@types/express": "^5.0.0",
+    "@types/multer": "^2.2.0",
+    "@types/node": "^22.20.2",
+    "@types/ws": "^8.5.13",
+    "prisma": "^6.19.3",
+    "typescript": "~5.9.0",
+    "vitest": "^3.0.0"
+  }
+}

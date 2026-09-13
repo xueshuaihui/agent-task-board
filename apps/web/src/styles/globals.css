@@ -1,0 +1,246 @@
+@import "tailwindcss";
+
+/*
+ * 设计 token —— 逐条对应《高保真原型 v1.1》一、设计系统（1.1–1.6）。
+ * 右侧注释即原型里的变量名/取值，改这里必须同步改原型；未列出的值一律不允许现编。
+ *
+ * 1.3 间距：原型 space-1..8 = 4/8/12/16/20/24/32px，基准 4px。Tailwind 的 spacing 刻度
+ * 与之一一对应（space-N → 工具类 N，如 p-4 = 16px），所以这里只把基准从 rem 钉成 px，
+ * 避免宿主改根字号时桌面窗口里的尺寸漂移。
+ *
+ * 1.5 组件尺寸（原型 → 用法）：
+ *   顶栏 56px   → h-14      列头 44px → h-11     主按钮 32px → h-8
+ *   小按钮 28px → h-7       输入框 32px → h-8    托盘项 32px → h-8
+ *   抽屉 640px  → w-drawer（11.2 按窗口宽度分档） 弹窗 560px → w-dialog
+ *
+ * 1.6 动效（原型 → 工具类）：
+ *   120ms ease-out → duration-120 ease-out        100ms ease-out → duration-100 ease-out
+ *   200ms cubic-bezier(.2,0,0,1) → duration-200 ease-settle
+ *   240ms 抽屉滑入 → animate-drawer-in             160ms 弹窗淡入 → animate-dialog-in
+ *   800ms 状态变更高亮 → animate-status-flash（10.1）
+ */
+@theme {
+  /* —— 1.1 主色与中性色 —— */
+  --color-primary: #4f46e5; /* --primary */
+  --color-primary-hover: #4338ca; /* --primary-hover */
+  --color-primary-light: #eef2ff; /* --primary-light */
+  --color-bg-app: #f8fafc; /* --bg-app */
+  --color-bg-surface: #ffffff; /* --bg-surface */
+  --color-bg-muted: #f1f5f9; /* --bg-muted */
+  --color-border: #e2e8f0; /* --border */
+  --color-border-strong: #cbd5e1; /* --border-strong */
+  --color-text-primary: #0f172a; /* --text-primary */
+  --color-text-secondary: #64748b; /* --text-secondary */
+  --color-text-tertiary: #94a3b8; /* --text-tertiary */
+  --color-text-inverse: #ffffff; /* --text-inverse */
+
+  /* —— 1.1 状态色（主色 + 浅底）—— */
+  --color-status-backlog: #94a3b8;
+  --color-status-backlog-soft: #f1f5f9;
+  --color-status-ready: #3b82f6;
+  --color-status-ready-soft: #eff6ff;
+  --color-status-running: #f59e0b;
+  --color-status-running-soft: #fffbeb;
+  --color-status-review: #8b5cf6;
+  --color-status-review-soft: #f5f3ff;
+  --color-status-done: #10b981;
+  --color-status-done-soft: #ecfdf5;
+  --color-status-failed: #ef4444;
+  --color-status-failed-soft: #fef2f2;
+  --color-status-blocked: #64748b;
+  --color-status-blocked-soft: #f1f5f9;
+  --color-status-pinned: #f59e0b; /* 置顶图钉 */
+  --color-status-pinned-soft: #fffbeb;
+
+  /* —— 1.1 优先级色（主色 + 标签底）—— */
+  --color-priority-0: #dc2626;
+  --color-priority-0-soft: #fef2f2;
+  --color-priority-1: #ea580c;
+  --color-priority-1-soft: #fff7ed;
+  --color-priority-2: #0891b2;
+  --color-priority-2-soft: #ecfeff;
+  --color-priority-3: #64748b;
+  --color-priority-3-soft: #f1f5f9;
+
+  /* —— 1.2 字体 —— */
+  --font-sans: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", monospace;
+
+  /* 字号/字重/行高一一对应 1.2 表格的行；任务 ID 与代码用 font-mono 叠加 */
+  --text-page-title: 20px;
+  --text-page-title--line-height: 28px;
+  --text-page-title--font-weight: 600;
+  --text-section-title: 16px;
+  --text-section-title--line-height: 24px;
+  --text-section-title--font-weight: 600;
+  --text-card-title: 14px;
+  --text-card-title--line-height: 20px;
+  --text-card-title--font-weight: 500;
+  --text-body: 14px;
+  --text-body--line-height: 22px;
+  --text-body--font-weight: 400;
+  --text-aux: 12px;
+  --text-aux--line-height: 18px;
+  --text-aux--font-weight: 400;
+  --text-code: 13px;
+  --text-code--line-height: 20px;
+  --text-code--font-weight: 400;
+  --text-nav: 14px; /* 2.2 导航项 */
+  --text-nav--line-height: 22px;
+  --text-nav--font-weight: 500;
+  --text-logo: 16px; /* 2.2 logo 文本 */
+  --text-logo--line-height: 24px;
+  --text-logo--font-weight: 600;
+  --text-badge: 12px; /* 2.2 角标数字 */
+  --text-badge--line-height: 18px;
+  --text-badge--font-weight: 500;
+
+  /* —— 1.3 间距基准 —— */
+  --spacing: 4px;
+
+  /* —— 1.4 圆角 —— */
+  --radius-card: 8px;
+  --radius-control: 6px; /* 按钮、输入框 */
+  --radius-tag: 4px;
+  --radius-drawer: 12px; /* 仅左侧两角，见 components/ui/drawer */
+  --radius-modal: 12px;
+  --radius-badge: 10px;
+  --radius-node: 8px; /* 依赖图节点（阶段二） */
+
+  /* —— 1.4 阴影 —— */
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-card-hover: 0 4px 12px rgb(0 0 0 / 0.08);
+  --shadow-card-drag: 0 12px 24px rgb(79 70 229 / 0.18);
+  --shadow-drawer: -4px 0 24px rgb(0 0 0 / 0.12);
+  --shadow-modal: 0 12px 32px rgb(0 0 0 / 0.16);
+  --shadow-node: 0 1px 3px rgb(0 0 0 / 0.08);
+
+  /* —— 1.5 尺寸档（原型「卡片宽度 = 列宽 - 32px」等）—— */
+  --container-column: 280px;
+  --container-column-narrow: 240px; /* 11.1 1200–1440px */
+  --container-column-collapsed: 40px; /* 3.1 空列折叠 */
+  --container-card: 248px;
+  --container-drawer: 640px;
+  --container-drawer-md: 560px; /* 11.2：1200–1440px；960–1200px 档取 480px 现写 */
+  --container-dialog: 560px;
+  --container-review-form: 720px;
+  --container-notify-panel: 360px; /* 10.2，阶段二 */
+  --container-tray-menu: 220px; /* 2.3，由 Rust 侧渲染，这里只留档位 */
+
+  /* —— 1.6 缓动与动画 —— */
+  --ease-settle: cubic-bezier(0.2, 0, 0, 1);
+  --animate-drawer-in: drawer-in 240ms var(--ease-settle);
+  --animate-dialog-in: dialog-in 160ms ease-out;
+  --animate-status-flash: status-flash 800ms ease-out; /* 10.1 */
+  --animate-toast-in: toast-in 160ms ease-out;
+  --animate-shimmer: shimmer 1400ms ease-in-out infinite;
+
+  @keyframes drawer-in {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+  @keyframes dialog-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  @keyframes status-flash {
+    0% {
+      background-color: var(--color-primary-light);
+    }
+    50% {
+      background-color: var(--color-bg-surface);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes shimmer {
+    0% {
+      opacity: 0.55;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0.55;
+    }
+  }
+
+  /* —— 11.1 断点作用对象是 Tauri 主窗口内容区宽度，不是 Tailwind 默认视口档 —— */
+  --breakpoint-win-md: 960px;
+  --breakpoint-win-lg: 1200px;
+  --breakpoint-win-xl: 1440px;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-bg-app);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-font-smoothing: antialiased;
+    /* 2.1：桌面应用内禁全局文本选择，输入框与 [data-selectable] 例外 */
+    user-select: none;
+  }
+
+  input,
+  textarea,
+  select,
+  [data-selectable] {
+    user-select: text;
+  }
+
+  /* 2.1：WebView 默认右键菜单由 app/desktop.ts 拦截；这里去掉 macOS 长按手势 */
+  body {
+    -webkit-touch-callout: none;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 1px;
+  }
+}
+
+@layer utilities {
+  /* 看板列与抽屉内的窄滚动条，行为接近原生应用 */
+  .atb-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+  .atb-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .atb-scroll::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+    border-radius: var(--radius-badge);
+  }
+}
