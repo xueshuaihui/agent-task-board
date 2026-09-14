@@ -1,4 +1,4 @@
-import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import type { Task, TaskRun } from '@prisma/client';
 import { ApiException, USER_COPY } from '../contract/errors';
 import { durationMs, nowSql, toIso } from '../contract/time';
@@ -15,6 +15,18 @@ import { SettingsService } from '../infra/settings.service';
 /** 4.3.2：租约由后台每 30 秒扫描一次过期项。 */
 export const LEASE_SWEEP_INTERVAL_MS = 30_000;
 
+/**
+ * 扫描周期的注入点，与 `ATB_WS_GATEWAY_OPTIONS` 同一套口径：
+ * 生产（AppModule 直接装配）不提供这个 token，`@Optional()` 拿到 undefined，
+ * 周期就是 4.3.2 那个 30 秒；只有测试需要把周期压到毫秒级时才提供。
+ */
+export const LEASE_SWEEP_OPTIONS = 'ATB_LEASE_SWEEP_OPTIONS';
+
+export interface LeaseSweepOptions {
+  /** 后台回收扫描的周期（毫秒）。 */
+  intervalMs?: number;
+}
+
 export type LeaseVerdict =
   | { kind: 'ok'; task: Task; run: TaskRun; agent: AgentAuth }
   | { kind: 'replay'; task: Task; run: TaskRun }
@@ -24,6 +36,7 @@ export type LeaseVerdict =
 export class LeaseService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger('lease');
   private timer: NodeJS.Timeout | null = null;
+  private readonly intervalMs: number;
   private sweeping = false;
 
   constructor(
@@ -32,7 +45,20 @@ export class LeaseService implements OnModuleInit, OnModuleDestroy {
     private readonly audit: AuditService,
     private readonly events: EventsService,
     private readonly notifications: NotificationsService,
-  ) {}
+    @Optional() @Inject(LEASE_SWEEP_OPTIONS) options?: LeaseSweepOptions,
+  ) {
+    this.intervalMs = options?.intervalMs ?? LEASE_SWEEP_INTERVAL_MS;
+  }
+
+  /** 定时器此刻是否在跑：装配用例据此判断 onModuleInit / onModuleDestroy 有没有接上。 */
+  get sweeperRunning(): boolean {
+    return this.timer !== null;
+  }
+
+  /** 本次生效的扫描周期；不注入 options 时恒等于 4.3.2 的 30 秒。 */
+  get sweeperIntervalMs(): number {
+    return this.intervalMs;
+  }
 
   onModuleInit(): void {
     this.startSweeper();
@@ -42,13 +68,13 @@ export class LeaseService implements OnModuleInit, OnModuleDestroy {
     this.stopSweeper();
   }
 
-  startSweeper(intervalMs = LEASE_SWEEP_INTERVAL_MS): void {
+  startSweeper(): void {
     if (this.timer) return;
     this.timer = setInterval(() => {
       this.reclaimExpired().catch((error: unknown) => {
         this.logger.warn(`租约回收扫描失败：${(error as Error)?.message ?? String(error)}`);
       });
-    }, intervalMs);
+    }, this.intervalMs);
     // 定时器不能拖住进程退出：sidecar 优雅停机与 vitest 收尾都依赖这一点。
     this.timer.unref?.();
   }

@@ -109,21 +109,44 @@ fn read_config() -> Option<serde_json::Value> {
   }
 }
 
-fn config_port() -> Option<u16> {
-  read_config()?
-    .get("port")
-    .and_then(|value| value.as_u64())
-    .and_then(|value| u16::try_from(value).ok())
+/// 端口解析的**唯一口径**，与 `apps/api/src/common/paths.ts` 逐条对齐（两边各有一条断言同一个例）：
+///
+/// 1. `ATB_PORT`：去空白后必须是**纯 ASCII 十进制数字**，且落在 1..=65535；
+///    `1e4`、`0x1F90`、`+8080`、`8080.0` 一律算非法（Node 原先用 `Number()` 解析会收下前三个，
+///    于是同一个环境变量两边算出两个端口——MCP 地址与 sidecar 实际监听端口就此错位）。
+/// 2. `config.json` 的 `port`：JSON 数字里数值为整且落在 1..=65535 才算合法。
+///    JSON 不区分 `8080` 与 `8080.0`，Node 的 `Number.isInteger` 认它，这里也必须认。
+/// 3. 都不合法就 `DEFAULT_PORT`；任何一级读失败都只降级，绝不让启动失败。
+fn port_from_text(raw: &str) -> Option<u16> {
+  let text = raw.trim();
+  if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+    return None;
+  }
+  text.parse::<u16>().ok().filter(|value| *value > 0)
+}
+
+fn port_from_number(value: &serde_json::Value) -> Option<u16> {
+  let number = value.as_f64()?;
+  if number.fract() != 0.0 {
+    return None;
+  }
+  i64::try_from(number)
+    .ok()
+    .and_then(|whole| u16::try_from(whole).ok())
     .filter(|value| *value > 0)
+}
+
+fn config_port() -> Option<u16> {
+  port_from_number(read_config()?.get("port")?)
 }
 
 /// 端口三级决定：`ATB_PORT` → `config.json` 的 `port` → 7788（20.9 明确它不进 `settings`）。
 pub fn resolve_port() -> u16 {
   if let Some(raw) = env_text("ATB_PORT") {
-    match raw.parse::<u16>() {
-      Ok(value) if value > 0 => return value,
-      _ => eprintln!("[desktop] ATB_PORT={raw} 不是合法端口，按下一级解析"),
+    if let Some(value) = port_from_text(&raw) {
+      return value;
     }
+    eprintln!("[desktop] ATB_PORT={raw} 不是合法端口，按下一级解析");
   }
   config_port().unwrap_or(DEFAULT_PORT)
 }

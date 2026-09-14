@@ -2,12 +2,13 @@ import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Global, Module, type Type } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { expect } from 'vitest';
 import { AppModule } from '../../app.module';
 import { allowedOrigins } from '../../common/origins';
-import { LeaseService } from '../../agent/lease.service';
+import { LEASE_SWEEP_OPTIONS, LeaseService } from '../../agent/lease.service';
 import { ApiExceptionFilter } from '../../infra/api-exception.filter';
 import { applyMigrations } from '../../infra/bootstrap';
 import { PrismaService } from '../../infra/prisma.service';
@@ -32,9 +33,26 @@ export interface TestApp {
   uiToken: string;
   app: NestExpressApplication;
   prisma: PrismaService;
-  /** 关掉 30 秒租约扫描后的显式入口：过期回收用手动调用来测，不依赖真实定时器。 */
+  /** 容器里那一个 LeaseService：手工回收用 `reclaimExpired()`，定时器状态读下面两个快照。 */
   leases: LeaseService;
+  /**
+   * `app.init()` 之后、helper 手工停表之前抓的装配快照。
+   * `running: true` 就是「onModuleInit 真的起了那个后台扫描」的证据；
+   * `intervalMs` 则锁住生产口径（不注入 options 即 4.3.2 的 30 秒）。
+   */
+  bootedSweeper: { running: boolean; intervalMs: number };
+  /** 只关 Nest 应用（跑 onModuleDestroy），临时目录与 Prisma 连接都留着：优雅退出用例要在这之后继续读写库。 */
+  closeApp(): Promise<void>;
   close(): Promise<void>;
+}
+
+export interface CreateTestAppOptions {
+  /**
+   * 覆盖后台租约扫描的周期（毫秒），走的是生产的 `ATB_LEASE_SWEEP_OPTIONS` 注入点。
+   * 不传即 helper 照旧把定时器停掉，用例手工调 `reclaimExpired()`；传了就让它一直跑着，
+   * 用来验「应用启动后扫描自己会动」（验收 13）。
+   */
+  leaseSweepIntervalMs?: number;
 }
 
 export interface Res<T = any> {
@@ -69,7 +87,7 @@ export interface Sender {
 
 const MCP_ACCEPT = 'application/json, text/event-stream';
 
-export async function createTestApp(): Promise<TestApp> {
+export async function createTestApp(options: CreateTestAppOptions = {}): Promise<TestApp> {
   applyDiShim();
 
   const dir = mkdtempSync(path.join(tmpdir(), 'atb-it-'));
@@ -80,7 +98,7 @@ export async function createTestApp(): Promise<TestApp> {
   applyMigrations();
 
   const prisma = new PrismaService();
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(rootModule(options), {
     logger: false,
     bodyParser: false,
   });
@@ -109,9 +127,21 @@ export async function createTestApp(): Promise<TestApp> {
   const origin = `http://127.0.0.1:${address.port}`;
 
   const leases = app.get(LeaseService);
-  // 30 秒的扫描定时器虽然 unref 了，但会把「过期未回收」这条分支的判定时刻变成随机的。
-  // 测试统一改成手动调 `reclaimExpired()`，见 lease-invalidation.test.ts。
-  leases.stopSweeper();
+  // 先抓装配快照再动定时器：这一步之后 helper 停不停表，都不影响「onModuleInit 起了什么」的结论。
+  const bootedSweeper = { running: leases.sweeperRunning, intervalMs: leases.sweeperIntervalMs };
+  // 默认路径仍然手工停表：30 秒的扫描会把「过期未回收」这条分支的判定时机变成随机的，
+  // 其余用例统一手动调 `reclaimExpired()`（见 lease-invalidation.test.ts）。
+  // 传了 leaseSweepIntervalMs 就绝不停——停了这个用例测的就只是 helper 了。
+  const keepSweeper = options.leaseSweepIntervalMs !== undefined;
+  if (!keepSweeper) leases.stopSweeper();
+
+  let appClosed = false;
+  const closeApp = async (): Promise<void> => {
+    if (appClosed) return;
+    appClosed = true;
+    // 不调 stopSweeper()：表要由 onModuleDestroy 自己停。
+    await app.close();
+  };
 
   return {
     dir,
@@ -120,14 +150,37 @@ export async function createTestApp(): Promise<TestApp> {
     app,
     prisma,
     leases,
+    bootedSweeper,
+    closeApp,
     close: async () => {
-      leases.stopSweeper();
-      await app.close();
+      if (!keepSweeper) leases.stopSweeper();
+      await closeApp();
       await prisma.$disconnect();
       rmSync(dir, { force: true, recursive: true });
       restoreEnv(previous);
     },
   };
+}
+
+/**
+ * 覆盖扫描周期用的根模块：`@Global()` 的导出会被 Nest 绑进容器里每个模块的依赖树，
+ * 所以包一层根模块就能让 AgentModule 里的 `@Inject(LEASE_SWEEP_OPTIONS)` 拿到值，
+ * 而生产的 `AppModule` / `AgentModule` 一行都不必改——测试装的仍是那棵真的模块树。
+ */
+function rootModule(options: CreateTestAppOptions): Type<unknown> {
+  const { leaseSweepIntervalMs } = options;
+  if (leaseSweepIntervalMs === undefined) return AppModule as unknown as Type<unknown>;
+
+  class SweeperTunedRoot {}
+  Module({
+    imports: [AppModule],
+    providers: [
+      { provide: LEASE_SWEEP_OPTIONS, useValue: { intervalMs: leaseSweepIntervalMs } },
+    ],
+    exports: [LEASE_SWEEP_OPTIONS],
+  })(SweeperTunedRoot);
+  Global()(SweeperTunedRoot);
+  return SweeperTunedRoot as unknown as Type<unknown>;
 }
 
 function restoreEnv(previous: { dataDir?: string; uiToken?: string }): void {

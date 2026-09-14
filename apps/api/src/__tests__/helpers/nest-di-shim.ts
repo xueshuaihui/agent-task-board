@@ -76,7 +76,8 @@ export function applyDiShim(): void {
 
   // ── agent / mcp
   declare(AgentQueryService, [PrismaService]);
-  declare(LeaseService, [PrismaService, SettingsService, AuditService, EventsService, NotificationsService]);
+  // index 5 由 @Inject(LEASE_SWEEP_OPTIONS) 自行声明，Object 只用来把数组撑到构造参数个数。
+  declare(LeaseService, [PrismaService, SettingsService, AuditService, EventsService, NotificationsService, Object]);
   declare(ClaimService, [PrismaService, SettingsService, LeaseService, AuditService, EventsService, AgentQueryService]);
   declare(WritebackService, [PrismaService, LeaseService, AuditService, EventsService, NotificationsService, AgentQueryService]);
   declare(AgentController, [ClaimService, LeaseService, WritebackService, AgentQueryService]);
