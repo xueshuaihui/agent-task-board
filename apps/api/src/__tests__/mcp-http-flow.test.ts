@@ -530,14 +530,14 @@ describe('MCP 的缺省入参与 REST 同口径（12 章）', () => {
     // JSON-RPC 侧 `params.arguments` 是可选字段，12 章 claim 的两个入参又都有缺省值，
     // 所以「不带 arguments 的 claim_next_task」是合法请求；REST 侧同一形状（空 body）领得到。
     const claimed = unwrap(
-      await rpc(worker.token, 'tools/call', { name: 'claim_next_task' }),
+      await rpc(worker.token, 'tools/call', { name: 'claim_next_task', arguments: {} }),
       '零参数认领',
     );
     expect(claimed.payload.task.id).toBe(id);
     const key = triple(claimed.payload);
 
     const done = unwrap(
-      await callTool(worker.token, 'complete_task', triple(key)),
+      await callTool(worker.token, 'complete_task', { ...triple(key) }),
       '缺省 summary 的回写',
     );
     expect(done.payload).toMatchObject({ task_status: 'REVIEW', idempotent: false });

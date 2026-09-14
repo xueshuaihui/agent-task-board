@@ -127,13 +127,11 @@ fn port_from_text(raw: &str) -> Option<u16> {
 
 fn port_from_number(value: &serde_json::Value) -> Option<u16> {
   let number = value.as_f64()?;
-  if number.fract() != 0.0 {
+  if number.fract() != 0.0 || !number.is_finite() {
     return None;
   }
-  i64::try_from(number)
-    .ok()
-    .and_then(|whole| u16::try_from(whole).ok())
-    .filter(|value| *value > 0)
+  let whole = number as i64;
+  u16::try_from(whole).ok().filter(|value| *value > 0)
 }
 
 fn config_port() -> Option<u16> {
