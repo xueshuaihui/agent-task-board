@@ -83,6 +83,27 @@ fn split_command(raw: &str) -> Vec<String> {
   parts
 }
 
+/// 解析运行 sidecar 用的 node 可执行文件，优先级从高到低：
+/// 1. `ATB_NODE_BIN` —— 显式指定（最高优先，便于调试/替换）；
+/// 2. `<resource_dir>/sidecar/node` —— 随 `.app` 打包进 Resources 的 node，保证从 Finder 双击启动也能用；
+/// 3. 系统 `node` —— 仅开发/未打包时依赖 PATH。
+fn resolve_node(resource_dir: Option<&Path>) -> String {
+  if let Some(raw) = std::env::var("ATB_NODE_BIN")
+    .ok()
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty())
+  {
+    return raw;
+  }
+  if let Some(dir) = resource_dir {
+    let bundled = dir.join("sidecar").join("node");
+    if bundled.is_file() {
+      return bundled.display().to_string();
+    }
+  }
+  "node".to_string()
+}
+
 /// 三档解析（优先级从高到低）：
 /// 1. `ATB_SIDECAR_CMD` —— 不打包就能验，可以把入口指到任意路径；
 /// 2. `<resource_dir>/sidecar/main.js` —— 阶段二把 sidecar 随 `.app` 打包后的布局；
@@ -98,18 +119,13 @@ pub fn resolve_entry(resource_dir: Option<&Path>) -> Vec<String> {
       return parts;
     }
   }
-  let node = std::env::var("ATB_NODE_BIN")
-    .ok()
-    .map(|value| value.trim().to_string())
-    .filter(|value| !value.is_empty())
-    .unwrap_or_else(|| "node".to_string());
   if let Some(dir) = resource_dir {
     let bundled = dir.join("sidecar").join("main.js");
     if bundled.is_file() {
-      return vec![node, bundled.display().to_string()];
+      return vec![resolve_node(Some(dir)), bundled.display().to_string()];
     }
   }
-  vec![node, env!("ATB_DEV_SIDECAR_ENTRY").to_string()]
+  vec![resolve_node(None), env!("ATB_DEV_SIDECAR_ENTRY").to_string()]
 }
 
 /// UI 会话 Token：随机 32 字节 hex（64 字符，满足 sidecar 的 `length >= 32`），

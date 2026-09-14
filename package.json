@@ -30,5 +30,8 @@
     "@prisma/engines@6.19.3": true,
     "@prisma/client@6.19.3": true,
     "esbuild@0.25.12": true
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4"
   }
 }
