@@ -49,6 +49,34 @@ export function collectMigrations(dir = migrationsDir()): PendingMigration[] {
     .sort((a, b) => a.order - b.order);
 }
 
+function tableExists(db: DatabaseSync, name: string): boolean {
+  const row = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
+  return Boolean(row);
+}
+
+/**
+ * 水位对齐（2026-09-15 真机验收缺陷 #2）：`scripts/db.mjs`（开发期 `prisma migrate deploy`）
+ * 建的库没有 `user_version` 水位（账本在 `_prisma_migrations` 表），shared 数据目录下
+ * 首次用本机制启动会误判为空库、重放 0001_init 撞表。
+ * 判据：version==0 且 `tasks` 表已存在 → 不是空库，按 `_prisma_migrations` 账本对齐水位；
+ * 无账本的既有库（来源不明）对齐到当前全量水位——前提是其 schema 与当前迁移同代，
+ * 跨代升级需要在这里补充显式判定，不允许静默跳迁移。
+ */
+function alignLegacyWatermark(db: DatabaseSync, migrations: PendingMigration[]): number {
+  if (!tableExists(db, 'tasks')) return 0;
+  if (tableExists(db, '_prisma_migrations')) {
+    const rows = db
+      .prepare(
+        'SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL',
+      )
+      .all() as Array<{ migration_name?: string }>;
+    const applied = new Set(rows.map((row) => row.migration_name).filter(Boolean));
+    const matched = migrations.filter((migration) => applied.has(migration.name));
+    if (matched.length > 0) return Math.max(...matched.map((migration) => migration.order));
+  }
+  return Math.max(...migrations.map((migration) => migration.order));
+}
+
 export function applyMigrations(logger?: Pick<AppLogger, 'log' | 'error'>): number[] {
   mkdirSync(paths.dataDir(), { recursive: true });
   mkdirSync(paths.artifactsDir(), { recursive: true });
@@ -60,7 +88,16 @@ export function applyMigrations(logger?: Pick<AppLogger, 'log' | 'error'>): numb
   try {
     const row = db.prepare('PRAGMA user_version').get() as { user_version?: number };
     let version = Number(row?.user_version ?? 0);
-    for (const migration of collectMigrations()) {
+    const migrations = collectMigrations();
+    if (version === 0) {
+      const aligned = alignLegacyWatermark(db, migrations);
+      if (aligned > 0) {
+        version = aligned;
+        db.exec(`PRAGMA user_version = ${aligned}`);
+        logger?.log(`检测到既有库（schema 已存在、无水位），迁移水位对齐为 ${aligned}`);
+      }
+    }
+    for (const migration of migrations) {
       if (migration.order <= version) continue;
       db.exec('BEGIN');
       try {
