@@ -15,3 +15,6 @@ apps/api/prisma/*.db-journal
 
 # TypeScript 增量构建缓存（不是源码）
 *.tsbuildinfo
+
+# Tauri 打包资源：110MB node 二进制手动拷入（见 README「前置」），不入库
+apps/desktop/src-tauri/resources/sidecar/

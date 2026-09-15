@@ -162,12 +162,42 @@ hdiutil create -volname "Agent Task Board" \
 - `.app`：`target/release/bundle/macos/Agent Task Board.app`（自包含，含 sidecar + node）
 - `.dmg`：`target/release/bundle/dmg/Agent Task Board_0.1.0_x64.dmg`（UDZO 压缩）
 
-### 运行须知
+### 运行须知（签名与 Gatekeeper，无证书降级方案）
 
-- **未签名**：本机无开发者证书，`.app/.dmg` 均未签名。首次打开会被 Gatekeeper 拦截 ——
-  右键「打开」或在终端执行 `xattr -cr "/path/Agent Task Board.app"` 后双击。
-- **x86_64 架构**：当前 release 二进制为 x86_64，在 Apple Silicon 上走 Rosetta。
-  要原生 arm64，需 `npx tauri build --target aarch64-apple-darwin`（node 也需对应架构）。
+**当前发布口径：未签名（本机无 Apple Developer 证书，阶段一按降级方案交付）。**
+
+- **首次打开被 Gatekeeper 拦截**是预期行为，两种解除方式：
+  1. 右键 `.app` →「打开」→ 再点「打开」（弹窗确认一次即可，之后正常启动）；
+  2. 终端执行 `xattr -cr "/path/Agent Task Board.app"` 清除隔离属性后双击。
+- `.dmg` 本身下载/拷贝不受影响，拦截发生在首次运行 `.app` 时。
+- **x86_64 架构**：当前 release 二进制为 x86_64，在 Apple Silicon 上走 Rosetta（可用，但非性能最优）。
+
+**arm64 原生构建（Apple Silicon 机器上执行）：**
+
+```bash
+# 1. 添加 arm64 Rust 目标
+rustup target add aarch64-apple-darwin
+
+# 2. 准备 arm64 版 node 二进制（不能用当前的 x86_64 node！）
+#    任一来源均可：官方 nodejs.org arm64 pkg / Homebrew / 已有安装，
+#    拷到打包资源路径（tauri.conf.json resources 声明的位置）：
+mkdir -p apps/desktop/src-tauri/resources/sidecar
+cp /path/to/arm64-node apps/desktop/src-tauri/resources/sidecar/node
+
+# 3. 指定目标架构构建
+cd apps/desktop/src-tauri
+export PATH="$HOME/.cargo/bin:$PATH"
+npx tauri build --target aarch64-apple-darwin
+# 产物在 target/aarch64-apple-darwin/release/bundle/macos/
+```
+
+**通用二进制（Universal 2，双架构单包）**：`npx tauri build --target universal-apple-darwin`。
+注意：node 侧也要是 universal 二进制（用 `lipo -create x86_64-node arm64-node -output node` 合成），
+否则 Rosetta 缺失的环境（如全新 arm64 机器未装 Rosetta）里 sidecar 起不来。两套架构的 node 都要备齐。
+
+> ⚠️ `resources/sidecar/node` 不入库（.gitignore 已覆盖），每次打包前按当前目标架构重新拷入对应 node。
+
+> 取得 Apple Developer 证书后升级路径：`tauri.conf.json` 配 `signingIdentity` → `codesign` → `notarytool` 公证 → `staple`，届时移除本节降级说明。
 
 ---
 
