@@ -164,17 +164,19 @@ hdiutil create -volname "Agent Task Board" \
 
 #### `target/release/` 产物说明
 
-| 路径 | 大小 | 性质 | 说明 |
-| --- | --- | --- | --- |
-| `atb-desktop` | 5.2M | **可执行产物** | `desktop:build` 的裸二进制；web UI 已编译期嵌入（`frontendDist`），api 入口已由 `build.rs` 注入。**不自包含**：启动 sidecar 需 `PATH` 里有 node 或设 `ATB_NODE_BIN` |
-| `atb-desktop.d` | <1K | 构建元数据 | cargo 生成的 depfile，可忽略 |
-| `sidecar/` | ≈110M | 打包中间资源 | `main.js` + `node` 的暂存拷贝，供打包流程取用；删了不影响已产出产物，下次打包会重新生成/需重新拷入 |
-| `build/` `deps/` `incremental/` `examples/` | — | cargo 中间产物 | 编译缓存与依赖产物，只影响增量编译速度，可随时删（删后全量重编） |
-| `bundle/macos/Agent Task Board.app` | 115M | **交付产物** | 自包含 .app：`Contents/MacOS/atb-desktop` + `Resources/sidecar/{main.js,node}` + 图标，Finder 双击可独立运行 |
-| `bundle/dmg/Agent Task Board_0.1.0_x64.dmg` | 44M | **交付产物** | 最终分发镜像（UDZO），校验和见 `docs/发版记录 v0.1.0.md` |
-| `bundle/dmg/bundle_dmg.sh` `bundle/dmg/icon.icns` | — | 工具残留 | tauri 的 DMG 打包脚本及资源；无头会话下 osascript 必失败，实际 .dmg 用 `hdiutil` 兜底生成 |
-| `bundle/macos/rw.*.dmg` | — | 失败残留 | `bundle_dmg.sh` 中断留下的读写临时镜像，**可安全删除** |
-| `bundle/share/create-dmg/` | — | 工具残留 | create-dmg 脚本临时目录，**可安全删除** |
+> 本节产物均产生自 macOS 构建；跨平台产物（Windows NSIS / Linux deb、AppImage）为阶段二 F1/D3 项，届时在同一 `bundle/` 下按平台分子目录。
+
+| 路径 | 大小 | 适用系统 | 性质 | 说明 |
+| --- | --- | --- | --- | --- |
+| `atb-desktop` | 5.2M | **macOS**（Mach-O x86_64；Apple Silicon 经 Rosetta） | **可执行产物** | `desktop:build` 的裸二进制；web UI 已编译期嵌入（`frontendDist`），api 入口已由 `build.rs` 注入。**不自包含**：启动 sidecar 需 `PATH` 里有 node 或设 `ATB_NODE_BIN` |
+| `atb-desktop.d` | <1K | 与构建平台无关 | 构建元数据 | cargo 生成的 depfile，可忽略 |
+| `sidecar/` | ≈110M | **macOS**（node 为 x86_64 Mach-O） | 打包中间资源 | `main.js` + `node` 的暂存拷贝，供打包流程取用；删了不影响已产出产物，下次打包会重新生成/需重新拷入 |
+| `build/` `deps/` `incremental/` `examples/` | — | 与构建平台一致 | cargo 中间产物 | 编译缓存与依赖产物，只影响增量编译速度，可随时删（删后全量重编） |
+| `bundle/macos/Agent Task Board.app` | 115M | **macOS**（10.15+，x86_64 / Apple Silicon） | **交付产物** | 自包含 .app：`Contents/MacOS/atb-desktop` + `Resources/sidecar/{main.js,node}` + 图标，Finder 双击可独立运行 |
+| `bundle/dmg/Agent Task Board_0.1.0_x64.dmg` | 44M | **macOS**（仅 macOS 可挂载） | **交付产物** | 最终分发镜像（UDZO），校验和见 `docs/发版记录 v0.1.0.md` |
+| `bundle/dmg/bundle_dmg.sh` `bundle/dmg/icon.icns` | — | macOS（依赖 osascript） | 工具残留 | tauri 的 DMG 打包脚本及资源；无头会话下 osascript 必失败，实际 .dmg 用 `hdiutil` 兜底生成 |
+| `bundle/macos/rw.*.dmg` | — | macOS | 失败残留 | `bundle_dmg.sh` 中断留下的读写临时镜像，**可安全删除** |
+| `bundle/share/create-dmg/` | — | 与构建平台无关 | 工具残留 | create-dmg 脚本临时目录，**可安全删除** |
 
 > 要分发给他人只需 `.dmg`（或直接压缩 `.app`）；`atb-desktop` 适合开发调试（配 `npm run dev:api` 的数据目录或本地 node 环境）。清理中间产物：`cargo clean`（会连同交付产物一起删除，重新打包即可恢复）。
 
