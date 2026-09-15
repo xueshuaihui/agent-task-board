@@ -28,8 +28,7 @@
       "icons/128x128.png"
     ],
     "resources": {
-      "../../api/dist/main.js": "sidecar/main.js",
-      "resources/sidecar/node": "sidecar/node"
+      "resources/sidecar": "sidecar"
     },
     "macOS": {
       "minimumSystemVersion": "11.0"

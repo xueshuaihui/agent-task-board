@@ -2,11 +2,20 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 /**
+ * 单文件 bundle（scripts/bundle-sidecar.mjs）在编译期注入的版本号。
+ * bundle 里没有 package.json 可读，走这里直取；tsc/vitest 路径不受影响（undefined 落到文件查找）。
+ */
+declare const __ATB_BUILD_VERSION__: string | undefined;
+
+/**
  * 版本号只有一个来源：apps/api/package.json，就绪行与「关于」页都读它。
  * 编译产物可能是 `dist/common`（rootDir=src）或 `dist/src/common`（rootDir=仓库根），
  * 两种布局都往上找，不靠猜层数。
  */
 function readVersion(): string {
+  if (typeof __ATB_BUILD_VERSION__ === 'string' && __ATB_BUILD_VERSION__ && __ATB_BUILD_VERSION__ !== '0.0.0') {
+    return __ATB_BUILD_VERSION__;
+  }
   const candidates = ['../..', '../../..', '../../../..'].map((up) =>
     path.resolve(__dirname, up, 'package.json'),
   );

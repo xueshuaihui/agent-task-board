@@ -124,19 +124,21 @@ npm run desktop:build   # cargo build --release → 裸二进制 atb-desktop
 ### 2. 打包 macOS .app / .dmg（可独立分发）
 
 `@tauri-apps/cli@2` 已作为根 devDependency 安装（随 `npm install` 落地），提供 `tauri build`。
-`.app` 会把 web UI（编译期嵌入）、api sidecar（`Resources/sidecar/main.js`）与 node 运行时
-（`Resources/sidecar/node`）一起打包，**从 Finder 双击即可独立运行**。
+`.app` 会把 web UI（编译期嵌入）、api sidecar 与 node 运行时一起打包，**从 Finder 双击即可独立运行**。
 
-**前置：把 node 运行时拷进打包资源**
-> 本机只有 WorkBuddy 托管的 node，不在 GUI 默认 PATH；
-> 从 Finder 启动的 `.app` 若找不到 `node`，整个后端 sidecar 起不来。
-> `tauri.conf.json` 的 `bundle.resources` 已声明 `resources/sidecar/node`，
-> 但该文件需手动放入（不入库，约 110 MB）。**缺失会直接导致 `tauri build` 报错。**
+**前置：装配 sidecar 打包资源（`npm run build:sidecar -w @atb/api`，一步完成）**
+
+> sidecar 不是单个 JS 文件能跑起来的（真机验收教训：只带 `dist/main.js` 会报
+> `Cannot find module '@nestjs/core'`）。`build:sidecar` 做四件事，产出
+> `apps/desktop/src-tauri/resources/sidecar/`（~135M，不入库）：
+> 1. **webpack 单文件 bundle**（ts-loader 保留 `emitDecoratorMetadata`，esbuild 不支持会打挂 Nest 依赖注入；仅 `@prisma/client` 外置，Nest 可选 peer 依赖以哑桩替换，见 `apps/api/scripts/bundle-sidecar.mjs`）；
+> 2. 装配**最小 Prisma 运行时**（生成客户端 + schema + query engine，从整包 97M 裁到 ~21M）；
+> 3. 装配 `prisma/migrations`（bootstrap 按 `__dirname` 找迁移）；
+> 4. 拷入 node 运行时（`ATB_NODE_BIN` 优先，缺省用当前执行的 node；需与目标架构一致）。
 
 ```bash
-# 拷贝 node 二进制（需与 release 二进制同架构：当前为 x86_64）
-mkdir -p apps/desktop/src-tauri/resources/sidecar
-cp /绝对路径/node apps/desktop/src-tauri/resources/sidecar/node
+npm run build           # 先正常构建 api（tsc）+ web（vite）
+npm run build:sidecar -w @atb/api   # 装配打包资源（上述四步）
 ```
 
 **打包：**
@@ -144,7 +146,7 @@ cp /绝对路径/node apps/desktop/src-tauri/resources/sidecar/node
 ```bash
 cd apps/desktop/src-tauri
 export PATH="$HOME/.cargo/bin:$PATH"
-npx tauri build     # .app 产出在 target/release/bundle/macos/
+npx tauri build     # .app 产出在 target/release/bundle/macos/；dmg 步骤失败见下
 ```
 
 **生成 .dmg（绕过 create-dmg 的 osascript 依赖）**
@@ -170,10 +172,10 @@ hdiutil create -volname "Agent Task Board" \
 | --- | --- | --- | --- | --- |
 | `atb-desktop` | 5.2M | **macOS**（Mach-O x86_64；Apple Silicon 经 Rosetta） | **可执行产物** | `desktop:build` 的裸二进制；web UI 已编译期嵌入（`frontendDist`），api 入口已由 `build.rs` 注入。**不自包含**：启动 sidecar 需 `PATH` 里有 node 或设 `ATB_NODE_BIN` |
 | `atb-desktop.d` | <1K | 与构建平台无关 | 构建元数据 | cargo 生成的 depfile，可忽略 |
-| `sidecar/` | ≈110M | **macOS**（node 为 x86_64 Mach-O） | 打包中间资源 | `main.js` + `node` 的暂存拷贝，供打包流程取用；删了不影响已产出产物，下次打包会重新生成/需重新拷入 |
+| `sidecar/` | ≈135M | **macOS**（node 为 x86_64 Mach-O） | 打包中间资源 | `npm run build:sidecar` 的装配产物：`main.js`（单文件 bundle）+ `node` + `prisma/migrations` + 最小 `node_modules`；删了下次重新跑脚本即可 |
 | `build/` `deps/` `incremental/` `examples/` | — | 与构建平台一致 | cargo 中间产物 | 编译缓存与依赖产物，只影响增量编译速度，可随时删（删后全量重编） |
-| `bundle/macos/Agent Task Board.app` | 115M | **macOS**（10.15+，x86_64 / Apple Silicon） | **交付产物** | 自包含 .app：`Contents/MacOS/atb-desktop` + `Resources/sidecar/{main.js,node}` + 图标，Finder 双击可独立运行 |
-| `bundle/dmg/Agent Task Board_0.1.0_x64.dmg` | 44M | **macOS**（仅 macOS 可挂载） | **交付产物** | 最终分发镜像（UDZO），校验和见 `docs/发版记录 v0.1.0.md` |
+| `bundle/macos/Agent Task Board.app` | 142M | **macOS**（10.15+，x86_64 / Apple Silicon） | **交付产物** | 自包含 .app：`Contents/MacOS/atb-desktop` + `Resources/sidecar/{main.js, node, prisma/migrations, node_modules}` + 图标，Finder 双击可独立运行 |
+| `bundle/dmg/Agent Task Board_0.1.0_x64.dmg` | 56M | **macOS**（仅 macOS 可挂载） | **交付产物** | 最终分发镜像（UDZO），校验和见 `docs/发版记录 v0.1.0.md` |
 | `bundle/dmg/bundle_dmg.sh` `bundle/dmg/icon.icns` | — | macOS（依赖 osascript） | 工具残留 | tauri 的 DMG 打包脚本及资源；无头会话下 osascript 必失败，实际 .dmg 用 `hdiutil` 兜底生成 |
 | `bundle/macos/rw.*.dmg` | — | macOS | 失败残留 | `bundle_dmg.sh` 中断留下的读写临时镜像，**可安全删除** |
 | `bundle/share/create-dmg/` | — | 与构建平台无关 | 工具残留 | create-dmg 脚本临时目录，**可安全删除** |

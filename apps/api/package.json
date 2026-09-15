@@ -6,6 +6,7 @@
   "main": "dist/main.js",
   "scripts": {
     "build": "nest build",
+    "build:sidecar": "node scripts/bundle-sidecar.mjs",
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
     "typecheck": "tsc --noEmit",
@@ -34,8 +35,11 @@
     "@types/multer": "^2.2.0",
     "@types/node": "^22.20.2",
     "@types/ws": "^8.5.13",
+    "esbuild": "^0.28.2",
     "prisma": "^6.19.3",
+    "ts-loader": "^9.6.2",
     "typescript": "~5.9.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "webpack": "^5.111.0"
   }
 }

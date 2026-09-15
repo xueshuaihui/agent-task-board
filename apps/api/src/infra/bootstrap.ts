@@ -15,6 +15,8 @@ import { paths } from '../common/paths';
 export function migrationsDir(): string {
   const candidates = [
     process.env.ATB_MIGRATIONS_DIR,
+    // bundle 布局（scripts/bundle-sidecar.mjs）：迁移目录与 main.js 同装进 Resources/sidecar/
+    path.resolve(__dirname, 'prisma', 'migrations'),
     path.resolve(__dirname, '..', 'prisma', 'migrations'),
     path.resolve(__dirname, '..', '..', 'prisma', 'migrations'),
     path.resolve(process.cwd(), 'prisma', 'migrations'),
