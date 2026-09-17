@@ -15,6 +15,7 @@
 
 | 你的目标 | 走哪条路径 | 最少步骤 |
 | --- | --- | --- |
+| **使用这个产品**（不是开发） | 见下方 [产品使用概览](#产品使用概览) | 安装 .dmg → 双击启动 → 看板建任务 |
 | 开发调试（改代码、跑测试） | 路径 A：[开发模式](#路径-a开发模式) | `npm install` → `npm run prisma` → `npm run dev:api` + `npm run dev:web` |
 | 本机跑一下桌面壳（不要安装包） | 路径 B：[构建裸二进制](#路径-b构建裸二进制本机运行) | `npm run build` → `npm run desktop:build` |
 | **打包可分发的 .app / .dmg** | 路径 C：[打包安装包](#路径-c打包可分发的-app--dmg) | `npm install` → `npm run build` → `npm run build:sidecar -w @atb/api` → `npx tauri build` → `hdiutil` |
@@ -37,6 +38,46 @@ hdiutil create -volname "Agent Task Board" \
 
 > ⚠️ 换机器 / 换架构打包前，先把对应架构的 **node 二进制**放到
 > `apps/desktop/src-tauri/resources/sidecar/node`（不入库，③ 会原样使用）。详见路径 C 第 0 步。
+
+---
+
+## 产品使用概览
+
+> 完整操作说明见 `docs/系统操作使用手册.md`（第 3–5 章）；本节只给最短理解路径。
+
+### 一句话工作流
+
+**你在看板上建任务 → Agent 经 MCP / REST 认领并执行 → 结果进入「待审核」→ 你审核通过才生效。**
+Agent 永远不能替你把关；所有产出物（diff / 文件 / 链接）经人工审核后可见、可退回。
+
+### 界面速览（桌面端主窗口）
+
+| 页面 | 干什么 |
+| --- | --- |
+| **看板** | 六列任务流：需求池 → 待执行 → 执行中 → 待审核 → 已完成 / 异常；拖拽流转 |
+| **审核** | 待审核队列，逐条批（通过 / 驳回 + 意见），可自动跳下一条 |
+| **任务** | 列表视图：筛选、搜索、排序、分页 |
+| **设置** | Token 管理、字段定义、模板、数据导入导出、备份、审计日志 |
+| 🔔 铃铛 | 未读通知角标（审核待办、执行失败、租约过期…），点击直达 REVIEW 过滤 |
+
+### 建任务的三种方式
+
+1. **看板 UI**：拖拽 / 表单直接建；
+2. **让 AI 助手代建（推荐）**：把 `docs/任务创建模版（Agent 协助）.md` 发给任意 AI 助手，按字段约束填 JSON 后代调创建；
+3. **REST**：`POST /api/v1/tasks`（UI Token 鉴权，见模版文档第 4 节）。
+
+> 新任务一律进「需求池」；要被执行 Agent 精确认领，可在任务上标注能力要求（如 `repo:agent-task-board`）。
+
+### Agent 接入（让执行方干活）
+
+1. **设置 → Token** 签发 Agent Token（与 UI Token 分组，互不可调用对方接口）；
+2. Agent 走 **MCP**（`http://127.0.0.1:7788/mcp`）或 **REST** 九个工具：
+   `list_ready_tasks` → `claim_next_task`（建租约）→ `update_progress` / `append_log` → `complete_task`；
+3. Cursor 用户可直接用现成调度脚本 `scripts/cursor-agent-poll.mjs`（轮询认领，免写接入代码）。
+
+### 数据在哪
+
+全部本地：SQLite（`~/.agent-board/`）+ 产物文件，仅监听 `127.0.0.1`，无远端依赖；备份 / 导入导出在「设置」内操作。
 
 ---
 
