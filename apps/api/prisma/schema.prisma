@@ -77,6 +77,7 @@ model Task {
   priority             Int       @default(3)
   tags                 String?   @default("[]")
   requiredCapabilities String?   @default("[]") @map("required_capabilities")
+  skills               String    @default("[]")
   customFields         String?   @default("{}") @map("custom_fields")
   pinned               Int       @default(0)
   dueAt                String?   @map("due_at")
@@ -287,4 +288,40 @@ model Notification {
 
   @@index([accountId, readAt], map: "idx_notif_account")
   @@map("notifications")
+}
+
+// 0919：技能管理（迁移 0003_skills）。JSON 列是文本，客户端 parse/stringify。
+model Skill {
+  id              String  @id
+  accountId       String  @map("account_id")
+  name            String
+  type            String
+  status          String  @default("DRAFT")
+  description     String  @default("")
+  tags            String  @default("[]")
+  currentVersion  String  @default("v0.1.0") @map("current_version")
+  content         String  @default("{\"blocks\":[],\"entryBlockId\":null}")
+  mcpDependencies String  @default("[]") @map("mcp_dependencies")
+  createdAt       String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  updatedAt       String  @default(dbgenerated("(datetime('now'))")) @map("updated_at")
+  versions        SkillVersion[]
+
+  @@index([accountId, status], map: "idx_skills_account")
+  @@unique([accountId, name], map: "uniq_skills_account_name")
+  @@map("skills")
+}
+
+model SkillVersion {
+  id              String @id
+  skillId         String @map("skill_id")
+  version         String
+  content         String @default("{\"blocks\":[],\"entryBlockId\":null}")
+  mcpDependencies String @default("[]") @map("mcp_dependencies")
+  changelog       String @default("")
+  createdAt       String @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  skill           Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([skillId, version])
+  @@index([skillId], map: "idx_skill_versions_skill")
+  @@map("skill_versions")
 }

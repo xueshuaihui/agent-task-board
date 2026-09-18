@@ -45,6 +45,8 @@ import { TemplatesController } from '../../templates/templates.controller';
 import { TokensService } from '../../tokens/tokens.service';
 import { TokensController } from '../../tokens/tokens.controller';
 import { WsGateway } from '../../ws/ws-gateway';
+import { SkillsService } from '../../skills/skills.service';
+import { SkillsController } from '../../skills/skills.controller';
 
 /**
  * 为什么需要这张表
@@ -85,7 +87,9 @@ export function applyDiShim(): void {
   declare(PrefsController, [PrismaService]);
 
   // ── agent / mcp
-  declare(AgentQueryService, [PrismaService]);
+  declare(AgentQueryService, [PrismaService, SkillsService]);
+  declare(SkillsService, [PrismaService]);
+  declare(SkillsController, [SkillsService]);
   // index 5 由 @Inject(LEASE_SWEEP_OPTIONS) 自行声明，Object 只用来把数组撑到构造参数个数。
   declare(LeaseService, [PrismaService, SettingsService, AuditService, EventsService, NotificationsService, Object]);
   declare(ClaimService, [PrismaService, SettingsService, LeaseService, AuditService, EventsService, AgentQueryService]);
@@ -101,6 +105,7 @@ export function applyDiShim(): void {
     EventsService,
     NotificationsService,
     ArtifactsService,
+    SkillsService,
     AppLogger,
   ]);
   declare(TasksController, [TasksService]);

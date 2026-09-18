@@ -95,6 +95,11 @@ export const taskPatchSchema = z
     pinned: z.boolean().optional(),
     project_id: z.string().trim().min(1).max(64).nullable().optional(),
     sort_order: z.number().int().optional(),
+    // 0919 10.3：技能绑定（引用由服务层校验归属/存在/版本，见 SkillsService.normalizeTaskBindings）。
+    skills: z.array(z.object({
+      skill_id: z.string().trim().min(1).max(64),
+      version: z.string().trim().max(20).optional(),
+    })).max(20).optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: '没有需要更新的字段' });
 export type TaskPatchInput = z.infer<typeof taskPatchSchema>;

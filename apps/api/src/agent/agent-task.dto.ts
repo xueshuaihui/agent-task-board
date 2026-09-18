@@ -2,6 +2,7 @@ import type { Artifact, Review, Task, TaskDependency } from '@prisma/client';
 import type { ClaimReason, TaskStatus } from '../contract/enums';
 import { toIso } from '../contract/time';
 import { parseJsonArray, parseJsonObject } from '../tasks/task.dto';
+import type { TaskSkillPayload } from '../skills/skills.dto';
 
 /** 12 章 `review_feedback` 元素：只给结论与三字段，不给审核时间等 UI 负担。 */
 export interface ReviewFeedbackItem {
@@ -36,6 +37,8 @@ export interface AgentTaskPayload {
   required_capabilities: string[];
   dependencies: AgentDependencies;
   review_feedback: ReviewFeedbackItem[];
+  /** 0919 10.3：随任务下发的技能（含内容/版本/MCP 依赖）。 */
+  skills: TaskSkillPayload[];
 }
 
 export interface LeaseDto {
@@ -96,6 +99,7 @@ export function buildTaskPayload(
   task: Task,
   dependencies: AgentDependencies,
   reviewFeedback: ReviewFeedbackItem[],
+  skills: TaskSkillPayload[] = [],
 ): AgentTaskPayload {
   return {
     id: task.id,
@@ -115,5 +119,6 @@ export function buildTaskPayload(
     required_capabilities: parseJsonArray(task.requiredCapabilities),
     dependencies,
     review_feedback: reviewFeedback,
+    skills,
   };
 }

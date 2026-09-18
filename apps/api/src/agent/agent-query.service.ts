@@ -5,6 +5,7 @@ import { toIso } from '../contract/time';
 import { parseJsonArray } from '../tasks/task.dto';
 import type { RequestAuth } from '../auth/auth.scope';
 import { PrismaService } from '../infra/prisma.service';
+import { SkillsService } from '../skills/skills.service';
 import { agentOf } from './agent-auth';
 import type { GetTaskInput, ReviewFeedbackInput } from './agent-inputs';
 import {
@@ -19,7 +20,10 @@ type DependencyRow = { id: string; depends_on: string; type: string; title: stri
 
 @Injectable()
 export class AgentQueryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly skillsService: SkillsService,
+  ) {}
 
   /** `get_task`：任务详情 + 审核意见 + 自定义字段 + 依赖（12 章）。 */
   async getTask(input: GetTaskInput, auth: RequestAuth): Promise<{ task: AgentTaskPayload }> {
@@ -41,7 +45,13 @@ export class AgentQueryService {
   async payload(taskId: string): Promise<AgentTaskPayload> {
     const task = await this.prisma.task.findUnique({ where: { id: taskId } });
     if (!task) throw new ApiException('TASK_GONE', '任务已删除');
-    return buildTaskPayload(task, await this.deps(taskId), toReviewFeedback(await this.reviews(taskId, 5)));
+    return buildTaskPayload(
+      task,
+      await this.deps(taskId),
+      toReviewFeedback(await this.reviews(taskId, 5)),
+      // 10.3：技能随任务下发（按任务归属账号解析，绑定引用补全为带内容的载荷）。
+      await this.skillsService.resolveForTask(task.accountId, task.skills),
+    );
   }
 
   /** `list_ready_tasks` 的精简卡片：够 Agent 决定领哪个，不带描述与产物。 */
@@ -59,6 +69,8 @@ export class AgentQueryService {
       run_count: task.runCount,
       due_at: task.dueAt,
       required_capabilities: parseJsonArray(task.requiredCapabilities),
+      // 10.3：ready 列表同样带技能载荷（Agent 决定领不领时就要看能力/依赖声明）。
+      skills: await this.skillsService.resolveForTask(accountId, task.skills),
       created_at: toIso(task.createdAt),
     };
   }

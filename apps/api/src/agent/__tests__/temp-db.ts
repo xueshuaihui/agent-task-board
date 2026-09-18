@@ -12,6 +12,7 @@ import { NotificationsService } from '../../infra/notifications.service';
 import { PrismaService } from '../../infra/prisma.service';
 import { SettingsService } from '../../infra/settings.service';
 import { AgentQueryService } from '../agent-query.service';
+import { SkillsService } from '../../skills/skills.service';
 import { ClaimService } from '../claim.service';
 import { LeaseService } from '../lease.service';
 import { WritebackService } from '../writeback.service';
@@ -51,7 +52,7 @@ export function createAgentHarness(): AgentHarness {
   const notifications = new NotificationsService(prisma, events);
 
   const leases = new LeaseService(prisma, settings, audit, events, notifications);
-  const query = new AgentQueryService(prisma);
+  const query = new AgentQueryService(prisma, new SkillsService(prisma));
   const claims = new ClaimService(prisma, settings, leases, audit, events, query);
   const writeback = new WritebackService(prisma, leases, audit, events, notifications, query);
 

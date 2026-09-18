@@ -14,6 +14,7 @@ import { McpModule } from './mcp/mcp.module';
 import { NotificationsApiModule } from './notifications-api/notifications-api.module';
 import { ProjectsModule } from './projects/projects.module';
 import { SettingsApiModule } from './settings-api/settings-api.module';
+import { SkillsModule } from './skills/skills.module';
 import { TasksModule } from './tasks/tasks.module';
 import { TemplatesModule } from './templates/templates.module';
 import { TokensModule } from './tokens/tokens.module';
@@ -24,6 +25,8 @@ import { WsModule } from './ws/ws.module';
     InfraModule,
     AuthModule,
     FieldDefsModule,
+    // SkillsModule 先于 AgentModule：AgentQueryService 注入 SkillsService 解析任务绑定（10.3）。
+    SkillsModule,
     // 字面量子路由（tasks/ready、tasks/claim）必须早于 TasksController 的 tasks/:id 注册，
     // 否则 `GET /tasks/ready` 会被当成 `:id = 'ready'` 抢走并落到 UI 凭证组。
     AgentModule,

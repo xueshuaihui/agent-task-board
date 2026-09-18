@@ -28,6 +28,7 @@ export interface TaskRawRow {
   created_at: string | null;
   updated_at: string | null;
   // 0919 账号/项目/父子扩展列（t.* 原样带回；测试造行可缺省）。
+  skills?: string;
   account_id?: string;
   project_id?: string | null;
   parent_task_id?: string | null;
@@ -125,6 +126,8 @@ export interface TaskDetailDto extends TaskCardDto {
   claimed_at: string | null;
   depends_on: { id: string; dep_id: string; title: string; status: TaskStatus; type: string }[];
   blocks: { id: string; dep_id: string; title: string; status: TaskStatus; type: string }[];
+  /** 0919 10.3：技能绑定引用（[{skill_id, version}]），详情接口返回。 */
+  skills: { skill_id: string; version?: string }[];
   /** 0919：父任务的需求才有：子任务列表与聚合进度/状态。 */
   children?: {
     id: string;

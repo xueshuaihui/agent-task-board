@@ -33,6 +33,8 @@ import type {
   TaskPatchInput,
 } from '../contract/schemas';
 import { jsonFilterParts } from './json-filters';
+import { SkillsService } from '../skills/skills.service';
+import { parseSkillRefs } from '../skills/skills.dto';
 import type { RequestAuth } from '../auth/auth.scope';
 import { isArtifactMissing } from '../artifacts/artifact-storage';
 import { ArtifactsService } from '../artifacts/artifacts.service';
@@ -97,6 +99,8 @@ export class TasksService {
     private readonly notifications: NotificationsService,
     /** 4.3.1 规则 4 / 验收 38：删除任务时产物目录由产物侧负责清（路径校验只有一份）。 */
     private readonly artifacts: ArtifactsService,
+    /** 0919 10.3：skills 绑定的归属/版本校验由技能侧负责。 */
+    private readonly skillsService: SkillsService,
     private readonly logger: AppLogger,
   ) {}
 
@@ -180,6 +184,10 @@ export class TasksService {
     if (input.tags !== undefined) data.tags = JSON.stringify(input.tags);
     if (input.required_capabilities !== undefined) {
       data.requiredCapabilities = JSON.stringify(input.required_capabilities);
+    }
+    if (input.skills !== undefined) {
+      // 10.3：逐个校验归属/存在/版本（缺省补 current），存 JSON 引用。
+      data.skills = await this.skillsService.normalizeTaskBindings(accountId, input.skills);
     }
 
     const nextType = input.type ?? before.type;
@@ -725,6 +733,8 @@ export class TasksService {
       claimed_at: toIso(source.claimed_at),
       // 卡片只带 show_on_card 的字段，详情抽屉要看到全部值（20.10）。
       custom_fields: parseJsonObject(source.custom_fields),
+      // 0919 10.3：技能绑定引用（前端据此渲染技能标签 Tab）。
+      skills: parseSkillRefs(source.skills as string | null),
       depends_on: deps
         .filter((dep) => dep.dir === 'depends_on')
         .map((dep) => ({
