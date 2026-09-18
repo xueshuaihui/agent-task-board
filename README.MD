@@ -45,7 +45,7 @@ npx tauri build                              # ④ 打包 .app（dmg 步骤失�
 cd target/release/bundle
 hdiutil create -volname "Agent Task Board" \
   -srcfolder "macos/Agent Task Board.app" -ov -format UDZO \
-  "dmg/Agent Task Board_0.2.0_x64.dmg"       # ⑤ hdiutil 生成 .dmg
+  "dmg/Agent Task Board_0.1.0_x64.dmg"       # ⑤ hdiutil 生成 .dmg
 ```
 
 > ⚠️ 换机器 / 换架构打包前，先把对应架构的 **node 二进制**放到
@@ -257,7 +257,7 @@ npx tauri build      # .app 产出在 target/release/bundle/macos/
 cd apps/desktop/src-tauri/target/release/bundle
 hdiutil create -volname "Agent Task Board" \
   -srcfolder "macos/Agent Task Board.app" -ov -format UDZO \
-  "dmg/Agent Task Board_0.2.0_x64.dmg"
+  "dmg/Agent Task Board_0.1.0_x64.dmg"
 ```
 
 **交付物**：`target/release/bundle/dmg/Agent Task Board_<版本>_x64.dmg`（分发给他人只需这一个文件；或直接压缩 `.app`）。
@@ -376,7 +376,7 @@ npx tauri build --target aarch64-apple-darwin
 | `sidecar/` | ≈135M | **macOS**（node 为 x86_64 Mach-O） | 打包中间资源 | `npm run build:sidecar` 的装配产物：`main.js`（单文件 bundle）+ `node` + `prisma/migrations` + 最小 `node_modules`；删了重新跑脚本即可 |
 | `build/` `deps/` `incremental/` `examples/` | — | 与构建平台一致 | cargo 中间产物 | 编译缓存与依赖产物，只影响增量编译速度，可随时删（删后全量重编） |
 | `bundle/macos/Agent Task Board.app` | 142M | **macOS**（10.15+，x86_64 / Apple Silicon） | **交付产物** | 自包含 .app：`Contents/MacOS/atb-desktop` + `Resources/sidecar/{main.js, node, prisma/migrations, node_modules}` + 图标，Finder 双击可独立运行 |
-| `bundle/dmg/Agent Task Board_0.2.0_x64.dmg` | 56M | **macOS**（仅 macOS 可挂载） | **交付产物** | 最终分发镜像（UDZO），校验和见 `docs/发版记录 v0.1.0.md` |
+| `bundle/dmg/Agent Task Board_0.1.0_x64.dmg` | 56M | **macOS**（仅 macOS 可挂载） | **交付产物** | 最终分发镜像（UDZO），校验和见 `docs/发版记录 v0.1.0.md` |
 | `bundle/dmg/bundle_dmg.sh` `bundle/dmg/icon.icns` | — | macOS（依赖 osascript） | 工具残留 | tauri 的 DMG 打包脚本及资源；无头会话下 osascript 必失败，实际 .dmg 用 `hdiutil` 兜底生成 |
 | `bundle/macos/rw.*.dmg` | — | macOS | 失败残留 | `bundle_dmg.sh` 中断留下的读写临时镜像，**可安全删除** |
 | `bundle/share/create-dmg/` | — | 与构建平台无关 | 工具残留 | create-dmg 脚本临时目录，**可安全删除** |

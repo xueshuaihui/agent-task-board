@@ -1,6 +1,6 @@
 [package]
 name = "atb-desktop"
-version = "0.2.0"
+version = "0.1.0"
 description = "Agent Task Board 桌面壳：Tauri 2 主窗口 + 托盘 + Node sidecar 托管（PRD 9.4）"
 edition = "2021"
 rust-version = "1.77"

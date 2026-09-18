@@ -1,6 +1,6 @@
 {
   "name": "@atb/web",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Tauri 主窗口内的看板前端（React + Vite）",

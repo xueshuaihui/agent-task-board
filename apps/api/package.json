@@ -1,6 +1,6 @@
 {
   "name": "@atb/api",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Node sidecar：SQLite + REST + MCP + WebSocket，仅监听 127.0.0.1",
   "main": "dist/main.js",
