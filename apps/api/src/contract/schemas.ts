@@ -94,6 +94,8 @@ export const taskPatchSchema = z
     due_at: dateInputSchema.nullable().optional(),
     pinned: z.boolean().optional(),
     project_id: z.string().trim().min(1).max(64).nullable().optional(),
+    /** 0919 跨分组移动：挂到需求 / 置 null 脱离需求（归属校验在服务层 assertParent）。 */
+    parent_task_id: idParam.nullable().optional(),
     sort_order: z.number().int().optional(),
     // 0919 10.3：技能绑定（引用由服务层校验归属/存在/版本，见 SkillsService.normalizeTaskBindings）。
     skills: z.array(z.object({

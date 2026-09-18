@@ -180,6 +180,22 @@ export class TasksService {
         data.project = { disconnect: true };
       }
     }
+    if (input.parent_task_id !== undefined) {
+      // 0919 跨分组移动：置 null 脱离需求；挂新需求走 assertParent（类型/层级校验），
+      // 自身已挂子任务时不能变成别人的子任务（层级会超 2 层）。
+      if (input.parent_task_id === null) {
+        data.parent = { disconnect: true };
+      } else {
+        const childCount = await this.prisma.task.count({ where: { parentTaskId: id } });
+        if (childCount > 0) {
+          throw new ApiException('VALIDATION_FAILED', '已有子任务的任务不能再挂到其他需求下', [
+            { path: 'parent_task_id', code: 'too_deep', message: '该任务自身是父任务' },
+          ]);
+        }
+        await this.assertParent(accountId, input.parent_task_id);
+        data.parent = { connect: { id: input.parent_task_id } };
+      }
+    }
     if (input.sort_order !== undefined) data.sortOrder = input.sort_order;
     if (input.tags !== undefined) data.tags = JSON.stringify(input.tags);
     if (input.required_capabilities !== undefined) {
