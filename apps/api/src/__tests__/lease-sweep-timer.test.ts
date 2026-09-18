@@ -38,6 +38,10 @@ function columnOf(snapshot: Map<string, string[]>, status: string): string[] {
 /**
  * 等到「同一份响应里已在异常列、且不在执行中列」为止。
  *
+ * 注意 vi.waitFor 的语义：回调**抛错**才会重试，返回 false 会被当成成功直接放行。
+ * 所以条件不满足时必须 throw，否则这个等待只是「读一次快照」，CI 慢机上定时器
+ * 还没来得及回收就直接通过了。
+ *
  * 六列与列头计数在 `tasks.board()` 里是各自独立的语句，一次状态变更正好跨过请求边界时，
  * 同一份响应会把同一张卡在执行中列与异常列各摆一次（下一次读就自好了）。
  * 这里轮询的是一次完整快照，而不是分两次读两列——否则等来的可能是那份自相矛盾的中间态。
@@ -46,7 +50,11 @@ async function waitForMovedToFailed(t: TestApp, id: string): Promise<void> {
   await vi.waitFor(
     async () => {
       const snapshot = await boardSnapshot(t);
-      return columnOf(snapshot, 'FAILED').includes(id) && !columnOf(snapshot, 'RUNNING').includes(id);
+      const moved =
+        columnOf(snapshot, 'FAILED').includes(id) && !columnOf(snapshot, 'RUNNING').includes(id);
+      if (!moved) {
+        throw new Error(`任务 ${id} 尚未由定时器回收进异常列（waitFor 重试中）`);
+      }
     },
     // 本地 40ms 周期两跳内就位；CI 慢机（3-4 vCPU 跑 37 个文件并行）给足余量。
     { timeout: 15_000, interval: 25 },
