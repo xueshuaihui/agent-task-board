@@ -10,7 +10,7 @@
 #   sidecar 的 node 二进制取自构建机当前 node（bundle-sidecar.mjs 第 4 步），
 #   Node 官方无 universal 发行版；Prisma query engine 也是按机器架构生成的
 #   原生库。因此 .app 内的 node/引擎只能单架构 → 用 matrix 在两种 runner 上
-#   各自构建独立 dmg（x64 = macos-13 Intel；arm64 = macos-15 Apple Silicon），
+#   各自构建独立 dmg（x64 = macos-15-intel Intel；arm64 = macos-15 Apple Silicon），
 #   每个 .app 自带匹配架构的 node 与引擎，Rosetta 不参与 sidecar 运行。
 #
 # 通道约定（与 docs/发布手册.md 一致）：
@@ -40,7 +40,7 @@ jobs:
       matrix:
         include:
           - arch: x64
-            runner: macos-13      # Intel：与既有 _x64 产物线一致
+            runner: macos-15-intel  # 最后一代 Intel 免费镜像（macos-13 已于 2025-12 退役；本镜像用到 2027-08）
           - arch: arm64
             runner: macos-15      # Apple Silicon：产出原生 _arm64.dmg
     runs-on: ${{ matrix.runner }}
