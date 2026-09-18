@@ -1,6 +1,6 @@
 {
   "name": "agent-task-board",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "本地桌面任务看板：人建任务，Agent 经 MCP/REST 认领执行，结果强制人工审核",
   "workspaces": [
@@ -23,7 +23,8 @@
     "desktop:check": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "desktop:test": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "desktop:dev": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo run --manifest-path apps/desktop/src-tauri/Cargo.toml",
-    "desktop:build": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo build --release --manifest-path apps/desktop/src-tauri/Cargo.toml"
+    "desktop:build": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo build --release --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "package:release": "bash scripts/package-release.sh"
   },
   "allowScripts": {
     "prisma@6.19.3": true,

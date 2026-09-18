@@ -18,10 +18,22 @@
 | **使用这个产品**（不是开发） | 见下方 [产品使用概览](#产品使用概览) | 安装 .dmg → 双击启动 → 看板建任务 |
 | 开发调试（改代码、跑测试） | 路径 A：[开发模式](#路径-a开发模式) | `npm install` → `npm run prisma` → `npm run dev:api` + `npm run dev:web` |
 | 本机跑一下桌面壳（不要安装包） | 路径 B：[构建裸二进制](#路径-b构建裸二进制本机运行) | `npm run build` → `npm run desktop:build` |
-| **打包可分发的 .app / .dmg** | 路径 C：[打包安装包](#路径-c打包可分发的-app--dmg) | `npm install` → `npm run build` → `npm run build:sidecar -w @atb/api` → `npx tauri build` → `hdiutil` |
+| **打包可分发的 .app / .dmg（一键）** | `npm run package:release` | 放好 node 二进制 → 一条命令到底（门禁/构建/装配/打包/冒烟/校验和全自动） |
+| 打包想逐步手动执行 | 路径 C：[打包安装包](#路径-c打包可分发的-app--dmg) | `npm install` → `npm run build` → `npm run build:sidecar -w @atb/api` → `npx tauri build` → `hdiutil` |
+| **把新版本发到 GitHub Releases** | [发布到 GitHub Releases 速查](#发布到-github-releases-速查) | commit → `git push origin vX.Y.Z`（CI 自动构建发布）；兜底见方式二 |
 | 拿到 .dmg 后装不上 / 打不开 | 见 [运行须知（Gatekeeper）](#运行须知签名与-gatekeeper无证书降级方案) | 右键「打开」或 `xattr -cr` |
 
-**路径 C 一屏版（macOS，从零到 .dmg 全过程）：**
+**一键打包（推荐，= 路径 C 全流程自动化 + 冒烟 + 校验和）：**
+
+```bash
+# 前置（仅换机器/换架构时）：把目标架构的 node 二进制放到
+# apps/desktop/src-tauri/resources/sidecar/node（不入库）
+npm run package:release            # 门禁 → 构建 → 装配 sidecar → .app → .dmg → 冒烟 → SHA-256
+```
+
+> 版本号自动读自 `apps/desktop/src-tauri/tauri.conf.json`；可选参数：`--skip-gates` / `--skip-dmg` / `--skip-smoke`。
+
+**路径 C 手动版（macOS，从零到 .dmg 全过程；想理解每步在做什么再看）：**
 
 ```bash
 npm install                                  # ① 依赖（仅首次）
@@ -33,7 +45,7 @@ npx tauri build                              # ④ 打包 .app（dmg 步骤失�
 cd target/release/bundle
 hdiutil create -volname "Agent Task Board" \
   -srcfolder "macos/Agent Task Board.app" -ov -format UDZO \
-  "dmg/Agent Task Board_0.1.0_x64.dmg"       # ⑤ hdiutil 生成 .dmg
+  "dmg/Agent Task Board_0.2.0_x64.dmg"       # ⑤ hdiutil 生成 .dmg
 ```
 
 > ⚠️ 换机器 / 换架构打包前，先把对应架构的 **node 二进制**放到
@@ -143,7 +155,7 @@ agent-task-board/
 │           ├── resources/    # sidecar 打包资源（不入库，打包脚本生成）
 │           └── Cargo.toml
 ├── docs/            # 产品与设计文档、高保真原型、操作手册、发版记录
-├── scripts/         # Cursor 外部调度脚本（cursor-agent-poll.mjs）
+├── scripts/         # 辅助脚本：cursor-agent-poll.mjs（外部调度）、package-release.sh（一键打包）
 ├── package.json     # 根 workspaces 与聚合脚本
 └── README.MD
 ```
@@ -245,10 +257,72 @@ npx tauri build      # .app 产出在 target/release/bundle/macos/
 cd apps/desktop/src-tauri/target/release/bundle
 hdiutil create -volname "Agent Task Board" \
   -srcfolder "macos/Agent Task Board.app" -ov -format UDZO \
-  "dmg/Agent Task Board_0.1.0_x64.dmg"
+  "dmg/Agent Task Board_0.2.0_x64.dmg"
 ```
 
-**交付物**：`target/release/bundle/dmg/Agent Task Board_0.1.0_x64.dmg`（分发给他人只需这一个文件；或直接压缩 `.app`）。
+**交付物**：`target/release/bundle/dmg/Agent Task Board_<版本>_x64.dmg`（分发给他人只需这一个文件；或直接压缩 `.app`）。
+
+---
+
+## 发布到 GitHub Releases 速查
+
+> 完整 SOP（含前置安装、坑实录、逐项检查清单）见 `docs/发布手册.md`；本节是最少命令版。
+
+### 方式一（推荐）：推 tag 自动发布，无需本地打包、无需 token
+
+`.github/workflows/release.yml` 已配置：tag 推送即触发 **GitHub Actions 云端构建**（门禁 → sidecar 装配 → .app → .dmg → 冒烟 → SHA256），并自动创建 Release、上传 `dmg` + `SHA256SUMS.txt`。鉴权用仓库自带 `GITHUB_TOKEN`，**不涉及任何个人 token**。
+
+```bash
+git push origin main
+git tag -a vX.Y.Z -m "vX.Y.Z <通道>：<一句话定位>"
+git push origin vX.Y.Z        # ← 到此为止，构建与发布全自动
+```
+
+- 进度：仓库 **Actions** 页实时可看（约 15–25 分钟，Rust 冷缓存首跑更久）
+- 通道约定自动生效：`v0.x.*` 一律 prerelease；`v1.0.0+` 自动为正式版
+- tag 已存在 Release 时重推 = 补传产物（`--clobber` 覆盖同名资产）
+
+### 方式二：本地打包 + 手动上传（CI 不可用时的兜底）
+
+一键打包（含门禁与冒烟）先行：`npm run package:release`，然后：
+
+#### ① 提交并打 tag（annotated）
+
+```bash
+git add <本次发布包含的变更>
+git commit -m "..."
+git push origin main
+git tag -a vX.Y.Z -m "vX.Y.Z <通道>：<一句话定位>
+
+- 主要变更点
+- 已知限制"
+git push origin vX.Y.Z
+```
+
+> 通道约定：里程碑间的对外分发用 prerelease（如 v0.0.2）；验收门禁全过后走正式版。tag 是发布批次标识，包内版本跟随 `tauri.conf.json` 的 `version`。
+
+#### ② 创建 Release 并上传产物
+
+```bash
+export GH_TOKEN=<你的 fine-grained token>        # 用完即撤销，见下⚠️
+~/.local/bin/gh release create vX.Y.Z \
+  --title "vX.Y.Z <通道>：<一句话定位>" \
+  --notes-file /tmp/release-notes-vX.Y.Z.md \    # 先写好：安装指引 + 变更清单 + 已知限制
+  --prerelease                                   # 正式版去掉此参数
+
+~/.local/bin/gh release upload vX.Y.Z \
+  "apps/desktop/src-tauri/target/release/bundle/dmg/Agent Task Board_<版本>_x64.dmg" \
+  apps/desktop/src-tauri/target/release/bundle/SHA256SUMS.txt --clobber
+```
+
+### ③ 核验
+
+```bash
+~/.local/bin/gh release view vX.Y.Z --json name,tagName,isPrerelease,assets \
+  --jq '.name + " | " + (.isPrerelease|tostring) + " | assets: " + ([.assets[].name]|join(", "))'
+```
+
+> ⚠️ **token 三条铁律**（发布手册 §5.1 实录）：Fine-grained token 必须显式授权本仓库（否则 API 一律 404）；Permissions 需 Contents: Read and write；**发布完立即 revoke/regenerate**——token 一旦进过对话/终端历史就视为泄露。
 
 ---
 
@@ -301,7 +375,7 @@ npx tauri build --target aarch64-apple-darwin
 | `sidecar/` | ≈135M | **macOS**（node 为 x86_64 Mach-O） | 打包中间资源 | `npm run build:sidecar` 的装配产物：`main.js`（单文件 bundle）+ `node` + `prisma/migrations` + 最小 `node_modules`；删了重新跑脚本即可 |
 | `build/` `deps/` `incremental/` `examples/` | — | 与构建平台一致 | cargo 中间产物 | 编译缓存与依赖产物，只影响增量编译速度，可随时删（删后全量重编） |
 | `bundle/macos/Agent Task Board.app` | 142M | **macOS**（10.15+，x86_64 / Apple Silicon） | **交付产物** | 自包含 .app：`Contents/MacOS/atb-desktop` + `Resources/sidecar/{main.js, node, prisma/migrations, node_modules}` + 图标，Finder 双击可独立运行 |
-| `bundle/dmg/Agent Task Board_0.1.0_x64.dmg` | 56M | **macOS**（仅 macOS 可挂载） | **交付产物** | 最终分发镜像（UDZO），校验和见 `docs/发版记录 v0.1.0.md` |
+| `bundle/dmg/Agent Task Board_0.2.0_x64.dmg` | 56M | **macOS**（仅 macOS 可挂载） | **交付产物** | 最终分发镜像（UDZO），校验和见 `docs/发版记录 v0.1.0.md` |
 | `bundle/dmg/bundle_dmg.sh` `bundle/dmg/icon.icns` | — | macOS（依赖 osascript） | 工具残留 | tauri 的 DMG 打包脚本及资源；无头会话下 osascript 必失败，实际 .dmg 用 `hdiutil` 兜底生成 |
 | `bundle/macos/rw.*.dmg` | — | macOS | 失败残留 | `bundle_dmg.sh` 中断留下的读写临时镜像，**可安全删除** |
 | `bundle/share/create-dmg/` | — | 与构建平台无关 | 工具残留 | create-dmg 脚本临时目录，**可安全删除** |
@@ -322,6 +396,8 @@ npx tauri build --target aarch64-apple-darwin
 | `npm run build` | 构建 api + web | A / B / C 通用 |
 | `npm run build:sidecar -w @atb/api` | 装配 sidecar 打包资源 | 路径 C |
 | `npm run desktop:build` | cargo 构建裸二进制 | 路径 B |
+| `npm run package:release` | **一键打包**：门禁→构建→装配→.app→.dmg→冒烟→SHA-256 | 路径 C |
+| `npm run package:release -- --skip-gates` | 同上，跳过 typecheck/test | 赶时间自担风险 |
 | `npm run desktop:check` / `desktop:test` / `desktop:dev` | Cargo 检查 / 测试 / 运行 | 开发辅助 |
 | `npm run typecheck` | api + web 类型检查 | 质量门禁 |
 | `npm run test` | 运行测试（vitest） | 质量门禁 |
