@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { Button, Checkbox, Dialog, RadioGroup, Select } from '@/components/ui';
 import { GROUPABLE_KEYS, GROUP_DIMENSIONS, type GroupDimensionKey } from './dimensions';
 import { useGroupingStore, type GroupingPrefs } from './useGroupingState';
@@ -17,11 +18,15 @@ const NONE = 'none';
 type Draft = Pick<GroupingPrefs, 'primary' | 'secondary' | 'options'>;
 
 export function GroupSelector({ open, onClose }: GroupSelectorProps) {
-  const current = useGroupingStore((state) => ({
-    primary: state.primary,
-    secondary: state.secondary,
-    options: state.options,
-  }));
+  // zustand selector 返回新对象必须套 useShallow，否则 useSyncExternalStore 每次比对都不等，
+  // 触发 forceStoreRerender 死循环（Maximum update depth exceeded）。
+  const current = useGroupingStore(
+    useShallow((state) => ({
+      primary: state.primary,
+      secondary: state.secondary,
+      options: state.options,
+    })),
+  );
   const update = useGroupingStore((state) => state.update);
   const [draft, setDraft] = useState<Draft>(current);
 
