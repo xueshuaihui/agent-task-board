@@ -6,17 +6,19 @@ import {
   ChevronsUpDown,
   ClipboardList,
   Layers,
+  Network,
   Plus,
   Settings2,
   X,
 } from 'lucide-react';
-import type { BoardView, Template } from '@/api/types';
+import type { BoardView, TaskCard, Template } from '@/api/types';
 import { api, qk, useSettings, useTags } from '@/api';
 import { navigate } from '@/app/router';
 import { useFilterStore } from '@/app/store/filters';
 import { priorityText } from '@/lib/labels';
 import { cn } from '@/lib/cn';
 import { Button, Menu, MenuCaret, Tooltip, type MenuItem, type MenuProps } from '@/components/ui';
+import { openDependencyGraph } from '@/features/requirements';
 import { ProjectSwitcher } from '@/features/projects';
 import { boardFilterCount, VIEW_ORDER } from './model';
 import { GroupSelector } from './grouping/GroupSelector';
@@ -51,9 +53,14 @@ export interface BoardToolbarProps {
     laneKeys: readonly string[];
     onToggleAll: (collapsed: boolean) => void;
   };
+  /**
+   * 2.md 8.1 全局依赖图入口：当前看板拉平的任务集合（普通/泳道模式都是六列快照，
+   * 由看板页传入）。传了才渲染「依赖图」按钮；列表页复用本组件不传则不出现。
+   */
+  graphTasks?: readonly TaskCard[];
 }
 
-export function BoardToolbar({ onCreate, grouping }: BoardToolbarProps) {
+export function BoardToolbar({ onCreate, grouping, graphTasks }: BoardToolbarProps) {
   const [groupingOpen, setGroupingOpen] = useState(false);
   // 「分组」按钮上的当前主分组名：分组选择器草稿态，应用前不落盘，这里只读展示。
   const primary = useGroupingStore((state) => state.primary);
@@ -139,6 +146,19 @@ export function BoardToolbar({ onCreate, grouping }: BoardToolbarProps) {
             </span>
           </Tooltip>
         </div>
+      ) : null}
+
+      {graphTasks ? (
+        <Tooltip content="查看当前看板任务的依赖关系图（2.md 8.1）">
+          <Button
+            variant="default"
+            className="h-8 shrink-0"
+            icon={<Network className="size-4" aria-hidden />}
+            onClick={() => openDependencyGraph(graphTasks)}
+          >
+            依赖图
+          </Button>
+        </Tooltip>
       ) : null}
 
       <CreateMenu onCreate={onCreate} />

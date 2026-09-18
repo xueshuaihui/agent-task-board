@@ -5,6 +5,7 @@ import { BoardPage } from '@/features/board';
 import { ProjectsPage } from '@/features/projects';
 import { ReviewPage } from '@/features/review';
 import { SettingsPage } from '@/features/settings';
+import { SkillLibraryPage } from '@/features/skills';
 import { TaskListPage } from '@/features/task-list';
 import { ChangePasswordPage, LoginPage, RequireAuth } from '@/features/auth';
 import { applyUiTheme } from '@/lib/theme';
@@ -31,6 +32,7 @@ const PAGES: Record<Exclude<RouteName, 'login' | 'changePassword'>, ComponentTyp
   projects: ProjectsPage,
   review: ReviewPage,
   tasks: TaskListPage,
+  skills: SkillLibraryPage,
   settings: SettingsPage,
 };
 

@@ -64,6 +64,8 @@ export function BoardPage() {
     return map;
   }, [columns]);
   const total = columns.reduce((sum, column) => sum + column.tasks.length, 0);
+  /** 2.md 8.1：依赖图入口的数据 = 当前看板可见任务（六列拉平，泳道模式同源）。 */
+  const graphTasks = useMemo(() => columns.flatMap((column) => column.tasks), [columns]);
 
   /* ------------------------------------------------------ 分组（泳道）接线 */
 
@@ -173,6 +175,7 @@ export function BoardPage() {
           laneKeys,
           onToggleAll: (collapsed) => collapseAll(grouping.primary, laneKeys, collapsed),
         }}
+        graphTasks={graphTasks}
       />
 
       {board.isError ? (

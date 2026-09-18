@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import type { TaskDetail, TaskTab } from '@/api';
+import type { TaskDetail } from '@/api';
 import { useSettings } from '@/api';
 import { Button, Drawer, Tabs, type TabItem } from '@/components/ui';
 import { transitions } from '@/lib/motion';
 import { pickAction, type TaskAction } from './actions';
 import { DrawerMetaRow, DrawerTabRow, DrawerTitle } from './drawer-header';
-import { DRAWER_TABS, TAB_LABELS, TABS_WITH_COUNT } from './labels';
+import { DRAWER_TABS, TAB_LABELS, TABS_WITH_COUNT, type DrawerTab } from './labels';
 import { useTaskCommentCount, useTaskOverview } from './queries';
 import { AuditTab } from './tabs/audit';
 import { CommentsTab } from './tabs/comments';
@@ -14,6 +14,8 @@ import { DependenciesTab } from './tabs/dependencies';
 import { OverviewTab } from './tabs/overview';
 import { ReviewsTab } from './tabs/reviews';
 import { RunsTab } from './tabs/runs';
+import { SkillsTab } from './tabs/skills';
+import type { TaskDetailView } from './types';
 import { useDrawerActions, type DrawerActionsApi } from './use-drawer-actions';
 import { InlineError, LoadingBlock } from './ui-bits';
 
@@ -57,7 +59,7 @@ function DrawerWithOverview({ taskId, onClose }: Required<TaskDetailDrawerProps>
 
 /** 拆一层是因为 `useDrawerActions` 要拿 `detail` 建动作集，没数据之前不能挂它。 */
 function DrawerBody({ detail, onClose }: { detail: TaskDetail; onClose: () => void }) {
-  const [tab, setTab] = useState<TaskTab>('overview');
+  const [tab, setTab] = useState<DrawerTab>('overview');
   const settings = useSettings();
   const commentCount = useTaskCommentCount(detail.id);
   const actions = useDrawerActions({ detail, onJumpToLogs: () => setTab('runs') });
@@ -86,7 +88,7 @@ function DrawerBody({ detail, onClose }: { detail: TaskDetail; onClose: () => vo
                 ariaLabel="任务详情标签页"
                 className="border-b-0 px-0"
                 value={tab}
-                onChange={(value) => setTab(value as TaskTab)}
+                onChange={(value) => setTab(value as DrawerTab)}
                 items={items}
               />
             }
@@ -111,6 +113,9 @@ function DrawerBody({ detail, onClose }: { detail: TaskDetail; onClose: () => vo
           {tab === 'dependencies' ? <DependenciesTab taskId={detail.id} /> : null}
           {tab === 'comments' ? <CommentsTab taskId={detail.id} /> : null}
           {tab === 'audit' ? <AuditTab taskId={detail.id} /> : null}
+          {/* 0919 10.2：skills 是后端 TaskDetailDto 额外下发、基座 TaskDetail 类型未收的字段，
+              读取视图在 ./types.ts 的 TaskDetailView 补形状（不改 src/api）。 */}
+          {tab === 'skills' ? <SkillsTab detail={detail as TaskDetailView} /> : null}
         </motion.div>
       </AnimatePresence>
       {actions.confirmNode}
@@ -147,7 +152,7 @@ function FooterBar({ actions }: { actions: DrawerActionsApi }) {
   );
 }
 
-function countFor(tab: TaskTab, runs: number, comments: number): number | undefined {
+function countFor(tab: DrawerTab, runs: number, comments: number): number | undefined {
   if (!TABS_WITH_COUNT.includes(tab)) return undefined;
   const value = tab === 'runs' ? runs : comments;
   return value > 0 ? value : undefined;

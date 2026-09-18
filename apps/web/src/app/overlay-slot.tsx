@@ -1,6 +1,7 @@
 import { useShellStore } from './store/shell';
 import { TaskDetailDrawer } from '@/features/task-detail';
 import { ReviewFormDialog } from '@/features/review';
+import { DependencyGraphGlobalHost, RequirementDrawerHost } from '@/features/requirements';
 import { useWSEvent } from '@/ws';
 
 /**
@@ -29,6 +30,9 @@ export function OverlaySlot() {
     <>
       <TaskDetailDrawer taskId={openTaskId} onClose={closeTask} />
       <ReviewFormDialog taskId={reviewTaskId} prefill={reviewPrefill} onClose={closeReview} />
+      {/* 0919：需求抽屉（2.md 6.1）与全局依赖图（2.md 8.1）与任务抽屉同层，壳层各挂一份。 */}
+      <RequirementDrawerHost />
+      <DependencyGraphGlobalHost />
     </>
   );
 }

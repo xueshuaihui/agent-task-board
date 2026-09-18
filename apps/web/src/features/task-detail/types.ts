@@ -1,4 +1,4 @@
-import type { ArtifactMeta, AuditEntry } from '@/api';
+import type { ArtifactMeta, AuditEntry, TaskDetail } from '@/api';
 
 /**
  * 抽屉内部使用的「读取视图」类型。
@@ -10,6 +10,20 @@ import type { ArtifactMeta, AuditEntry } from '@/api';
  */
 
 export type PreviewKind = 'diff' | 'text' | 'image' | 'link' | 'none';
+
+/**
+ * 0919 10.2：后端 `GET /tasks/{id}` 的 TaskDetailDto 额外下发 `skills`
+ * （`[{skill_id, version}]` 的引用，名称/类型要用技能列表补全）。
+ * `src/api/**` 的 TaskDetail 类型未收该字段，抽屉读取视图在这里补形状。
+ */
+export interface TaskSkillRefView {
+  skill_id: string;
+  version?: string | null;
+}
+
+export interface TaskDetailView extends TaskDetail {
+  skills?: TaskSkillRefView[] | null;
+}
 
 /** 服务端按 6.10.1 + 6.10.3 算好的「能不能预览、为什么不能」。 */
 export interface ArtifactPreviewDecision {

@@ -1,6 +1,7 @@
 import { useMemo, type AnchorHTMLAttributes, type ReactNode } from 'react';
 import { create } from 'zustand';
 import { cn } from '@/lib/cn';
+import { skillsRouteCandidate } from '@/features/skills';
 
 /**
  * 极薄 hash 路由（不引第三方 router）。
@@ -16,6 +17,8 @@ export const ROUTES = {
   projects: { path: '/projects', label: '项目' },
   review: { path: '/review', label: '审核' },
   tasks: { path: '/tasks', label: '任务' },
+  // 0919 第十章：技能库。路由对象来自 features/skills 的候选（path/label 同形）。
+  skills: skillsRouteCandidate,
   settings: { path: '/settings', label: '设置' },
   // 0919 三章：公开路由（登录 / 首登强制改密），不在主导航出现（NAV_ORDER 不含），
   // app.tsx 的 AppShell 按名字分流到认证页而非工作区壳。
@@ -31,7 +34,7 @@ const PATH_TO_NAME = new Map<string, RouteName>(
 );
 
 /** 17.2：「依赖图」是阶段二入口，阶段一不渲染该项（见 lib/phase.ts）。 */
-export const NAV_ORDER: readonly RouteName[] = ['board', 'projects', 'review', 'tasks', 'settings'];
+export const NAV_ORDER: readonly RouteName[] = ['board', 'projects', 'review', 'tasks', 'skills', 'settings'];
 
 interface RouterState {
   /** 形如 `/tasks?status=REVIEW`。 */

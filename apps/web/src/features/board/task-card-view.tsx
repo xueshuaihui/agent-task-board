@@ -19,6 +19,7 @@ import { FLASH_CLASS, priorityStyle, statusStyle } from '@/lib/status-style';
 import { cn } from '@/lib/cn';
 import { Badge, IconButton, Progress, StatusDot, TagBadge, Tooltip } from '@/components/ui';
 import { useIsFlashed } from '@/app/store/flash';
+import { RequirementBadge, useRequirementDrawerStore } from '@/features/requirements';
 import {
   artifactOverflow,
   blockedText,
@@ -152,6 +153,22 @@ export const BoardCardView = memo(function BoardCardView({
             </div>
           ))}
         </dl>
+      ) : null}
+
+      {/* 2.md 4.8：子任务卡片显示所属需求的进度角标；点击打开需求抽屉（壳层单例）。
+          外层 span 拦冒泡：点角标不应把任务详情抽屉也带开。 */}
+      {card.parent && !asOverlay ? (
+        <span
+          className="mt-2 block min-w-0"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <RequirementBadge
+            parent={card.parent}
+            onClick={() => useRequirementDrawerStore.getState().openRequirement(card.parent!.id)}
+          />
+        </span>
       ) : null}
 
       {status === 'RUNNING' ? <RunningBody card={card} overlay={overlay} /> : null}

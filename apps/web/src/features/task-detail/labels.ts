@@ -6,17 +6,24 @@ import { COPY } from '@/lib/copy';
  * 「Tab 名 / 预览器提示」这类原型 4.3、6.10 才出现、且没有共享出处的字符串。
  */
 
-export const TAB_LABELS: Record<TaskTab, string> = {
+/**
+ * 抽屉 Tab 名。基座 `TaskTab`（`src/api/types.ts`）不含 0919 追加的「技能」，
+ * 本 feature 在本地扩一名（见 tabs/skills.tsx），不改 `src/api`。
+ */
+export type DrawerTab = TaskTab | 'skills';
+
+export const TAB_LABELS: Record<DrawerTab, string> = {
   overview: '概览',
   runs: '执行',
   reviews: '审核',
   dependencies: '依赖',
   comments: '评论',
   audit: '审计',
+  skills: '技能',
 };
 
 /** 原型 4.3：只有「执行」与「评论」两项带条数徽标，为 0 时不显示。 */
-export const TABS_WITH_COUNT: readonly TaskTab[] = ['runs', 'comments'];
+export const TABS_WITH_COUNT: readonly DrawerTab[] = ['runs', 'comments'];
 
 /**
  * 原型 4.3 的 Tab 顺序。基座 `TASK_TABS`（`src/api/types.ts`）与这里同序同值，
@@ -24,13 +31,14 @@ export const TABS_WITH_COUNT: readonly TaskTab[] = ['runs', 'comments'];
  * `src/api/**` 不归本 feature，所以在本地钉一份。TODO(主 agent 接线)：
  * 把 `TASK_TABS` 改成值导出后，这里直接换成 `import { TASK_TABS } from '@/api'`。
  */
-export const DRAWER_TABS: readonly TaskTab[] = [
+export const DRAWER_TABS: readonly DrawerTab[] = [
   'overview',
   'runs',
   'reviews',
   'dependencies',
   'comments',
   'audit',
+  'skills',
 ];
 
 /** 6.10.1 / 13 章：`preview.reason` → 界面文案。 */
