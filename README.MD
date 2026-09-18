@@ -155,7 +155,7 @@ agent-task-board/
 │           ├── resources/    # sidecar 打包资源（不入库，打包脚本生成）
 │           └── Cargo.toml
 ├── docs/            # 产品与设计文档、高保真原型、操作手册、发版记录
-├── scripts/         # 辅助脚本：cursor-agent-poll.mjs（外部调度）、package-release.sh（一键打包）
+├── scripts/         # 辅助脚本：cursor-agent-poll.mjs（外部调度）、package-release.sh（一键打包）、release.sh（SOP 七阶段全流程，CI 化后仅兜底）
 ├── package.json     # 根 workspaces 与聚合脚本
 └── README.MD
 ```
@@ -260,7 +260,7 @@ hdiutil create -volname "Agent Task Board" \
   "dmg/Agent Task Board_0.1.0_x64.dmg"
 ```
 
-**交付物**：`target/release/bundle/dmg/Agent Task Board_<版本>_x64.dmg`（分发给他人只需这一个文件；或直接压缩 `.app`）。
+**交付物**：`target/release/bundle/dmg/Agent Task Board_<版本>_<架构>.dmg`——dmg 后缀按**构建机架构自动判定**（Intel 机出 `_x64`，Apple Silicon 出 `_arm64`；脚本第 0 步会校验 sidecar node 架构一致性）。分发给他人只需对应架构这一个文件；或直接压缩 `.app`。CI 发布时双架构 dmg 由流水线自动出齐（见下节方式一）。
 
 ---
 
@@ -360,6 +360,9 @@ npx tauri build --target aarch64-apple-darwin
 `npx tauri build --target universal-apple-darwin`。
 注意：node 侧也要是 universal 二进制（`lipo -create x86_64-node arm64-node -output node` 合成），
 否则 Rosetta 缺失的环境（如全新 arm64 机器未装 Rosetta）里 sidecar 起不来。
+此外 **Prisma query engine 也是按架构生成的原生库**，universal 包内需同时带两套引擎并按运行架构选择，
+`bundle-sidecar.mjs` 目前不支持——因此**本项目采用「每架构独立 dmg」**（CI matrix 双 runner 各出一份，
+见 [发布到 GitHub Releases 速查](#发布到-github-releases-速查) 方式一），规避 universal 的额外复杂度。
 
 > 取得 Apple Developer 证书后的升级路径：`tauri.conf.json` 配 `signingIdentity` → `codesign` → `notarytool` 公证 → `staple`，届时移除本节降级说明。
 
@@ -373,10 +376,10 @@ npx tauri build --target aarch64-apple-darwin
 | --- | --- | --- | --- | --- |
 | `atb-desktop` | 5.2M | **macOS**（Mach-O x86_64；Apple Silicon 经 Rosetta） | **可执行产物** | 路径 B 的裸二进制；web UI 已编译期嵌入（`frontendDist`），api 入口已由 `build.rs` 注入。**不自包含**：启动 sidecar 需 `PATH` 里有 node 或设 `ATB_NODE_BIN` |
 | `atb-desktop.d` | <1K | 与构建平台无关 | 构建元数据 | cargo 生成的 depfile，可忽略 |
-| `sidecar/` | ≈135M | **macOS**（node 为 x86_64 Mach-O） | 打包中间资源 | `npm run build:sidecar` 的装配产物：`main.js`（单文件 bundle）+ `node` + `prisma/migrations` + 最小 `node_modules`；删了重新跑脚本即可 |
+| `sidecar/` | ≈135M | **macOS**（node 架构与构建机一致：Intel 为 x86_64，Apple Silicon 为 arm64） | 打包中间资源 | `npm run build:sidecar` 的装配产物：`main.js`（单文件 bundle）+ `node` + `prisma/migrations` + 最小 `node_modules`；删了重新跑脚本即可 |
 | `build/` `deps/` `incremental/` `examples/` | — | 与构建平台一致 | cargo 中间产物 | 编译缓存与依赖产物，只影响增量编译速度，可随时删（删后全量重编） |
 | `bundle/macos/Agent Task Board.app` | 142M | **macOS**（10.15+，x86_64 / Apple Silicon） | **交付产物** | 自包含 .app：`Contents/MacOS/atb-desktop` + `Resources/sidecar/{main.js, node, prisma/migrations, node_modules}` + 图标，Finder 双击可独立运行 |
-| `bundle/dmg/Agent Task Board_0.1.0_x64.dmg` | 56M | **macOS**（仅 macOS 可挂载） | **交付产物** | 最终分发镜像（UDZO），校验和见 `docs/发版记录 v0.1.0.md` |
+| `bundle/dmg/Agent Task Board_<版本>_<架构>.dmg` | ≈56M | **macOS**（仅 macOS 可挂载） | **交付产物** | 最终分发镜像（UDZO）；`<架构>` 由构建机决定（`x64`/`arm64`），CI 发布时双架构各一份，校验和见 Release 内 `SHA256SUMS.txt` |
 | `bundle/dmg/bundle_dmg.sh` `bundle/dmg/icon.icns` | — | macOS（依赖 osascript） | 工具残留 | tauri 的 DMG 打包脚本及资源；无头会话下 osascript 必失败，实际 .dmg 用 `hdiutil` 兜底生成 |
 | `bundle/macos/rw.*.dmg` | — | macOS | 失败残留 | `bundle_dmg.sh` 中断留下的读写临时镜像，**可安全删除** |
 | `bundle/share/create-dmg/` | — | 与构建平台无关 | 工具残留 | create-dmg 脚本临时目录，**可安全删除** |
@@ -397,8 +400,10 @@ npx tauri build --target aarch64-apple-darwin
 | `npm run build` | 构建 api + web | A / B / C 通用 |
 | `npm run build:sidecar -w @atb/api` | 装配 sidecar 打包资源 | 路径 C |
 | `npm run desktop:build` | cargo 构建裸二进制 | 路径 B |
-| `npm run package:release` | **一键打包**：门禁→构建→装配→.app→.dmg→冒烟→SHA-256 | 路径 C |
+| `npm run package:release` | **一键打包**：门禁→构建→装配→.app→.dmg→冒烟→SHA-256（dmg 架构后缀自动判定） | 路径 C |
 | `npm run package:release -- --skip-gates` | 同上，跳过 typecheck/test | 赶时间自担风险 |
+| `bash scripts/release.sh <tag>` | **SOP 七阶段全流程**（打包 + 提交/打 tag/推送 + gh 建 Release），CI 化后仅作 CI 不可用时的兜底 | 方式二 |
+| `git push origin vX.Y.Z` | **CI 自动发布**（推荐）：云端构建双架构 → 自动建 Release 上传产物 | 方式一 |
 | `npm run desktop:check` / `desktop:test` / `desktop:dev` | Cargo 检查 / 测试 / 运行 | 开发辅助 |
 | `npm run typecheck` | api + web 类型检查 | 质量门禁 |
 | `npm run test` | 运行测试（vitest） | 质量门禁 |
