@@ -7,6 +7,7 @@ import { auditApi } from './resources/audit';
 import { dataApi } from './resources/data';
 import { fieldDefsApi } from './resources/field-defs';
 import { notificationsApi } from './resources/notifications';
+import { prefsApi } from './resources/prefs';
 import { settingsApi } from './resources/settings';
 import { tasksApi, boardApi, runsApi, tagsApi } from './resources/tasks';
 import { templatesApi } from './resources/templates';
@@ -25,6 +26,7 @@ export const api = {
   audit: auditApi,
   artifacts: artifactsApi,
   data: dataApi,
+  prefs: prefsApi,
 } as const;
 
 export { http, buildQuery, requestUrl } from './client';

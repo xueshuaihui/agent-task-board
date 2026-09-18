@@ -213,6 +213,10 @@ export interface TaskCard {
   artifact_count: number;
   /** 卡片只带 show_on_card 的字段（20.10）。 */
   custom_fields: Record<string, unknown>;
+  /** 0919：项目归属（与后端 TaskCardDto.project_id 对齐）。 */
+  project_id: string | null;
+  /** 0919：子任务的父任务摘要（含父任务下子任务完成度）；无父任务为 null。 */
+  parent?: { id: string; title: string; done: number; total: number } | null;
 }
 
 export interface CardArtifact {
@@ -233,6 +237,30 @@ export interface TaskDetail extends TaskCard {
   claimed_at: string | null;
   depends_on: DependencyRef[];
   blocks: DependencyRef[];
+  /**
+   * 0919 5.2/5.3：子任务全量列表（后端 `familyFields()` 恒回，无子任务为空数组）。
+   * 只有「需求」类型会有非空 children。
+   */
+  children?: TaskChildRef[];
+  /** 0919：聚合进度与聚合状态；无子任务为 null（与后端 `TaskDetailDto.aggregate` 同形）。 */
+  aggregate?: TaskAggregate | null;
+}
+
+/** 0919：`TaskDetail.children[]` 的元素（后端按 sort_order, created_at 排序）。 */
+export interface TaskChildRef {
+  id: string;
+  title: string;
+  type: string;
+  status: string;
+  priority: number;
+  sort_order: number;
+}
+
+/** 0919：聚合进度（进度 = done / total）与聚合状态（全 DONE→DONE、全 BACKLOG→BACKLOG、其余 IN_PROGRESS）。 */
+export interface TaskAggregate {
+  total: number;
+  done: number;
+  status: 'DONE' | 'BACKLOG' | 'IN_PROGRESS';
 }
 
 export interface DependencyRef {
@@ -546,6 +574,8 @@ export interface ImportPreview {
 
 export interface BoardQuery {
   view?: BoardView;
+  /** 0919：按项目过滤；`none` = 未分配项目。服务端只收单值，多选由 `useProjectScoped` 拆请求合并。 */
+  project_id?: string;
   priority?: number[];
   type?: string[];
   tags?: string[];
@@ -555,6 +585,8 @@ export interface BoardQuery {
 
 export interface TaskListQuery {
   status?: TaskStatus[] | string[];
+  /** 0919：按项目过滤；`none` = 未分配项目。服务端只收单值，多选由 `useProjectScoped` 拆请求合并。 */
+  project_id?: string;
   keyword?: string;
   priority?: number[];
   type?: string[];
@@ -582,6 +614,8 @@ export interface AuditQuery {
 export interface TaskCreateInput {
   title: string;
   type: string;
+  /** 0919 五章：创建时归属项目；不传 = 未分配。 */
+  project_id?: string | null;
   priority?: number;
   description?: string;
   tags?: string[];
@@ -591,6 +625,11 @@ export interface TaskCreateInput {
   depends_on?: string[];
   dependency_type?: DependencyType;
   pinned?: boolean;
+  /**
+   * 0919 5.4：挂到需求（父任务）。父必须是「需求」类型且自身不是子任务（嵌套 ≤ 2 层），
+   * 违规 → 422 `VALIDATION_FAILED`，`details[].code` 为 `parent_type` / `too_deep`。
+   */
+  parent_task_id?: string | null;
 }
 
 export type TaskPatchInput = Partial<Omit<TaskCreateInput, 'depends_on' | 'dependency_type'>> & {

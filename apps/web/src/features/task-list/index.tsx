@@ -1,6 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, ArchiveRestore, Eye, Gavel, MoreHorizontal, Pin, PinOff, Search, Undo2 } from 'lucide-react';
-import { api, errorMessage, qk, useApiMutation, useTaskList } from '@/api';
+import {
+  Archive,
+  ArchiveRestore,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  Gavel,
+  MoreHorizontal,
+  Pin,
+  PinOff,
+  Search,
+  Undo2,
+} from 'lucide-react';
+import { api, errorMessage, qk, useApiMutation } from '@/api';
+import { useTaskListWithProjects } from '@/features/projects';
 import type { ListSortField, TaskListItem, TaskStatus } from '@/api/types';
 import { BOARD_COLUMN_ORDER } from '@/api/types';
 import { useRouteSearchParams } from '@/app/router';
@@ -25,6 +38,8 @@ import {
 } from '@/components/ui';
 import type { MenuItem } from '@/components/ui';
 import { directTransitions } from '@/features/board/matrix';
+import { GROUP_DIMENSIONS, toGroupable } from '@/features/board/grouping/dimensions';
+import { useGroupingStore } from '@/features/board/grouping/useGroupingState';
 import { statusLabel } from '@/lib/labels';
 import { cn } from '@/lib/cn';
 import {
@@ -133,9 +148,41 @@ export function TaskListPage() {
     () => toListQuery(filters, { page, page_size: pageSize, sort: sort.field, order: sort.order }),
     [filters, page, pageSize, sort],
   );
-  const list = useTaskList(params);
+  // 7.8：项目多选时每项目一次 `project_id` 服务端过滤请求再按页合并（useProjectScoped）。
+  const list = useTaskListWithProjects(params);
   const rows = useMemo(() => list.data?.items ?? [], [list.data]);
   const total = list.data?.total ?? 0;
+
+  /* ----------------------------------------------- 分组分节（复用看板 grouping） */
+
+  // 主分组维度与看板共用一份偏好（useGroupingStore）；「不分组」时退回平铺表格。
+  const listPrimary = useGroupingStore((state) => state.primary);
+  const sections = useMemo(() => {
+    if (listPrimary === 'none') return null;
+    const dim = GROUP_DIMENSIONS[listPrimary];
+    const map = new Map<string, { key: string; label: string; icon: string; rows: TaskListItem[] }>();
+    for (const row of rows) {
+      // 标签维一张卡可归属多个分组 → 同一行会在多个节出现（与看板泳道口径一致）。
+      for (const value of dim.getValues(toGroupable(row))) {
+        let section = map.get(value.key);
+        if (!section) {
+          section = { key: value.key, label: value.label, icon: dim.icon, rows: [] };
+          map.set(value.key, section);
+        }
+        section.rows.push(row);
+      }
+    }
+    return [...map.values()];
+  }, [rows, listPrimary]);
+  const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<string>>(new Set());
+  const toggleSection = useCallback((key: string) => {
+    setCollapsedSections((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   // 整页只有这一个秒级定时器，它同时喂租约倒计时（20.4）和 RUNNING 行的「已进行时间」
   // （`displayedDurationMs` 拿 `now` 与 `started_at` 相减），所以判据是「有 RUNNING 行」，
@@ -334,18 +381,59 @@ export function TaskListPage() {
                 </TH>
               </THead>
               <TBody>
-                {rows.map((row) => (
-                  <TaskRow
-                    key={row.id}
-                    row={row}
-                    now={now}
-                    onlyArchived={onlyArchived}
-                    selected={selected[row.id] !== undefined}
-                    onToggle={() => toggleRow(row)}
-                    onAction={rowAction.mutate}
-                    actionBusy={rowAction.isPending && rowAction.variables?.id === row.id}
-                  />
-                ))}
+                {sections
+                  ? sections.flatMap((section) => {
+                      const collapsed = collapsedSections.has(section.key);
+                      const header = (
+                        <TR key={`section:${section.key}`} className="bg-bg-raised">
+                          <TD colSpan={11} className="py-0">
+                            <button
+                              type="button"
+                              onClick={() => toggleSection(section.key)}
+                              className="-mx-1 flex w-full items-center gap-2 py-2 text-left"
+                              aria-expanded={!collapsed}
+                            >
+                              {collapsed ? (
+                                <ChevronRight className="size-3.5 text-text-tertiary" aria-hidden />
+                              ) : (
+                                <ChevronDown className="size-3.5 text-text-tertiary" aria-hidden />
+                              )}
+                              <span aria-hidden>{section.icon}</span>
+                              <span className="text-[13px] font-medium text-text-primary">{section.label}</span>
+                              <span className="text-aux text-text-tertiary">{section.rows.length}</span>
+                            </button>
+                          </TD>
+                        </TR>
+                      );
+                      if (collapsed) return [header];
+                      return [
+                        header,
+                        ...section.rows.map((row) => (
+                          <TaskRow
+                            key={`${section.key}:${row.id}`}
+                            row={row}
+                            now={now}
+                            onlyArchived={onlyArchived}
+                            selected={selected[row.id] !== undefined}
+                            onToggle={() => toggleRow(row)}
+                            onAction={rowAction.mutate}
+                            actionBusy={rowAction.isPending && rowAction.variables?.id === row.id}
+                          />
+                        )),
+                      ];
+                    })
+                  : rows.map((row) => (
+                      <TaskRow
+                        key={row.id}
+                        row={row}
+                        now={now}
+                        onlyArchived={onlyArchived}
+                        selected={selected[row.id] !== undefined}
+                        onToggle={() => toggleRow(row)}
+                        onAction={rowAction.mutate}
+                        actionBusy={rowAction.isPending && rowAction.variables?.id === row.id}
+                      />
+                    ))}
               </TBody>
             </Table>
             <Pagination

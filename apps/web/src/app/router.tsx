@@ -13,6 +13,7 @@ import { cn } from '@/lib/cn';
 
 export const ROUTES = {
   board: { path: '/board', label: '看板' },
+  projects: { path: '/projects', label: '项目' },
   review: { path: '/review', label: '审核' },
   tasks: { path: '/tasks', label: '任务' },
   settings: { path: '/settings', label: '设置' },
@@ -30,7 +31,7 @@ const PATH_TO_NAME = new Map<string, RouteName>(
 );
 
 /** 17.2：「依赖图」是阶段二入口，阶段一不渲染该项（见 lib/phase.ts）。 */
-export const NAV_ORDER: readonly RouteName[] = ['board', 'review', 'tasks', 'settings'];
+export const NAV_ORDER: readonly RouteName[] = ['board', 'projects', 'review', 'tasks', 'settings'];
 
 interface RouterState {
   /** 形如 `/tasks?status=REVIEW`。 */

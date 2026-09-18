@@ -1,14 +1,22 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Lock, MoreHorizontal, Pin, PinOff } from 'lucide-react';
 import type { TaskDetail } from '@/api';
-import { Badge, IconButton, Input, Menu, StatusDot, TagBadge } from '@/components/ui';
+import { Badge, IconButton, Input, Menu, Progress, StatusDot, TagBadge } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { COPY } from '@/lib/copy';
 import { priorityText, statusLabel } from '@/lib/labels';
 import { priorityStyle, statusStyle } from '@/lib/status-style';
 import { leaseRemaining } from '@/lib/time';
+import { useRequirementDrawerStore } from '@/features/requirements/requirement-store';
 import { usePatchTask, useSetPinned } from './mutations';
 import type { DrawerActionsApi } from './use-drawer-actions';
+
+/** 聚合状态徽标文案（1.md 5.4；与 task-detail/subtasks.tsx 的视图映射同口径）。 */
+const AGGREGATE_LABEL: Record<string, string> = {
+  DONE: '全部完成',
+  BACKLOG: '未开始',
+  IN_PROGRESS: '进行中',
+};
 
 /**
  * 原型 4.2 头部 + 4.3 标签栏。
@@ -144,6 +152,37 @@ export function DrawerMetaRow({ detail }: { detail: TaskDetail }) {
               <Badge tone="outline">{`+${overflow}`}</Badge>
             </span>
           ) : null}
+        </MetaCell>
+      ) : null}
+      {detail.parent ? (
+        <MetaCell label="需求" className="col-span-2">
+          <button
+            type="button"
+            onClick={() => useRequirementDrawerStore.getState().openRequirement(detail.parent!.id)}
+            title={`打开需求 ${detail.parent.id}`}
+            className="min-w-0 truncate text-left text-text-primary hover:text-primary"
+          >
+            {detail.parent.title}
+          </button>
+          <span className="shrink-0 tabular-nums text-text-secondary">
+            {detail.parent.done}/{detail.parent.total}
+          </span>
+        </MetaCell>
+      ) : null}
+      {detail.aggregate && detail.aggregate.total > 0 ? (
+        <MetaCell label="子任务" className="col-span-2">
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <Progress
+              value={Math.round((detail.aggregate.done / detail.aggregate.total) * 100)}
+              className="h-1 max-w-[160px] flex-1"
+            />
+            <span className="shrink-0 font-medium tabular-nums text-text-primary">
+              {detail.aggregate.done}/{detail.aggregate.total}
+            </span>
+            <span className="shrink-0 text-text-secondary">
+              {AGGREGATE_LABEL[detail.aggregate.status] ?? detail.aggregate.status}
+            </span>
+          </span>
         </MetaCell>
       ) : null}
       {detail.blocked.count > 0 ? (

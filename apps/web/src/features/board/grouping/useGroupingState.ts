@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
+import { api } from '@/api';
 import type { GroupDimensionKey } from './dimensions';
 
 /**
@@ -35,7 +36,8 @@ export interface GroupingPrefs {
 }
 
 export const DEFAULT_GROUPING_PREFS: GroupingPrefs = {
-  primary: 'project',
+  // 主分组默认「状态」：退化为现有单维看板形态（六列），其他维度由分组选择器切换。
+  primary: 'status',
   secondary: 'none',
   options: {
     showEmptyLanes: false,
@@ -73,11 +75,47 @@ export function readGroupingPrefs(): GroupingPrefs {
 }
 
 export function writeGroupingPrefs(prefs: GroupingPrefs): void {
+  // localStorage 永远先写：服务端 PUT 失败（离线 / 5xx）时回落本地，偏好不丢。
   try {
     window.localStorage.setItem(GROUPING_PREFS_KEY, JSON.stringify(prefs));
   } catch {
     // 写失败仅丢偏好，不提示。
   }
+  void api.prefs.put(GROUPING_PREFS_SERVER_KEY, prefs).catch(() => {
+    // 服务端不可用：静默回落 localStorage（上面的 setItem 已写）。
+  });
+}
+
+/** 模块级幂等标记：hydrate 只在首次建 store 时跑一次。 */
+let prefsHydrated = false;
+
+/**
+ * 服务端 → 本地的一次性水合：GET /prefs/board.grouping，命中且合法时覆盖 store。
+ * 失败（未登录 / 网络 / 404）保持 localStorage 的初值，不影响正确性。
+ */
+export function hydrateGroupingPrefs(): void {
+  if (prefsHydrated || typeof window === 'undefined') return;
+  prefsHydrated = true;
+  void api.prefs
+    .get(GROUPING_PREFS_SERVER_KEY)
+    .then((result) => {
+      if (!result.value || typeof result.value !== 'object') return;
+      const parsed = result.value as Partial<GroupingPrefs>;
+      const prefs: GroupingPrefs = {
+        ...DEFAULT_GROUPING_PREFS,
+        ...parsed,
+        options: { ...DEFAULT_GROUPING_PREFS.options, ...parsed.options },
+      };
+      try {
+        window.localStorage.setItem(GROUPING_PREFS_KEY, JSON.stringify(prefs));
+      } catch {
+        // 忽略：本地写失败只影响下次离线打开时的初值。
+      }
+      useGroupingStore.setState(prefs);
+    })
+    .catch(() => {
+      // 回落 localStorage（store 初值已从本地读）。
+    });
 }
 
 /**
@@ -205,3 +243,6 @@ export function isLaneCollapsed(
 ): boolean {
   return collapsed[`${dimension}:${laneKey}`] === true;
 }
+
+// store 建好后立刻用服务端偏好水合一次（幂等）。
+hydrateGroupingPrefs();

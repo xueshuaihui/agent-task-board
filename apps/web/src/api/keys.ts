@@ -68,4 +68,8 @@ export const qk = {
   artifact: (id: string) => ['artifact', id] as const,
   artifactDiff: (id: string) => ['artifact', id, 'diff'] as const,
   artifactRoot: ['artifact'] as const,
+
+  /** 0919 五章：项目 CRUD（features/projects）。 */
+  projects: () => ['projects'] as const,
+  projectsRoot: ['projects'] as const,
 } as const;

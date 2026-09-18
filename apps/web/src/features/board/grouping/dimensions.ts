@@ -24,11 +24,11 @@ export interface GroupValue {
 
 /**
  * 卡片 + 分组所需的归属字段。
- * 接缝：`project_id` / `requirement_*` 来自「项目与需求模型」（PRD 五章），
- * 服务端卡片 DTO 尚未下发，先约定字段名，接口补齐后本类型可整体替换为 TaskCard。
+ * 接缝：0919 起 TaskCard 已带 `project_id`（必填 string|null）与 `parent` 摘要
+ * （apps/api/src/tasks/task.dto.ts），project_id 直接继承、不再重复声明；
+ * 其余展示用扩展字段（project_name / requirement_*）仍由本类型补齐。
  */
 export interface GroupableTask extends TaskCard {
-  project_id?: string | null;
   project_name?: string | null;
   project_color?: string | null;
   /** 需求 = 父任务（5.2）：泳道按父任务聚合子任务。 */
@@ -147,4 +147,20 @@ export const GROUPABLE_KEYS = [
 
 export function dimensionOf(key: GroupDimensionKey): GroupDimension | null {
   return key === 'none' ? null : GROUP_DIMENSIONS[key];
+}
+
+/**
+ * 20.7 卡片 to GroupableTask：project / requirement（父任务）摘要在接缝处对齐。
+ * 后端 TaskCardDto 带的是 `project_id` 与 `parent { id, title, done, total }`
+ * （apps/api/src/tasks/task.dto.ts）；grouping 引擎读的 project / requirement 系列
+ * 字段在这里只做一次翻译。卡片 DTO 直接带这几个字段后可整体删掉本函数。
+ */
+export function toGroupable(card: TaskCard): GroupableTask {
+  return {
+    ...card,
+    project_name: card.project_id ?? null,
+    requirement_id: card.parent?.id ?? null,
+    requirement_title: card.parent?.title ?? null,
+    requirement_progress: card.parent ? { done: card.parent.done, total: card.parent.total } : null,
+  };
 }

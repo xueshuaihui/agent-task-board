@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Pencil } from 'lucide-react';
 import { fieldErrorsOf, useFieldDefs, useSettings, useTags } from '@/api';
+import { useActiveProjects } from '@/features/projects';
 import type { FieldDef, TaskDetail, TaskTab } from '@/api';
-import { Badge, Button, Field, Input, Select, TagBadge, Textarea } from '@/components/ui';
+import { Badge, Button, Field, Input, Progress, Select, TagBadge, Textarea } from '@/components/ui';
 import { priorityText, statusLabel } from '@/lib/labels';
 import { formatDateTime } from '@/lib/time';
 import { useShellStore } from '@/app/store/shell';
+import { useRequirementDrawerStore } from '@/features/requirements/requirement-store';
 import {
   applicableFieldDefs,
   CapabilityEditor,
@@ -20,6 +22,7 @@ import {
 import { TASK_RUNNING_EDIT_HINT } from '../labels';
 import { usePatchTask, type DrawerTaskPatch } from '../mutations';
 import { InlineError, KeyValues, Mono, Section, StatusGlyph } from '../ui-bits';
+import { SubtasksSection } from '../subtasks';
 import { MarkdownLite } from '../rich-text';
 
 /**
@@ -56,8 +59,17 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
     [fieldDefs.data, detail.type],
   );
   const defByKey = useMemo(() => new Map(defs.map((def) => [def.key, def])), [defs]);
+  // 0919 五章：基本信息里带出所属项目（详情接口的卡片 DTO 已有 project_id）。
+  const projects = useActiveProjects();
+  const projectName = useMemo(
+    () => (detail.project_id ? (projects.data?.items ?? []).find((p) => p.id === detail.project_id) : undefined),
+    [projects.data?.items, detail.project_id],
+  );
 
   const editable = detail.status !== 'RUNNING';
+
+  // 0919 7.4：子任务是「需求」时，概览里直接给子任务列表（复用需求抽屉同一份组件）。
+  const isRequirement = detail.type === '需求' || (detail.children?.length ?? 0) > 0;
 
   const typeOptions = useMemo(() => {
     const list = settings.data?.task_types ?? [];
@@ -90,6 +102,8 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
 
   return (
     <div className="flex flex-col gap-5">
+      {/* 0919 7.2 面包屑：子任务头部显示所属需求，点击打开需求抽屉（features/requirements）。 */}
+      {detail.parent ? <ParentSummaryLine parent={detail.parent} /> : null}
       <Section title="描述" meta="编辑见「基本信息 · 编辑」表单">
         {detail.description ? <MarkdownLite text={detail.description} /> : <p className="text-body text-text-tertiary">无描述</p>}
       </Section>
@@ -111,6 +125,10 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
             defs={defs}
             typeOptions={typeOptions}
             tagCandidates={tags.data?.tags ?? []}
+            projectOptions={(projects.data?.items ?? []).map((project) => ({
+              value: project.id,
+              label: `${project.icon ? `${project.icon} ` : ''}${project.name}`,
+            }))}
             onCancel={() => {
               setEditing(false);
               patch.reset();
@@ -125,6 +143,11 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
             rows={[
               { label: '类型', value: detail.type },
               { label: '优先级', value: priorityText(detail.priority) },
+              {
+                label: '项目',
+                value: projectName ? `${projectName.icon ? `${projectName.icon} ` : ''}${projectName.name}` : '未分配',
+                muted: !projectName,
+              },
               {
                 label: '标签',
                 value:
@@ -177,6 +200,16 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
         )}
       </Section>
 
+      {isRequirement ? (
+        <Section title="子任务" meta="需求不直接执行，进度与状态由子任务聚合（1.md 5.2/5.4）">
+          <SubtasksSection
+            taskId={detail.id}
+            items={detail.children ?? []}
+            aggregate={detail.aggregate ?? null}
+          />
+        </Section>
+      ) : null}
+
       <Section
         title="依赖摘要"
         action={
@@ -202,8 +235,7 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
   );
 }
 
-function DependencyChips({ refs }: { refs: TaskDetail['depends_on'] }) {
-  return (
+function DependencyChips({ refs }: { refs: TaskDetail['depends_on'] }) {  return (
     <span className="flex flex-wrap gap-x-3 gap-y-1">
       {refs.map((ref) => (
         <button
@@ -222,11 +254,39 @@ function DependencyChips({ refs }: { refs: TaskDetail['depends_on'] }) {
   );
 }
 
+/**
+ * 0919 7.2 面包屑「需求」段：子任务头部显示所属需求 + 聚合进度，点击打开需求抽屉
+ * （`features/requirements` 的壳层宿主；宿主未挂载时点击只是无操作，不报错）。
+ */
+function ParentSummaryLine({ parent }: { parent: NonNullable<TaskDetail['parent']> }) {
+  const openRequirement = useRequirementDrawerStore((state) => state.openRequirement);
+  const percent = parent.total > 0 ? Math.round((parent.done / parent.total) * 100) : 0;
+  return (
+    <div className="flex min-w-0 items-center gap-2 rounded-card border border-border bg-bg-surface px-3 py-2">
+      <span className="shrink-0 text-aux text-text-secondary">需求</span>
+      <button
+        type="button"
+        onClick={() => openRequirement(parent.id)}
+        title={`打开需求 ${parent.id}`}
+        className="min-w-0 truncate text-body text-text-primary hover:text-primary"
+      >
+        {parent.title}
+      </button>
+      <span className="ml-auto shrink-0 text-aux tabular-nums text-text-secondary">
+        {parent.done}/{parent.total} 完成
+      </span>
+      <Progress value={percent} className="h-1 w-20 shrink-0" />
+    </div>
+  );
+}
+
 interface EditFormProps {
   detail: TaskDetail;
   defs: FieldDef[];
   typeOptions: { value: string; label: string }[];
   tagCandidates: string[];
+  /** 0919 五章：项目候选（仅活跃项目；归档中的项目不再出现，原值仍可保留/清空）。 */
+  projectOptions: { value: string; label: string }[];
   onCancel: () => void;
   onSubmit: (body: DrawerTaskPatch) => void;
   pending: boolean;
@@ -240,6 +300,7 @@ function OverviewEditForm({
   defs,
   typeOptions,
   tagCandidates,
+  projectOptions,
   onCancel,
   onSubmit,
   pending,
@@ -252,6 +313,7 @@ function OverviewEditForm({
   const [tagsValue, setTagsValue] = useState<string[]>(detail.tags);
   const [capabilities, setCapabilities] = useState<string[]>(detail.required_capabilities);
   const [dueAt, setDueAt] = useState(detail.due_at ?? '');
+  const [projectId, setProjectId] = useState(detail.project_id ?? '');
   const [custom, setCustom] = useState<FieldDraft>(() => draftFromValues(defs, detail.custom_fields ?? {}));
 
   const save = () => {
@@ -268,6 +330,7 @@ function OverviewEditForm({
       body.required_capabilities = capabilities;
     }
     if (dueAt !== (detail.due_at ?? '')) body.due_at = dueAt === '' ? null : dueAt;
+    if (projectId !== (detail.project_id ?? '')) body.project_id = projectId === '' ? null : projectId;
 
     const changed: Record<string, unknown> = {};
     for (const def of defs) {
@@ -303,6 +366,14 @@ function OverviewEditForm({
           />
         </Field>
       </div>
+      <Field label="项目" hint="归档项目不出现在候选里；改为「未分配」即移出项目">
+        <Select
+          value={projectId}
+          placeholder="未分配项目"
+          options={projectOptions}
+          onChange={(event) => setProjectId(event.target.value)}
+        />
+      </Field>
       <Field label="标签" hint="回车添加；候选来自历史标签的实时聚合（20.3）">
         <TagEditor value={tagsValue} candidates={tagCandidates} onChange={setTagsValue} />
       </Field>

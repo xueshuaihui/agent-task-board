@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useDroppable } from '@dnd-kit/core';
 import { STATUS_STYLE } from '@/lib/status-style';
 import { cn } from '@/lib/cn';
 import { CardSkeleton } from '@/components/ui';
@@ -43,8 +44,43 @@ export function LaneColumnHead({
   );
 }
 
-export function SwimlaneView({
-  lane,
+/**
+ * 4.9 泳道内状态列的 droppable 外壳：落点 id `column:{laneKey}:{status}`，
+ * `useCrossGroupDrag` 按它识别「跨到哪条泳道的哪一列」。非分组模式下不进 DndContext，
+ * useDroppable 走 dnd-kit 的默认上下文，不注册、无副作用。
+ */
+function DroppableColumn({
+  laneKey,
+  column,
+  extra,
+  children,
+}: {
+  laneKey: string;
+  column: Swimlane['groups'][number]['columns'][number];
+  extra?: ReactNode;
+  children: ReactNode;
+}) {
+  const droppable = useDroppable({
+    id: `column:${laneKey}:${column.status}`,
+    data: { laneKey, status: column.status },
+  });
+  return (
+    <div
+      ref={droppable.setNodeRef}
+      className={cn(
+        'flex w-[280px] shrink-0 flex-col rounded-lg bg-bg-app',
+        droppable.isOver && 'bg-bg-muted',
+      )}
+      data-lane={laneKey}
+      data-status={column.status}
+    >
+      <LaneColumnHead column={column} extra={extra} />
+      <div className="flex flex-1 flex-col gap-2 px-2 pb-2">{children}</div>
+    </div>
+  );
+}
+
+export function SwimlaneView({  lane,
   collapsed,
   options,
   loading = false,
@@ -76,19 +112,11 @@ export function SwimlaneView({
             )}
             <div className="flex gap-3 overflow-x-auto p-3">
               {group.columns.map((column) => (
-                <div
-                  key={column.status}
-                  className="flex w-[280px] shrink-0 flex-col rounded-lg bg-bg-app"
-                  data-lane={lane.key}
-                  data-status={column.status}
-                >
-                  <LaneColumnHead column={column} extra={columnHeaderExtra?.(column)} />
-                  <div className="flex flex-1 flex-col gap-2 px-2 pb-2">
-                    {loading
-                      ? [...Array(Math.min(column.count, 3) || 1)].map((_, index) => <CardSkeleton key={index} />)
-                      : column.tasks.map((task) => <div key={task.id}>{renderCard(task)}</div>)}
-                  </div>
-                </div>
+                <DroppableColumn key={column.status} laneKey={lane.key} column={column} extra={columnHeaderExtra?.(column)}>
+                  {loading
+                    ? [...Array(Math.min(column.count, 3) || 1)].map((_, index) => <CardSkeleton key={index} />)
+                    : column.tasks.map((task) => <div key={task.id}>{renderCard(task)}</div>)}
+                </DroppableColumn>
               ))}
             </div>
           </div>

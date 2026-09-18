@@ -10,21 +10,27 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
+import { useShallow } from 'zustand/react/shallow';
 import { CloudOff, Plus, RotateCcw } from 'lucide-react';
 import type { BoardColumn, TaskCard, TaskStatus } from '@/api/types';
-import { errorMessage, useBoard, useFieldDefs } from '@/api';
+import { errorMessage, useFieldDefs } from '@/api';
 import { navigate } from '@/app/router';
 import { toBoardQuery, useFilterStore } from '@/app/store/filters';
 import { useShellStore, type ReviewPrefill } from '@/app/store/shell';
 import { Button, EmptyState, useToast, type ToastApi } from '@/components/ui';
+import { useBoardWithProjects, useProjects } from '@/features/projects';
 import { BoardColumnView } from './board-column';
 import type { CardActions } from './card-actions';
 import { DeleteDialog, StopDialog } from './dialogs';
+import { GroupedBoard } from './grouped-board';
 import { dropStates, dropVerdict } from './matrix';
 import { COLUMN_ORDER, isDefaultBoardView } from './model';
 import { useBoardMutations, type BoardMutations } from './mutations';
 import { QuickCreateDialog, type QuickCreateTarget } from './quick-create';
 import { BoardToolbar } from './toolbar';
+import { toGroupable } from './grouping/dimensions';
+import { applyLaneOrder, buildSwimlanes, filterLanes } from './grouping/grouping';
+import { useGroupingStore } from './grouping/useGroupingState';
 import { BoardCardView } from './task-card-view';
 import { useRunOverlay } from './use-run-overlay';
 
@@ -44,7 +50,8 @@ export function BoardPage() {
   const params = useMemo(() => toBoardQuery(filters), [filters]);
   const defaultView = useMemo(() => isDefaultBoardView(filters), [filters]);
 
-  const board = useBoard(params);
+  // 7.8：项目多选 → 每个选中项目一次 `project_id` 服务端过滤请求、按六列合并（useProjectScoped）。
+  const board = useBoardWithProjects(params);
   const fieldDefs = useFieldDefs();
   const defs = useMemo(() => fieldDefs.data?.items ?? [], [fieldDefs.data?.items]);
   const mutations = useBoardMutations();
@@ -57,6 +64,62 @@ export function BoardPage() {
     return map;
   }, [columns]);
   const total = columns.reduce((sum, column) => sum + column.tasks.length, 0);
+
+  /* ------------------------------------------------------ 分组（泳道）接线 */
+
+  // 分组偏好整体订阅（useShallow 按字段浅比较）；默认 primary='status' → 经典六列形态。
+  const grouping = useGroupingStore(
+    useShallow((state) => ({
+      primary: state.primary,
+      secondary: state.secondary,
+      options: state.options,
+      laneOrder: state.laneOrder,
+      laneFilter: state.laneFilter,
+      projectIds: state.projectIds,
+      laneSort: state.laneSort,
+    })),
+  );
+  const collapseAll = useGroupingStore((state) => state.collapseAll);
+  /** 主分组不是「状态」时走泳道视图；「状态」维度即现有单维看板，不重复包一层泳道。 */
+  const grouped = grouping.primary !== 'status';
+
+  /** 六列快照拉平 + 接缝字段补齐（project / requirement 摘要）；项目名/色来自项目缓存。 */
+  const projects = useProjects();
+  const projectById = useMemo(
+    () => new Map((projects.data?.items ?? []).map((project) => [project.id, project])),
+    [projects.data?.items],
+  );
+  const groupableTasks = useMemo(
+    () =>
+      columns
+        .flatMap((column) => column.tasks)
+        .map(toGroupable)
+        .map((task) => {
+          const project = task.project_id ? projectById.get(task.project_id) : undefined;
+          return project ? { ...task, project_name: project.name, project_color: project.color } : task;
+        }),
+    [columns, projectById],
+  );
+  // 4.5 多项目过滤已由服务端完成（useBoardWithProjects），这里不再前端截一遍。
+
+  /** 泳道结构与 GroupedBoard 内部同一套纯函数；这里算一份供工具栏拿 laneKeys。 */
+  const groupedLanes = useMemo(() => {
+    if (!grouped) return [];
+    const sorted = [...groupableTasks];
+    if (grouping.laneSort === 'priority') sorted.sort((a, b) => a.priority - b.priority);
+    else if (grouping.laneSort === 'updated_at')
+      sorted.sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''));
+    let built = buildSwimlanes({
+      tasks: sorted,
+      primary: grouping.primary,
+      secondary: grouping.secondary,
+      showEmptyLanes: grouping.options.showEmptyLanes,
+    });
+    if (grouping.options.rememberOrder)
+      built = applyLaneOrder(built, grouping.laneOrder[grouping.primary] ?? []);
+    return filterLanes(built, grouping.laneFilter);
+  }, [grouped, groupableTasks, grouping]);
+  const laneKeys = useMemo(() => groupedLanes.map((lane) => lane.key), [groupedLanes]);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overColumn, setOverColumn] = useState<string | null>(null);
@@ -102,7 +165,15 @@ export function BoardPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <BoardToolbar onCreate={(template) => setQuick({ target: 'BACKLOG', preset: template?.preset })} />
+      <BoardToolbar
+        onCreate={(template) => setQuick({ target: 'BACKLOG', preset: template?.preset })}
+        grouping={{
+          primary: grouping.primary,
+          grouped,
+          laneKeys,
+          onToggleAll: (collapsed) => collapseAll(grouping.primary, laneKeys, collapsed),
+        }}
+      />
 
       {board.isError ? (
         <EmptyState
@@ -136,6 +207,15 @@ export function BoardPage() {
       ) : total === 0 && defaultView ? (
         // 3.6：只有「整张看板空」才替掉六列；筛选后的空态由折叠列 + 工具栏那句文案表达。
         <BoardEmpty onCreate={() => setQuick({ target: 'BACKLOG' })} />
+      ) : grouped ? (
+        // 7.3/7.4 泳道视图：主分组≠「状态」时走 GroupedBoard（含跨分组拖拽确认）。
+        <GroupedBoard
+          tasks={groupableTasks}
+          defs={defs}
+          actions={actions}
+          mutations={mutations}
+          overlayOf={overlayOf}
+        />
       ) : (
         <DndContext
           sensors={sensors}

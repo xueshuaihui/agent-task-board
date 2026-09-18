@@ -2,6 +2,7 @@ import { useEffect, type ComponentType } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { useSettings } from '@/api';
 import { BoardPage } from '@/features/board';
+import { ProjectsPage } from '@/features/projects';
 import { ReviewPage } from '@/features/review';
 import { SettingsPage } from '@/features/settings';
 import { TaskListPage } from '@/features/task-list';
@@ -27,6 +28,7 @@ import { TopBar } from './top-bar';
  */
 const PAGES: Record<Exclude<RouteName, 'login' | 'changePassword'>, ComponentType> = {
   board: BoardPage,
+  projects: ProjectsPage,
   review: ReviewPage,
   tasks: TaskListPage,
   settings: SettingsPage,
