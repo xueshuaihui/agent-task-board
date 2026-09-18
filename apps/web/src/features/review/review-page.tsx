@@ -189,8 +189,8 @@ export function ReviewPage() {
                   className="flex flex-col gap-2 px-4 pb-1"
                 >
                   <AnimatePresence>
-                    {rows.map((row) => (
-                      <PendingRow key={row.id} row={row} reduced={reduceMotion} />
+                    {rows.map((row, index) => (
+                      <PendingRow key={row.id} row={row} index={index} reduced={reduceMotion} />
                     ))}
                   </AnimatePresence>
                 </motion.ul>
@@ -307,14 +307,18 @@ function SortButton({
  * （整卡点击开抽屉、操作区 stopPropagation、审核按钮、回写提示点、状态闪烁），
  * 外层换成 motion.li：入场 stagger、队列变化时 layout 滑动、离场淡出。
  */
-function PendingRow({ row, reduced }: { row: TaskListItem; reduced: boolean }) {
+function PendingRow({ row, index, reduced }: { row: TaskListItem; index: number; reduced: boolean }) {
   const flashed = useIsFlashed(row.id);
   return (
     <motion.li
       layout={!reduced}
       transition={springs.gentle}
       variants={reduced ? undefined : itemVariants}
+      // 显式 initial/animate：不能依赖父容器 stagger 编排——数据晚到的行会卡在
+      // hidden 态永远不可见（内容「塌陷」）。stagger 顺序由 custom 索引延迟保证。
       initial={reduced ? false : 'hidden'}
+      animate={reduced ? undefined : 'show'}
+      custom={index}
       exit={reduced ? undefined : { opacity: 0, transition: { duration: 0.15 } }}
       className="list-none"
     >

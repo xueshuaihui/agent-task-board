@@ -104,10 +104,15 @@ export function BoardColumnView({
               animate="show"
             >
               <AnimatePresence>
-                {column.tasks.map((card) => (
+                {column.tasks.map((card, index) => (
                   <motion.div
                     key={card.id}
                     variants={itemVariants}
+                    // 显式 initial/animate + custom 索引延迟：数据晚到的卡（WS 推送、
+                    // 拖拽回列）不依赖父容器 stagger 编排，否则会卡在 hidden 态不可见。
+                    initial={reduce ? false : 'hidden'}
+                    animate={reduce ? undefined : 'show'}
+                    custom={index}
                     exit={reduce ? undefined : { opacity: 0, y: 8, transition: { duration: 0.14, ease: 'easeOut' } }}
                   >
                     <DraggableCard

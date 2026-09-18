@@ -25,7 +25,14 @@ export const transitions = {
   drawer: { duration: 0.26, ease: [0.32, 0.72, 0, 1] },
 } satisfies Record<string, Transition>;
 
-/** 列表入场编排：父容器 variants + 子项 itemVariants，间隔 40ms（DESIGN.md §5）。 */
+/**
+ * 列表入场：父容器 listVariants + 子项 itemVariants，间隔 40ms（DESIGN.md §5）。
+ *
+ * 注意：子项**必须自己带 `initial="hidden"` + `animate="show"`**（见下），不能只靠
+ * 父容器的 stagger 编排——数据异步到达晚于父容器首次动画时，后来挂载的子项不会被
+ * 编排触发，会永远卡在 hidden 态（opacity:0），看起来就是内容「塌陷/空白」。
+ * stagger 顺序改由 custom 索引 × 0.04s 的动态延迟保证（上限 240ms，长列表不拖尾）。
+ */
 export const listVariants: Variants = {
   hidden: {},
   show: { transition: { staggerChildren: 0.04, delayChildren: 0.02 } },
@@ -33,5 +40,9 @@ export const listVariants: Variants = {
 
 export const itemVariants: Variants = {
   hidden: { opacity: 0, y: 8 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.24, ease: [0.32, 0.72, 0, 1] } },
+  show: (index: number = 0) => ({
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.24, ease: [0.32, 0.72, 0, 1], delay: Math.min(index * 0.04, 0.24) },
+  }),
 };
