@@ -101,19 +101,22 @@ const compiler = webpack({
   optimization: { minimize: false },
   performance: { hints: false },
   stats: 'errors-warnings',
-}, (error, stats) => {
-  if (error) die(`webpack 执行失败：${error.message}`);
-  if (stats.hasErrors()) {
-    die(`bundle 失败：\n${stats.toString({ colors: false, errors: true, errorDetails: true })}`);
-  }
-  if (stats.hasWarnings()) log(`webpack 警告（懒加载可选依赖，未使用即无害）：\n${stats.toString({ colors: false, warnings: true, modules: false, assets: false })}`);
-  log('bundle 完成');
 });
-// close 是异步收尾（落盘产物在其中）：必须等它结束再 stat，否则 CI 慢盘上
-// main.js 尚未写完就报 ENOENT——本地机器快，恰好总能先写完，掩盖了这个竞态。
+// 产物落盘发生在 run 回调里：必须 await run 完成再 stat。
+// 注意 close() 在 run 未结束时并不等待（watch 语义），等它等于没等——
+// CI 慢盘上 main.js 尚未写完就 stat 会报 ENOENT，本地快盘恰好总能先写完。
 await new Promise((resolve, reject) => {
-  compiler.close((closeError) => (closeError ? reject(closeError) : resolve()));
+  compiler.run((error, stats) => {
+    if (error) return reject(error);
+    if (stats.hasErrors()) {
+      return reject(new Error(stats.toString({ colors: false, errors: true, errorDetails: true })));
+    }
+    if (stats.hasWarnings()) log(`webpack 警告（懒加载可选依赖，未使用即无害）：\n${stats.toString({ colors: false, warnings: true, modules: false, assets: false })}`);
+    log('bundle 完成');
+    resolve();
+  });
 });
+compiler.close(() => {});
 totalBytes += statSync(path.join(resourcesDir, 'main.js')).size;
 
 // ---------- 2. 最小 Prisma 运行时（约 21M，比整包 97M 小一个量级） ----------
