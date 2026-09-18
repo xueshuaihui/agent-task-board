@@ -1,8 +1,9 @@
-import { useEffect, useRef, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import type { ReactNode } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { useEscape, useLockBodyScroll } from '@/lib/dismiss';
+import { transitions } from '@/lib/motion';
 import { IconButton } from './button';
 
 export interface DialogProps {
@@ -18,7 +19,12 @@ export interface DialogProps {
   className?: string;
 }
 
-/** 10.5 确认弹窗与 6.5 审核表单的共用壳：1.4 圆角 12px + `shadow-modal`，1.6 淡入 160ms。 */
+/**
+ * DESIGN.md §2：Radix Dialog + AnimatePresence。遮罩 bg-black/45 + 轻模糊（深色 /60）；
+ * 面板出入 = 缩放 0.96→1 + 上移 8px + 淡入，ease-emphasis 200ms（transitions.overlay）。
+ * Esc / 点击遮罩 / X 关闭、焦点圈定与滚动锁定全部由 Radix 提供。
+ * prefers-reduced-motion 时只做淡入淡出。
+ */
 export function Dialog({
   open,
   onClose,
@@ -29,57 +35,87 @@ export function Dialog({
   dismissible = true,
   className,
 }: DialogProps) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  useEscape(open, () => {
-    if (dismissible) onClose();
-  });
-  useLockBodyScroll(open);
+  const reducedMotion = useReducedMotion();
 
-  useEffect(() => {
-    if (!open) return;
-    // 打开时把焦点送进面板：Esc 与 Tab 环才归它管，而不是留在触发按钮上。
-    const target = panelRef.current?.querySelector<HTMLElement>(
-      'input,textarea,select,button:not([disabled])',
-    );
-    (target ?? panelRef.current)?.focus({ preventScroll: true });
-  }, [open]);
+  const panelMotion = reducedMotion
+    ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } }
+    : {
+        initial: { opacity: 0, scale: 0.96, y: 8 },
+        animate: { opacity: 1, scale: 1, y: 0 },
+        exit: { opacity: 0, scale: 0.97, y: 4 },
+      };
 
-  if (!open) return null;
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-      <div
-        className="absolute inset-0 bg-[rgba(15,23,42,0.45)]"
-        onClick={dismissible ? onClose : undefined}
-        aria-hidden
-      />
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        tabIndex={-1}
-        className={cn(
-          'relative flex max-h-full w-full flex-col overflow-hidden rounded-modal bg-bg-surface shadow-modal outline-none',
-          'animate-dialog-in',
-          size === 'review' ? 'max-w-review-form' : 'max-w-dialog',
-          className,
-        )}
-      >
-        {title !== undefined || dismissible ? (
-          <header className="flex h-11 shrink-0 items-center justify-between gap-4 border-b border-border px-5">
-            <h2 className="truncate text-section-title text-text-primary">{title}</h2>
-            {dismissible ? <IconButton label="关闭" size="iconSm" onClick={onClose} icon={<X className="size-4" />} /> : null}
-          </header>
-        ) : null}
-        <div data-selectable className="atb-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          {children}
-        </div>
-        {footer ? (
-          <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-5 py-4">
-            {footer}
-          </footer>
-        ) : null}
-      </div>
-    </div>,
-    document.body,
+  return (
+    <DialogPrimitive.Root
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogPrimitive.Portal forceMount>
+        <AnimatePresence>
+          {open ? (
+            <DialogPrimitive.Overlay key="dialog-overlay" forceMount asChild>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={transitions.overlay}
+                className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px] dark:bg-black/60"
+              />
+            </DialogPrimitive.Overlay>
+          ) : null}
+          {open ? (
+            <DialogPrimitive.Content
+              key="dialog-content"
+              forceMount
+              asChild
+              aria-describedby={undefined}
+              aria-label={title === undefined ? '对话框' : undefined}
+              onEscapeKeyDown={(event) => {
+                if (!dismissible) event.preventDefault();
+              }}
+              onInteractOutside={(event) => {
+                if (!dismissible) event.preventDefault();
+              }}
+            >
+              <motion.div
+                {...panelMotion}
+                transition={transitions.overlay}
+                className={cn(
+                  // inset-0 + m-auto：定宽高 fit 内容的双轴居中，避让开动画 transform 的位移冲突
+                  'fixed inset-0 z-50 m-auto flex h-fit max-h-[calc(100%-3rem)] w-[calc(100%-3rem)] flex-col overflow-hidden rounded-modal bg-bg-surface shadow-modal outline-none',
+                  size === 'review' ? 'max-w-review-form' : 'max-w-dialog',
+                  className,
+                )}
+              >
+                {title !== undefined || dismissible ? (
+                  <header className="flex h-11 shrink-0 items-center justify-between gap-4 border-b border-border px-5">
+                    {title !== undefined ? (
+                      <DialogPrimitive.Title asChild>
+                        <h2 className="truncate text-section-title text-text-primary">{title}</h2>
+                      </DialogPrimitive.Title>
+                    ) : null}
+                    {dismissible ? (
+                      <DialogPrimitive.Close asChild>
+                        <IconButton label="关闭" size="iconSm" icon={<X className="size-4" />} />
+                      </DialogPrimitive.Close>
+                    ) : null}
+                  </header>
+                ) : null}
+                <div data-selectable className="atb-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                  {children}
+                </div>
+                {footer ? (
+                  <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-5 py-4">
+                    {footer}
+                  </footer>
+                ) : null}
+              </motion.div>
+            </DialogPrimitive.Content>
+          ) : null}
+        </AnimatePresence>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }

@@ -115,7 +115,8 @@ function ArtifactRow({ artifact, maxMb, onPreview, active }: ArtifactRowProps) {
   return (
     <li
       className={cn(
-        'flex items-center gap-2 px-3 py-2',
+        // DESIGN §4：行 hover 浮现操作按钮（group/group-hover），hover 底用 raised token。
+        'group flex items-center gap-2 px-3 py-2 transition-colors duration-140 ease-out hover:bg-bg-raised',
         active && 'bg-primary-light',
         lost && 'bg-bg-muted',
       )}
@@ -151,22 +152,37 @@ function ArtifactRow({ artifact, maxMb, onPreview, active }: ArtifactRowProps) {
           : decision.note ?? (artifact.size_bytes !== null ? formatBytes(artifact.size_bytes) : typeLabel)}
       </span>
       {/* `missing` 行的 `decision.action` 是 `none`：预览/下载/浏览器打开三个按钮一个都不给。
-          下载更不能再给——服务端 `/raw` 此时回 404 `ARTIFACT_LOST`，点了只会报错（6.10.2）。 */}
+          下载更不能再给——服务端 `/raw` 此时回 404 `ARTIFACT_LOST`，点了只会报错（6.10.2）。
+          三个动作按钮 hover/focus-within 才浮现（右移 4px 入场），键盘可达。 */}
       {decision.action === 'preview' ? (
-        <Button size="sm" onClick={openPreview}>
+        <Button size="sm" className={ACTION_REVEAL_CLASS} onClick={openPreview}>
           预览
         </Button>
       ) : null}
       {decision.action === 'download' ? (
-        <Button size="sm" loading={busy} onClick={() => run(() => downloadArtifact(artifact.id, artifact.name))}>
+        <Button
+          size="sm"
+          className={ACTION_REVEAL_CLASS}
+          loading={busy}
+          onClick={() => run(() => downloadArtifact(artifact.id, artifact.name))}
+        >
           下载
         </Button>
       ) : null}
       {decision.action === 'open-link' ? (
-        <Button size="sm" loading={busy} onClick={() => run(() => openExternalArtifact(artifact.id))}>
+        <Button
+          size="sm"
+          className={ACTION_REVEAL_CLASS}
+          loading={busy}
+          onClick={() => run(() => openExternalArtifact(artifact.id))}
+        >
           浏览器打开
         </Button>
       ) : null}
     </li>
   );
 }
+
+/** hover 浮现的动作按钮样式：默认隐藏 + 右移 1 格，行 hover 或按钮/行内聚焦时回到原位。 */
+const ACTION_REVEAL_CLASS =
+  'translate-x-1 opacity-0 transition-[opacity,transform] duration-140 ease-out group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:translate-x-0 group-focus-within:opacity-100 focus-visible:translate-x-0 focus-visible:opacity-100';

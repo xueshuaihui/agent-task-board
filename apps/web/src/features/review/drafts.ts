@@ -59,5 +59,7 @@ export function clampField(value: string): { value: string; truncated: boolean }
 
 /** 本地必填校验：只挡空值，枚举与长度交服务端（原型 5.3「校验」行）。 */
 export function missingRequiredFields(draft: ReviewDraft): RequiredField[] {
+  // 4.3：通过（APPROVE）时三字段为选填，可直接提交；驳回才强制必填（保持原逻辑）。
+  if (draft.conclusion === 'APPROVE') return [];
   return REQUIRED_FIELDS.filter((key) => draft[key].trim().length === 0);
 }

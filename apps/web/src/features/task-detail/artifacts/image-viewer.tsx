@@ -55,54 +55,64 @@ export function ImageViewer({ artifactId, name }: { artifactId: string; name: st
 
   return (
     <div className="flex min-h-0 flex-col gap-2">
-      <div className="atb-scroll flex max-h-[52vh] min-h-[200px] items-start justify-center overflow-auto rounded-card border border-border bg-bg-muted p-2">
-        <img
-          src={url}
-          alt={name}
-          onError={onError}
-          style={
-            actual
-              ? { maxWidth: 'none', transform: `scale(${scale})`, transformOrigin: 'top left' }
-              : { maxWidth: '100%', transform: `scale(${scale})`, transformOrigin: 'top center' }
-          }
-          className="rounded-tag bg-bg-surface object-contain shadow-card"
-        />
-      </div>
-      <div className="flex items-center gap-2">
-        <Button
-          size="sm"
-          onClick={() => setScale((value) => Math.max(MIN_SCALE, Number((value - 0.25).toFixed(2))))}
-        >
-          −
-        </Button>
-        <span className="w-12 text-center font-mono text-aux text-text-secondary">{percent}%</span>
-        <Button
-          size="sm"
-          onClick={() => setScale((value) => Math.min(MAX_SCALE, Number((value + 0.25).toFixed(2))))}
-        >
-          +
-        </Button>
-        <Button
-          size="sm"
-          variant={actual ? 'default' : 'subtle'}
-          icon={<Maximize className="size-3.5" />}
-          onClick={() => {
-            setActual(true);
-            setScale(1);
-          }}
-        >
-          原始大小
-        </Button>
-        <Button
-          size="sm"
-          variant={actual ? 'subtle' : 'default'}
-          onClick={() => {
-            setActual(false);
-            setScale(FIT_SCALE);
-          }}
-        >
-          适应窗口
-        </Button>
+      {/* 缩放工具栏悬浮在预览区底部的胶囊里（DESIGN §4）：外层 relative 定位，
+          胶囊 absolute 盖在滚动框上，图片在框内滚动时工具栏不动。 */}
+      <div className="relative">
+        <div className="atb-scroll flex max-h-[52vh] min-h-[200px] items-start justify-center overflow-auto rounded-card border border-border bg-bg-muted p-2">
+          <img
+            src={url}
+            alt={name}
+            onError={onError}
+            style={
+              actual
+                ? { maxWidth: 'none', transform: `scale(${scale})`, transformOrigin: 'top left' }
+                : { maxWidth: '100%', transform: `scale(${scale})`, transformOrigin: 'top center' }
+            }
+            className="rounded-tag bg-bg-surface object-contain shadow-card"
+          />
+        </div>
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-3">
+          <div className="pointer-events-auto flex items-center gap-1.5 rounded-badge border border-border bg-bg-surface px-2.5 py-1.5 shadow-pop">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setScale((value) => Math.max(MIN_SCALE, Number((value - 0.25).toFixed(2))))}
+            >
+              −
+            </Button>
+            <span className="w-12 text-center font-mono text-aux tabular-nums text-text-secondary">
+              {percent}%
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setScale((value) => Math.min(MAX_SCALE, Number((value + 0.25).toFixed(2))))}
+            >
+              +
+            </Button>
+            <Button
+              size="sm"
+              variant={actual ? 'default' : 'subtle'}
+              icon={<Maximize className="size-3.5" />}
+              onClick={() => {
+                setActual(true);
+                setScale(1);
+              }}
+            >
+              原始大小
+            </Button>
+            <Button
+              size="sm"
+              variant={actual ? 'subtle' : 'default'}
+              onClick={() => {
+                setActual(false);
+                setScale(FIT_SCALE);
+              }}
+            >
+              适应窗口
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

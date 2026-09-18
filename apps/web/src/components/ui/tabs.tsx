@@ -1,5 +1,8 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
+import * as TabsPrimitive from '@radix-ui/react-tabs';
+import { motion, useReducedMotion } from 'motion/react';
 import { cn } from '@/lib/cn';
+import { springs } from '@/lib/motion';
 
 export interface TabItem {
   value: string;
@@ -22,6 +25,12 @@ export interface TabsProps {
   ariaLabel?: string;
 }
 
+/**
+ * Tabs（DESIGN.md §2）：Radix Tabs 提供方向键/roving focus/aria，motion
+ * `layoutId` 做滑动指示器——segmented 滑动胶囊（primary-light 底）、underline
+ * 滑动 2px 下划线，切换时指示器用 springs.gentle 滑过去。layoutId 按实例生成，
+ * 避免同屏多个 Tabs 互相串场。
+ */
 export function Tabs({
   value,
   onChange,
@@ -30,64 +39,74 @@ export function Tabs({
   className,
   ariaLabel,
 }: TabsProps) {
-  if (variant === 'underline') {
-    return (
-      <div
-        role="tablist"
-        aria-label={ariaLabel}
-        className={cn('flex items-center gap-6 border-b border-border px-5', className)}
-      >
-        {items.map((item) => (
-          <button
-            key={item.value}
-            role="tab"
-            type="button"
-            aria-selected={item.value === value}
-            disabled={item.disabled}
-            onClick={() => onChange(item.value)}
-            className={cn(
-              '-mb-px flex h-11 items-center gap-1 border-b-2 text-nav transition-colors duration-120 ease-out',
-              item.value === value
-                ? 'border-primary text-text-primary'
-                : 'border-transparent text-text-secondary hover:text-text-primary',
-              item.disabled && 'cursor-not-allowed opacity-50',
-            )}
-          >
-            {item.label}
-            {item.count !== undefined ? <CountBadge count={item.count} muted /> : null}
-          </button>
-        ))}
-      </div>
-    );
-  }
+  const indicatorId = useId();
+  const reduceMotion = useReducedMotion();
+  const indicatorTransition = reduceMotion ? { duration: 0 } : springs.gentle;
 
   return (
-    <div
-      role="tablist"
-      aria-label={ariaLabel}
-      className={cn('inline-flex h-8 items-center gap-1 rounded-control bg-bg-muted p-1', className)}
-    >
-      {items.map((item) => (
-        <button
-          key={item.value}
-          role="tab"
-          type="button"
-          aria-selected={item.value === value}
-          disabled={item.disabled}
-          onClick={() => onChange(item.value)}
-          className={cn(
-            'flex h-6 items-center gap-1 rounded-[4px] px-2 text-aux transition-colors duration-120 ease-out',
-            item.value === value
-              ? 'bg-bg-surface text-primary shadow-card'
-              : 'text-text-secondary hover:text-text-primary',
-            item.disabled && 'cursor-not-allowed opacity-50',
-          )}
-        >
-          {item.label}
-          {item.count !== undefined ? <CountBadge count={item.count} /> : null}
-        </button>
-      ))}
-    </div>
+    <TabsPrimitive.Root value={value} onValueChange={onChange} className={className}>
+      {variant === 'underline' ? (
+        <TabsPrimitive.List aria-label={ariaLabel} className="flex items-center gap-6 border-b border-border px-5">
+          {items.map((item) => {
+            const active = item.value === value;
+            return (
+              <TabsPrimitive.Trigger
+                key={item.value}
+                value={item.value}
+                disabled={item.disabled}
+                className={cn(
+                  'relative flex h-11 items-center gap-1 rounded-none text-nav outline-none transition-colors duration-120 ease-out',
+                  active ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary',
+                  item.disabled && 'cursor-not-allowed opacity-50',
+                )}
+              >
+                {active ? (
+                  <motion.span
+                    layoutId={indicatorId}
+                    transition={indicatorTransition}
+                    className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-primary"
+                  />
+                ) : null}
+                <span className="relative flex items-center gap-1">
+                  {item.label}
+                  {item.count !== undefined ? <CountBadge count={item.count} muted /> : null}
+                </span>
+              </TabsPrimitive.Trigger>
+            );
+          })}
+        </TabsPrimitive.List>
+      ) : (
+        <TabsPrimitive.List aria-label={ariaLabel} className="inline-flex h-8 items-center gap-1 rounded-control bg-bg-muted p-1">
+          {items.map((item) => {
+            const active = item.value === value;
+            return (
+              <TabsPrimitive.Trigger
+                key={item.value}
+                value={item.value}
+                disabled={item.disabled}
+                className={cn(
+                  'relative flex h-6 items-center gap-1 rounded-[4px] px-2 text-aux outline-none transition-colors duration-120 ease-out',
+                  active ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary',
+                  item.disabled && 'cursor-not-allowed opacity-50',
+                )}
+              >
+                {active ? (
+                  <motion.span
+                    layoutId={indicatorId}
+                    transition={indicatorTransition}
+                    className="absolute inset-0 rounded-[4px] bg-primary-light"
+                  />
+                ) : null}
+                <span className="relative flex items-center gap-1">
+                  {item.label}
+                  {item.count !== undefined ? <CountBadge count={item.count} /> : null}
+                </span>
+              </TabsPrimitive.Trigger>
+            );
+          })}
+        </TabsPrimitive.List>
+      )}
+    </TabsPrimitive.Root>
   );
 }
 
@@ -95,7 +114,7 @@ function CountBadge({ count, muted }: { count: number; muted?: boolean }) {
   return (
     <span
       className={cn(
-        'min-w-[18px] rounded-badge px-1.5 py-px text-center text-badge',
+        'min-w-[18px] rounded-badge px-1.5 py-px text-center text-badge tabular-nums',
         muted ? 'bg-bg-muted text-text-secondary' : 'bg-bg-surface text-text-secondary',
       )}
     >

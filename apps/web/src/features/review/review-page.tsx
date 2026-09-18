@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, ListChecks } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, ListChecks } from 'lucide-react';
 import { errorMessage, useAudit, useTaskList } from '@/api';
 import type { AuditEntry, ListSortField, TaskListItem, TaskListQuery } from '@/api/types';
 import { navigate } from '@/app/router';
@@ -15,15 +16,11 @@ import {
   Pagination,
   Skeleton,
   StatusDot,
-  Table,
-  TBody,
-  TD,
-  TH,
-  THead,
   Tooltip,
-  TR,
   Tabs,
 } from '@/components/ui';
+import { cn } from '@/lib/cn';
+import { itemVariants, listVariants, springs } from '@/lib/motion';
 import { REVIEW_CONCLUSION_LABEL, labelOf, priorityText, statusLabel } from '@/lib/labels';
 import { formatRelative } from '@/lib/time';
 import { useIsFlashed } from '@/app/store/flash';
@@ -60,6 +57,9 @@ export function ReviewPage() {
     order: 'desc',
   });
   const [historyPage, setHistoryPage] = useState(1);
+
+  /** DESIGN §1.6：尊重系统「减少动态效果」——布局/入场动画整体关掉，信息呈现不变。 */
+  const reduceMotion = useReducedMotion() ?? false;
 
   const params = useMemo<TaskListQuery>(
     () => ({
@@ -172,29 +172,29 @@ export function ReviewPage() {
                 description="Agent 完成执行回写后，任务会进入这一列并出现在这里。"
               />
             ) : (
-              <Table>
-                <THead>
-                  <TH className="w-[90px]" sortField="id" sort={sort} onSort={onSort}>
-                    ID
-                  </TH>
-                  <TH className="min-w-[240px]">标题</TH>
-                  <TH className="w-[88px]">类型</TH>
-                  <TH className="w-[64px]" sortField="priority" sort={sort} onSort={onSort}>
-                    优先级
-                  </TH>
-                  <TH className="w-[104px]">Agent</TH>
-                  <TH className="w-[72px]">时长</TH>
-                  <TH className="w-[104px]" sortField="updated_at" sort={sort} onSort={onSort}>
-                    更新时间
-                  </TH>
-                  <TH className="w-[132px]">操作</TH>
-                </THead>
-                <TBody>
-                  {rows.map((row) => (
-                    <PendingRow key={row.id} row={row} />
+              <>
+                {/*
+                 * DESIGN §4 审核：队列改成卡片列表（原表格的实现注释见文件头，排序能力保留，
+                 * 从表头按钮迁到卡片上方的排序条）；卡片入场 stagger + 队列变化时 layout 滑动。
+                 */}
+                <div className="flex flex-wrap items-center gap-1 px-4 pt-3 text-aux text-text-secondary">
+                  {QUEUE_SORTS.map((item) => (
+                    <SortButton key={item.field} {...item} sort={sort} onSort={onSort} />
                   ))}
-                </TBody>
-              </Table>
+                </div>
+                <motion.ul
+                  variants={reduceMotion ? undefined : listVariants}
+                  initial={reduceMotion ? false : 'hidden'}
+                  animate={reduceMotion ? undefined : 'show'}
+                  className="flex flex-col gap-2 px-4 pb-1"
+                >
+                  <AnimatePresence>
+                    {rows.map((row) => (
+                      <PendingRow key={row.id} row={row} reduced={reduceMotion} />
+                    ))}
+                  </AnimatePresence>
+                </motion.ul>
+              </>
             )}
             <Pagination
               className="px-4"
@@ -260,49 +260,100 @@ export function ReviewPage() {
 
 /* ------------------------------------------------------------------ 行组件 */
 
-function PendingRow({ row }: { row: TaskListItem }) {
+/** 队列卡片沿用原表格的三个可排序字段（id / priority / updated_at），交互口径不变。 */
+const QUEUE_SORTS: readonly { field: ListSortField; label: string }[] = [
+  { field: 'id', label: 'ID' },
+  { field: 'priority', label: '优先级' },
+  { field: 'updated_at', label: '更新时间' },
+];
+
+function SortButton({
+  field,
+  label,
+  sort,
+  onSort,
+}: {
+  field: ListSortField;
+  label: string;
+  sort: { field: ListSortField; order: 'asc' | 'desc' };
+  onSort: (field: ListSortField) => void;
+}) {
+  const active = sort.field === field;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(field)}
+      className={cn(
+        'inline-flex items-center gap-1 rounded-control px-1.5 py-1 hover:text-text-primary',
+        active && 'text-text-primary',
+      )}
+    >
+      {label}
+      {active ? (
+        sort.order === 'asc' ? (
+          <ArrowUp className="size-3 text-primary" aria-hidden />
+        ) : (
+          <ArrowDown className="size-3 text-primary" aria-hidden />
+        )
+      ) : (
+        <ArrowUpDown className="size-3 text-text-tertiary" aria-hidden />
+      )}
+    </button>
+  );
+}
+
+/**
+ * DESIGN §4 审核：待审核队列卡片。原表格行的全部信息与交互原样保留
+ * （整卡点击开抽屉、操作区 stopPropagation、审核按钮、回写提示点、状态闪烁），
+ * 外层换成 motion.li：入场 stagger、队列变化时 layout 滑动、离场淡出。
+ */
+function PendingRow({ row, reduced }: { row: TaskListItem; reduced: boolean }) {
   const flashed = useIsFlashed(row.id);
   return (
-    <TR
-      className={flashed ? 'animate-status-flash' : undefined}
-      onClick={() => useShellStore.getState().openTask(row.id)}
+    <motion.li
+      layout={!reduced}
+      transition={springs.gentle}
+      variants={reduced ? undefined : itemVariants}
+      initial={reduced ? false : 'hidden'}
+      exit={reduced ? undefined : { opacity: 0, transition: { duration: 0.15 } }}
+      className="list-none"
     >
-      <TD className="w-[90px]">
-        <IdCell id={row.id} />
-      </TD>
-      <TD>
-        <TitleCell row={row} />
-      </TD>
-      <TD className="w-[88px]">
-        <TypeCell row={row} />
-      </TD>
-      <TD className="w-[64px]">
-        <PriorityCell priority={row.priority} />
-      </TD>
-      <TD className="w-[104px]">
-        <AgentCell row={row} />
-      </TD>
-      <TD className="w-[72px]">
-        <DurationCell ms={row.duration_ms} />
-      </TD>
-      <TD className="w-[104px]">
-        <UpdatedCell value={row.updated_at} />
-      </TD>
-      <TD className="w-[132px]">
-        <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
-          <Button
-            size="sm"
-            variant="primary"
-            onClick={() => useShellStore.getState().openReview(row.id)}
-          >
-            审核
-          </Button>
-          <Tooltip content={`第 ${row.run_count} 次执行回写待判`}>
-            <StatusDot className="bg-status-review" />
-          </Tooltip>
+      <div
+        className={cn(
+          'cursor-pointer rounded-card border border-border bg-bg-surface shadow-card',
+          'transition-[transform,box-shadow,border-color] duration-140 ease-out',
+          'hover:-translate-y-0.5 hover:border-border-strong hover:shadow-card-hover',
+          flashed && 'animate-status-flash',
+        )}
+        onClick={() => useShellStore.getState().openTask(row.id)}
+      >
+        <div className="flex items-center gap-2 px-3 pt-2.5">
+          <IdCell id={row.id} />
+          <div className="min-w-0 flex-1">
+            <TitleCell row={row} />
+          </div>
+          <UpdatedCell value={row.updated_at} />
+          <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => useShellStore.getState().openReview(row.id)}
+            >
+              审核
+            </Button>
+            <Tooltip content={`第 ${row.run_count} 次执行回写待判`}>
+              <StatusDot className="bg-status-review" />
+            </Tooltip>
+          </div>
         </div>
-      </TD>
-    </TR>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 px-3 pb-2.5 pt-1">
+          <TypeCell row={row} />
+          <PriorityCell priority={row.priority} />
+          <AgentCell row={row} />
+          <DurationCell ms={row.duration_ms} />
+        </div>
+      </div>
+    </motion.li>
   );
 }
 

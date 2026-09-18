@@ -24,7 +24,12 @@ export function Card({ className, hoverable, children, ...rest }: CardProps) {
 
 export function CardHeader({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <div className={cn('flex h-11 items-center gap-2 border-b border-border px-4', className)}>
+    <div
+      className={cn(
+        'flex h-11 items-center gap-2 border-b border-border px-4 text-section-title text-text-primary',
+        className,
+      )}
+    >
       {children}
     </div>
   );

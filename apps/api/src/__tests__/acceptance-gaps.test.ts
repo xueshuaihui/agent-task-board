@@ -76,6 +76,14 @@ describe('验收 8：审核三字段必填', () => {
     // 上面这些 422 一个都没动过任务状态。
     expect((await ui.get(`${API}/tasks/${id}`)).body.status).toBe('REVIEW');
   });
+
+  it('通过（APPROVE）时三字段为选填，留空也能直接进已完成', async () => {
+    const id = await newTask(t, { title: '通过可不填意见' });
+    await toReviewKey(id);
+    const res = await review(t, id, { conclusion: 'APPROVE', suggestion: '', reason: '', detail: '' });
+    expect(res.status, `通过留空应被放行，实际 ${res.status} ${JSON.stringify(res.body)}`).toBe(201);
+    expect(res.body.status).toBe('DONE');
+  });
 });
 
 describe('验收 16：必填自定义字段卡住「拖到待执行」', () => {

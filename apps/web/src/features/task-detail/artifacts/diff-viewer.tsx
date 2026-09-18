@@ -104,13 +104,16 @@ export function DiffViewer({ artifactId, collapseAfterLines }: DiffViewerProps) 
       </ul>
 
       <div className="min-w-0 flex-1">
-        <div className="mb-1 flex items-baseline gap-2">
-          <span className="min-w-0 flex-1 truncate font-mono text-code text-text-primary" title={active.path}>
-            {active.path}
-          </span>
-          <span className="shrink-0 text-aux text-text-tertiary">
-            {active.additions}+ / {active.deletions}-
-          </span>
+        {/* 路径头：悬浮胶囊样式（rounded-badge + bg-surface + shadow-pop，DESIGN §4）。 */}
+        <div className="mb-2 flex">
+          <div className="flex min-w-0 max-w-full items-baseline gap-2 rounded-badge border border-border bg-bg-surface px-3 py-1 shadow-pop">
+            <span className="min-w-0 truncate font-mono text-code text-text-primary" title={active.path}>
+              {active.path}
+            </span>
+            <span className="shrink-0 text-aux tabular-nums text-text-tertiary">
+              {active.additions}+ / {active.deletions}-
+            </span>
+          </div>
         </div>
         {query.data?.truncated ? (
           <p className="mb-1 text-aux text-status-failed">文件超过预览上限，只解析了前一部分。</p>
@@ -120,53 +123,58 @@ export function DiffViewer({ artifactId, collapseAfterLines }: DiffViewerProps) 
             {query.data.unparsed_lines} 行无法解析为 diff 片段，按原文未显示。
           </p>
         ) : null}
-        <div className="atb-scroll max-h-[52vh] overflow-auto rounded-card border border-border bg-bg-surface">
-          {active.binary ? (
-            <p className="px-3 py-2 text-aux text-text-tertiary">二进制文件，无文本差异可显示。</p>
-          ) : (
-            visibleHunks.map((hunk, hunkIndex) => (
-              <div key={`${hunk.header}-${hunkIndex}`}>
-                <p className="bg-bg-muted px-3 py-1 font-mono text-code text-text-secondary">
-                  {hunk.header}
-                </p>
-                {hunk.lines.map((line, lineIndex) => (
-                  <div
-                    key={`${line.old_line ?? 'n'}-${line.new_line ?? 'n'}-${lineIndex}`}
-                    className={cn('flex items-start font-mono text-code leading-5', LINE_CLASS[line.type])}
-                  >
-                    <span className="w-10 shrink-0 select-none pr-1 text-right text-text-tertiary">
-                      {line.old_line ?? ''}
-                    </span>
-                    <span className="w-10 shrink-0 select-none border-r border-border pr-1 text-right text-text-tertiary">
-                      {line.new_line ?? ''}
-                    </span>
-                    <span className="min-w-0 flex-1 whitespace-pre px-2 text-text-primary" data-selectable>
-                      {line.text}
-                    </span>
-                  </div>
-                ))}
+        {/* 折叠控件悬浮在滚动框底部（DESIGN §4 悬浮胶囊）：胶囊盖在内容上，
+            折叠/展开都留在视线里，不跟内容滚走——与原「按钮放滚动框外面」同一意图。 */}
+        <div className="relative">
+          <div className="atb-scroll max-h-[52vh] overflow-auto rounded-card border border-border bg-bg-surface">
+            {active.binary ? (
+              <p className="px-3 py-2 text-aux text-text-tertiary">二进制文件，无文本差异可显示。</p>
+            ) : (
+              visibleHunks.map((hunk, hunkIndex) => (
+                <div key={`${hunk.header}-${hunkIndex}`}>
+                  <p className="bg-bg-muted px-3 py-1 font-mono text-code text-text-secondary">
+                    {hunk.header}
+                  </p>
+                  {hunk.lines.map((line, lineIndex) => (
+                    <div
+                      key={`${line.old_line ?? 'n'}-${line.new_line ?? 'n'}-${lineIndex}`}
+                      className={cn('flex items-start font-mono text-code leading-5', LINE_CLASS[line.type])}
+                    >
+                      <span className="w-10 shrink-0 select-none pr-1 text-right text-text-tertiary">
+                        {line.old_line ?? ''}
+                      </span>
+                      <span className="w-10 shrink-0 select-none border-r border-border pr-1 text-right text-text-tertiary">
+                        {line.new_line ?? ''}
+                      </span>
+                      <span className="min-w-0 flex-1 whitespace-pre px-2 text-text-primary" data-selectable>
+                        {line.text}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ))
+            )}
+          </div>
+          {limit === null ? null : (
+            <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-3">
+              <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-badge border border-border bg-bg-surface px-3 py-1 shadow-pop">
+                {/* 折叠时框内只有前 N 行，这条控制要一直可见，不能滚走。 */}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setExpandedKey(expanded ? null : activeKey)}
+                >
+                  {expanded ? '收起' : '展开全部'}
+                </Button>
+                <span className="min-w-0 truncate text-aux text-text-tertiary">
+                  {expanded
+                    ? `共 ${totalLines} 行，已显示全部`
+                    : `已折叠 ${hiddenLines} 行（共 ${totalLines} 行，先显示前 ${limit} 行）`}
+                </span>
               </div>
-            ))
+            </div>
           )}
         </div>
-        {limit === null ? null : (
-          <div className="mt-1 flex items-center gap-2">
-            {/* 按钮放在滚动框**外面**：折叠时框内只有前 N 行，展开后要把这条控制留在视线里，
-                不能让它跟着内容滚走。 */}
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setExpandedKey(expanded ? null : activeKey)}
-            >
-              {expanded ? '收起' : '展开全部'}
-            </Button>
-            <span className="min-w-0 flex-1 text-aux text-text-tertiary">
-              {expanded
-                ? `共 ${totalLines} 行，已显示全部`
-                : `已折叠 ${hiddenLines} 行（共 ${totalLines} 行，先显示前 ${limit} 行）`}
-            </span>
-          </div>
-        )}
       </div>
     </div>
   );

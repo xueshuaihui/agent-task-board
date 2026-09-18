@@ -1,4 +1,5 @@
 import { useEffect, type ComponentType } from 'react';
+import { AnimatePresence } from 'motion/react';
 import { useSettings } from '@/api';
 import { BoardPage } from '@/features/board';
 import { ReviewPage } from '@/features/review';
@@ -9,6 +10,7 @@ import { useWSWarning } from '@/ws';
 import type { RouteName } from './router';
 import { useRoute } from './router';
 import { OverlaySlot } from './overlay-slot';
+import { PageTransition } from './page-transition';
 import { TopBar } from './top-bar';
 
 /**
@@ -34,8 +36,8 @@ const PAGES: Record<RouteName, ComponentType> = {
  *
  * 走 `useSettings()` 而不是另发一次请求：key 与设置页共用 `qk.settings()`，于是启动时应用一次、
  * 此后任何失效重取都再应用一次，通用 Tab 那侧不需要自己接（`useSettingsWriter` 写成功后会更新同一份缓存）。
- * 阶段一没有深色色板（原型 v1.1 的 1.1 只给浅色一套），这里只把存值送进 DOM、不发明深色 token：
- * 选「深色」照样存得下、界面仍是浅色，与通用 Tab 那行提示一致。
+ * 深色色板在 globals.css 的 `[data-ui-theme="dark"]` 块（DESIGN.md §1.1），选「深色」即整体换肤；
+ * 顶栏三态切换也走同一条链（乐观 applyUiTheme + PATCH 失效本查询）。
  */
 function useUiThemeSync(): void {
   const settings = useSettings();
@@ -64,7 +66,11 @@ export function AppShell() {
         </div>
       ) : null}
       <main className="atb-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6">
-        <Page />
+        <AnimatePresence mode="wait">
+          <PageTransition key={route.key}>
+            <Page />
+          </PageTransition>
+        </AnimatePresence>
       </main>
       <OverlaySlot />
     </div>

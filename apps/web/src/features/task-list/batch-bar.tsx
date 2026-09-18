@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Archive, Tag, X } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 import { api, qk, useApiMutation, useTags } from '@/api';
 import type { BatchResult, TaskListItem, TaskStatus } from '@/api/types';
+import { springs, transitions } from '@/lib/motion';
 import {
   Badge,
   Button,
@@ -73,6 +75,7 @@ export function BatchBar({ rows, onKeep }: BatchBarProps) {
   const [outcome, setOutcome] = useState<BatchOutcome | null>(null);
   const [tagsOpen, setTagsOpen] = useState(false);
   const tooMany = ids.length > BATCH_MAX;
+  const reducedMotion = useReducedMotion();
 
   const run = useApiMutation<BatchVars, BatchResult>((vars) => vars.send(), {
     // 批量写动的是一堆任务，只能整片失效：看板 + 列表（`qk.tasksRoot` 盖住本页与审核页的表格）。
@@ -102,10 +105,27 @@ export function BatchBar({ rows, onKeep }: BatchBarProps) {
   }));
 
   return (
-    <div className="flex flex-wrap items-center gap-2 border-t border-border bg-bg-muted px-4 py-2">
-      <span className="text-aux text-text-primary">
-        已选 <span className="font-mono">{ids.length}</span> 项
-      </span>
+    /* DESIGN §4：底部浮动胶囊条——fixed 居中不占文档流，胶囊本体吃点击、外层放行。 */
+    <div className="pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-6">
+      <motion.div
+        initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 16, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={reducedMotion ? { duration: 0 } : transitions.overlay}
+        className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-badge border border-border bg-bg-surface py-2 pl-4 pr-2 shadow-pop"
+      >
+        <span className="text-aux text-text-primary">
+          已选{' '}
+          <motion.span
+            key={ids.length}
+            initial={reducedMotion ? false : { scale: 0.6 }}
+            animate={{ scale: 1 }}
+            transition={springs.pop}
+            className="inline-block font-mono tabular-nums"
+          >
+            {ids.length}
+          </motion.span>{' '}
+          项
+        </span>
       {tooMany ? (
         <Tooltip content={`服务端单次最多 ${BATCH_MAX} 条，请分批处理`}>
           <Badge tone="outline" className="border-status-failed text-status-failed">
@@ -159,6 +179,7 @@ export function BatchBar({ rows, onKeep }: BatchBarProps) {
           清除选择
         </Button>
       </div>
+      </motion.div>
 
       <TagsDialog
         open={tagsOpen}

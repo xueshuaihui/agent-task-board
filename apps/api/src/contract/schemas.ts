@@ -103,16 +103,28 @@ export type TransitionInput = z.infer<typeof transitionSchema>;
 export const reviewSchema = z
   .object({
     conclusion: z.enum(REVIEW_CONCLUSIONS),
-    suggestion: z.string().trim().min(1).max(5000),
-    reason: z.string().trim().min(1).max(5000),
-    detail: z.string().trim().min(1).max(5000),
+    /**
+     * 4.3：三字段对 APPROVE 为选填（可直接通过、拖到已完成），故基础 schema 不卡 min(1)；
+     * REJECT 的必填由下方 superRefine 兜底，避免「通过也要写意见」误伤。
+     */
+    suggestion: z.string().trim().max(5000).optional(),
+    reason: z.string().trim().max(5000).optional(),
+    detail: z.string().trim().max(5000).optional(),
     return_to: z.enum(RETURN_TARGETS).optional(),
     priority_adj: prioritySchema.optional(),
     run_id: idParam.optional(),
   })
   .superRefine((value, ctx) => {
-    if (value.conclusion === 'REJECT' && !value.return_to) {
-      ctx.addIssue({ code: 'custom', path: ['return_to'], message: '驳回必须指定退回目标' });
+    if (value.conclusion === 'REJECT') {
+      if (!value.return_to) {
+        ctx.addIssue({ code: 'custom', path: ['return_to'], message: '驳回必须指定退回目标' });
+      }
+      for (const field of ['suggestion', 'reason', 'detail'] as const) {
+        const text = value[field];
+        if (!text || text.trim().length === 0) {
+          ctx.addIssue({ code: 'custom', path: [field], message: '驳回必须填写该字段' });
+        }
+      }
     }
     if (value.conclusion === 'APPROVE' && value.return_to) {
       ctx.addIssue({ code: 'custom', path: ['return_to'], message: '通过时不应有退回目标' });

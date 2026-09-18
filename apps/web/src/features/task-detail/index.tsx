@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { TaskDetail, TaskTab } from '@/api';
 import { useSettings } from '@/api';
 import { Button, Drawer, Tabs, type TabItem } from '@/components/ui';
+import { transitions } from '@/lib/motion';
 import { pickAction, type TaskAction } from './actions';
 import { DrawerMetaRow, DrawerTabRow, DrawerTitle } from './drawer-header';
 import { DRAWER_TABS, TAB_LABELS, TABS_WITH_COUNT } from './labels';
@@ -60,6 +62,7 @@ function DrawerBody({ detail, onClose }: { detail: TaskDetail; onClose: () => vo
   const commentCount = useTaskCommentCount(detail.id);
   const actions = useDrawerActions({ detail, onJumpToLogs: () => setTab('runs') });
   const maxMb = settings.data?.artifact_max_mb ?? 20;
+  const reducedMotion = useReducedMotion();
 
   const items: TabItem[] = DRAWER_TABS.map((value) => {
     const count = countFor(value, detail.run_count, commentCount.data?.total ?? 0);
@@ -92,12 +95,24 @@ function DrawerBody({ detail, onClose }: { detail: TaskDetail; onClose: () => vo
       }
       footer={<FooterBar actions={actions} />}
     >
-      {tab === 'overview' ? <OverviewTab taskId={detail.id} detail={detail} onGoToTab={setTab} /> : null}
-      {tab === 'runs' ? <RunsTab taskId={detail.id} detail={detail} maxMb={maxMb} /> : null}
-      {tab === 'reviews' ? <ReviewsTab taskId={detail.id} /> : null}
-      {tab === 'dependencies' ? <DependenciesTab taskId={detail.id} /> : null}
-      {tab === 'comments' ? <CommentsTab taskId={detail.id} /> : null}
-      {tab === 'audit' ? <AuditTab taskId={detail.id} /> : null}
+      {/* Tab 内容切换淡入（DESIGN §4 任务详情）：key = 活动页签，fade/rise；reduced-motion 只淡入。 */}
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={tab}
+          initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, transition: transitions.fade }}
+          transition={reducedMotion ? transitions.fade : transitions.rise}
+          className="min-w-0"
+        >
+          {tab === 'overview' ? <OverviewTab taskId={detail.id} detail={detail} onGoToTab={setTab} /> : null}
+          {tab === 'runs' ? <RunsTab taskId={detail.id} detail={detail} maxMb={maxMb} /> : null}
+          {tab === 'reviews' ? <ReviewsTab taskId={detail.id} /> : null}
+          {tab === 'dependencies' ? <DependenciesTab taskId={detail.id} /> : null}
+          {tab === 'comments' ? <CommentsTab taskId={detail.id} /> : null}
+          {tab === 'audit' ? <AuditTab taskId={detail.id} /> : null}
+        </motion.div>
+      </AnimatePresence>
       {actions.confirmNode}
     </Drawer>
   );

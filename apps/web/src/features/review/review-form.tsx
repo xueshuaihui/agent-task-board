@@ -7,6 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react';
+import { useReducedMotion, motion } from 'motion/react';
 import { FileCode2, AlertTriangle, RotateCcw } from 'lucide-react';
 import {
   api,
@@ -23,6 +24,9 @@ import type { ReviewPrefill } from '@/app/store/shell';
 import {
   Badge,
   Button,
+  Card,
+  CardBody,
+  CardHeader,
   Dialog,
   Field,
   RadioGroup,
@@ -31,9 +35,12 @@ import {
   Textarea,
   useToast,
 } from '@/components/ui';
+import { transitions } from '@/lib/motion';
 import {
   ARTIFACT_TYPE_LABEL,
   REVIEW_CONCLUSION_LABEL,
+  RUN_STATUS_LABEL,
+  TRIGGER_TYPE_LABEL,
   labelOf,
   priorityText,
   statusLabel,
@@ -43,8 +50,9 @@ import { ArtifactPreviewDialog } from '@/features/task-detail/artifacts/preview-
 import { DiffViewer } from '@/features/task-detail/artifacts/diff-viewer';
 import { downloadArtifact } from '@/features/task-detail/artifacts/use-artifact-content';
 import type { PreviewTarget } from '@/features/task-detail/types';
+import { Mono } from '@/features/task-detail/ui-bits';
 import { priorityStyle, statusStyle } from '@/lib/status-style';
-import { formatBytes, formatRelative } from '@/lib/time';
+import { formatBytes, formatDateTime, formatDuration, formatRelative } from '@/lib/time';
 import {
   EMPTY_DRAFT,
   REVIEW_FIELD_MAX,
@@ -101,6 +109,8 @@ function ReviewFormBody({
   const runs = useTaskRuns(taskId);
   const reviews = useTaskReviews(taskId);
   const settings = useSettings();
+  /** DESIGN §1.6：系统开启「减少动态效果」时退回字段不做位移入场。 */
+  const reduceMotion = useReducedMotion();
 
   const [draft, setDraft] = useState<ReviewDraft>(() =>
     applyPrefill(readDraft(taskId) ?? EMPTY_DRAFT, prefill),
@@ -284,8 +294,9 @@ function ReviewFormBody({
             {banner ? null : '⌘ / Ctrl + Enter 提交'}
           </span>
           <Button onClick={onClose}>取消</Button>
+          {/* DESIGN §4 审核：结论即强调——通过走 primary 渐变，驳回切换 outlineDanger 描红。 */}
           <Button
-            variant="primary"
+            variant={draft.conclusion === 'REJECT' ? 'outlineDanger' : 'primary'}
             loading={submit.isPending}
             disabled={offQueue}
             onClick={onSubmit}
@@ -315,50 +326,100 @@ function ReviewFormBody({
           />
         ) : null}
 
-        <Section title="任务信息">
-          {overview.isPending ? (
-            <p className="text-aux text-text-tertiary">加载中…</p>
-          ) : task ? (
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-code text-text-secondary" data-selectable>
-                  {task.id}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-card-title text-text-primary">
-                  {task.title}
-                </span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 text-aux text-text-secondary">
-                <Badge tone="neutral">{task.type}</Badge>
-                <Badge className={priorityStyle(task.priority).soft}>
-                  {priorityText(task.priority)}
-                </Badge>
-                <Badge className="flex items-center gap-1">
-                  <StatusDot className={statusStyle(status).dot} />
-                  {task.status_label || statusLabel(status)}
-                </Badge>
-                {task.tags.map((tag) => (
-                  <Badge key={tag} tone="outline">
-                    {tag}
+        {/* DESIGN §4 审核：表单顶部摘要头卡片——任务元信息 + 本次执行摘要收进同一张卡，
+            状态徽标升到卡头右侧；文案与加载/错误分支保持原样。 */}
+        <Card>
+          <CardHeader className="justify-between text-card-title">
+            <span className="text-card-title text-text-primary">任务信息</span>
+            {task ? (
+              <Badge className="flex items-center gap-1">
+                <StatusDot className={statusStyle(status).dot} />
+                {task.status_label || statusLabel(status)}
+              </Badge>
+            ) : null}
+          </CardHeader>
+          <CardBody className="flex flex-col gap-2">
+            {overview.isPending ? (
+              <p className="text-aux text-text-tertiary">加载中…</p>
+            ) : task ? (
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-code text-text-secondary" data-selectable>
+                    {task.id}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-card-title text-text-primary">
+                    {task.title}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-aux text-text-secondary">
+                  <Badge tone="neutral">{task.type}</Badge>
+                  <Badge className={priorityStyle(task.priority).soft}>
+                    {priorityText(task.priority)}
                   </Badge>
-                ))}
-                <span>第 {task.run_count} 次执行</span>
-                {run?.agent_name ? <span>Agent：{run.agent_name}</span> : null}
+                  {task.tags.map((tag) => (
+                    <Badge key={tag} tone="outline">
+                      {tag}
+                    </Badge>
+                  ))}
+                  <span>第 {task.run_count} 次执行</span>
+                  {run?.agent_name ? <span>Agent：{run.agent_name}</span> : null}
+                </div>
               </div>
-            </div>
-          ) : (
-            <p className="text-aux text-status-failed">{errorMessage(overview.error)}</p>
-          )}
-        </Section>
-
-        <Section title="执行摘要">
-          <p className="whitespace-pre-wrap rounded-control bg-bg-muted px-3 py-2 text-body text-text-primary" data-selectable>
-            {run?.summary || '本次执行未留下摘要（Agent 侧约定把结论写进 complete_task 的 summary）'}
-          </p>
-          {runs.isError ? (
-            <p className="mt-2 text-aux text-status-failed">{errorMessage(runs.error)}</p>
-          ) : null}
-        </Section>
+            ) : (
+              <p className="text-aux text-status-failed">{errorMessage(overview.error)}</p>
+            )}
+            <Section title="执行摘要">
+              {run ? (
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Mono className="shrink-0">{run.id}</Mono>
+                    <Badge tone="neutral">{run.agent_name ?? '未署名 Agent'}</Badge>
+                    <Badge className={RUN_STATUS_SOFT[run.status] ?? ''}>
+                      {labelOf(RUN_STATUS_LABEL, run.status)}
+                    </Badge>
+                    <span className="text-aux text-text-tertiary">
+                      {formatDateTime(run.started_at)}
+                      {run.finished_at ? ` – ${formatDateTime(run.finished_at)}` : ''}
+                    </span>
+                    {run.duration_ms != null ? (
+                      <span className="text-aux text-text-tertiary">耗时 {formatDuration(run.duration_ms)}</span>
+                    ) : null}
+                  </div>
+                  <p className="text-aux text-text-tertiary">
+                    触发方式：{labelOf(TRIGGER_TYPE_LABEL, run.trigger_type)} · 日志 {run.log_count} 条
+                    {run.artifacts.length > 0 ? ` · 产物 ${run.artifacts.length} 个` : ''}
+                    {run.run_number ? ` · 第 ${run.run_number} 次执行` : ''}
+                  </p>
+                  <div className="rounded-control bg-bg-muted px-3 py-2">
+                    {run.summary ? (
+                      <p className="whitespace-pre-wrap text-body text-text-primary" data-selectable>
+                        {run.summary}
+                      </p>
+                    ) : (
+                      <p className="text-body text-text-tertiary">
+                        本次执行未留下摘要（Agent 侧约定把结论写进 complete_task 的 summary）
+                      </p>
+                    )}
+                  </div>
+                  {run.error ? (
+                    <p className="text-body text-status-failed">失败原因：{run.error}</p>
+                  ) : null}
+                  {run.review ? (
+                    <p className="text-aux text-text-secondary">
+                      历史审核结论：{labelOf(REVIEW_CONCLUSION_LABEL, run.review.conclusion)}（
+                      {formatDateTime(run.review.created_at)}）
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-body text-text-tertiary">该任务没有可关联的执行记录（6.6）。</p>
+              )}
+              {runs.isError ? (
+                <p className="mt-2 text-aux text-status-failed">{errorMessage(runs.error)}</p>
+              ) : null}
+            </Section>
+          </CardBody>
+        </Card>
 
         {/* 原型 5.3 上半区：diff 内嵌预览 + 其他产物的动作按钮，都复用抽屉那套已建好的预览器。 */}
         {diffArtifacts.length > 0 ? (
@@ -466,7 +527,7 @@ function ReviewFormBody({
           <Field
             key={field.key}
             label={field.label}
-            required
+            required={draft.conclusion === 'REJECT'}
             htmlFor={`review-${field.key}`}
             error={localErrors[field.key] ?? serverErrors[field.key]}
             hint={
@@ -494,7 +555,12 @@ function ReviewFormBody({
         ))}
 
         {draft.conclusion === 'REJECT' ? (
-          <>
+          <motion.div
+            initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={transitions.rise}
+            className="flex flex-col gap-4"
+          >
             <Field
               label="退回目标"
               required
@@ -528,7 +594,7 @@ function ReviewFormBody({
                 />
               </div>
             </Field>
-          </>
+          </motion.div>
         ) : null}
 
         {runs.data && !run ? (
@@ -627,6 +693,14 @@ const REQUIRED_FIELDS_VIEW: readonly {
   { key: 'reason', label: '原因', rows: 2, placeholder: '为什么给出这个结论' },
   { key: 'detail', label: '详情', rows: 4, placeholder: '补充上下文：期望改哪里、缺了什么' },
 ];
+
+/** 执行摘要里 Run 状态徽标的柔和配色，与状态机语义一致（RUNNING=进行中 / SUCCESS=完成 / FAILED=失败 / ABANDONED=放弃）。 */
+const RUN_STATUS_SOFT: Record<string, string> = {
+  RUNNING: 'bg-status-running-soft text-status-running',
+  SUCCESS: 'bg-status-done-soft text-status-done',
+  FAILED: 'bg-status-failed-soft text-status-failed',
+  ABANDONED: 'bg-status-blocked-soft text-status-blocked',
+};
 
 const CONCLUSION_OPTIONS = [
   { value: 'APPROVE', label: '通过' },

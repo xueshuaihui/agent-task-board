@@ -1,72 +1,73 @@
 @import "tailwindcss";
 
 /*
- * 设计 token —— 逐条对应《高保真原型 v1.1》一、设计系统（1.1–1.6）。
- * 右侧注释即原型里的变量名/取值，改这里必须同步改原型；未列出的值一律不允许现编。
+ * 设计 token —— 2026-09 UI 改版后的唯一权威（apps/web/DESIGN.md）。
+ * 浅色为默认值，深色整套装在 `[data-ui-theme="dark"]`（lib/theme.applyUiTheme 落属性）。
+ * 改这里必须同步改 DESIGN.md；两处都没有的值不允许现编。
  *
- * 1.3 间距：原型 space-1..8 = 4/8/12/16/20/24/32px，基准 4px。Tailwind 的 spacing 刻度
- * 与之一一对应（space-N → 工具类 N，如 p-4 = 16px），所以这里只把基准从 rem 钉成 px，
- * 避免宿主改根字号时桌面窗口里的尺寸漂移。
+ * 1.3 间距：基准 4px，Tailwind 刻度即 px（p-4 = 16px），钉死 rem 避免 WebView 字号漂移。
  *
- * 1.5 组件尺寸（原型 → 用法）：
- *   顶栏 56px   → h-14      列头 44px → h-11     主按钮 32px → h-8
- *   小按钮 28px → h-7       输入框 32px → h-8    托盘项 32px → h-8
- *   抽屉 640px  → w-drawer（11.2 按窗口宽度分档） 弹窗 560px → w-dialog
+ * 1.5 组件尺寸（DESIGN.md §1.5）：
+ *   顶栏 56px → h-14    列头 44px → h-11    主按钮 32px → h-8    小按钮 28px → h-7
+ *   抽屉 640px → w-drawer（11.2 按窗口宽度分档）   弹窗 560px → w-dialog
  *
- * 1.6 动效（原型 → 工具类）：
- *   120ms ease-out → duration-120 ease-out        100ms ease-out → duration-100 ease-out
- *   200ms cubic-bezier(.2,0,0,1) → duration-200 ease-settle
- *   240ms 抽屉滑入 → animate-drawer-in             160ms 弹窗淡入 → animate-dialog-in
- *   800ms 状态变更高亮 → animate-status-flash（10.1）
+ * 1.6 动效：浮层 200ms ease-emphasis、页面过渡 240ms、状态高亮 800ms；
+ *     弹簧与过渡曲线常量在 src/lib/motion.ts（motion 侧），改两处要同步。
  */
-@theme {
-  /* —— 1.1 主色与中性色 —— */
-  --color-primary: #4f46e5; /* --primary */
-  --color-primary-hover: #4338ca; /* --primary-hover */
-  --color-primary-light: #eef2ff; /* --primary-light */
-  --color-bg-app: #f8fafc; /* --bg-app */
-  --color-bg-surface: #ffffff; /* --bg-surface */
-  --color-bg-muted: #f1f5f9; /* --bg-muted */
-  --color-border: #e2e8f0; /* --border */
-  --color-border-strong: #cbd5e1; /* --border-strong */
-  --color-text-primary: #0f172a; /* --text-primary */
-  --color-text-secondary: #64748b; /* --text-secondary */
-  --color-text-tertiary: #94a3b8; /* --text-tertiary */
-  --color-text-inverse: #ffffff; /* --text-inverse */
+@custom-variant dark (&:where([data-ui-theme=dark], [data-ui-theme=dark] *));
 
-  /* —— 1.1 状态色（主色 + 浅底）—— */
-  --color-status-backlog: #94a3b8;
-  --color-status-backlog-soft: #f1f5f9;
+@theme {
+  /* —— 1.1 中性色（冷紫灰调，表面三层：app < surface < raised）—— */
+  --color-bg-app: #f4f5fa;
+  --color-bg-surface: #ffffff;
+  --color-bg-raised: #f7f8fc;
+  --color-bg-muted: #eef0f7;
+  --color-border: #e4e7f0;
+  --color-border-strong: #cdd3e4;
+  --color-text-primary: #181b27;
+  --color-text-secondary: #5d6474;
+  --color-text-tertiary: #939cb0;
+  --color-text-inverse: #ffffff;
+
+  /* —— 1.1 主色：靛蓝→紫渐变的起点色；渐变本体走 .bg-primary-gradient 工具类 —— */
+  --color-primary: #5a51e8;
+  --color-primary-hover: #4a41d4;
+  --color-primary-light: #ecebfe;
+  --color-primary-ring: rgb(90 81 232 / 0.35);
+
+  /* —— 1.1 状态色（主色 + soft 底；soft 深色版见下方 dark 块）—— */
+  --color-status-backlog: #8a93a8;
+  --color-status-backlog-soft: #eef0f6;
   --color-status-ready: #3b82f6;
-  --color-status-ready-soft: #eff6ff;
+  --color-status-ready-soft: #e9f2fe;
   --color-status-running: #f59e0b;
-  --color-status-running-soft: #fffbeb;
+  --color-status-running-soft: #fdf3e0;
   --color-status-review: #8b5cf6;
-  --color-status-review-soft: #f5f3ff;
+  --color-status-review-soft: #f1ecfe;
   --color-status-done: #10b981;
-  --color-status-done-soft: #ecfdf5;
+  --color-status-done-soft: #e5f8f1;
   --color-status-failed: #ef4444;
-  --color-status-failed-soft: #fef2f2;
-  --color-status-blocked: #64748b;
-  --color-status-blocked-soft: #f1f5f9;
-  --color-status-pinned: #f59e0b; /* 置顶图钉 */
-  --color-status-pinned-soft: #fffbeb;
+  --color-status-failed-soft: #fdecec;
+  --color-status-blocked: #6b7280;
+  --color-status-blocked-soft: #eef0f6;
+  --color-status-pinned: #f59e0b;
+  --color-status-pinned-soft: #fdf3e0;
 
   /* —— 1.1 优先级色（主色 + 标签底）—— */
   --color-priority-0: #dc2626;
-  --color-priority-0-soft: #fef2f2;
+  --color-priority-0-soft: #fdecec;
   --color-priority-1: #ea580c;
-  --color-priority-1-soft: #fff7ed;
+  --color-priority-1-soft: #fdf0e7;
   --color-priority-2: #0891b2;
-  --color-priority-2-soft: #ecfeff;
-  --color-priority-3: #64748b;
-  --color-priority-3-soft: #f1f5f9;
+  --color-priority-2-soft: #e3f6fb;
+  --color-priority-3: #6b7280;
+  --color-priority-3-soft: #eef0f6;
 
   /* —— 1.2 字体 —— */
   --font-sans: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", monospace;
 
-  /* 字号/字重/行高一一对应 1.2 表格的行；任务 ID 与代码用 font-mono 叠加 */
+  /* 字号/字重/行高一一对应 DESIGN.md §1.2；任务 ID 与代码用 font-mono 叠加 */
   --text-page-title: 20px;
   --text-page-title--line-height: 28px;
   --text-page-title--font-weight: 600;
@@ -85,55 +86,57 @@
   --text-code: 13px;
   --text-code--line-height: 20px;
   --text-code--font-weight: 400;
-  --text-nav: 14px; /* 2.2 导航项 */
+  --text-nav: 14px;
   --text-nav--line-height: 22px;
   --text-nav--font-weight: 500;
-  --text-logo: 16px; /* 2.2 logo 文本 */
+  --text-logo: 16px;
   --text-logo--line-height: 24px;
   --text-logo--font-weight: 600;
-  --text-badge: 12px; /* 2.2 角标数字 */
+  --text-badge: 12px;
   --text-badge--line-height: 18px;
   --text-badge--font-weight: 500;
 
   /* —— 1.3 间距基准 —— */
   --spacing: 4px;
 
-  /* —— 1.4 圆角 —— */
-  --radius-card: 8px;
-  --radius-control: 6px; /* 按钮、输入框 */
-  --radius-tag: 4px;
-  --radius-drawer: 12px; /* 仅左侧两角，见 components/ui/drawer */
-  --radius-modal: 12px;
-  --radius-badge: 10px;
-  --radius-node: 8px; /* 依赖图节点（阶段二） */
+  /* —— 1.3 圆角 —— */
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --radius-tag: 6px;
+  --radius-drawer: 16px; /* 仅左侧两角，见 components/ui/drawer */
+  --radius-modal: 16px;
+  --radius-badge: 999px;
+  --radius-node: 10px;
 
-  /* —— 1.4 阴影 —— */
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04);
-  --shadow-card-hover: 0 4px 12px rgb(0 0 0 / 0.08);
-  --shadow-card-drag: 0 12px 24px rgb(79 70 229 / 0.18);
-  --shadow-drawer: -4px 0 24px rgb(0 0 0 / 0.12);
-  --shadow-modal: 0 12px 32px rgb(0 0 0 / 0.16);
-  --shadow-node: 0 1px 3px rgb(0 0 0 / 0.08);
+  /* —— 1.4 阴影（浅色套）—— */
+  --shadow-card: 0 1px 2px rgb(20 22 34 / 0.05), 0 1px 3px rgb(20 22 34 / 0.04);
+  --shadow-card-hover: 0 4px 8px -2px rgb(20 22 34 / 0.08), 0 16px 28px -8px rgb(20 22 34 / 0.1);
+  --shadow-card-drag: 0 24px 48px -12px rgb(90 81 232 / 0.35), 0 8px 16px -8px rgb(20 22 34 / 0.12);
+  --shadow-drawer: -12px 0 40px -12px rgb(20 22 34 / 0.18);
+  --shadow-modal: 0 24px 64px -16px rgb(20 22 34 / 0.22), 0 4px 12px -4px rgb(20 22 34 / 0.08);
+  --shadow-pop: 0 8px 24px -8px rgb(20 22 34 / 0.14), 0 2px 6px -2px rgb(20 22 34 / 0.06);
+  --shadow-node: 0 1px 3px rgb(20 22 34 / 0.08);
 
-  /* —— 1.5 尺寸档（原型「卡片宽度 = 列宽 - 32px」等）—— */
+  /* —— 1.5 尺寸档 —— */
   --container-column: 280px;
-  --container-column-narrow: 240px; /* 11.1 1200–1440px */
-  --container-column-collapsed: 40px; /* 3.1 空列折叠 */
+  --container-column-narrow: 240px;
+  --container-column-collapsed: 40px;
   --container-card: 248px;
   --container-drawer: 640px;
-  --container-drawer-md: 560px; /* 11.2：1200–1440px；960–1200px 档取 480px 现写 */
+  --container-drawer-md: 560px;
   --container-dialog: 560px;
   --container-review-form: 720px;
-  --container-notify-panel: 360px; /* 10.2，阶段二 */
-  --container-tray-menu: 220px; /* 2.3，由 Rust 侧渲染，这里只留档位 */
+  --container-notify-panel: 360px;
 
-  /* —— 1.6 缓动与动画 —— */
+  /* —— 1.6 缓动与关键帧 —— */
   --ease-settle: cubic-bezier(0.2, 0, 0, 1);
-  --animate-drawer-in: drawer-in 240ms var(--ease-settle);
-  --animate-dialog-in: dialog-in 160ms ease-out;
-  --animate-status-flash: status-flash 800ms ease-out; /* 10.1 */
-  --animate-toast-in: toast-in 160ms ease-out;
+  --ease-emphasis: cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-drawer-in: drawer-in 260ms var(--ease-emphasis);
+  --animate-dialog-in: dialog-in 200ms var(--ease-emphasis);
+  --animate-pop-in: pop-in 140ms var(--ease-settle);
+  --animate-status-flash: status-flash 800ms ease-out;
   --animate-shimmer: shimmer 1400ms ease-in-out infinite;
+  --animate-flow: flow 1.6s linear infinite;
 
   @keyframes drawer-in {
     from {
@@ -146,11 +149,21 @@
   @keyframes dialog-in {
     from {
       opacity: 0;
-      transform: translateY(4px) scale(0.98);
+      transform: translateY(8px) scale(0.96);
     }
     to {
       opacity: 1;
       transform: translateY(0) scale(1);
+    }
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
     }
   }
   @keyframes status-flash {
@@ -164,16 +177,6 @@
       background-color: transparent;
     }
   }
-  @keyframes toast-in {
-    from {
-      opacity: 0;
-      transform: translateY(-8px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
   @keyframes shimmer {
     0% {
       opacity: 0.55;
@@ -185,11 +188,72 @@
       opacity: 0.55;
     }
   }
+  /* 进度条上的流动高光（执行中卡片） */
+  @keyframes flow {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(100%);
+    }
+  }
 
-  /* —— 11.1 断点作用对象是 Tauri 主窗口内容区宽度，不是 Tailwind 默认视口档 —— */
+  /* —— 11.1 断点作用对象是 Tauri 主窗口内容区宽度 —— */
   --breakpoint-win-md: 960px;
   --breakpoint-win-lg: 1200px;
   --breakpoint-win-xl: 1440px;
+}
+
+/* —— 深色主题整套覆盖：tools 直接 var() 引用，覆盖即全局生效 —— */
+[data-ui-theme="dark"] {
+  --color-bg-app: #0f1118;
+  --color-bg-surface: #161926;
+  --color-bg-raised: #1d2130;
+  --color-bg-muted: #262b3c;
+  --color-border: #2a3044;
+  --color-border-strong: #3a4159;
+  --color-text-primary: #e9ebf4;
+  --color-text-secondary: #9ba3ba;
+  --color-text-tertiary: #6a7188;
+  --color-text-inverse: #ffffff;
+
+  --color-primary: #7c74ff;
+  --color-primary-hover: #8d86ff;
+  --color-primary-light: rgb(124 116 255 / 0.16);
+  --color-primary-ring: rgb(124 116 255 / 0.45);
+
+  --color-status-backlog: #9aa3b8;
+  --color-status-backlog-soft: rgb(138 147 168 / 0.16);
+  --color-status-ready: #5c9dff;
+  --color-status-ready-soft: rgb(59 130 246 / 0.16);
+  --color-status-running: #ffad24;
+  --color-status-running-soft: rgb(245 158 11 / 0.16);
+  --color-status-review: #a37cff;
+  --color-status-review-soft: rgb(139 92 246 / 0.16);
+  --color-status-done: #2dd4a0;
+  --color-status-done-soft: rgb(16 185 129 / 0.16);
+  --color-status-failed: #ff6363;
+  --color-status-failed-soft: rgb(239 68 68 / 0.16);
+  --color-status-blocked: #8b93a8;
+  --color-status-blocked-soft: rgb(138 147 168 / 0.16);
+  --color-status-pinned: #ffad24;
+  --color-status-pinned-soft: rgb(245 158 11 / 0.16);
+
+  --color-priority-0: #ff7070;
+  --color-priority-0-soft: rgb(220 38 38 / 0.16);
+  --color-priority-1: #ff8a4c;
+  --color-priority-1-soft: rgb(234 88 12 / 0.16);
+  --color-priority-2: #22b1d4;
+  --color-priority-2-soft: rgb(8 145 178 / 0.16);
+  --color-priority-3: #9aa3b8;
+  --color-priority-3-soft: rgb(138 147 168 / 0.16);
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-card-hover: 0 8px 24px -8px rgb(0 0 0 / 0.55);
+  --shadow-drawer: -12px 0 40px -12px rgb(0 0 0 / 0.6);
+  --shadow-modal: 0 24px 64px -16px rgb(0 0 0 / 0.65);
+  --shadow-pop: 0 8px 24px -8px rgb(0 0 0 / 0.6);
+  --shadow-node: 0 1px 3px rgb(0 0 0 / 0.4);
 }
 
 @layer base {
@@ -209,6 +273,8 @@
     -webkit-font-smoothing: antialiased;
     /* 2.1：桌面应用内禁全局文本选择，输入框与 [data-selectable] 例外 */
     user-select: none;
+    /* 主题切换时颜色平滑过渡，避免硬闪 */
+    transition: background-color 200ms var(--ease-settle), color 200ms var(--ease-settle);
   }
 
   input,
@@ -226,6 +292,22 @@
   :focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: 1px;
+    outline-color: var(--color-primary-ring);
+  }
+
+  ::selection {
+    background-color: var(--color-primary-ring);
+    color: var(--color-text-primary);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
@@ -242,5 +324,38 @@
   .atb-scroll::-webkit-scrollbar-thumb {
     background: var(--color-border-strong);
     border-radius: var(--radius-badge);
+  }
+  .atb-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* 主操作渐变（主按钮、导航激活指示、Logo 标）：135° 靛蓝→紫 */
+  .bg-primary-gradient {
+    background-image: linear-gradient(135deg, #6366f1, #8b5cf6);
+  }
+  [data-ui-theme="dark"] .bg-primary-gradient {
+    background-image: linear-gradient(135deg, #6a67f5, #9b6cff);
+  }
+
+  /* 主按钮顶缘内高光，让渐变按钮有「玻璃」厚度 */
+  .shadow-primary-inset {
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18);
+  }
+
+  /* 玻璃顶栏：surface 半透 + 背景模糊 */
+  .glass-bar {
+    background-color: color-mix(in srgb, var(--color-bg-surface) 82%, transparent);
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  }
+
+  /* 进度条流动高光的白色斜纹 */
+  .progress-sheen {
+    background-image: linear-gradient(
+      100deg,
+      transparent 20%,
+      rgb(255 255 255 / 0.45) 50%,
+      transparent 80%
+    );
   }
 }

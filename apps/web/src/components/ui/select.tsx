@@ -1,7 +1,6 @@
 import { forwardRef, type SelectHTMLAttributes } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { inputClass } from './input';
 
 export interface SelectOption {
   value: string;
@@ -16,9 +15,20 @@ export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   invalid?: boolean;
 }
 
+/** 1.1：raised 底 + focus ring（primary-ring）；全局 :focus-visible 也会补描边。 */
+const selectClass = cn(
+  'h-8 w-full appearance-none rounded-control border border-border bg-bg-raised px-3 pr-8 text-body text-text-primary',
+  'transition-colors duration-120 ease-out',
+  'hover:border-border-strong',
+  'focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary-ring',
+  'disabled:cursor-not-allowed disabled:opacity-60',
+  'aria-[invalid=true]:border-status-failed',
+);
+
 /**
- * 用原生 `<select>` 而不是自绘下拉：桌面 WebView 里原生面板体验已经够好，
- * 且键盘/IME 行为不需要我们重新实现一遍。需要「多选 + 搜索」的场合用 Menu + Checkbox。
+ * 用原生 `<select>` 而不是自绘下拉（DESIGN.md §2）：桌面 WebView 里原生面板
+ * 键盘/IME 体验最好，这里只换皮——raised 底、focus ring、右侧自绘箭头。
+ * 需要「多选 + 搜索」的场合用 Menu + Checkbox。
  */
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
   { className, options, placeholder, invalid, ...rest },
@@ -29,7 +39,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
       <select
         ref={ref}
         aria-invalid={invalid || undefined}
-        className={cn(inputClass, 'appearance-none pr-8', className)}
+        className={cn(selectClass, className)}
         {...rest}
       >
         {placeholder === undefined ? null : (

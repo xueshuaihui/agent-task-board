@@ -1,12 +1,14 @@
 import type { ReactNode } from 'react';
+import { Card, CardBody, CardHeader } from '@/components/ui';
 import { cn } from '@/lib/cn';
 
 /**
- * 设置页八个 Tab 共用的版式件（原型 7.1～7.9）。
+ * 设置页八个 Tab 共用的版式件（DESIGN.md §4 设置行）。
  *
- * 为什么放在 feature 里而不是 `components/ui`：基座的 `Card`/`Field` 面向看板与表单，
- * 而设置页要的是「标签 160px + 控件 + 右侧 12px 说明」这一种行（原型 7.2 末条规则），
- * 别的页面没有这个诉求。`components/ui/**` 由基座 agent 持有，这里只组合它、不改它。
+ * 视觉层（2026-09 改版）：分区卡片直接复用基座 `Card`/`CardHeader`
+ * （标题行走 `text-section-title`）；Token/字段/模板/备份这类列表行的操作按钮
+ * 由 `RowActions` 做 hover 浮现（`group-hover/row`，键盘聚焦同样浮现）。
+ * `components/ui/**` 由基座 agent 持有，这里只组合它、不改它。
  *
  * 全部配色/字号走 `styles/globals.css` 的 @theme token，不出现裸色值。
  */
@@ -60,7 +62,7 @@ export function SettingSection({
 }: SettingSectionProps) {
   const head =
     title !== undefined || action || meta || description ? (
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+      <CardHeader className="h-auto min-h-11 flex-wrap justify-between gap-x-2 gap-y-1 py-2">
         <div className="flex min-w-0 items-baseline gap-2">
           {title !== undefined ? (
             <h3 className="shrink-0 text-section-title text-text-primary">{title}</h3>
@@ -71,7 +73,7 @@ export function SettingSection({
         {description ? (
           <p className="w-full text-aux text-text-tertiary">{description}</p>
         ) : null}
-      </div>
+      </CardHeader>
     ) : null;
 
   if (bare) {
@@ -84,15 +86,10 @@ export function SettingSection({
   }
 
   return (
-    <section
-      className={cn(
-        'overflow-hidden rounded-card border border-border bg-bg-surface shadow-card',
-        className,
-      )}
-    >
+    <Card className={cn('overflow-hidden', className)}>
       {head}
-      <div className="px-4 py-1">{children}</div>
-    </section>
+      <CardBody className="px-4 py-1">{children}</CardBody>
+    </Card>
   );
 }
 
@@ -251,7 +248,7 @@ export function SettingsTable<T>({
             <div
               key={rowKey(item)}
               className={cn(
-                'grid gap-x-3 border-b border-border px-4 last:border-b-0 transition-colors duration-120 ease-out hover:bg-primary-light',
+                'group/row grid gap-x-3 border-b border-border px-4 last:border-b-0 transition-colors duration-120 ease-out hover:bg-primary-light',
                 cols,
                 align === 'center' ? 'items-center py-2' : 'items-start py-3',
                 rowTone?.(item) === 'muted' && 'bg-bg-muted text-text-tertiary hover:bg-bg-muted',
@@ -272,9 +269,13 @@ export function SettingsTable<T>({
 
 /* ------------------------------------------------------------- 杂项 */
 
-/** 一组行内小按钮（编辑 / 停用 / 删除 / 恢复）。 */
+/** 一组行内小按钮（编辑 / 停用 / 删除 / 恢复）：行 hover 或键盘聚焦时浮现（DESIGN §4 设置行）。 */
 export function RowActions({ children }: { children: ReactNode }) {
-  return <span className="inline-flex items-center gap-1">{children}</span>;
+  return (
+    <span className="inline-flex items-center gap-1 opacity-0 translate-x-1 transition-[opacity,transform] duration-140 ease-out group-hover/row:opacity-100 group-hover/row:translate-x-0 focus-within:opacity-100 focus-within:translate-x-0">
+      {children}
+    </span>
+  );
 }
 
 /** 表单底部的服务端错误条（422 的 fieldErrors 汇总在此，文案来自 `errorMessage`）。 */

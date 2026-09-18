@@ -1,33 +1,44 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { cva, type VariantProps } from 'class-variance-authority';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 /**
- * 1.5 按钮高度：主 32px（h-8）、小 28px（h-7）；1.4 圆角 6px、无阴影。
- * `variant` 覆盖 4.5 的交互语义：primary=主操作（审核通过）、danger=不可逆（删除/强制停止）。
+ * 1.5 按钮高度：主 32px（h-8）、小 28px（h-7）；1.3 圆角 control 8px。
+ * `variant` 覆盖交互语义：primary=主操作（审核通过）、danger=不可逆（删除/强制停止）。
+ *
+ * 设计改版（DESIGN.md §2 / §0）：多 variant 用 cva 组合；primary 走 .bg-primary-gradient
+ * 靛蓝→紫渐变 + .shadow-primary-inset 顶缘内高光（玻璃厚度）；按压 active:scale-[.98]。
+ * 颜色一律走 token，不硬编码 hex。
  */
-const VARIANTS = {
-  primary:
-    'bg-primary text-text-inverse hover:bg-primary-hover disabled:hover:bg-primary',
-  default:
-    'bg-bg-surface text-text-primary border border-border hover:bg-bg-muted disabled:hover:bg-bg-surface',
-  ghost: 'text-text-secondary hover:bg-bg-muted hover:text-text-primary',
-  danger: 'bg-status-failed text-text-inverse hover:opacity-90',
-  outlineDanger:
-    'border border-status-failed text-status-failed hover:bg-status-failed-soft',
-  subtle: 'bg-bg-muted text-text-primary hover:bg-border',
-} as const;
+const button = cva(
+  'inline-flex shrink-0 items-center justify-center gap-2 rounded-control font-medium transition-[background-color,color,box-shadow,transform] duration-120 ease-out active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100',
+  {
+    variants: {
+      variant: {
+        primary: 'bg-primary-gradient shadow-primary-inset text-text-inverse hover:opacity-95',
+        default:
+          'bg-bg-surface text-text-primary border border-border hover:bg-bg-muted',
+        ghost: 'text-text-secondary hover:bg-bg-muted hover:text-text-primary',
+        danger: 'bg-status-failed text-text-inverse hover:opacity-90',
+        outlineDanger:
+          'border border-status-failed text-status-failed hover:bg-status-failed-soft',
+        subtle: 'bg-bg-muted text-text-primary hover:bg-border',
+      },
+      size: {
+        md: 'h-8 px-3 text-body',
+        sm: 'h-7 px-2 gap-1.5 text-aux',
+        icon: 'h-8 w-8',
+        iconSm: 'h-7 w-7',
+      },
+    },
+    defaultVariants: { variant: 'default', size: 'md' },
+  },
+);
 
-const SIZES = {
-  md: 'h-8 px-3 gap-2 text-body',
-  sm: 'h-7 px-2 gap-1.5 text-aux',
-  icon: 'h-8 w-8 justify-center',
-  iconSm: 'h-7 w-7 justify-center',
-} as const;
-
-export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: keyof typeof VARIANTS;
-  size?: keyof typeof SIZES;
+export interface ButtonProps
+  extends ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof button> {
   loading?: boolean;
   icon?: ReactNode;
 }
@@ -41,13 +52,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       type={type ?? 'button'}
       disabled={disabled || loading}
-      className={cn(
-        'inline-flex shrink-0 items-center rounded-control font-medium transition-colors duration-120 ease-out',
-        'disabled:cursor-not-allowed disabled:opacity-50',
-        VARIANTS[variant],
-        SIZES[size],
-        className,
-      )}
+      className={cn(button({ variant, size }), className)}
       {...rest}
     >
       {loading ? <Loader2 className="size-4 animate-spin" aria-hidden /> : icon}
@@ -56,7 +61,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   );
 });
 
-/** 顶栏与卡片 `⋯` 里的纯图标按钮（2.2 铃铛 24×24 也用它做底子）。 */
+/** 顶栏与卡片 `⋯` 里的纯图标按钮（铃铛 24×24 也用它做底子）。 */
 export function IconButton({
   label,
   className,

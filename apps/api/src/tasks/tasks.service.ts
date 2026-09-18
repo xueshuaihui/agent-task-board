@@ -305,9 +305,10 @@ export class TasksService {
           taskId: id,
           runId,
           conclusion: input.conclusion,
-          suggestion: input.suggestion,
-          reason: input.reason,
-          detail: input.detail,
+          // 4.3：通过时三字段为选填，落库写 ''（reviews 列 NOT NULL），不引入 nullable 涟漪。
+          suggestion: input.suggestion ?? '',
+          reason: input.reason ?? '',
+          detail: input.detail ?? '',
           returnTo: approved ? null : to,
           priorityAdj: input.priority_adj === undefined ? null : Number(input.priority_adj),
         },
@@ -343,8 +344,8 @@ export class TasksService {
           authorType: 'system',
           type: 'status_change',
           content: approved
-            ? `审核通过，已完成（${input.suggestion.slice(0, 60)}）`
-            : `驳回退回「${STATUS_LABEL[to]}」（${input.reason.slice(0, 60)}）`,
+            ? `审核通过，已完成（${(input.suggestion ?? '').slice(0, 60)}）`
+            : `驳回退回「${STATUS_LABEL[to]}」（${(input.reason ?? '').slice(0, 60)}）`,
         },
       });
       await this.audit.record(

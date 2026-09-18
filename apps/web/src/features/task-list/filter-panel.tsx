@@ -1,8 +1,10 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Check, Search, X } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 import { useFieldDefs, useSettings, useTags } from '@/api';
 import { TASK_STATUSES, type ArchivedFilter, type FieldDef, type TaskStatus } from '@/api/types';
 import { activeFilterCount, useFilterStore } from '@/app/store/filters';
+import { transitions } from '@/lib/motion';
 import { Badge, Button, Checkbox, Input, Menu, MenuCaret, RadioGroup } from '@/components/ui';
 import type { MenuItem } from '@/components/ui';
 import { cn } from '@/lib/cn';
@@ -134,6 +136,7 @@ export function FilterPanel({ onClose }: { onClose: () => void }) {
   const settings = useSettings();
   const fieldDefs = useFieldDefs();
   const count = activeFilterCount(filters);
+  const reducedMotion = useReducedMotion();
 
   const visibleFields = useMemo(
     () =>
@@ -144,7 +147,12 @@ export function FilterPanel({ onClose }: { onClose: () => void }) {
   );
 
   return (
-    <div className="rounded-card border border-border bg-bg-surface shadow-card">
+    <motion.div
+      initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={reducedMotion ? { duration: 0 } : transitions.overlay}
+      className="rounded-card border border-border bg-bg-surface shadow-pop"
+    >
       <div className="atb-scroll flex max-h-[360px] flex-col gap-3 overflow-y-auto p-4">
         <Group label="状态">
           <div className="flex flex-wrap gap-x-4 gap-y-2">
@@ -239,7 +247,7 @@ export function FilterPanel({ onClose }: { onClose: () => void }) {
           </Button>
         </div>
       </footer>
-    </div>
+    </motion.div>
   );
 }
 

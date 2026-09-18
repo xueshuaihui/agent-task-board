@@ -303,7 +303,8 @@ function RunningBody({ card, overlay }: { card: TaskCard; overlay: RunOverlay })
         <span className="truncate">{card.agent_name ?? 'Agent'}</span>
         <span className="ml-auto shrink-0 font-mono text-text-primary">{progress}%</span>
       </p>
-      <Progress value={progress} danger={overlay.leaseExpired === true} />
+      {/* §4 看板：执行中进度条带流动高光（租约过期转红时高光仍在，语义是「还在跑」） */}
+      <Progress value={progress} danger={overlay.leaseExpired === true} flowing />
       {message ? <p className="truncate text-aux text-text-tertiary">{message}</p> : null}
     </div>
   );

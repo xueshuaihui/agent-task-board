@@ -26,6 +26,7 @@ import {
 import type { MenuItem } from '@/components/ui';
 import { directTransitions } from '@/features/board/matrix';
 import { statusLabel } from '@/lib/labels';
+import { cn } from '@/lib/cn';
 import {
   AgentCell,
   DurationCell,
@@ -362,9 +363,11 @@ export function TaskListPage() {
             />
           </>
         )}
-        {/* 选择集跨页不清空，所以加载/错误/空态三种分支下也要能对手上的任务发起批量动作。 */}
-        {selectedRows.length > 0 ? <BatchBar rows={selectedRows} onKeep={keepSelection} /> : null}
       </div>
+
+      {/* 选择集跨页不清空，所以加载/错误/空态三种分支下也要能对手上的任务发起批量动作。
+          视觉层（DESIGN §4）：批量条是底部浮动胶囊条，fixed 定位挂在页面根部而非卡片内。 */}
+      {selectedRows.length > 0 ? <BatchBar rows={selectedRows} onKeep={keepSelection} /> : null}
     </div>
   );
 }
@@ -391,7 +394,11 @@ function TaskRow({
   const flashed = useIsFlashed(row.id);
   return (
     <TR
-      className={flashed ? 'animate-status-flash' : undefined}
+      className={cn(
+        flashed && 'animate-status-flash',
+        // 选中行与 hover 同色（primary-light）：勾选状态在整行上有可见反馈，颜色全走 token。
+        selected && 'bg-primary-light',
+      )}
       onClick={() => useShellStore.getState().openTask(row.id)}
       data-testid="task-row"
     >

@@ -29,7 +29,7 @@ export function Pagination({
   return (
     <div
       className={cn(
-        'flex h-11 items-center justify-end gap-3 border-t border-border text-aux text-text-secondary',
+        'flex h-11 items-center justify-end gap-3 border-t border-border text-aux tabular-nums text-text-secondary',
         className,
       )}
     >
@@ -67,10 +67,10 @@ export function Pagination({
               aria-current={item === current ? 'page' : undefined}
               onClick={() => onPageChange(item)}
               className={cn(
-                'inline-flex size-7 items-center justify-center rounded-control text-badge transition-colors duration-120 ease-out',
+                'inline-flex size-7 items-center justify-center rounded-control text-badge tabular-nums transition-colors duration-120 ease-out',
                 item === current
-                  ? 'bg-primary text-text-inverse'
-                  : 'hover:bg-bg-muted hover:text-text-primary',
+                  ? 'bg-primary-light font-medium text-primary'
+                  : 'text-text-secondary hover:bg-bg-muted hover:text-text-primary',
               )}
             >
               {item}
@@ -106,7 +106,7 @@ function PageArrow({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex size-7 items-center justify-center rounded-control hover:bg-bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+      className="inline-flex size-7 items-center justify-center rounded-control text-text-secondary transition-colors duration-120 ease-out hover:bg-bg-muted hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-secondary"
     >
       {children}
     </button>

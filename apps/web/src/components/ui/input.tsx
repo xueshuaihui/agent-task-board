@@ -1,11 +1,12 @@
 import { forwardRef, type InputHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
 
-/** 1.5：输入框高 32px、圆角 6px；1.1：底 `--bg-muted`、边框 `--border`。 */
+/** 1.5：输入框高 32px、圆角 control 8px；1.1：底 `--bg-raised`、边框 `--border`。
+ * focus ring 走全局 `:focus-visible`（primary-ring），这里只换边框色。 */
 export const inputClass = cn(
-  'h-8 w-full rounded-control border border-border bg-bg-muted px-3 text-body text-text-primary',
+  'h-8 w-full rounded-control border border-border bg-bg-raised px-3 text-body text-text-primary',
   'placeholder:text-text-tertiary transition-colors duration-120 ease-out',
-  'focus:border-primary focus:bg-bg-surface focus:outline-none',
+  'hover:border-border-strong focus:border-primary',
   'disabled:cursor-not-allowed disabled:opacity-60',
   'aria-[invalid=true]:border-status-failed',
 );

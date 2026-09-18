@@ -1,10 +1,12 @@
 import { useDroppable } from '@dnd-kit/core';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ChevronRight, ClipboardList, Plus } from 'lucide-react';
 import type { BoardColumn, FieldDef } from '@/api/types';
 import { navigate } from '@/app/router';
 import { taskListSearch } from '@/app/store/filters';
+import { itemVariants, listVariants, springs } from '@/lib/motion';
 import { statusLabel } from '@/lib/labels';
-import { statusStyle } from '@/lib/status-style';
+import { statusStyle, type StatusStyle } from '@/lib/status-style';
 import { cn } from '@/lib/cn';
 import { Button, CardSkeleton, StatusDot, Tooltip } from '@/components/ui';
 import { DraggableCard } from './board-card';
@@ -49,6 +51,7 @@ export function BoardColumnView({
   const collapsed = columnCollapsed(column, defaultView);
   const { setNodeRef } = useDroppable({ id: `column:${column.status}`, data: { status: column.status } });
   const style = statusStyle(column.status);
+  const reduce = useReducedMotion();
   const dropActive = dropState !== null && dropState.kind !== 'self';
   const forbidden = dropState?.kind === 'forbidden';
   const needsForm = dropState?.kind === 'form';
@@ -76,7 +79,7 @@ export function BoardColumnView({
       <ColumnHeader
         column={column}
         collapsed={collapsed}
-        dotClass={style.dot}
+        style={style}
         formAction={dropActive ? formAction : undefined}
       />
 
@@ -93,16 +96,31 @@ export function BoardColumnView({
             )}
           >
             {loading && column.tasks.length === 0 ? <CardSkeleton count={2} /> : null}
-            {column.tasks.map((card) => (
-              <DraggableCard
-                key={card.id}
-                card={card}
-                defs={defs}
-                actions={actions}
-                overlay={overlayOf(card.id)}
-                onDraggingChange={onDraggingChange}
-              />
-            ))}
+            {/* §4 看板：列内卡片 stagger 入场（≤40ms）+ AnimatePresence 退场；列内顺序仍由服务端定 */}
+            <motion.div
+              className="flex flex-col gap-2"
+              variants={listVariants}
+              initial={reduce ? false : 'hidden'}
+              animate="show"
+            >
+              <AnimatePresence>
+                {column.tasks.map((card) => (
+                  <motion.div
+                    key={card.id}
+                    variants={itemVariants}
+                    exit={reduce ? undefined : { opacity: 0, y: 8, transition: { duration: 0.14, ease: 'easeOut' } }}
+                  >
+                    <DraggableCard
+                      card={card}
+                      defs={defs}
+                      actions={actions}
+                      overlay={overlayOf(card.id)}
+                      onDraggingChange={onDraggingChange}
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </motion.div>
             {!loading && column.tasks.length === 0 ? <ColumnEmpty column={column} actions={actions} /> : null}
           </div>
 
@@ -113,19 +131,23 @@ export function BoardColumnView({
   );
 }
 
-/** 3.2 列头：8×8 色点 + 14px/500 列名 + 可点计数徽标；没有排序/折叠/筛选三项。 */
+/**
+ * 3.2 列头（改版后）：soft 底状态徽标胶囊（色点 + 列名）+ 可点计数胶囊。
+ * 计数变化带 springs.pop 弹跳（DESIGN.md §5 数字徽标）；没有排序/折叠/筛选三项。
+ */
 function ColumnHeader({
   column,
   collapsed,
-  dotClass,
+  style,
   formAction,
 }: {
   column: BoardColumn;
   collapsed: boolean;
-  dotClass: string;
+  style: StatusStyle;
   formAction?: string;
 }) {
   const label = statusLabel(column.status);
+  const reduce = useReducedMotion();
   const go = () => {
     // 3.2：计数徽标本身可点；待审核跳审核页，其余跳任务列表并带上该状态。
     if (column.status === 'REVIEW') navigate('review');
@@ -136,16 +158,24 @@ function ColumnHeader({
       type="button"
       onClick={go}
       aria-label={`查看${label}的全部任务`}
-      className="shrink-0 rounded-badge bg-bg-muted px-1.5 py-px text-badge text-text-secondary transition-colors duration-120 ease-out hover:bg-border hover:text-text-primary"
+      className="ml-auto shrink-0 rounded-badge bg-bg-muted px-2 py-px text-badge text-text-secondary transition-colors duration-120 ease-out hover:bg-border hover:text-text-primary"
     >
-      {column.count}
+      <motion.span
+        key={column.count}
+        className="inline-block tabular-nums"
+        initial={reduce ? false : { scale: 0.6 }}
+        animate={{ scale: 1 }}
+        transition={reduce ? { duration: 0 } : springs.pop}
+      >
+        {column.count}
+      </motion.span>
     </button>
   );
 
   if (collapsed) {
     return (
       <header className="flex h-11 shrink-0 flex-col items-center gap-2 pb-3 pt-1">
-        <StatusDot className={dotClass} />
+        <StatusDot className={style.dot} />
         {count}
         <span className="min-h-0 flex-1 truncate text-aux text-text-secondary [writing-mode:vertical-rl]">
           {label}
@@ -156,8 +186,16 @@ function ColumnHeader({
 
   return (
     <header className="flex h-11 shrink-0 items-center gap-2 pb-3">
-      <StatusDot className={dotClass} />
-      <h2 className="min-w-0 flex-1 truncate text-card-title text-text-primary">{label}</h2>
+      <div
+        className={cn(
+          'flex h-6 min-w-0 items-center gap-1.5 rounded-badge py-0.5 pl-1.5 pr-2.5',
+          style.soft,
+        )}
+      >
+        <StatusDot className={cn('size-2 shrink-0', style.dot)} />
+        <h2 className={cn('min-w-0 truncate text-badge font-medium', style.text)}>{label}</h2>
+      </div>
+      <span className="min-w-0 flex-1" />
       {formAction ? (
         <span className="shrink-0 rounded-tag bg-primary-light px-1.5 py-px text-badge text-primary">
           {formAction}

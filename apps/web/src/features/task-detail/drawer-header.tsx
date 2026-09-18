@@ -92,7 +92,11 @@ export function DrawerTitle({ detail }: { detail: TaskDetail }) {
   );
 }
 
-/** 4.2 第三行：类型 + 优先级 + 标签（左），状态色点 + 文本、租约倒计时（右）。 */
+/**
+ * 4.2 第三行（DESIGN §4 任务详情）：头部任务元信息**两列网格**——
+ * 左列标签（text-secondary）、右值用 token 文本色；标签/阻塞整行放（col-span-2）。
+ * 只动排版，字段条件渲染、title 提示与文案全部保留。
+ */
 export function DrawerMetaRow({ detail }: { detail: TaskDetail }) {
   const style = statusStyle(detail.status);
   const priority = priorityStyle(detail.priority);
@@ -101,50 +105,74 @@ export function DrawerMetaRow({ detail }: { detail: TaskDetail }) {
   const lease = useLease(detail);
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 px-5 pt-2">
-      <Badge tone="neutral">{detail.type}</Badge>
-      <Badge className={cn(priority.soft, priority.text)} icon={<StatusDot className={priority.dot} />}>
-        {priorityText(detail.priority)}
-      </Badge>
-      {shownTags.map((tag) => (
-        <TagBadge key={tag}>{tag}</TagBadge>
-      ))}
-      {overflow > 0 ? (
-        <span title={`其余标签：${detail.tags.slice(3).join('、')}`}>
-          <Badge tone="outline">{`+${overflow}`}</Badge>
-        </span>
-      ) : null}
-      {detail.blocked.count > 0 ? (
-        <span title={`${detail.blocked.by.map((item) => item.id).join('、')} 未完成（5.4）`}>
-          <Badge tone="outline" icon={<Lock className="size-3" aria-hidden />}>
-            {`被 ${detail.blocked.count} 个前置阻塞`}
-          </Badge>
-        </span>
-      ) : null}
-
-      <span className="flex-1" />
-
-      {lease ? (
-        <span
-          className={cn(
-            'shrink-0 font-mono text-aux',
-            lease.expired ? 'text-status-failed' : 'text-text-secondary',
-          )}
-          title={
-            lease.expired
-              ? COPY.leaseExpired
-              : `租约至 ${detail.lease_expires_at}；到期由服务端定时回收（9.3）`
-          }
-        >
-          {lease.expired ? COPY.leaseExpired : `租约 ${lease.text}`}
-        </span>
-      ) : null}
-
-      <span className="flex shrink-0 items-center gap-1.5 text-aux">
-        <span className="text-text-secondary">状态:</span>
+    <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 px-5 pt-2 text-aux">
+      <MetaCell label="类型">
+        <span className="truncate text-text-primary">{detail.type}</span>
+      </MetaCell>
+      <MetaCell label="优先级">
+        <StatusDot className={priority.dot} />
+        <span className={cn('font-medium', priority.text)}>{priorityText(detail.priority)}</span>
+      </MetaCell>
+      <MetaCell label="状态">
         <StatusDot className={style.dot} />
         <span className={cn('font-medium', style.text)}>{statusLabel(detail.status)}</span>
-      </span>
+      </MetaCell>
+      {lease ? (
+        <MetaCell label="租约">
+          <span
+            className={cn(
+              'truncate font-mono tabular-nums',
+              lease.expired ? 'text-status-failed' : 'text-text-primary',
+            )}
+            title={
+              lease.expired
+                ? COPY.leaseExpired
+                : `租约至 ${detail.lease_expires_at}；到期由服务端定时回收（9.3）`
+            }
+          >
+            {lease.expired ? COPY.leaseExpired : lease.text}
+          </span>
+        </MetaCell>
+      ) : null}
+      {detail.tags.length > 0 ? (
+        <MetaCell label="标签" className="col-span-2">
+          {shownTags.map((tag) => (
+            <TagBadge key={tag}>{tag}</TagBadge>
+          ))}
+          {overflow > 0 ? (
+            <span title={`其余标签：${detail.tags.slice(3).join('、')}`}>
+              <Badge tone="outline">{`+${overflow}`}</Badge>
+            </span>
+          ) : null}
+        </MetaCell>
+      ) : null}
+      {detail.blocked.count > 0 ? (
+        <MetaCell label="阻塞" className="col-span-2">
+          <span title={`${detail.blocked.by.map((item) => item.id).join('、')} 未完成（5.4）`}>
+            <Badge tone="outline" icon={<Lock className="size-3" aria-hidden />}>
+              {`被 ${detail.blocked.count} 个前置阻塞`}
+            </Badge>
+          </span>
+        </MetaCell>
+      ) : null}
+    </div>
+  );
+}
+
+/** 网格单元：标签 text-secondary + 值区（默认 text-primary，状态/优先级自带语义色）。 */
+function MetaCell({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={cn('flex min-w-0 items-center gap-1.5', className)}>
+      <span className="shrink-0 text-text-secondary">{label}</span>
+      <span className="flex min-w-0 flex-1 items-center gap-1.5 text-text-primary">{children}</span>
     </div>
   );
 }

@@ -161,14 +161,14 @@ export function AgentCell({ row }: { row: TaskListItem }) {
 }
 
 export function DurationCell({ ms }: { ms: number | null }) {
-  return <span className="text-aux text-text-secondary">{formatDuration(ms)}</span>;
+  return <span className="text-aux text-text-secondary tabular-nums">{formatDuration(ms)}</span>;
 }
 
 /** 20.4：24 小时内相对时间，hover 绝对时间。 */
 export function UpdatedCell({ value }: { value: string | null }) {
   return (
     <Tooltip content={formatDateTime(value)}>
-      <span className="block truncate text-aux text-text-secondary">{formatRelative(value)}</span>
+      <span className="block truncate text-aux text-text-secondary tabular-nums">{formatRelative(value)}</span>
     </Tooltip>
   );
 }

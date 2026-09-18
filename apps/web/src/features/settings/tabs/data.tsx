@@ -282,6 +282,7 @@ function ImportBlock() {
     <SettingSection
       title="导入"
       description="导入前服务端先做一次手动备份（6.12.2），结果页会给出该文件路径；这一步没有退路，所以不能一步直传。"
+      className="border-status-failed"
     >
       <SettingRow label="选择文件" width="fluid">
         <div className="flex flex-wrap items-center gap-2 py-1">

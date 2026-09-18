@@ -610,9 +610,10 @@ export interface StopInput {
 
 export interface ReviewInput {
   conclusion: ReviewConclusion;
-  suggestion: string;
-  reason: string;
-  detail: string;
+  /** 4.3：APPROVE 时选填，REJECT 时必填。 */
+  suggestion?: string;
+  reason?: string;
+  detail?: string;
   return_to?: ReturnTarget;
   priority_adj?: number;
   run_id?: string;

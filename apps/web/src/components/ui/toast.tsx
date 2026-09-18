@@ -4,10 +4,9 @@ import {
   useContext,
   useMemo,
   useRef,
-  useState,
   type ReactNode,
 } from 'react';
-import { createPortal } from 'react-dom';
+import { Toaster, toast } from 'sonner';
 import { AlertTriangle, CheckCircle2, Info, X, XCircle } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
@@ -47,24 +46,54 @@ const STYLE: Record<ToastVariant, { border: string; icon: ReactNode }> = {
   info: { border: 'border-l-primary', icon: <Info className="size-4 text-primary" /> },
 };
 
+/** 卡片皮肤走 token：surface 底 + 状态色左描边；图标用 lucide 描边系（§2 Toast）。 */
+function ToastCard({ item, onClose }: { item: Omit<ToastItem, 'id'>; onClose: () => void }) {
+  return (
+    <div
+      className={cn(
+        'flex w-[420px] items-start gap-2 rounded-card border border-border border-l-[3px] bg-bg-surface px-3 py-2 shadow-pop',
+        STYLE[item.variant].border,
+      )}
+    >
+      <span className="mt-[2px] shrink-0">{STYLE[item.variant].icon}</span>
+      <span className="min-w-0 flex-1 text-body text-text-primary">
+        {item.text}
+        {item.detail ? (
+          <span className="mt-1 block text-aux text-text-secondary" data-selectable>
+            {item.detail}
+          </span>
+        ) : null}
+      </span>
+      <button
+        type="button"
+        aria-label="关闭提示"
+        onClick={onClose}
+        className="shrink-0 text-text-tertiary hover:text-text-secondary"
+      >
+        <X className="size-3.5" />
+      </button>
+    </div>
+  );
+}
+
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<ToastItem[]>([]);
   const seq = useRef(0);
 
-  const dismiss = useCallback((id: number) => {
-    setItems((current) => current.filter((item) => item.id !== id));
+  const show = useCallback((item: Omit<ToastItem, 'id'>) => {
+    seq.current += 1;
+    const id = seq.current;
+    // sonner 承担入退场动画、悬停暂停、自动消失；id 用我们的自增号，
+    // dismiss(id) 才能对上号。custom 模式不带 sonner 默认皮，样式全走 token。
+    toast.custom(
+      (toastId) => <ToastCard item={item} onClose={() => toast.dismiss(toastId)} />,
+      { id, duration: DURATION[item.variant] },
+    );
+    return id;
   }, []);
 
-  const show = useCallback(
-    (item: Omit<ToastItem, 'id'>) => {
-      seq.current += 1;
-      const id = seq.current;
-      setItems((current) => [...current.slice(-4), { ...item, id }]);
-      setTimeout(() => dismiss(id), DURATION[item.variant]);
-      return id;
-    },
-    [dismiss],
-  );
+  const dismiss = useCallback((id: number) => {
+    toast.dismiss(id);
+  }, []);
 
   const api = useMemo<ToastApi>(
     () => ({
@@ -81,41 +110,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      {createPortal(
-        <div
-          aria-live="polite"
-          className="pointer-events-none fixed left-1/2 top-4 z-[60] flex w-[420px] -translate-x-1/2 flex-col items-center gap-2"
-        >
-          {items.map((item) => (
-            <div
-              key={item.id}
-              className={cn(
-                'pointer-events-auto flex w-full items-start gap-2 rounded-card border border-border border-l-[3px] bg-bg-surface px-3 py-2 shadow-card-hover animate-toast-in',
-                STYLE[item.variant].border,
-              )}
-            >
-              <span className="mt-[2px] shrink-0">{STYLE[item.variant].icon}</span>
-              <span className="min-w-0 flex-1 text-body text-text-primary">
-                {item.text}
-                {item.detail ? (
-                  <span className="mt-1 block text-aux text-text-secondary" data-selectable>
-                    {item.detail}
-                  </span>
-                ) : null}
-              </span>
-              <button
-                type="button"
-                aria-label="关闭提示"
-                onClick={() => dismiss(item.id)}
-                className="shrink-0 text-text-tertiary hover:text-text-secondary"
-              >
-                <X className="size-3.5" />
-              </button>
-            </div>
-          ))}
-        </div>,
-        document.body,
-      )}
+      <Toaster position="top-center" offset={16} gap={8} visibleToasts={5} />
     </ToastContext.Provider>
   );
 }
