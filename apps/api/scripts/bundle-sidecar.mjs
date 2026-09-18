@@ -109,7 +109,11 @@ const compiler = webpack({
   if (stats.hasWarnings()) log(`webpack 警告（懒加载可选依赖，未使用即无害）：\n${stats.toString({ colors: false, warnings: true, modules: false, assets: false })}`);
   log('bundle 完成');
 });
-compiler.close(() => {});
+// close 是异步收尾（落盘产物在其中）：必须等它结束再 stat，否则 CI 慢盘上
+// main.js 尚未写完就报 ENOENT——本地机器快，恰好总能先写完，掩盖了这个竞态。
+await new Promise((resolve, reject) => {
+  compiler.close((closeError) => (closeError ? reject(closeError) : resolve()));
+});
 totalBytes += statSync(path.join(resourcesDir, 'main.js')).size;
 
 // ---------- 2. 最小 Prisma 运行时（约 21M，比整包 97M 小一个量级） ----------
