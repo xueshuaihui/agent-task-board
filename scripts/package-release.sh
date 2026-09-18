@@ -54,7 +54,14 @@ warn()  { printf '  \033[0;33m⚠\033[0m %s\n' "$*"; }
 fail()  { printf '\n\033[0;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
 VERSION="$(node -p "require('./$TAURI_DIR/tauri.conf.json').version")"
-DMG_PATH="$BUNDLE_DIR/dmg/Agent Task Board_${VERSION}_x64.dmg"
+# 架构后缀：sidecar node 与 Prisma 引擎都取自构建机当前架构（bundle-sidecar.mjs），
+# 产物天然是构建机架构 → x86_64 机器出 _x64.dmg，Apple Silicon 出 _arm64.dmg
+case "$(uname -m)" in
+  arm64)          ARCH_SUFFIX="arm64" ;;
+  x86_64|i386)    ARCH_SUFFIX="x64" ;;
+  *) fail "未知构建机架构：$(uname -m)" ;;
+esac
+DMG_PATH="$BUNDLE_DIR/dmg/Agent Task Board_${VERSION}_${ARCH_SUFFIX}.dmg"
 
 echo "Agent Task Board 打包 v${VERSION}"
 echo "仓库：$REPO_ROOT"
@@ -67,6 +74,8 @@ NODE_ARCH=""
 NODE_ARCH="$(file "$SIDECAR_RES/node" | grep -oE 'x86_64|arm64' || true)"
 NODE_ARCH="${NODE_ARCH:-}"
 [ -n "$NODE_ARCH" ] || fail "无法识别 $SIDECAR_RES/node 架构（file 输出无 x86_64/arm64）"
+case "$NODE_ARCH" in x86_64) NODE_TAG="x64" ;; *) NODE_TAG="$NODE_ARCH" ;; esac
+[ "$NODE_TAG" = "$ARCH_SUFFIX" ] || warn "node 二进制架构（${NODE_TAG}）与构建机架构（${ARCH_SUFFIX}）不一致，产物可能无法在目标机运行"
 ok "node 二进制在位（${NODE_ARCH}）"
 
 [ -x "$HOME/.cargo/bin/cargo" ] || fail "缺少 Rust 工具链（$HOME/.cargo/bin/cargo），先 rustup 安装"

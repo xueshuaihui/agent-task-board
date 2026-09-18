@@ -1,19 +1,21 @@
-# 发布流水线：推 tag 即发布（release 像提交代码一样）
+# 发布流水线：推 tag 即发布（release 像提交代码一样），双架构产物
 #
 # 用法：
-#   git tag -a v0.2.0 -m "v0.2.0"
-#   git push origin v0.2.0
+#   git tag -a v0.3.0 -m "v0.3.0"
+#   git push origin v0.3.0
 # → GitHub Actions 云端构建（门禁→sidecar→.app→.dmg→冒烟→SHA256）
-# → 自动创建 GitHub Release 并上传 dmg + SHA256SUMS.txt
+# → 自动创建 GitHub Release 并上传 x64 / arm64 两个 dmg + SHA256SUMS.txt
+#
+# 双架构策略（为什么不是 universal 单包）：
+#   sidecar 的 node 二进制取自构建机当前 node（bundle-sidecar.mjs 第 4 步），
+#   Node 官方无 universal 发行版；Prisma query engine 也是按机器架构生成的
+#   原生库。因此 .app 内的 node/引擎只能单架构 → 用 matrix 在两种 runner 上
+#   各自构建独立 dmg（x64 = macos-13 Intel；arm64 = macos-15 Apple Silicon），
+#   每个 .app 自带匹配架构的 node 与引擎，Rosetta 不参与 sidecar 运行。
 #
 # 通道约定（与 docs/发布手册.md 一致）：
 #   - v0.x.* 一律 prerelease（v0.1.0 正式 tag 仍挂在 A3 真机验收门禁之后）
 #   - v1.0.0 及以上自动作为正式版
-#
-# 架构说明：runner 用 macos-13（Intel）。sidecar 的 node 二进制取自构建机当前
-# node（bundle-sidecar.mjs 第 4 步），Intel runner 产出 x86_64 node + darwin x64
-# Prisma 引擎，与既有 `*_x64.dmg` 产物线一致。未来如需 arm64 产物，改用
-# macos-latest（Apple Silicon）并把 DMG/产物命名中的 _x64 相应调整。
 #
 # 权限：使用仓库自带 GITHUB_TOKEN（无需个人 token），仅需 contents:write。
 
@@ -31,8 +33,17 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: macos-13
+  build:
+    name: 打包 ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-13      # Intel：与既有 _x64 产物线一致
+          - arch: arm64
+            runner: macos-15      # Apple Silicon：产出原生 _arm64.dmg
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -47,8 +58,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
+          prefix-key: rust-${{ matrix.arch }}
 
-      - name: 安装依赖 + Prisma 引擎（darwin x64）
+      - name: 安装依赖 + Prisma 引擎（按 runner 架构生成）
         run: |
           npm ci
           npm run prisma
@@ -56,23 +68,47 @@ jobs:
       - name: 打包（门禁 → 构建 → sidecar → .app → .dmg → 冒烟 → SHA256）
         run: bash scripts/package-release.sh
 
+      - name: 上传构建产物（待 release job 汇总）
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmg-${{ matrix.arch }}
+          path: apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 3
+
+  release:
+    name: 创建 Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 汇集双架构 dmg
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dmg-*
+          merge-multiple: true
+          path: dist
+
+      - name: 生成合并校验和
+        run: |
+          cd dist
+          shasum -a 256 -- *.dmg > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
       - name: 创建 Release 并上传产物
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          BUNDLE="apps/desktop/src-tauri/target/release/bundle"
-          DMG="${BUNDLE}/dmg/Agent Task Board_$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' apps/desktop/src-tauri/tauri.conf.json | head -1)_x64.dmg"
-          [ -f "$DMG" ] || { echo "✗ 未找到 DMG：$DMG"; exit 1; }
           # v0.x.* → prerelease（SOP 通道约定）；v1+ → 正式版
           PRERELEASE=""
           case "$TAG" in v0.*) PRERELEASE="--prerelease" ;; esac
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release ${TAG} 已存在，补充上传产物"
-            gh release upload "$TAG" "$DMG" "${BUNDLE}/SHA256SUMS.txt" --clobber
+            gh release upload "$TAG" dist/* --clobber
           else
-            gh release create "$TAG" "$DMG" "${BUNDLE}/SHA256SUMS.txt" \
+            gh release create "$TAG" dist/* \
               --generate-notes $PRERELEASE \
               --title "$TAG"
           fi

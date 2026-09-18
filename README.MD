@@ -278,7 +278,8 @@ git tag -a vX.Y.Z -m "vX.Y.Z <通道>：<一句话定位>"
 git push origin vX.Y.Z        # ← 到此为止，构建与发布全自动
 ```
 
-- 进度：仓库 **Actions** 页实时可看（约 15–25 分钟，Rust 冷缓存首跑更久）
+- 进度：仓库 **Actions** 页实时可看（双架构并行构建，约 15–25 分钟，Rust 冷缓存首跑更久）
+- **双架构产物**：matrix 同时在 Intel（macos-13）与 Apple Silicon（macos-15）runner 上构建，Release 自动附带 `*_x64.dmg` 与 `*_arm64.dmg` 两个安装镜像 + 合并 `SHA256SUMS.txt`（sidecar 的 node/Prisma 引擎按 runner 架构原生生成，不依赖 Rosetta）
 - 通道约定自动生效：`v0.x.*` 一律 prerelease；`v1.0.0+` 自动为正式版
 - tag 已存在 Release 时重推 = 补传产物（`--clobber` 覆盖同名资产）
 
