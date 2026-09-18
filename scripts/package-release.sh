@@ -70,6 +70,13 @@ echo "仓库：$REPO_ROOT"
 step "第 0 步 · 前置检查"
 
 [ -f "$SIDECAR_RES/node" ] || fail "缺少 $SIDECAR_RES/node（不入库，先按 README 路径 C 第 0 步拷入目标架构的 node 二进制）"
+# node 二进制不入库（.gitignore 覆盖）：全新 checkout（如 CI）自动用当前 node 装配；
+# 本机跨架构打包仍可按 README 路径 C 第 0 步预先放入目标架构二进制（下方架构校验会把关）。
+if [ ! -f "$SIDECAR_RES/node" ]; then
+  warn "$SIDECAR_RES/node 不存在（全新 checkout？），自动用当前 node 装配：$(command -v node)"
+  mkdir -p "$SIDECAR_RES"
+  cp "$(command -v node)" "$SIDECAR_RES/node"
+fi
 NODE_ARCH=""
 NODE_ARCH="$(file "$SIDECAR_RES/node" | grep -oE 'x86_64|arm64' || true)"
 NODE_ARCH="${NODE_ARCH:-}"

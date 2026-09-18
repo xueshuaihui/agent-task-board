@@ -36,8 +36,9 @@ if (!bin) {
 
 const args = process.argv.slice(2);
 if (args.length === 0) {
-  console.error('用法：node scripts/db.mjs <prisma 子命令> [参数…]  例如 migrate deploy');
-  process.exit(1);
+  // 缺省 generate：全新环境（npm ci 后）最常用的就是生成 client + 引擎；
+  // 迁移/部署等显式传子命令（如 npm run prisma -- migrate deploy）。
+  args.push('generate');
 }
 
 const apiRoot = path.resolve(here, '..');
