@@ -39,24 +39,41 @@ let server: Server;
 let port = 0;
 let events: EventsService;
 let gateway: WsGateway;
+/** 「健康连接活过空闲阈值」专用：宽阈值网关，见 createGateway 的说明。 */
+let lenientGateway: WsGateway;
+let lenientServer: Server;
+let lenientPort = 0;
+
+/** 起一个独立 http.Server 并挂上网关，返回监听端口。事件源由调用方指定，广播用例共用同一个。 */
+async function createGateway(broadcastEvents: EventsService, pingIntervalMs: number, idleTimeoutMs: number): Promise<[WsGateway, Server, number]> {
+  const gateway = new WsGateway(broadcastEvents, undefined, undefined, { pingIntervalMs, idleTimeoutMs });
+  const server = createServer((_req, res) => {
+    res.statusCode = 404;
+    res.end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as AddressInfo).port;
+  gateway.attach(server);
+  return [gateway, server, port];
+}
 
 beforeAll(async () => {
   process.env.ATB_UI_TOKEN = UI_TOKEN;
   events = new EventsService();
   // 心跳阈值调小，让「60 秒无消息判定断开」这条分支在同一量级里被覆盖。
-  gateway = new WsGateway(events, undefined, undefined, { pingIntervalMs: 40, idleTimeoutMs: 120 });
-  server = createServer((_req, res) => {
-    res.statusCode = 404;
-    res.end();
-  });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  port = (server.address() as AddressInfo).port;
-  gateway.attach(server);
+  [gateway, server, port] = await createGateway(events, 40, 120);
+  // 「健康连接不被掐」的用例不能共用上面这个 120ms 阈值：CI 慢机（37 个文件并行抢
+  // 4 核）上事件循环一次停顿就能超过 120ms，pong 还没处理服务端就把健康连接判死
+  // （readyState=CLOSED）。阈值放宽到 5 秒——停顿以几百 ms 计，够不着这条线；
+  // 快速掐断的负例仍由紧阈值网关覆盖，两边语义各自成立。
+  [lenientGateway, lenientServer, lenientPort] = await createGateway(events, 40, 5_000);
 });
 
 afterAll(async () => {
   gateway.onModuleDestroy();
   await new Promise<void>((resolve) => server.close(() => resolve()));
+  lenientGateway.onModuleDestroy();
+  await new Promise<void>((resolve) => lenientServer.close(() => resolve()));
 });
 
 interface UpgradeResult {
@@ -98,9 +115,9 @@ function rawUpgrade(path: string, protocols?: string[]): Promise<UpgradeResult> 
   });
 }
 
-function open(protocols?: string[] | string, options: ClientOptions = {}): Promise<WebSocket> {
+function open(protocols?: string[] | string, options: ClientOptions = {}, url?: string): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, protocols, {
+    const ws = new WebSocket(url ?? `ws://127.0.0.1:${port}/ws`, protocols, {
       handshakeTimeout: 3_000,
       ...options,
     });
@@ -218,11 +235,11 @@ describe('事件广播（13 章 / 验收 41）', () => {
   it('空闲连接按 ping 周期收到 heartbeat 数据帧，且正常回 pong 的连接活过空闲阈值', async () => {
     // 浏览器不把控制帧交给页面脚本，前端那条「60 秒无消息判死」只能靠这条数据帧喂：
     // 少了它，健康空闲的连接会被 UI 反复误判断开（真实事故，不是假想）。
-    const client = await open(UI_TOKEN);
+    const client = await open(UI_TOKEN, {}, `ws://127.0.0.1:${lenientPort}/ws`);
     const frames: Record<string, unknown>[] = [];
     client.on('message', (raw) => frames.push(JSON.parse(String(raw)) as Record<string, unknown>));
-    // 300ms > idleTimeoutMs(120)：pong 前移 lastSeenAt，所以不该被 terminate。
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    // 宽阈值网关（idleTimeoutMs=5000）：CI 慢机的事件循环停顿够不着这条线，不该被 terminate。
+    await new Promise((resolve) => setTimeout(resolve, 500));
     expect(client.readyState).toBe(WebSocket.OPEN);
 
     const heartbeats = frames.filter((frame) => frame.event === 'heartbeat');
