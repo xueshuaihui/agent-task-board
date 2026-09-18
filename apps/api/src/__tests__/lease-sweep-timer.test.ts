@@ -48,7 +48,8 @@ async function waitForMovedToFailed(t: TestApp, id: string): Promise<void> {
       const snapshot = await boardSnapshot(t);
       return columnOf(snapshot, 'FAILED').includes(id) && !columnOf(snapshot, 'RUNNING').includes(id);
     },
-    { timeout: 5_000, interval: 25 },
+    // 本地 40ms 周期两跳内就位；CI 慢机（3-4 vCPU 跑 37 个文件并行）给足余量。
+    { timeout: 15_000, interval: 25 },
   );
 }
 
@@ -89,6 +90,12 @@ describe('真实启动的 sidecar：过期租约由定时器自己收回（验�
   });
 
   it('无人续期、无人手工扫描：任务自己离开执行中列、落进异常/失败列', async () => {
+    // board() 的分列查询不在同一事务里（本文件头部的竞态注释）：CI 慢机上单次快照
+    // 可能恰好跨着回收事务的提交边界，读到「仍在执行中列」的中间态。
+    // 与 beforeAll 同样轮询到一致态再断言终态——语义不变（终态必须是 FAILED 且不在
+    // RUNNING），只是不再把「读的时机」当成被测对象；若真被翻回 RUNNING，这里会
+    // 以 15s 超时的形式给出比单次快照更强的失败信号。
+    await waitForMovedToFailed(t, fixture.id);
     const snapshot = await boardSnapshot(t);
     expect(columnOf(snapshot, 'RUNNING')).not.toContain(fixture.id);
     expect(columnOf(snapshot, 'FAILED')).toContain(fixture.id);
