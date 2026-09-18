@@ -82,6 +82,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # gh release create --generate-notes 要读 git 历史：不 checkout 的话
+      # 工作目录不是 git 仓库，会报 "fatal: not a git repository"。
+      - uses: actions/checkout@v4
+
       - name: 汇集双架构 dmg
         uses: actions/download-artifact@v4
         with:
