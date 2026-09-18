@@ -46,7 +46,7 @@ CREATE TABLE projects (
 CREATE INDEX idx_projects_account ON projects(account_id, status, sort);
 CREATE UNIQUE INDEX uniq_projects_account_name ON projects(account_id, name);
 
-ALTER TABLE tasks ADD COLUMN account_id TEXT NOT NULL DEFAULT 'acct_local' REFERENCES accounts(id);
+ALTER TABLE tasks ADD COLUMN account_id TEXT NOT NULL DEFAULT 'acct_local';
 ALTER TABLE tasks ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL;
 -- 父子：父必须是「需求」，嵌套最多 2 层；父不参与 Agent 领取（服务层过滤）。
 ALTER TABLE tasks ADD COLUMN parent_task_id TEXT REFERENCES tasks(id);
@@ -56,14 +56,14 @@ CREATE INDEX idx_tasks_account ON tasks(account_id, archived_at);
 CREATE INDEX idx_tasks_project ON tasks(project_id);
 CREATE INDEX idx_tasks_parent ON tasks(parent_task_id);
 
-ALTER TABLE api_tokens ADD COLUMN account_id TEXT NOT NULL DEFAULT 'acct_local' REFERENCES accounts(id);
+ALTER TABLE api_tokens ADD COLUMN account_id TEXT NOT NULL DEFAULT 'acct_local';
 CREATE INDEX idx_tokens_account ON api_tokens(account_id);
 
-ALTER TABLE task_templates ADD COLUMN account_id TEXT NOT NULL DEFAULT 'acct_local' REFERENCES accounts(id);
+ALTER TABLE task_templates ADD COLUMN account_id TEXT NOT NULL DEFAULT 'acct_local';
 CREATE INDEX idx_templates_account ON task_templates(account_id);
 
-ALTER TABLE custom_field_defs ADD COLUMN account_id TEXT NOT NULL DEFAULT 'acct_local' REFERENCES accounts(id);
+ALTER TABLE custom_field_defs ADD COLUMN account_id TEXT NOT NULL DEFAULT 'acct_local';
 CREATE INDEX idx_field_defs_account ON custom_field_defs(account_id);
 
-ALTER TABLE notifications ADD COLUMN account_id TEXT NOT NULL DEFAULT 'acct_local' REFERENCES accounts(id);
+ALTER TABLE notifications ADD COLUMN account_id TEXT NOT NULL DEFAULT 'acct_local';
 CREATE INDEX idx_notif_account ON notifications(account_id, read_at);
