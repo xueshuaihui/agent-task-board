@@ -27,6 +27,11 @@ export interface TaskRawRow {
   run_count: number;
   created_at: string | null;
   updated_at: string | null;
+  // 0919 账号/项目/父子扩展列（t.* 原样带回；测试造行可缺省）。
+  account_id?: string;
+  project_id?: string | null;
+  parent_task_id?: string | null;
+  sort_order?: number;
 }
 
 /** tasks 行 + 卡片需要的聚合列（当前 Run 的进度、阻塞数、产物数、上一次时长）。 */
@@ -101,10 +106,13 @@ export interface TaskCardDto {
   run_count: number;
   due_at: string | null;
   updated_at: string | null;
+  project_id: string | null;
   blocked: { count: number; by: { id: string; title: string }[] };
   artifacts: CardArtifact[];
   artifact_count: number;
   custom_fields: Record<string, unknown>;
+  /** 0919：子任务的父任务摘要（含父任务下子任务完成度）；无父任务为 null。 */
+  parent?: { id: string; title: string; done: number; total: number } | null;
 }
 
 export interface TaskDetailDto extends TaskCardDto {
@@ -117,6 +125,24 @@ export interface TaskDetailDto extends TaskCardDto {
   claimed_at: string | null;
   depends_on: { id: string; dep_id: string; title: string; status: TaskStatus; type: string }[];
   blocks: { id: string; dep_id: string; title: string; status: TaskStatus; type: string }[];
+  /** 0919：父任务的需求才有：子任务列表与聚合进度/状态。 */
+  children?: {
+    id: string;
+    title: string;
+    type: string;
+    status: TaskStatus;
+    priority: number;
+    sort_order: number;
+  }[];
+  aggregate?: { total: number; done: number; status: 'DONE' | 'BACKLOG' | 'IN_PROGRESS' } | null;
+}
+
+/** 聚合状态：全 DONE → DONE；全 BACKLOG → BACKLOG；其余一律 IN_PROGRESS。 */
+export function aggregateStatus(statuses: string[]): 'DONE' | 'BACKLOG' | 'IN_PROGRESS' {
+  if (statuses.length === 0) return 'BACKLOG';
+  if (statuses.every((status) => status === 'DONE')) return 'DONE';
+  if (statuses.every((status) => status === 'BACKLOG')) return 'BACKLOG';
+  return 'IN_PROGRESS';
 }
 
 export function parseJsonArray(raw: string | null | undefined): string[] {
@@ -179,6 +205,7 @@ export function toCardDto(
     blockedBy?: { id: string; title: string }[];
     artifacts?: CardArtifact[];
     cardFields?: Record<string, unknown>;
+    parent?: { id: string; title: string; done: number; total: number } | null;
     /** 读到 20.2 表外枚举值时的上报口；不传则本函数保持纯函数、无副作用。 */
     reportUnknownEnum?: UnknownEnumReport;
   } = {},
@@ -207,5 +234,7 @@ export function toCardDto(
     artifacts: extra.artifacts ?? [],
     artifact_count: toNum(row.artifact_count ?? extra.artifacts?.length),
     custom_fields: extra.cardFields ?? {},
+    project_id: row.project_id ?? null,
+    parent: extra.parent ?? null,
   };
 }

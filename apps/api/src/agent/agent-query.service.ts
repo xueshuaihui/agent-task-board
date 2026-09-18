@@ -45,8 +45,8 @@ export class AgentQueryService {
   }
 
   /** `list_ready_tasks` 的精简卡片：够 Agent 决定领哪个，不带描述与产物。 */
-  async summary(taskId: string) {
-    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+  async summary(taskId: string, accountId: string) {
+    const task = await this.prisma.task.findFirst({ where: { id: taskId, accountId } });
     if (!task) throw new ApiException('TASK_GONE', '任务已删除');
     return {
       id: task.id,

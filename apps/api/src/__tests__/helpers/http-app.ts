@@ -80,6 +80,7 @@ export interface SendOptions {
 export interface Sender {
   get<T = any>(url: string, options?: SendOptions): Promise<Res<T>>;
   post<T = any>(url: string, body?: unknown, options?: SendOptions): Promise<Res<T>>;
+  put<T = any>(url: string, body?: unknown, options?: SendOptions): Promise<Res<T>>;
   patch<T = any>(url: string, body?: unknown, options?: SendOptions): Promise<Res<T>>;
   del<T = any>(url: string, body?: unknown, options?: SendOptions): Promise<Res<T>>;
   send<T = any>(url: string, options?: SendOptions): Promise<Res<T>>;
@@ -228,6 +229,7 @@ export function request(t: TestApp, token: string | null = null): Sender {
     send,
     get: (url, options) => send(url, { ...options, method: 'GET' }),
     post: (url, body, options) => send(url, { ...options, method: 'POST', body }),
+    put: (url, body, options) => send(url, { ...options, method: 'PUT', body }),
     patch: (url, body, options) => send(url, { ...options, method: 'PATCH', body }),
     del: (url, body, options) => send(url, { ...options, method: 'DELETE', body }),
   };

@@ -12,6 +12,8 @@ import { ArtifactsController } from '../../artifacts/artifacts.controller';
 import { SignedResourceMiddleware } from '../../artifacts/signed-resource.middleware';
 import { AuditQueryService } from '../../audit-api/audit-query.service';
 import { AuditApiController } from '../../audit-api/audit-api.controller';
+import { AccountsController } from '../../auth/accounts.controller';
+import { AccountsService } from '../../auth/accounts.service';
 import { AuthGuard } from '../../auth/auth.guard';
 import { BackupService } from '../../backup/backup.service';
 import { BackupController } from '../../backup/backup.controller';
@@ -25,6 +27,9 @@ import { EventsService } from '../../infra/events.service';
 import { AppLogger } from '../../infra/logger';
 import { NotificationsService } from '../../infra/notifications.service';
 import { PrismaService } from '../../infra/prisma.service';
+import { PrefsController } from '../../projects/prefs.controller';
+import { ProjectsController } from '../../projects/projects.controller';
+import { ProjectsService } from '../../projects/projects.service';
 import { SettingsService } from '../../infra/settings.service';
 import { AutoArchiveJob } from '../../jobs/auto-archive.job';
 import { DependencyUnlockService } from '../../jobs/dependency-unlock.service';
@@ -71,8 +76,13 @@ export function applyDiShim(): void {
   declare(AuditService, [PrismaService]);
   declare(NotificationsService, [PrismaService, EventsService]);
 
-  // ── auth
+  // ── auth / 0919 项目与偏好
+  declare(AccountsService, [PrismaService, SettingsService, AuditService]);
+  declare(AccountsController, [AccountsService]);
   declare(AuthGuard, [Reflector, PrismaService]);
+  declare(ProjectsService, [PrismaService, AuditService]);
+  declare(ProjectsController, [ProjectsService]);
+  declare(PrefsController, [PrismaService]);
 
   // ── agent / mcp
   declare(AgentQueryService, [PrismaService]);

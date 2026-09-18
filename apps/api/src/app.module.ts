@@ -12,6 +12,7 @@ import { InfraModule } from './infra/infra.module';
 import { JobsModule } from './jobs/jobs.module';
 import { McpModule } from './mcp/mcp.module';
 import { NotificationsApiModule } from './notifications-api/notifications-api.module';
+import { ProjectsModule } from './projects/projects.module';
 import { SettingsApiModule } from './settings-api/settings-api.module';
 import { TasksModule } from './tasks/tasks.module';
 import { TemplatesModule } from './templates/templates.module';
@@ -32,6 +33,7 @@ import { WsModule } from './ws/ws.module';
     SettingsApiModule,
     TemplatesModule,
     NotificationsApiModule,
+    ProjectsModule,
     AuditApiModule,
     ArtifactsModule,
     DataModule,

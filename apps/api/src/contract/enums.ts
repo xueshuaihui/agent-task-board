@@ -95,6 +95,13 @@ export const AUDIT_ACTIONS = [
   'backup',
   'restore',
   'settings_change',
+  // 0919 账号体系
+  'account_init',
+  'account_create',
+  'account_update',
+  'account_change_password',
+  'project_change',
+  'pref_change',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -108,6 +115,9 @@ export const AUDIT_TARGET_TYPES = [
   'token',
   'settings',
   'data',
+  'account',
+  'project',
+  'preference',
 ] as const;
 export type AuditTargetType = (typeof AUDIT_TARGET_TYPES)[number];
 

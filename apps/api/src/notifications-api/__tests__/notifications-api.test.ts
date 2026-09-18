@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { applyMigrations } from '../../infra/bootstrap';
 import { EventsService } from '../../infra/events.service';
 import { NotificationsService } from '../../infra/notifications.service';
+import { BUILTIN_ACCOUNT_ID as BUILTIN } from '../../auth/accounts.service';
 import { PrismaService } from '../../infra/prisma.service';
 import { ZodPipe } from '../../infra/zod.pipe';
 import { NotificationsApiController } from '../notifications-api.controller';
@@ -43,10 +44,10 @@ async function seedPending(): Promise<void> {
 describe('GET /notifications', () => {
   it('默认给全部，unread_count 只数未读（角标的数字来源）', async () => {
     await seedPending();
-    await notifications.markRead(null, true);
+    await notifications.markRead(BUILTIN,null, true);
     await notifications.push('task_unblocked', null, 'T-1018 解除阻塞');
 
-    const all = await notifications.list(false);
+    const all = await notifications.list(BUILTIN,false);
     expect(all.items).toHaveLength(4);
     expect(all.unread_count).toBe(1);
     expect(Object.keys(all).sort().join(',')).toBe('items,unread_count');
@@ -54,7 +55,7 @@ describe('GET /notifications', () => {
 
   it('?unread=true 时 items 只剩未读，时间不倒序，且带任务跳转要用的 task_id', async () => {
     await seedPending();
-    const { items } = await notifications.list(true);
+    const { items } = await notifications.list(BUILTIN,true);
     // 同秒插入的三条只保证 `created_at DESC`：infra 的 list 没带 id 兜底，
     // 同秒内的相对次序不做断言（面板阶段二补 UI 时再加）。
     expect(items.map((item) => item.kind).sort()).toEqual(
@@ -69,31 +70,31 @@ describe('GET /notifications', () => {
 
   it('没有未读时 unread_count 为 0，不是 undefined', async () => {
     await seedPending();
-    await notifications.markRead(null, true);
-    expect((await notifications.list(true)).items).toEqual([]);
-    expect((await notifications.list(false)).unread_count).toBe(0);
+    await notifications.markRead(BUILTIN,null, true);
+    expect((await notifications.list(BUILTIN,true)).items).toEqual([]);
+    expect((await notifications.list(BUILTIN,false)).unread_count).toBe(0);
   });
 });
 
 describe('POST /notifications/read', () => {
   it('{ids:[]} 只标指定几条，其余仍计入未读', async () => {
     await seedPending();
-    const { items } = await notifications.list(true);
-    const updated = await notifications.markRead([items[0].id], false);
+    const { items } = await notifications.list(BUILTIN,true);
+    const updated = await notifications.markRead(BUILTIN,[items[0].id], false);
     expect(updated).toEqual({ updated: 1 });
-    expect((await notifications.list(true)).unread_count).toBe(2);
+    expect((await notifications.list(BUILTIN,true)).unread_count).toBe(2);
   });
 
   it('{all:true} 清空未读，且重复调用不再更新任何行', async () => {
     await seedPending();
-    expect(await notifications.markRead(null, true)).toEqual({ updated: 3 });
-    expect(await notifications.markRead(null, true)).toEqual({ updated: 0 });
-    expect((await notifications.list(false)).unread_count).toBe(0);
+    expect(await notifications.markRead(BUILTIN,null, true)).toEqual({ updated: 3 });
+    expect(await notifications.markRead(BUILTIN,null, true)).toEqual({ updated: 0 });
+    expect((await notifications.list(BUILTIN,false)).unread_count).toBe(0);
   });
 
   it('已读行不删除，面板（阶段二）还要读得到', async () => {
     await seedPending();
-    await notifications.markRead(null, true);
+    await notifications.markRead(BUILTIN,null, true);
     expect(await prisma.notification.count()).toBe(3);
   });
 
@@ -102,14 +103,15 @@ describe('POST /notifications/read', () => {
   const readThrough = async (body: unknown) =>
     new NotificationsApiController(notifications).markRead(
       await new ZodPipe(markReadBodySchema).transform(body, bodyMeta),
+      { kind: 'ui', accountId: BUILTIN, username: 'test', role: 'ADMIN', mustChangePassword: false },
     );
 
   it('36 位 UUID 的真实 id 能标已读（contract 的 idLike ≤24 会把这条整段拒掉）', async () => {
     await seedPending();
-    const { items } = await notifications.list(true);
+    const { items } = await notifications.list(BUILTIN,true);
     expect(items[0].id).toHaveLength(36);
     await expect(readThrough({ ids: [items[0].id] })).resolves.toEqual({ updated: 1 });
-    expect((await notifications.list(true)).unread_count).toBe(2);
+    expect((await notifications.list(BUILTIN,true)).unread_count).toBe(2);
   });
 
   it('两种条件都不给 → 422，ids 超 500 条也拒', async () => {

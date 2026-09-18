@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import type { z } from 'zod';
 import { notificationsQuerySchema } from '../contract/schemas';
-import { AuthScope } from '../auth/auth.scope';
+import { Auth, AuthScope, type RequestAuth } from '../auth/auth.scope';
 import { NotificationsService } from '../infra/notifications.service';
 import { zod } from '../infra/zod.pipe';
 import { type MarkReadInput, markReadBodySchema } from './notifications.dto';
@@ -19,8 +19,8 @@ export class NotificationsApiController {
   constructor(private readonly notifications: NotificationsService) {}
 
   @Get()
-  list(@Query(zod(notificationsQuerySchema)) query: NotificationsQuery) {
-    return this.notifications.list(query.unread === 'true');
+  list(@Query(zod(notificationsQuerySchema)) query: NotificationsQuery, @Auth() auth: RequestAuth) {
+    return this.notifications.list(auth.accountId, query.unread === 'true');
   }
 
   /**
@@ -28,7 +28,7 @@ export class NotificationsApiController {
    * 已读后的数字由前端重取一次列表，服务端不在这里再造第二条通道。
    */
   @Post('read')
-  markRead(@Body(zod(markReadBodySchema)) body: MarkReadInput) {
-    return this.notifications.markRead(body.ids ?? null, body.all === true);
+  markRead(@Body(zod(markReadBodySchema)) body: MarkReadInput, @Auth() auth: RequestAuth) {
+    return this.notifications.markRead(auth.accountId, body.ids ?? null, body.all === true);
   }
 }

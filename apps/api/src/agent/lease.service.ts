@@ -106,8 +106,9 @@ export class LeaseService implements OnModuleInit, OnModuleDestroy {
     const context = { task_id: input.task_id, run_id: input.run_id };
 
     const task = await this.prisma.task.findUnique({ where: { id: input.task_id } });
-    if (!task) {
+    if (!task || task.accountId !== agent.accountId) {
       // Run 随任务级联消失，Agent 手里的三元组已无从校验，只能按「任务没了」回。
+      // 账号不匹配同样按「任务没了」回：跨账号的三元组不提示存在性（20.5 口径）。
       throw new ApiException('TASK_GONE', '任务已删除，结果未写入', undefined, context);
     }
 

@@ -11,6 +11,7 @@ import { PrismaService } from '../../infra/prisma.service';
 import { SettingsService } from '../../infra/settings.service';
 import { ZodPipe } from '../../infra/zod.pipe';
 import { templatePatchBodySchema } from '../template.dto';
+import { BUILTIN_ACCOUNT_ID as BUILTIN } from '../../auth/accounts.service';
 import { TemplatesService } from '../templates.service';
 
 /**
@@ -64,7 +65,7 @@ const fullPreset = {
 describe('POST + GET /templates', () => {
   it('preset 原样读回，键名与 taskCreateSchema 对齐（验收 25）', async () => {
     await seedFieldDef('impact_scope', ['订单模块', '支付']);
-    const created = await templates.create({
+    const created = await templates.create(BUILTIN,{
       name: '缺陷修复',
       description: '线上缺陷用',
       preset: fullPreset,
@@ -76,7 +77,7 @@ describe('POST + GET /templates', () => {
     expect(created.sort_order).toBe(1);
     expect(created.created_at).toMatch(/Z$/);
 
-    const { items } = await templates.list();
+    const { items } = await templates.list(BUILTIN);
     expect(items.map((item) => item.name)).toEqual(['缺陷修复']);
     // 建任务表单可以 `{...preset, title: preset.title_prefix + 输入}` 直接摊开
     const formKeys = Object.keys(created.preset).sort();
@@ -93,7 +94,7 @@ describe('POST + GET /templates', () => {
   });
 
   it('落库的 preset 是 JSON 文本（DDL 的 preset NOT NULL）', async () => {
-    const { items } = await templates.list();
+    const { items } = await templates.list(BUILTIN);
     const row = await prisma.taskTemplate.findUnique({ where: { id: items[0].id } });
     expect(typeof row!.preset).toBe('string');
     expect(JSON.parse(row!.preset)).toMatchObject({ title_prefix: '【缺陷】' });
@@ -110,13 +111,13 @@ describe('POST + GET /templates', () => {
 
   it('预填类型不在 20.9 词表内 → 422', async () => {
     await expect(
-      templates.create({ name: '坏模板', preset: { type: '不存在的类型' }, sort_order: 0 }),
+      templates.create(BUILTIN,{ name: '坏模板', preset: { type: '不存在的类型' }, sort_order: 0 }),
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED', status: 422 });
   });
 
   it('预填字段没有对应定义 / 已停用 / 值违反 20.10 → 一律 422', async () => {
     const bad = (custom_fields: Record<string, unknown>) =>
-      templates.create({ name: '字段坏', preset: { custom_fields }, sort_order: 0 });
+      templates.create(BUILTIN,{ name: '字段坏', preset: { custom_fields }, sort_order: 0 });
     await expect(bad({ ghost: 'x' })).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
     await expect(bad({ impact_scope: '不在候选值里' })).rejects.toMatchObject({
       code: 'VALIDATION_FAILED',
@@ -135,10 +136,10 @@ describe('PATCH /templates/:id', () => {
   const bodyMeta: ArgumentMetadata = { type: 'body', metatype: Object, data: 'id' };
   /** 走真实入参管线：`.partial()` 的 default 回填这类问题只有在 pipe 后才看得到。 */
   const patchThrough = (id: string, body: unknown) =>
-    templates.patch(id, new ZodPipe(templatePatchBodySchema).transform(body, bodyMeta));
+    templates.patch(BUILTIN,id, new ZodPipe(templatePatchBodySchema).transform(body, bodyMeta));
 
   it('只改 name 时 preset 与 sort_order 都不动', async () => {
-    const created = await templates.create({
+    const created = await templates.create(BUILTIN,{
       name: '接口开发',
       preset: { type: '需求', priority: 2, tags: ['api'] },
       sort_order: 7,
@@ -150,12 +151,12 @@ describe('PATCH /templates/:id', () => {
   });
 
   it('传了 preset 即整份替换（编辑弹窗提交全量表单）', async () => {
-    const created = await templates.create({
+    const created = await templates.create(BUILTIN,{
       name: '代码巡检',
       preset: { type: '巡检', priority: 3, tags: ['scan'] },
       sort_order: 0,
     });
-    const patched = await templates.patch(created.id, { preset: { type: '重构' } });
+    const patched = await templates.patch(BUILTIN,created.id, { preset: { type: '重构' } });
     expect(patched.preset).toEqual({ type: '重构' });
   });
 
@@ -167,7 +168,7 @@ describe('PATCH /templates/:id', () => {
   });
 
   it('不存在的 id → 404', async () => {
-    await expect(templates.patch('00000000-0000-4000-8000-000000000000', { name: 'x' })).rejects.toMatchObject(
+    await expect(templates.patch(BUILTIN,'00000000-0000-4000-8000-000000000000', { name: 'x' })).rejects.toMatchObject(
       { code: 'NOT_FOUND', status: 404 },
     );
   });
@@ -175,7 +176,7 @@ describe('PATCH /templates/:id', () => {
 
 describe('DELETE /templates/:id', () => {
   it('删除不回溯任务：模板行没了，任务字段一字不改（7.5）', async () => {
-    const template = await templates.create({
+    const template = await templates.create(BUILTIN,{
       name: '待删模板',
       preset: fullPreset,
       sort_order: 0,
@@ -192,7 +193,7 @@ describe('DELETE /templates/:id', () => {
       },
     });
 
-    await templates.remove(template.id);
+    await templates.remove(BUILTIN,template.id);
 
     expect(await prisma.taskTemplate.findUnique({ where: { id: template.id } })).toBeNull();
     const task = await prisma.task.findUnique({ where: { id: 'T-9100' } });
@@ -208,13 +209,13 @@ describe('DELETE /templates/:id', () => {
   });
 
   it('再删一次 404，列表里没有幽灵行', async () => {
-    const template = await templates.create({ name: '只删一次', preset: {}, sort_order: 0 });
-    await templates.remove(template.id);
-    await expect(templates.remove(template.id)).rejects.toMatchObject({
+    const template = await templates.create(BUILTIN,{ name: '只删一次', preset: {}, sort_order: 0 });
+    await templates.remove(BUILTIN,template.id);
+    await expect(templates.remove(BUILTIN,template.id)).rejects.toMatchObject({
       code: 'NOT_FOUND',
       status: 404,
     });
-    const { items } = await templates.list();
+    const { items } = await templates.list(BUILTIN);
     expect(items.map((item) => item.id)).not.toContain(template.id);
   });
 });

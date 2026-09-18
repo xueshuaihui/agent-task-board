@@ -2,6 +2,8 @@ export const ERROR_STATUS = {
   UNAUTHORIZED: 401,
   INVALID_BACKUP_NAME: 400,
   FORBIDDEN: 403,
+  // 0919：mustChangePassword=true 时除改密/me/logout 外的 UI 接口一律拒绝
+  MUST_CHANGE_PASSWORD: 403,
   NOT_FOUND: 404,
   ARTIFACT_LOST: 404,
   BACKUP_NOT_FOUND: 404,

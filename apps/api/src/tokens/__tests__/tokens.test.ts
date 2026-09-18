@@ -9,6 +9,7 @@ import { hashToken } from '../../contract/ids';
 import { applyMigrations } from '../../infra/bootstrap';
 import { PrismaService } from '../../infra/prisma.service';
 import { TokensService } from '../tokens.service';
+import { BUILTIN_ACCOUNT_ID as BUILTIN } from '../../auth/accounts.service';
 import { AuditService } from '../../infra/audit.service';
 
 /**
@@ -50,7 +51,7 @@ function guardFor(bearer: string): Promise<unknown> {
 
 describe('POST /tokens', () => {
   it('响应给一次性明文，库里只落 sha256', async () => {
-    const issued = await tokens.issue({ name: 'qoder-1', capabilities: ['language:typescript'] });
+    const issued = await tokens.issue(BUILTIN,{ name: 'qoder-1', capabilities: ['language:typescript'] });
     expect(issued.token).toMatch(/^atb_[0-9a-zA-Z]{40}$/);
     expect(issued.capabilities).toEqual(['language:typescript']);
 
@@ -62,7 +63,7 @@ describe('POST /tokens', () => {
   });
 
   it('出参不含 token_hash，审计详情也不含明文', async () => {
-    const issued = await tokens.issue({ name: 'claude-ci', capabilities: [] });
+    const issued = await tokens.issue(BUILTIN,{ name: 'claude-ci', capabilities: [] });
     expect(Object.keys(issued)).not.toContain('token_hash');
     const audit = await prisma.auditLog.findFirst({
       where: { action: 'token_issue', targetId: issued.id },
@@ -74,11 +75,11 @@ describe('POST /tokens', () => {
 
 describe('GET /tokens', () => {
   it('含已吊销项，且不带任何可还原凭证的列', async () => {
-    const active = await tokens.issue({ name: 'qoder-2', capabilities: [] });
-    const legacy = await tokens.issue({ name: 'legacy-bot', capabilities: [] });
-    await tokens.revoke(legacy.id);
+    const active = await tokens.issue(BUILTIN,{ name: 'qoder-2', capabilities: [] });
+    const legacy = await tokens.issue(BUILTIN,{ name: 'legacy-bot', capabilities: [] });
+    await tokens.revoke(BUILTIN,legacy.id);
 
-    const { items } = await tokens.list();
+    const { items } = await tokens.list(BUILTIN);
     const names = items.map((item) => item.name);
     expect(names).toContain('qoder-2');
     expect(names).toContain('legacy-bot');
@@ -94,7 +95,7 @@ describe('GET /tokens', () => {
 
 describe('DELETE /tokens/:id', () => {
   it('吊销后该 Token 的请求一律 401，行仍在、Run 归属不丢', async () => {
-    const issued = await tokens.issue({ name: 'busy-bot', capabilities: [] });
+    const issued = await tokens.issue(BUILTIN,{ name: 'busy-bot', capabilities: [] });
     await expect(guardFor(issued.token)).resolves.toBe(true);
 
     await prisma.task.create({ data: { id: 'T-9001', title: '归属检查' } });
@@ -102,7 +103,7 @@ describe('DELETE /tokens/:id', () => {
       data: { id: 'R-9001', taskId: 'T-9001', runNumber: 1, tokenId: issued.id },
     });
 
-    await tokens.revoke(issued.id);
+    await tokens.revoke(BUILTIN,issued.id);
 
     await expect(guardFor(issued.token)).rejects.toMatchObject({
       code: 'UNAUTHORIZED',
@@ -116,9 +117,9 @@ describe('DELETE /tokens/:id', () => {
   });
 
   it('重复吊销幂等，只留一条 token_revoke 审计', async () => {
-    const issued = await tokens.issue({ name: 'twice-bot', capabilities: [] });
-    await tokens.revoke(issued.id);
-    await tokens.revoke(issued.id);
+    const issued = await tokens.issue(BUILTIN,{ name: 'twice-bot', capabilities: [] });
+    await tokens.revoke(BUILTIN,issued.id);
+    await tokens.revoke(BUILTIN,issued.id);
     const rows = await prisma.auditLog.findMany({
       where: { action: 'token_revoke', targetId: issued.id },
     });
@@ -126,7 +127,7 @@ describe('DELETE /tokens/:id', () => {
   });
 
   it('不存在的 id 给 404 NOT_FOUND', async () => {
-    await expect(tokens.revoke('00000000-0000-4000-8000-000000000000')).rejects.toMatchObject({
+    await expect(tokens.revoke(BUILTIN,'00000000-0000-4000-8000-000000000000')).rejects.toMatchObject({
       code: 'NOT_FOUND',
       status: 404,
     });

@@ -12,8 +12,64 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Account {
+  id                 String  @id
+  username           String  @unique
+  passwordHash       String  @default("") @map("password_hash")
+  salt               String  @default("")
+  algo               String  @default("scrypt")
+  role               String  @default("MEMBER")
+  status             String  @default("ACTIVE")
+  mustChangePassword Int     @default(0) @map("must_change_password")
+  displayName        String? @map("display_name")
+  createdAt          String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  updatedAt          String  @default(dbgenerated("(datetime('now'))")) @map("updated_at")
+
+  preferences UserPreference[]
+  projects    Project[]
+
+  @@map("accounts")
+}
+
+// value 是 JSON 文本，客户端自行 parse/stringify（SQLite 无 JSON 列型）。
+model UserPreference {
+  accountId String  @map("account_id")
+  key       String
+  value     String  @default("{}")
+  updatedAt String  @default(dbgenerated("(datetime('now'))")) @map("updated_at")
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, key])
+  @@map("user_preferences")
+}
+
+model Project {
+  id          String  @id
+  accountId   String  @map("account_id")
+  name        String
+  color       String?
+  icon        String?
+  description String?
+  status      String  @default("ACTIVE")
+  sort        Int     @default(0)
+  createdAt   String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  updatedAt   String  @default(dbgenerated("(datetime('now'))")) @map("updated_at")
+  account     Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tasks       Task[]
+
+  @@index([accountId, status, sort], map: "idx_projects_account")
+  @@map("projects")
+}
+
 model Task {
   id                   String    @id
+  accountId            String    @default("acct_local") @map("account_id")
+  project              Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId            String?   @map("project_id")
+  parent               Task?     @relation("ParentChild", fields: [parentTaskId], references: [id])
+  parentTaskId         String?   @map("parent_task_id")
+  children             Task[]    @relation("ParentChild")
+  sortOrder            Int       @default(0) @map("sort_order")
   type                 String    @default("需求")
   title                String
   description          String?
@@ -43,6 +99,9 @@ model Task {
   dependenciesFrom TaskDependency[]     @relation("Dependents")
   dependenciesTo   TaskDependency[]     @relation("Dependencies")
 
+  @@index([accountId, archivedAt], map: "idx_tasks_account")
+  @@index([projectId], map: "idx_tasks_project")
+  @@index([parentTaskId], map: "idx_tasks_parent")
   @@index([status], map: "idx_tasks_status")
   @@index([status, pinned, priority, createdAt], map: "idx_tasks_ready")
   @@index([archivedAt], map: "idx_tasks_archived")
@@ -66,17 +125,20 @@ model TaskDependency {
 
 model TaskTemplate {
   id          String   @id
+  accountId   String   @default("acct_local") @map("account_id")
   name        String
   description String?
   preset      String
   sortOrder   Int?     @map("sort_order")
   createdAt   String   @default(dbgenerated("(datetime('now'))")) @map("created_at")
 
+  @@index([accountId], map: "idx_templates_account")
   @@map("task_templates")
 }
 
 model CustomFieldDef {
   id           String   @id
+  accountId    String   @default("acct_local") @map("account_id")
   key          String   @unique
   label        String
   type         String
@@ -171,6 +233,7 @@ model Comment {
 
 model ApiToken {
   id           String    @id
+  accountId    String    @default("acct_local") @map("account_id")
   name         String
   tokenHash    String    @unique @map("token_hash")
   capabilities String?   @default("[]")
@@ -179,6 +242,7 @@ model ApiToken {
   createdAt    String    @default(dbgenerated("(datetime('now'))")) @map("created_at")
   runs         TaskRun[]
 
+  @@index([accountId], map: "idx_tokens_account")
   @@map("api_tokens")
 }
 
@@ -213,6 +277,7 @@ model IdSequence {
 
 model Notification {
   id        String   @id
+  accountId String   @default("acct_local") @map("account_id")
   kind      String
   taskId    String?  @map("task_id")
   message   String
@@ -220,5 +285,6 @@ model Notification {
   createdAt String   @default(dbgenerated("(datetime('now'))")) @map("created_at")
   task      Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
+  @@index([accountId, readAt], map: "idx_notif_account")
   @@map("notifications")
 }

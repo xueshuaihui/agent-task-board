@@ -42,18 +42,21 @@ export class FieldDefsService {
     private readonly settings: SettingsService,
   ) {}
 
-  async list(): Promise<{ items: FieldDefDto[] }> {
+  async list(accountId: string): Promise<{ items: FieldDefDto[] }> {
     const rows = await this.prisma.customFieldDef.findMany({
+      where: { accountId },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     });
     return { items: rows.map(toDto) };
   }
 
-  async create(input: FieldDefCreateInput): Promise<FieldDefDto> {
+  async create(accountId: string, input: FieldDefCreateInput): Promise<FieldDefDto> {
     await this.assertTaskTypes(input.applies_to);
     this.assertOptions(input.type, input.options);
     if (input.default_value) this.assertDefault(input.type, input.default_value);
-    const duplicate = await this.prisma.customFieldDef.findUnique({ where: { key: input.key } });
+    const duplicate = await this.prisma.customFieldDef.findFirst({
+      where: { key: input.key, accountId },
+    });
     if (duplicate) {
       throw new ApiException('VALIDATION_FAILED', `字段 key「${input.key}」已存在`, [
         { path: 'key', code: 'duplicate_key', message: '同一 key 不能建两份定义' },
@@ -66,6 +69,7 @@ export class FieldDefsService {
     await this.prisma.customFieldDef.create({
       data: {
         id,
+        accountId,
         key: input.key,
         label: input.label,
         type: input.type,
@@ -87,11 +91,11 @@ export class FieldDefsService {
       targetId: input.key,
       after: { ...input },
     });
-    return (await this.get(id)).dto;
+    return (await this.get(accountId, id)).dto;
   }
 
-  async patch(id: string, input: FieldDefPatchInput): Promise<FieldDefDto> {
-    const { dto: before } = await this.get(id);
+  async patch(accountId: string, id: string, input: FieldDefPatchInput): Promise<FieldDefDto> {
+    const { dto: before } = await this.get(accountId, id);
     // PATCH 的 schema 已挡掉 key/type，走到这里只可能是别的属性；applies_to 仍需按词表校验。
     if (input.applies_to) await this.assertTaskTypes(input.applies_to);
     const type = before.type;
@@ -129,15 +133,16 @@ export class FieldDefsService {
       before: { ...before },
       after: { ...input },
     });
-    return (await this.get(id)).dto;
+    return (await this.get(accountId, id)).dto;
   }
 
   /** 13 章：删除只对未被任何任务引用的字段开放，被引用时提示「改用停用」。 */
-  async remove(id: string): Promise<{ id: string; deleted: boolean }> {
-    const { dto } = await this.get(id);
+  async remove(accountId: string, id: string): Promise<{ id: string; deleted: boolean }> {
+    const { dto } = await this.get(accountId, id);
     const rows = await this.prisma.$queryRaw<{ count: number | bigint }[]>`
       SELECT COUNT(*) AS count FROM tasks
-      WHERE custom_fields IS NOT NULL
+      WHERE account_id = ${accountId}
+        AND custom_fields IS NOT NULL
         AND EXISTS (
           SELECT 1 FROM json_each(custom_fields) e WHERE e.key = ${dto.key})`;
     const used = Number(rows[0]?.count ?? 0);
@@ -158,8 +163,8 @@ export class FieldDefsService {
     return { id, deleted: true };
   }
 
-  private async get(id: string): Promise<{ dto: FieldDefDto }> {
-    const row = await this.prisma.customFieldDef.findUnique({ where: { id } });
+  private async get(accountId: string, id: string): Promise<{ dto: FieldDefDto }> {
+    const row = await this.prisma.customFieldDef.findFirst({ where: { id, accountId } });
     if (!row) throw new ApiException('NOT_FOUND', `字段定义 ${id} 不存在`);
     return { dto: toDto(row) };
   }

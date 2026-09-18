@@ -10,7 +10,7 @@ import { AuditService } from '../infra/audit.service';
 import { EventsService } from '../infra/events.service';
 import { PrismaService } from '../infra/prisma.service';
 import { SettingsService } from '../infra/settings.service';
-import { agentOf } from './agent-auth';
+import { agentOf, type AgentAuth } from './agent-auth';
 import type { ClaimInput, ListReadyInput } from './agent-inputs';
 import type { ClaimResult } from './agent-task.dto';
 import { AgentQueryService } from './agent-query.service';
@@ -75,7 +75,7 @@ export class ClaimService {
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        return await this.claimOnce(input, agent.tokenId, agent.tokenName, effective, leaseId, modifier, ttl);
+        return await this.claimOnce(input, agent, effective, leaseId, modifier, ttl);
       } catch (error) {
         if (error instanceof ClaimMiss) {
           return { task: null, reason: error.reason };
@@ -99,16 +99,18 @@ export class ClaimService {
 
   private async claimOnce(
     input: ClaimInput,
-    tokenId: string,
-    tokenName: string,
+    agent: AgentAuth,
     effective: Set<string>,
     leaseId: string,
     modifier: string,
     ttl: number,
   ): Promise<ClaimResult> {
+    const tokenId = agent.tokenId;
+    const tokenName = agent.tokenName;
     const claimed = await this.prisma.$transaction(async (tx) => {
       const candidates = await tx.$queryRawUnsafe<CandidateRow[]>(
         `${CANDIDATE_SELECT} LIMIT ?`,
+        agent.accountId,
         CLAIM_CANDIDATE_WINDOW,
       );
       const matched = candidates.filter(
@@ -130,6 +132,7 @@ export class ClaimService {
           leaseId,
           modifier,
           candidate.id,
+          agent.accountId,
           candidate.id,
         );
         if (changed === 0) continue;
@@ -196,6 +199,7 @@ export class ClaimService {
     const effective = new Set(effectiveCapabilities(input.capabilities, agent.capabilities));
     const rows = await this.prisma.$queryRawUnsafe<CandidateRow[]>(
       `${CANDIDATE_SELECT} LIMIT ?`,
+      agent.accountId,
       LIST_CANDIDATE_WINDOW,
     );
     const matched = rows
@@ -207,7 +211,7 @@ export class ClaimService {
       .slice(0, input.limit);
 
     return {
-      items: await Promise.all(matched.map((row) => this.query.summary(row.id))),
+      items: await Promise.all(matched.map((row) => this.query.summary(row.id, agent.accountId))),
       count: matched.length,
       limit: input.limit,
     };
@@ -219,7 +223,10 @@ const CANDIDATE_SELECT = `
   SELECT t.id, t.type, t.required_capabilities, t.run_count
   FROM tasks t
   WHERE t.status = 'READY'
+    AND t.account_id = ?
     AND t.archived_at IS NULL
+    -- 0919：父任务（需求）不进 Agent 池，只以子任务被领取
+    AND NOT EXISTS (SELECT 1 FROM tasks c WHERE c.parent_task_id = t.id)
     AND (t.lease_id IS NULL OR t.lease_expires_at <= datetime('now'))
     AND NOT EXISTS (
       SELECT 1 FROM task_dependencies d
@@ -246,6 +253,7 @@ const CLAIM_UPDATE_SQL = `
   WHERE id = ?
     AND status = 'READY'
     AND archived_at IS NULL
+    AND account_id = ?
     AND (lease_id IS NULL OR lease_expires_at <= datetime('now'))
     AND NOT EXISTS (
       SELECT 1 FROM task_dependencies d
