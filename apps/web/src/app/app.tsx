@@ -5,6 +5,7 @@ import { BoardPage } from '@/features/board';
 import { ReviewPage } from '@/features/review';
 import { SettingsPage } from '@/features/settings';
 import { TaskListPage } from '@/features/task-list';
+import { ChangePasswordPage, LoginPage, RequireAuth } from '@/features/auth';
 import { applyUiTheme } from '@/lib/theme';
 import { useWSWarning } from '@/ws';
 import type { RouteName } from './router';
@@ -24,7 +25,7 @@ import { TopBar } from './top-bar';
  * 壳层自己只读一个设置键：`ui_theme`（20.9，见 `useUiThemeSync`）。存值可能来自任何一条路径
  * （导入 JSON、另一个窗口、直接 `PATCH /settings`），只挂在设置页上就等于「存了不生效」。
  */
-const PAGES: Record<RouteName, ComponentType> = {
+const PAGES: Record<Exclude<RouteName, 'login' | 'changePassword'>, ComponentType> = {
   board: BoardPage,
   review: ReviewPage,
   tasks: TaskListPage,
@@ -48,10 +49,30 @@ function useUiThemeSync(): void {
   }, [theme]);
 }
 
+/**
+ * 根组件：认证页（0919 三章公开路由）不套工作区壳、不进认证守卫；
+ * 其余路由包 `RequireAuth`——未登录跳 /login、首登强制改密跳 /change-password。
+ */
 export function AppShell() {
   const route = useRoute();
-  const ws = useWSWarning();
+  if (route.name === 'login') return <LoginPage />;
+  if (route.name === 'changePassword') return <ChangePasswordPage />;
   const Page = PAGES[route.name];
+  return (
+    <RequireAuth>
+      <WorkspaceShell page={Page} routeKey={route.key} />
+    </RequireAuth>
+  );
+}
+
+function WorkspaceShell({
+  page: Page,
+  routeKey,
+}: {
+  page: ComponentType;
+  routeKey: string;
+}) {
+  const ws = useWSWarning();
   useUiThemeSync();
 
   return (
@@ -67,7 +88,7 @@ export function AppShell() {
       ) : null}
       <main className="atb-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6">
         <AnimatePresence mode="wait">
-          <PageTransition key={route.key}>
+          <PageTransition key={routeKey}>
             <Page />
           </PageTransition>
         </AnimatePresence>

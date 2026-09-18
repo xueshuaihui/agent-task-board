@@ -6,6 +6,7 @@ import { useUnreadStore, badgeText } from '@/app/store/unread';
 import { taskListSearch } from '@/app/store/filters';
 import { navigate, NAV_ORDER, ROUTES, useRoute } from '@/app/router';
 import { IconButton } from '@/components/ui';
+import { AccountMenu } from '@/features/auth';
 import { useUnreadCount } from '@/ws';
 import { springs } from '@/lib/motion';
 import { applyUiTheme } from '@/lib/theme';
@@ -149,6 +150,9 @@ export function TopBar() {
             </motion.span>
           ) : null}
         </div>
+
+        {/* 2.3 账号下拉：显示名 / 切换账号 / 修改密码 / ADMIN 的用户管理 / 退出登录。 */}
+        <AccountMenu />
       </div>
     </header>
   );

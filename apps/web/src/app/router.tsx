@@ -16,6 +16,10 @@ export const ROUTES = {
   review: { path: '/review', label: '审核' },
   tasks: { path: '/tasks', label: '任务' },
   settings: { path: '/settings', label: '设置' },
+  // 0919 三章：公开路由（登录 / 首登强制改密），不在主导航出现（NAV_ORDER 不含），
+  // app.tsx 的 AppShell 按名字分流到认证页而非工作区壳。
+  login: { path: '/login', label: '登录' },
+  changePassword: { path: '/change-password', label: '修改密码' },
 } as const satisfies Record<string, { path: string; label: string }>;
 
 export type RouteName = keyof typeof ROUTES;
