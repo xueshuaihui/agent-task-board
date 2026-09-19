@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Save, Send } from 'lucide-react';
-import { Button, Skeleton, Tabs, useToast } from '@/components/ui';
+import { Button, Field, Input, Skeleton, Tabs, Textarea, useToast } from '@/components/ui';
 import { errorMessage } from '@/api';
 import { BlockEditor } from './block-editor';
 import { usePatchSkill, useSkill } from './hooks';
@@ -31,6 +31,11 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
   const skill = query.data;
 
   const [content, setContent] = useState<SkillContent>({ blocks: [], entryBlockId: null });
+  const [meta, setMeta] = useState<{ name: string; description: string; tagsText: string }>({
+    name: '',
+    description: '',
+    tagsText: '',
+  });
   const [dirty, setDirty] = useState(false);
   const [mode, setMode] = useState('visual');
   const [publishOpen, setPublishOpen] = useState(false);
@@ -38,12 +43,22 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
   useEffect(() => {
     if (skill) {
       setContent(skill.content ?? emptyContent());
+      setMeta({
+        name: skill.name,
+        description: skill.description,
+        tagsText: skill.tags.join(', '),
+      });
       setDirty(false);
     }
   }, [skill]);
 
   const patch = usePatchSkill((updated) => {
     setContent(updated.content ?? emptyContent());
+    setMeta({
+      name: updated.name,
+      description: updated.description,
+      tagsText: updated.tags.join(', '),
+    });
     setDirty(false);
     toast.success('草稿已保存');
   });
@@ -51,7 +66,18 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
   const saveDraft = () => {
     if (!skill) return;
     patch.mutate(
-      { id: skill.id, body: { content } },
+      {
+        id: skill.id,
+        body: {
+          content,
+          name: meta.name.trim(),
+          description: meta.description.trim(),
+          tags: meta.tagsText
+            .split(/[,，\s]+/)
+            .map((tag) => tag.trim())
+            .filter(Boolean),
+        },
+      },
       { onError: (error) => toast.error('保存失败', errorMessage(error)) },
     );
   };
@@ -119,6 +145,47 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
       <div className="min-h-0 flex-1">
         {mode === 'visual' ? (
           <div className="mx-auto max-w-3xl">
+            {skill ? (
+              <div className="mb-4 flex flex-col gap-3 rounded-card border border-border bg-bg-raised p-4">
+                <p className="text-card-title text-text-secondary">技能信息</p>
+                <Field label="名称" htmlFor="skill-edit-name">
+                  <Input
+                    id="skill-edit-name"
+                    value={meta.name}
+                    onChange={(event) => {
+                      setMeta((prev) => ({ ...prev, name: event.target.value }));
+                      setDirty(true);
+                    }}
+                  />
+                </Field>
+                <Field
+                  label="描述"
+                  htmlFor="skill-edit-desc"
+                  hint={meta.description.trim() ? undefined : '发布前检查要求描述不为空'}
+                >
+                  <Textarea
+                    id="skill-edit-desc"
+                    value={meta.description}
+                    rows={3}
+                    placeholder="这个技能解决什么问题、怎么用"
+                    onChange={(event) => {
+                      setMeta((prev) => ({ ...prev, description: event.target.value }));
+                      setDirty(true);
+                    }}
+                  />
+                </Field>
+                <Field label="标签" hint="逗号或空格分隔">
+                  <Input
+                    value={meta.tagsText}
+                    placeholder="review, quality"
+                    onChange={(event) => {
+                      setMeta((prev) => ({ ...prev, tagsText: event.target.value }));
+                      setDirty(true);
+                    }}
+                  />
+                </Field>
+              </div>
+            ) : null}
             {skill ? (
               <BlockEditor
                 content={content}

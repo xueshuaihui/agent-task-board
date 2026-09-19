@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, Check } from 'lucide-react';
-import { Button, Dialog, Field, Textarea } from '@/components/ui';
-import { usePublishSkill } from './hooks';
+import { Button, Dialog, Field, Input, Textarea } from '@/components/ui';
+import { usePatchSkill, usePublishSkill } from './hooks';
 import { McpDependencyEditor } from './mcp-dependency-editor';
 import { danglingNexts, previewNextVersion } from './meta';
 import type { Skill, SkillContent, SkillMcpDependency } from './types';
@@ -24,15 +24,20 @@ export interface PublishDialogProps {
 export function PublishDialog({ open, skill, content, onClose, onPublished }: PublishDialogProps) {
   const [changelog, setChangelog] = useState('');
   const [mcp, setMcp] = useState<SkillMcpDependency[]>(skill.mcp_dependencies);
+  const [metaOpen, setMetaOpen] = useState(false);
+  const [fixName, setFixName] = useState(skill.name);
+  const [fixDescription, setFixDescription] = useState(skill.description);
   const publish = usePublishSkill((updated) => {
     onClose();
     onPublished(updated);
   });
+  const patchMeta = usePatchSkill(() => setMetaOpen(false));
 
   if (!open) return null;
 
   const nextVersion = previewNextVersion(skill.current_version);
   const brokenLinks = danglingNexts(content);
+  const metaMissingDescription = !skill.description;
   const checks: { ok: boolean; text: string }[] = [
     { ok: Boolean(skill.name) && Boolean(skill.description), text: '元数据完整（名称、描述）' },
     { ok: Boolean(content.entryBlockId) && content.blocks.length > 0, text: '入口块与内容块存在' },
@@ -80,14 +85,71 @@ export function PublishDialog({ open, skill, content, onClose, onPublished }: Pu
         <div className="flex flex-col gap-1.5 rounded-card border border-border bg-bg-raised p-3">
           <p className="text-card-title text-text-secondary">发布前检查</p>
           {checks.map((check) => (
-            <p key={check.text} className="flex items-center gap-2 text-aux">
-              {check.ok ? (
-                <Check className="size-3.5 text-status-done" />
-              ) : (
-                <AlertTriangle className="size-3.5 text-status-running" />
-              )}
-              <span className={check.ok ? 'text-text-secondary' : 'text-text-primary'}>{check.text}</span>
-            </p>
+            <div key={check.text} className="flex flex-col gap-1.5">
+              <p className="flex items-center gap-2 text-aux">
+                {check.ok ? (
+                  <Check className="size-3.5 text-status-done" />
+                ) : (
+                  <AlertTriangle className="size-3.5 text-status-running" />
+                )}
+                <span className={check.ok ? 'text-text-secondary' : 'text-text-primary'}>{check.text}</span>
+                {check.text === '元数据完整（名称、描述）' && !check.ok ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto"
+                    onClick={() => {
+                      setFixName(skill.name);
+                      setFixDescription(skill.description);
+                      setMetaOpen((prev) => !prev);
+                    }}
+                  >
+                    {metaOpen ? '收起' : '就地补齐'}
+                  </Button>
+                ) : null}
+              </p>
+              {check.text === '元数据完整（名称、描述）' && !check.ok && metaOpen ? (
+                <div className="flex flex-col gap-2 rounded-card border border-border bg-bg p-3">
+                  <Field label="名称" htmlFor="publish-fix-name">
+                    <Input
+                      id="publish-fix-name"
+                      value={fixName}
+                      onChange={(event) => setFixName(event.target.value)}
+                    />
+                  </Field>
+                  <Field label="描述" htmlFor="publish-fix-desc">
+                    <Textarea
+                      id="publish-fix-desc"
+                      value={fixDescription}
+                      rows={3}
+                      placeholder="这个技能解决什么问题、怎么用"
+                      onChange={(event) => setFixDescription(event.target.value)}
+                    />
+                  </Field>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="self-start"
+                    disabled={!fixName.trim()}
+                    loading={patchMeta.isPending}
+                    onClick={() =>
+                      patchMeta.mutate({
+                        id: skill.id,
+                        body: {
+                          name: fixName.trim(),
+                          description: fixDescription.trim(),
+                        },
+                      })
+                    }
+                  >
+                    保存
+                  </Button>
+                  {metaMissingDescription ? (
+                    <p className="text-aux text-text-tertiary">保存后检查自动通过；也可稍后在编辑器补齐描述。</p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
           ))}
         </div>
       </div>
