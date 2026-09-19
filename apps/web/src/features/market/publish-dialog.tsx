@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Store } from 'lucide-react';
+import { Cloud, Store } from 'lucide-react';
 import { Button, Checkbox, Dialog, Field, Input, Select, useToast } from '@/components/ui';
-import { useMarketPublish } from './hooks';
+import { useCloudStatus, useMarketCloudPublish, useMarketPublish } from './hooks';
 import { MARKET_CATEGORIES, COMPATIBLE_CLIENTS } from './types';
 
 /**
@@ -34,6 +34,14 @@ export function MarketPublishDialog({ open, skillId, onClose }: MarketPublishDia
     onClose();
   });
 
+  // 0919 服务端市场：connected 时给出「发布到服务端市场」入口（服务端直发无审核流）
+  const cloudStatus = useCloudStatus({ enabled: open });
+  const connected = cloudStatus.data?.connected ?? false;
+  const cloudPublish = useMarketCloudPublish(() => {
+    toast.success('已发布到服务端市场', `以 ${cloudStatus.data?.username ?? ''} 身份上架，可在服务端市场检索`);
+    onClose();
+  });
+
   const toggleClient = (client: string) => {
     setClients((prev) => (prev.includes(client) ? prev.filter((item) => item !== client) : [...prev, client]));
   };
@@ -44,6 +52,21 @@ export function MarketPublishDialog({ open, skillId, onClose }: MarketPublishDia
       return;
     }
     publish.mutate({ skill_id: skillId, visibility, category, license, compatible_clients: clients });
+  };
+
+  const submitCloud = () => {
+    if (!category) {
+      toast.error('请选择分类');
+      return;
+    }
+    // 服务端直发：private 同样按原样上传，由服务端决定可见性
+    cloudPublish.mutate({
+      skill_id: skillId,
+      visibility: visibility === 'public' ? 'public' : 'private',
+      category,
+      license,
+      compatible_clients: clients,
+    });
   };
 
   return (
@@ -61,6 +84,12 @@ export function MarketPublishDialog({ open, skillId, onClose }: MarketPublishDia
           <Button variant="ghost" onClick={onClose}>
             取消
           </Button>
+          {connected ? (
+            <Button variant="primary" loading={cloudPublish.isPending} onClick={submitCloud}>
+              <Cloud className="size-4" aria-hidden />
+              发布到服务端市场
+            </Button>
+          ) : null}
           <Button variant="primary" loading={publish.isPending} onClick={submit}>
             {visibility === 'public' ? '提交审核' : '保存为私有'}
           </Button>
@@ -68,6 +97,12 @@ export function MarketPublishDialog({ open, skillId, onClose }: MarketPublishDia
       }
     >
       <div className="flex flex-col gap-4">
+        {connected ? (
+          <div className="inline-flex items-center gap-1.5 text-aux text-text-secondary">
+            <Cloud className="size-4 text-primary" aria-hidden />
+            ☁ 已连接服务端市场（{cloudStatus.data?.username}）：可直接发布同步到服务端，服务端失败原因会原样透出
+          </div>
+        ) : null}
         <Field label="可见性" hint="私有发布仅作记录不上架；公开发布提交管理员审核">
           <Select
             value={visibility}

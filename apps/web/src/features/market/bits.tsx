@@ -7,13 +7,11 @@ import type { MarketSource } from './types';
 
 /** 市场各页共用的小展示件：来源徽标 / 类型标签 / 评分星。 */
 
-/** 来源徽标：官方 builtin / 市场 published（1.md 9.2）。 */
+/** 来源徽标：官方 builtin / 市场 published / 服务端 cloud（1.md 9.2 + 0919 服务端市场）。 */
 export function SourceBadge({ source }: { source: MarketSource }) {
-  return source === 'builtin' ? (
-    <Badge className="bg-primary-light text-primary">官方</Badge>
-  ) : (
-    <Badge>市场</Badge>
-  );
+  if (source === 'builtin') return <Badge className="bg-primary-light text-primary">官方</Badge>;
+  if (source === 'cloud') return <Badge className="bg-primary-light text-primary">☁ 服务端</Badge>;
+  return <Badge>市场</Badge>;
 }
 
 /** 类型标签（复用技能库的类型词表与文案）。 */

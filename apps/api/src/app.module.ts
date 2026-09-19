@@ -27,7 +27,7 @@ import { WsModule } from './ws/ws.module';
     AuthModule,
     FieldDefsModule,
     // SkillsModule 先于 AgentModule：AgentQueryService 注入 SkillsService 解析任务绑定（10.3）。
-    // MarketModule：0919 九章云端市场（内置技能在 onModuleInit 幂等种子）。
+    // MarketModule：0919 九章服务端市场（内置技能在 onModuleInit 幂等种子）。
     MarketModule,
     SkillsModule,
     // 字面量子路由（tasks/ready、tasks/claim）必须早于 TasksController 的 tasks/:id 注册，

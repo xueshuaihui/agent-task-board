@@ -17,7 +17,7 @@ import { useShellStore } from './store/shell';
  * （overlay-slot 只挂一份 TaskDetailDrawer，见 app/overlay-slot.tsx）。
  *
  * 技能 / 项目 / 命令分组是 2.4 原型的完整形态：技能与项目各有自己的检索端点规划、
- * 命令是调色板能力，本期云端与调色板不落地，先不渲染空分组。
+ * 命令是调色板能力，本期服务端与调色板不落地，先不渲染空分组。
  */
 const DEBOUNCE_MS = 300;
 const KEYWORD_MAX = 120;

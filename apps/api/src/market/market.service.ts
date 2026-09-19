@@ -24,8 +24,13 @@ import {
   type MarketSubscriptionDto,
   type MarketSubscriptionStatus,
   type MarketReviewInput,
+  type CloudPublishInput as MarketCloudPublishInput,
 } from './market.dto';
 import { BUILTIN_LISTINGS, DELISTED_BUILTIN_SLUGS } from './market.seed';
+import { slugify } from './slugify';
+
+export { slugify };
+import { CloudMarketService, isCloudListingId, toCloudId } from './cloud/cloud-market.service';
 import type { SkillContent, SkillMcpDependency } from '../skills/skills.dto';
 
 const EMPTY_CONTENT: SkillContent = { blocks: [], entryBlockId: null };
@@ -39,14 +44,6 @@ function parseJson<T>(raw: string, fallback: T): T {
   }
 }
 
-/** 发布 slugify：非 ASCII（中文技能名）整体归一为 'skill'，冲突由调用方加后缀。 */
-export function slugify(name: string): string {
-  const slug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return slug || 'skill';
-}
 
 interface AccountBrief {
   id: string;
@@ -56,7 +53,10 @@ interface AccountBrief {
 
 @Injectable()
 export class MarketService implements OnModuleInit {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cloud: CloudMarketService,
+  ) {}
 
   /** 8.8 内置技能：启动时按 slug 幂等种子（已存在即跳过）。 */
   async onModuleInit(): Promise<void> {
@@ -121,10 +121,14 @@ export class MarketService implements OnModuleInit {
   // ---------------------------------------------------------------- 浏览/详情（9.1/9.2）
 
   /** 浏览：只出 PUBLISHED（builtin 种子即 PUBLISHED）；UNLISTED 只在我的发布可见。 */
+  /**
+   * 浏览：本地 PUBLISHED（builtin/published/服务端影子）+ 已连接时聚合服务端 listing。
+   * 服务端不可达时静默回落本地，响应带 warning 提示（不打断浏览）。
+   */
   async list(
     query: MarketListQuery,
     accountId: string,
-  ): Promise<{ items: MarketListingSummary[]; total: number }> {
+  ): Promise<{ items: MarketListingSummary[]; total: number; warning?: string }> {
     const rows = await this.prisma.marketListing.findMany({ where: { status: 'PUBLISHED' } });
     const keyword = query.keyword?.toLowerCase();
     const items: MarketListingSummary[] = [];
@@ -146,9 +150,35 @@ export class MarketService implements OnModuleInit {
       }
       items.push(await this.toSummary(row));
     }
+    // 服务端源聚合：过滤条件下推（keyword/category/type），min_rating/compatible_client 在合并后本地过滤
+    let warning: string | undefined;
+    try {
+      const remote = await this.cloud.fetchListings({
+        keyword: query.keyword,
+        category: query.category,
+        type: query.type,
+        sort: query.sort,
+      });
+      if (remote) {
+        for (const summary of remote.items) {
+          if (query.min_rating !== undefined && summary.rating_avg < query.min_rating) continue;
+          if (query.compatible_client && !summary.compatible_clients.includes(query.compatible_client)) continue;
+          if (keyword) {
+            const hit =
+              summary.name.toLowerCase().includes(keyword) ||
+              summary.description.toLowerCase().includes(keyword) ||
+              summary.tags.some((tag) => tag.toLowerCase().includes(keyword));
+            if (!hit) continue;
+          }
+          items.push(summary);
+        }
+      }
+    } catch {
+      warning = '服务端市场不可达，已回落本地市场';
+    }
     const sorted = this.sortListings(items, query.sort);
     void accountId;
-    return { items: sorted, total: sorted.length };
+    return warning ? { items: sorted, total: sorted.length, warning } : { items: sorted, total: sorted.length };
   }
 
   private sortListings(items: MarketListingSummary[], sort: MarketListQuery['sort']): MarketListingSummary[] {
@@ -170,6 +200,10 @@ export class MarketService implements OnModuleInit {
   }
 
   async detail(id: string, accountId: string): Promise<MarketListingDetail> {
+    // 服务端来源 listing：详情整体走服务端（评论/评分服务端为准），my.* 查本地影子订阅
+    if (isCloudListingId(id)) {
+      return this.cloud.fetchDetail(id, accountId);
+    }
     const row = await this.prisma.marketListing.findUnique({ where: { id } });
     if (!row) throw new ApiException('NOT_FOUND', '市场技能不存在');
     // UNLISTED/PENDING/REJECTED/DELISTED 只有发布者本人与 ADMIN 可见（14.2 我的发布口径）
@@ -246,6 +280,47 @@ export class MarketService implements OnModuleInit {
     return this.detail(row.id, accountId);
   }
 
+  /**
+   * 发布到服务端市场（0919 对接层）：把本地技能当前版本上传服务端。
+   * visibility='local' 保持纯本地（现状不动）；public/private 上传成功后本地记
+   * cloud_listing_id 且状态 PUBLISHED（服务端直发无审核流）。服务端失败透传原文（502）。
+   */
+  async publishToCloud(
+    input: MarketCloudPublishInput,
+    accountId: string,
+  ): Promise<MarketListingDetail | { published: false; message: string }> {
+    if (input.visibility === 'local') {
+      return { published: false, message: '保持纯本地发布，未上传服务端' };
+    }
+    const skill = await this.prisma.skill.findFirst({ where: { id: input.skill_id, accountId } });
+    if (!skill) throw new ApiException('NOT_FOUND', '技能不存在');
+    if (skill.status !== 'PUBLISHED') {
+      throw new ApiException('ILLEGAL_TRANSITION', '技能需先发布（PUBLISHED）才能上架市场', undefined, {
+        skill_status: skill.status,
+      });
+    }
+    const row = await this.cloud.publishSkill(
+      {
+        id: skill.id,
+        name: skill.name,
+        description: skill.description,
+        tags: skill.tags,
+        type: skill.type,
+        content: skill.content,
+        mcpDependencies: skill.mcpDependencies,
+        currentVersion: skill.currentVersion,
+      },
+      {
+        category: input.category,
+        license: input.license,
+        compatible_clients: input.compatible_clients,
+        visibility: input.visibility,
+      },
+      accountId,
+    );
+    return this.detail(row.id, accountId);
+  }
+
   /** 审核：仅 ADMIN；approve→PUBLISHED（记 published_at），reject→REJECTED。 */
   async review(id: string, input: MarketReviewInput, accountId: string): Promise<MarketListingDetail> {
     const auth = await this.requireAccount(accountId);
@@ -268,7 +343,7 @@ export class MarketService implements OnModuleInit {
     return this.detail(id, accountId);
   }
 
-  /** 下线（9.4）：publisher 或 ADMIN；云端下架 + 全部订阅行置 DELISTED（快照保留）。 */
+  /** 下线（9.4）：publisher 或 ADMIN；服务端下架 + 全部订阅行置 DELISTED（快照保留）。 */
   async delist(id: string, accountId: string): Promise<MarketListingDetail> {
     const auth = await this.requireAccount(accountId);
     const row = await this.requireListing(id);
@@ -331,6 +406,10 @@ export class MarketService implements OnModuleInit {
     id: string,
     accountId: string,
   ): Promise<MarketSubscriptionDto & { content: SkillContent }> {
+    // 服务端来源：先取服务端 content 快照并落地影子 listing（source='cloud'），再走既有本地落地逻辑
+    if (isCloudListingId(id)) {
+      await this.cloud.fetchSnapshot(id);
+    }
     const row = await this.requireListing(id);
     if (row.status !== 'PUBLISHED') {
       throw new ApiException('ILLEGAL_TRANSITION', `当前状态「${MARKET_STATUS_LABEL[row.status as MarketListingStatus]}」不可订阅`, undefined, {
@@ -405,11 +484,18 @@ export class MarketService implements OnModuleInit {
 
   /** 拉新：把本地技能升级到 listing 最新快照（走 skill_versions 新版本），status→SYNCED。 */
   async pullUpdate(id: string, accountId: string): Promise<MarketSubscriptionDto & { content: SkillContent }> {
-    const row = await this.requireListing(id);
     const subscription = await this.prisma.marketSubscription.findUnique({
       where: { accountId_listingId: { accountId, listingId: id } },
     });
     if (!subscription) throw new ApiException('NOT_FOUND', '尚未订阅该技能');
+    // 服务端来源：「检查更新」调服务端 versions 对比；已是最新则原样返回，否则拉服务端快照对齐
+    if (isCloudListingId(id)) {
+      const latest = await this.cloud.fetchLatestVersion(toCloudId(id));
+      if (latest && latest !== subscription.snapshotVersion) {
+        await this.cloud.fetchSnapshot(id);
+      }
+    }
+    const row = await this.requireListing(id);
     await this.syncSnapshot(row, subscription);
     return this.subscriptionDto(
       (await this.prisma.marketSubscription.findUnique({
@@ -508,7 +594,7 @@ export class MarketService implements OnModuleInit {
       listing_name: listing.name,
       listing_slug: listing.slug,
       listing_status: listing.status as MarketListingStatus,
-      source: listing.source as 'builtin' | 'published',
+      source: listing.source as 'builtin' | 'published' | 'cloud',
       status: row.status as MarketSubscriptionStatus,
       snapshot_version: row.snapshotVersion,
       latest_version: listing.currentVersion,
@@ -521,6 +607,11 @@ export class MarketService implements OnModuleInit {
   // ---------------------------------------------------------------- 评分/评论/收藏/举报（9.5）
 
   async rate(id: string, input: MarketRatingInput, accountId: string): Promise<{ avg: number; count: number }> {
+    // 服务端来源：直接代理到服务端，本地不落库
+    if (isCloudListingId(id)) {
+      void accountId;
+      return this.cloud.rate(id, input.score);
+    }
     await this.requireListing(id);
     const existing = await this.prisma.marketRating.findUnique({
       where: { accountId_listingId: { accountId, listingId: id } },
@@ -554,6 +645,9 @@ export class MarketService implements OnModuleInit {
   }
 
   async comment(id: string, input: MarketCommentInput, accountId: string): Promise<MarketCommentDto> {
+    if (isCloudListingId(id)) {
+      return this.cloud.comment(id, input.content, accountId);
+    }
     await this.requireListing(id);
     const row = await this.prisma.marketComment.create({
       data: { id: `mkc_${uuidv7()}`, accountId, listingId: id, content: input.content },
@@ -597,6 +691,10 @@ export class MarketService implements OnModuleInit {
 
   /** 收藏 toggle。 */
   async toggleFavorite(id: string, accountId: string): Promise<{ favorited: boolean }> {
+    if (isCloudListingId(id)) {
+      void accountId;
+      return this.cloud.toggleFavorite(id);
+    }
     await this.requireListing(id);
     const existing = await this.prisma.marketFavorite.findUnique({
       where: { accountId_listingId: { accountId, listingId: id } },
@@ -612,6 +710,10 @@ export class MarketService implements OnModuleInit {
   }
 
   async report(id: string, input: MarketReportInput, accountId: string): Promise<{ ok: true }> {
+    if (isCloudListingId(id)) {
+      void accountId;
+      return this.cloud.report(id, input.reason);
+    }
     await this.requireListing(id);
     await this.prisma.marketReport.create({
       data: { id: `mkr_${uuidv7()}`, accountId, listingId: id, reason: input.reason },
@@ -622,6 +724,9 @@ export class MarketService implements OnModuleInit {
   // ---------------------------------------------------------------- 反馈闭环（9.5/14.3）
 
   async createFeedback(id: string, input: MarketFeedbackInput, accountId: string): Promise<MarketFeedbackDto> {
+    if (isCloudListingId(id)) {
+      return this.cloud.feedback(id, { title: input.title, content: input.content }, accountId);
+    }
     const listing = await this.requireListing(id);
     const row = await this.prisma.marketFeedback.create({
       data: {
@@ -745,7 +850,8 @@ export class MarketService implements OnModuleInit {
       category: row.category,
       tags: parseJson<string[]>(row.tags, []),
       type: row.type,
-      source: row.source as 'builtin' | 'published',
+      source: row.source as 'builtin' | 'published' | 'cloud',
+      cloud_listing_id: row.cloudListingId,
       license: row.license,
       compatible_clients: parseJson<string[]>(row.compatibleClients, []),
       current_version: row.currentVersion,

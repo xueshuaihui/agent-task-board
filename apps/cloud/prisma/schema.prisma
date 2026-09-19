@@ -1,0 +1,141 @@
+// 云端市场库（独立于桌面端 apps/api 的库）：只有云账号与市场两类实体。
+// 与 apps/api 相同的口径：迁移 SQL（prisma/migrations/*.sql）是权威定义，本文件只做客户端映射。
+generator client {
+  provider = "prisma-client-js"
+  // 输出到本 workspace 内：与 apps/api 共享 hoisted node_modules 的默认 client 会互相覆盖。
+  output   = "./generated/client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model CloudAccount {
+  id          String  @id
+  username    String  @unique
+  passwordHash String @map("password_hash")
+  salt        String
+  algo        String  @default("scrypt")
+  displayName String? @map("display_name")
+  role        String  @default("MEMBER")
+  status      String  @default("ACTIVE")
+  createdAt   String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  updatedAt   String  @default(dbgenerated("(datetime('now'))")) @map("updated_at")
+
+  @@map("accounts")
+}
+
+// value 是 JSON 文本，客户端自行 parse/stringify（SQLite 无 JSON 列型）。
+model MarketListing {
+  id                 String  @id
+  slug               String  @unique
+  name               String
+  description        String
+  category           String
+  tags               String  @default("[]")
+  type               String
+  license            String  @default("")
+  compatibleClients  String  @default("[]") @map("compatible_clients")
+  content            String  @default("{}")
+  mcpDependencies    String  @default("[]") @map("mcp_dependencies")
+  currentVersion     String  @map("current_version")
+  publisherAccountId String? @map("publisher_account_id")
+  status             String  @default("PUBLISHED")
+  ratingAvg          Float   @default(0) @map("rating_avg")
+  ratingCount        Int     @default(0) @map("rating_count")
+  subscriberCount    Int     @default(0) @map("subscriber_count")
+  viewCount          Int     @default(0) @map("view_count")
+  publishedAt        String? @map("published_at")
+  createdAt          String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  updatedAt          String  @default(dbgenerated("(datetime('now'))")) @map("updated_at")
+
+  @@index([status], map: "idx_market_listings_status")
+  @@index([publisherAccountId], map: "idx_market_listings_publisher")
+  @@map("market_listings")
+}
+
+model MarketListingVersion {
+  id        String @id
+  listingId String @map("listing_id")
+  version   String
+  content   String
+  changelog String @default("")
+  createdAt String @default(dbgenerated("(datetime('now'))")) @map("created_at")
+
+  @@index([listingId, createdAt], map: "idx_market_versions_listing")
+  @@map("market_listing_versions")
+}
+
+model MarketSubscription {
+  accountId       String @map("account_id")
+  listingId       String @map("listing_id")
+  snapshotContent String @map("snapshot_content")
+  snapshotVersion String @map("snapshot_version")
+  status          String @default("SYNCED")
+  createdAt       String @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  updatedAt       String @default(dbgenerated("(datetime('now'))")) @map("updated_at")
+
+  @@id([accountId, listingId])
+  @@index([listingId], map: "idx_market_subs_listing")
+  @@map("market_subscriptions")
+}
+
+model MarketRating {
+  accountId String @map("account_id")
+  listingId String @map("listing_id")
+  score     Int
+  createdAt String @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  updatedAt String @default(dbgenerated("(datetime('now'))")) @map("updated_at")
+
+  @@id([accountId, listingId])
+  @@map("market_ratings")
+}
+
+model MarketComment {
+  id        String @id
+  accountId String @map("account_id")
+  listingId String @map("listing_id")
+  content   String
+  createdAt String @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  updatedAt String @default(dbgenerated("(datetime('now'))")) @map("updated_at")
+
+  @@index([listingId, createdAt], map: "idx_market_comments_listing")
+  @@map("market_comments")
+}
+
+model MarketFavorite {
+  accountId String @map("account_id")
+  listingId String @map("listing_id")
+  createdAt String @default(dbgenerated("(datetime('now'))")) @map("created_at")
+
+  @@id([accountId, listingId])
+  @@map("market_favorites")
+}
+
+model MarketReport {
+  id        String @id
+  accountId String @map("account_id")
+  listingId String @map("listing_id")
+  reason    String
+  createdAt String @default(dbgenerated("(datetime('now'))")) @map("created_at")
+
+  @@map("market_reports")
+}
+
+model MarketFeedback {
+  id             String  @id
+  accountId      String  @map("account_id")
+  listingId      String  @map("listing_id")
+  title          String
+  content        String
+  status         String  @default("PENDING")
+  authorResponse String  @default("") @map("author_response")
+  respondedAt    String? @map("responded_at")
+  createdAt      String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  updatedAt      String  @default(dbgenerated("(datetime('now'))")) @map("updated_at")
+
+  @@index([listingId], map: "idx_market_feedbacks_listing")
+  @@index([accountId], map: "idx_market_feedbacks_account")
+  @@map("market_feedbacks")
+}

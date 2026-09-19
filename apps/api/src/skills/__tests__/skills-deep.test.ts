@@ -464,7 +464,7 @@ describe('技能深化（8.4/8.6/8.7/8.8）', () => {
     expect(builtin.unavailable).toBeUndefined();
   });
 
-  it('PUT /skills/sources 存取；git/http 云端类型响应标 unavailable:true', async () => {
+  it('PUT /skills/sources 存取；git/http 服务端类型响应标 unavailable:true', async () => {
     const res = await ui.send(`${API}/skills/sources`, {
       method: 'PUT',
       body: [

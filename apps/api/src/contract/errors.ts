@@ -25,6 +25,8 @@ export const ERROR_STATUS = {
   INVALID_PARAM: 422,
   // 8.8 技能源：git/http 远程源本期不实现
   NOT_IMPLEMENTED: 501,
+  // 0919 服务端市场：服务端不可达 / 服务端返回错误（透传原文），网关语义
+  CLOUD_ERROR: 502,
   INTERNAL: 500,
 } as const satisfies Record<string, number>;
 

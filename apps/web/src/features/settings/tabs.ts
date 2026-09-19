@@ -9,6 +9,7 @@ import { navigate, useRouteSearchParams } from '@/app/router';
  */
 export const SETTINGS_TAB_IDS = [
   'general',
+  'cloud',
   'tokens',
   'fields',
   'templates',
@@ -27,6 +28,7 @@ export interface SettingsTabMeta {
 
 export const SETTINGS_TABS: readonly SettingsTabMeta[] = [
   { id: 'general', label: '通用' },
+  { id: 'cloud', label: '服务端市场' },
   { id: 'tokens', label: 'Token' },
   { id: 'fields', label: '字段定义' },
   { id: 'templates', label: '模板' },

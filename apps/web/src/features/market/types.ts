@@ -41,7 +41,7 @@ export const MARKET_FEEDBACK_STATUS_LABEL: Record<MarketFeedbackStatus, string> 
   WONTFIX: '不修复',
 };
 
-export type MarketSource = 'builtin' | 'published';
+export type MarketSource = 'builtin' | 'published' | 'cloud';
 
 export type MarketSort = 'hot' | 'new' | 'rating' | 'downloads';
 
@@ -122,3 +122,26 @@ export interface MarketFeedbackDto {
 }
 
 export type { SkillContent, SkillMcpDependency };
+
+/* ---------------- 服务端市场（0919 对接层） ---------------- */
+
+export interface CloudMarketStatus {
+  connected: boolean;
+  url: string;
+  username: string;
+}
+
+export interface CloudPublishInput {
+  skill_id: string;
+  category: string;
+  license?: string;
+  compatible_clients?: string[];
+  visibility: 'public' | 'private' | 'local';
+}
+
+/** 市场列表响应的 warning（服务端不可达回落本地时出现）。 */
+export interface MarketListResult {
+  items: MarketListingSummary[];
+  total: number;
+  warning?: string;
+}

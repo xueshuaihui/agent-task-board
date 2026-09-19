@@ -343,6 +343,8 @@ model MarketListing {
   tags               String  @default("[]")
   type               String
   source             String  @default("published")
+  // 0919 云端市场：云端来源影子 listing / 本地发布上云后记云端 listing id
+  cloudListingId     String? @map("cloud_listing_id")
   license            String  @default("")
   compatibleClients  String  @default("[]") @map("compatible_clients")
   content            String  @default("{\"blocks\":[],\"entryBlockId\":null}")

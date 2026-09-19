@@ -155,7 +155,7 @@ export const skillTestSchema = z.object({
 export const SKILL_SOURCE_TYPES = ['builtin', 'directory', 'git', 'http'] as const;
 export type SkillSourceType = (typeof SKILL_SOURCE_TYPES)[number];
 
-/** git/http 是云端类型：可存配置，但本期扫描只回 501。 */
+/** git/http 是服务端类型：可存配置，但本期扫描只回 501。 */
 export const CLOUD_SOURCE_TYPES: readonly SkillSourceType[] = ['git', 'http'];
 
 export const skillSourceSchema = z.object({

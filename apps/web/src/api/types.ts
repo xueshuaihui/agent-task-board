@@ -540,6 +540,11 @@ export interface Settings {
   task_types: string[];
   ui_theme: 'system' | 'light' | 'dark';
   review_reuse_last_opinion: boolean;
+  /** 0919 服务端市场：token 由 connect 的 login 换取，仅存本地单机库。 */
+  cloud_enabled: boolean;
+  cloud_url: string;
+  cloud_username: string;
+  cloud_token: string;
 }
 export type SettingsKey = keyof Settings;
 

@@ -98,6 +98,25 @@ export const marketFeedbackVerifySchema = z.object({
 });
 export type MarketFeedbackVerifyInput = z.infer<typeof marketFeedbackVerifySchema>;
 
+// ---------------------------------------------------------------- 服务端市场（0919 对接层）
+
+export const cloudConnectSchema = z.object({
+  url: z.string().trim().url().max(500),
+  username: z.string().trim().min(1).max(100),
+  password: z.string().min(1).max(200),
+});
+export type CloudConnectInput = z.infer<typeof cloudConnectSchema>;
+
+/** visibility='local'：保持纯本地（现状），不触碰服务端。 */
+export const cloudPublishSchema = z.object({
+  skill_id: z.string().min(1).max(64),
+  category: z.string().trim().min(1).max(50),
+  license: z.string().trim().max(100).default(''),
+  compatible_clients: z.array(z.string().trim().min(1).max(50)).max(20).default([]),
+  visibility: z.enum(['public', 'private', 'local']),
+});
+export type CloudPublishInput = z.infer<typeof cloudPublishSchema>;
+
 // ---------------------------------------------------------------- 读取模型
 
 export interface MarketListingSummary {
@@ -108,11 +127,13 @@ export interface MarketListingSummary {
   category: string;
   tags: string[];
   type: string;
-  source: 'builtin' | 'published';
+  source: 'builtin' | 'published' | 'cloud';
   license: string;
   compatible_clients: string[];
   current_version: string;
   publisher_account_id: string | null;
+  /** 服务端 listing 原始 id（本地发布同步到服务端 / 服务端来源条目才有）。 */
+  cloud_listing_id?: string | null;
   publisher_name: string;
   status: MarketListingStatus;
   status_label: string;
@@ -146,7 +167,7 @@ export interface MarketSubscriptionDto {
   listing_name: string;
   listing_slug: string;
   listing_status: MarketListingStatus;
-  source: 'builtin' | 'published';
+  source: 'builtin' | 'published' | 'cloud';
   status: MarketSubscriptionStatus;
   snapshot_version: string;
   latest_version: string;

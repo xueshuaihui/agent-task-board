@@ -49,6 +49,9 @@ import { SkillsService } from '../../skills/skills.service';
 import { SkillsController } from '../../skills/skills.controller';
 import { MarketController } from '../../market/market.controller';
 import { MarketService } from '../../market/market.service';
+import { CloudMarketClient } from '../../market/cloud/cloud.client';
+import { CloudMarketService } from '../../market/cloud/cloud-market.service';
+import { CloudMarketController } from '../../market/cloud/cloud.controller';
 
 /**
  * 为什么需要这张表
@@ -93,9 +96,12 @@ export function applyDiShim(): void {
   declare(SkillsService, [PrismaService]);
   declare(SkillsController, [SkillsService]);
 
-  // ── market（0919 九章）
-  declare(MarketService, [PrismaService]);
+  // ── market（0919 九章 + 服务端市场对接层）
+  declare(CloudMarketClient, [SettingsService]);
+  declare(CloudMarketService, [SettingsService, CloudMarketClient, PrismaService]);
+  declare(MarketService, [PrismaService, CloudMarketService]);
   declare(MarketController, [MarketService]);
+  declare(CloudMarketController, [CloudMarketService, MarketService]);
   // index 5 由 @Inject(LEASE_SWEEP_OPTIONS) 自行声明，Object 只用来把数组撑到构造参数个数。
   declare(LeaseService, [PrismaService, SettingsService, AuditService, EventsService, NotificationsService, Object]);
   declare(ClaimService, [PrismaService, SettingsService, LeaseService, AuditService, EventsService, AgentQueryService]);

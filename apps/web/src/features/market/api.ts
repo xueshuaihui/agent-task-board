@@ -1,10 +1,12 @@
 import { http } from '@/api';
 import type {
+  CloudMarketStatus,
   MarketCommentDto,
   MarketFeedbackDto,
   MarketListingDetail,
   MarketListingSummary,
   MarketListQuery,
+  MarketListResult,
   MarketSubscriptionDto,
 } from './types';
 
@@ -19,7 +21,7 @@ function enc(id: string): string {
 
 export const marketApi = {
   // 浏览 / 我的
-  list: (query?: MarketListQuery) => http.get<{ items: MarketListingSummary[]; total: number }>('/market/listings', query),
+  list: (query?: MarketListQuery) => http.get<MarketListResult>('/market/listings', query),
   subscriptions: () => http.get<{ items: MarketSubscriptionDto[] }>('/market/subscriptions'),
   myPublishes: () => http.get<{ items: MarketListingSummary[] }>('/market/me/publishes'),
   myFeedbacks: () => http.get<{ items: MarketFeedbackDto[] }>('/market/me/feedbacks'),
@@ -55,4 +57,12 @@ export const marketApi = {
     http.post<MarketFeedbackDto>(`/market/feedbacks/${enc(feedbackId)}/respond`, body),
   verifyFeedback: (feedbackId: string, confirmed: boolean) =>
     http.post<MarketFeedbackDto>(`/market/feedbacks/${enc(feedbackId)}/verify`, { confirmed }),
+
+  // 服务端市场对接层（0919）
+  cloudStatus: () => http.get<CloudMarketStatus>('/market/cloud/status'),
+  cloudConnect: (body: { url: string; username: string; password: string }) =>
+    http.post<CloudMarketStatus>('/market/cloud/connect', body),
+  cloudDisconnect: () => http.post<CloudMarketStatus>('/market/cloud/disconnect', {}),
+  cloudPublish: (body: { skill_id: string; category: string; license?: string; compatible_clients?: string[]; visibility: 'public' | 'private' | 'local' }) =>
+    http.post<MarketListingDetail | { published: false; message: string }>('/market/cloud/publish', body),
 };

@@ -9,6 +9,7 @@ import type { MarketListQuery } from './types';
  */
 export const marketKeys = {
   root: ['market'] as const,
+  cloudStatus: () => ['market', 'cloud', 'status'] as const,
   list: (query?: MarketListQuery) => ['market', 'list', query ?? {}] as const,
   detail: (id: string) => ['market', 'detail', id] as const,
   subscriptions: () => ['market', 'subscriptions'] as const,
@@ -54,6 +55,40 @@ export function useMyFeedbacks() {
 
 export function useMyFavorites() {
   return useQuery({ queryKey: marketKeys.myFavorites(), queryFn: () => marketApi.myFavorites() });
+}
+
+/* ---------------- 服务端市场（0919 对接层） ---------------- */
+
+export function useCloudStatus(options?: Options) {
+  return useQuery({
+    queryKey: marketKeys.cloudStatus(),
+    queryFn: () => marketApi.cloudStatus(),
+    enabled: options?.enabled ?? true,
+  });
+}
+
+export function useCloudConnect(onSuccess?: () => void) {
+  return useApiMutation(
+    (vars: { url: string; username: string; password: string }) => marketApi.cloudConnect(vars),
+    {
+      invalidate: [marketKeys.cloudStatus(), ['settings']],
+      onSuccess,
+    },
+  );
+}
+
+export function useCloudDisconnect(onSuccess?: () => void) {
+  return useApiMutation(() => marketApi.cloudDisconnect(), {
+    invalidate: [marketKeys.cloudStatus(), marketKeys.root, ['settings']],
+    onSuccess,
+  });
+}
+
+export function useMarketCloudPublish(onSuccess?: () => void) {
+  return useApiMutation<Parameters<typeof marketApi.cloudPublish>[0], unknown>(marketApi.cloudPublish, {
+    invalidate: [...rootInvalidate(), ['settings']],
+    onSuccess,
+  });
 }
 
 /** 写操作统一失效整棵市场子树：detail 里嵌着评论/收藏/订阅状态，逐 key 精确失效得不偿失。 */

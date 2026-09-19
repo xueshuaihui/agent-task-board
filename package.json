@@ -5,6 +5,7 @@
   "description": "本地桌面任务看板：人建任务，Agent 经 MCP/REST 认领执行，结果强制人工审核",
   "workspaces": [
     "apps/api",
+    "apps/cloud",
     "apps/web",
     "apps/desktop"
   ],
@@ -13,6 +14,7 @@
   },
   "scripts": {
     "dev:api": "npm run start:dev -w @atb/api",
+    "dev:cloud": "npm run start:dev -w @atb/cloud",
     "dev:web": "npm run dev -w @atb/web",
     "build": "npm run build -w @atb/api && npm run build -w @atb/web",
     "typecheck": "npm run typecheck -w @atb/api && npm run typecheck -w @atb/web",

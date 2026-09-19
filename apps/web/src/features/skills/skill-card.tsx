@@ -10,7 +10,7 @@ import { SKILL_STATUS_META, SKILL_TYPE_META } from './meta';
 
 /**
  * 技能卡片（2.md 10.2）：类型徽标 + 名称 + 描述 + 标签 + 分隔线下的
- * 状态/版本/绑定任务数，右上角操作菜单。来源只有「本地」一种（云端市场不在本次范围）。
+ * 状态/版本/绑定任务数，右上角操作菜单。来源只有「本地」一种（服务端市场不在本次范围）。
  */
 
 export interface SkillCardProps {

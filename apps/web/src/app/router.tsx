@@ -20,7 +20,7 @@ export const ROUTES = {
   tasks: { path: '/tasks', label: '任务' },
   // 0919 第十章：技能库。路由对象来自 features/skills 的候选（path/label 同形）。
   skills: skillsRouteCandidate,
-  // 0919 十四章 IA 的「市场（云端）」：市场首页 + 个人中心二级视图（?tab=personal）。
+  // 0919 十四章 IA 的「市场（服务端）」：市场首页 + 个人中心二级视图（?tab=personal）。
   market: { path: '/market', label: '市场' },
   // 市场技能详情（13 章）：?id=<listingId>，不进主导航（NAV_ORDER 不含）。
   marketDetail: { path: '/market/detail', label: '市场详情' },

@@ -3,7 +3,7 @@ import { createTestApp, errorCode, type Sender, type TestApp } from '../../__tes
 import { API, anonSender } from '../../__tests__/helpers/seed';
 
 /**
- * 0919 九章云端市场：内置种子、浏览/排序/筛选、发布-审核流、订阅与快照落地、
+ * 0919 九章服务端市场：内置种子、浏览/排序/筛选、发布-审核流、订阅与快照落地、
  * 更新拉新、下线保留快照（9.4）、评分/评论/收藏/举报、反馈闭环、权限边界。
  */
 

@@ -34,6 +34,12 @@ export const SETTINGS_SPECS = {
   },
   ui_theme: { schema: z.enum(['system', 'light', 'dark']), default: 'system', hot: true },
   review_reuse_last_opinion: { schema: z.boolean(), default: true, hot: true },
+  // 0919 服务端市场对接：token 由 connect 时的 login 换取（密码不落库）。
+  // url/username 保存供展示与重连；token 仅存本地单机 SQLite（见设置页提示）。
+  cloud_enabled: { schema: z.boolean(), default: false, hot: true },
+  cloud_url: { schema: z.string().max(500), default: '', hot: true },
+  cloud_username: { schema: z.string().max(100), default: '', hot: true },
+  cloud_token: { schema: z.string().max(2000), default: '', hot: true },
 } as const satisfies Record<string, { schema: z.ZodTypeAny; default: unknown; hot: boolean }>;
 
 export type SettingsKey = keyof typeof SETTINGS_SPECS;

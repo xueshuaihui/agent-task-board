@@ -69,6 +69,7 @@ function MarketBrowse() {
     return ids;
   }, [subscriptions.data]);
 
+  const warning = listQuery.data?.warning;
   const items = listQuery.data?.items ?? [];
   const hot = items.slice(0, 3);
   const latest = [...items]
@@ -79,6 +80,11 @@ function MarketBrowse() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-5 py-6">
+      {warning ? (
+        <div role="alert" className="rounded-tag border border-border bg-bg-muted px-3 py-2 text-aux text-text-secondary">
+          ⚠ {warning}
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center gap-3">
         <form
           className="relative min-w-[220px] max-w-[420px] flex-1"

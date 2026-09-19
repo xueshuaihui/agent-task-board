@@ -26,7 +26,7 @@ import {
 } from './market.dto';
 
 /**
- * 0919 九章云端市场：listings/评分/评论全局共享；订阅/收藏/反馈/我的按请求账号隔离。
+ * 0919 九章服务端市场：listings/评分/评论全局共享；订阅/收藏/反馈/我的按请求账号隔离。
  * Agent Token 属 agent 凭证组，被默认 ui scope 拒绝——市场是纯用户功能。
  */
 @Controller('api/v1/market')
