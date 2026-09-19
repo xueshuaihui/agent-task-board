@@ -6,7 +6,7 @@ import { BlockEditor } from './block-editor';
 import { usePatchSkill, useSkill } from './hooks';
 import { SKILL_STATUS_META, emptyContent } from './meta';
 import { PublishDialog } from './publish-dialog';
-import { SkillFlowEditor } from './skill-flow-editor';
+import { SkillFlowEditor } from './flow-canvas';
 import { sanitizeForSave } from './flow-model';
 import { SourceEditor } from './source-editor';
 import { StructuredEditor } from './structured-editor';
