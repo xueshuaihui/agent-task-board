@@ -7,7 +7,7 @@
 import type { SkillContent, SkillMcpDependency } from '@/features/skills/types';
 
 /** 9.1/12.1 分类词表（与后端 MARKET_CATEGORIES 同步）。 */
-export const MARKET_CATEGORIES = ['开发流程', '质量保障', '测试', '文档', '部署', '重构', '效率', '写作'] as const;
+export const MARKET_CATEGORIES = ['开发流程', '质量保障', '测试', '文档', '部署', '重构', '效率', '写作', '安全', '数据', '运维'] as const;
 
 /** 兼容客户端词表（1.md 示例 payload 里的取值）。 */
 export const COMPATIBLE_CLIENTS = ['qoder', 'claude-code', 'codex'] as const;

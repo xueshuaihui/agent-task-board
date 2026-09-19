@@ -25,7 +25,7 @@ import {
   type MarketSubscriptionStatus,
   type MarketReviewInput,
 } from './market.dto';
-import { BUILTIN_LISTINGS } from './market.seed';
+import { BUILTIN_LISTINGS, DELISTED_BUILTIN_SLUGS } from './market.seed';
 import type { SkillContent, SkillMcpDependency } from '../skills/skills.dto';
 
 const EMPTY_CONTENT: SkillContent = { blocks: [], entryBlockId: null };
@@ -64,6 +64,7 @@ export class MarketService implements OnModuleInit {
   }
 
   async seedBuiltins(): Promise<number> {
+    await this.delistRemovedBuiltins();
     const existing = await this.prisma.marketListing.findMany({
       where: { slug: { in: BUILTIN_LISTINGS.map((row) => row.slug) } },
       select: { slug: true },
@@ -94,6 +95,27 @@ export class MarketService implements OnModuleInit {
       created += 1;
     }
     return created;
+  }
+
+  /** 官方下架：把已从 seed 清单移除、但仍残留为 PUBLISHED 的内置技能置 DELISTED，同步订阅行。 */
+  private async delistRemovedBuiltins(): Promise<void> {
+    if (DELISTED_BUILTIN_SLUGS.length === 0) return;
+    const rows = await this.prisma.marketListing.findMany({
+      where: { slug: { in: DELISTED_BUILTIN_SLUGS }, source: 'builtin', status: 'PUBLISHED' },
+      select: { id: true },
+    });
+    if (rows.length === 0) return;
+    const ids = rows.map((row) => row.id);
+    await this.prisma.$transaction([
+      this.prisma.marketListing.updateMany({
+        where: { id: { in: ids } },
+        data: { status: 'DELISTED', updatedAt: nowSql() },
+      }),
+      this.prisma.marketSubscription.updateMany({
+        where: { listingId: { in: ids }, status: 'SYNCED' },
+        data: { status: 'DELISTED' },
+      }),
+    ]);
   }
 
   // ---------------------------------------------------------------- 浏览/详情（9.1/9.2）

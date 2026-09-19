@@ -76,12 +76,12 @@ afterAll(async () => {
 });
 
 describe('市场：内置技能与浏览', () => {
-  it('启动种子：21 个内置技能全部 PUBLISHED，publisher 显示「官方」', async () => {
+  it('启动种子：50 个内置技能全部 PUBLISHED，publisher 显示「官方」', async () => {
     const res = await bob.get(`${API}/market/listings`);
     expect(res.status).toBe(200);
-    expect(res.body.total).toBeGreaterThanOrEqual(21);
+    expect(res.body.total).toBeGreaterThanOrEqual(50);
     const builtins = res.body.items.filter((row: any) => row.source === 'builtin');
-    expect(builtins.length).toBe(21);
+    expect(builtins.length).toBe(50);
     for (const row of builtins) {
       expect(row.status).toBe('PUBLISHED');
       expect(row.publisher_name).toBe('官方');
@@ -94,9 +94,7 @@ describe('市场：内置技能与浏览', () => {
       'unit-testing',
       'performance-optimization',
       'security-scan',
-      'regression-testing',
       'deployment-pipeline',
-      'doc-generation',
       'commit-message',
       'readme-generation',
       'refactoring-advice',
@@ -129,7 +127,7 @@ describe('市场：内置技能与浏览', () => {
     const client = await bob.get(
       `${API}/market/listings?compatible_client=${encodeURIComponent('Claude Code')}`,
     );
-    expect(client.body.items.length).toBe(21);
+    expect(client.body.items.length).toBe(50);
 
     const none = await bob.get(
       `${API}/market/listings?compatible_client=${encodeURIComponent('不存在的客户端')}`,

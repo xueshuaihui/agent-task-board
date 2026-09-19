@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { SKILL_TYPES, skillContentSchema, type SkillContent, type SkillMcpDependency } from '../skills/skills.dto';
 
 /** 9.1/12.1 市场分类词表（原型 12.1 的分类条）。 */
-export const MARKET_CATEGORIES = ['开发流程', '质量保障', '测试', '文档', '部署', '重构', '效率', '写作'] as const;
+export const MARKET_CATEGORIES = ['开发流程', '质量保障', '测试', '文档', '部署', '重构', '效率', '写作', '安全', '数据', '运维'] as const;
 
 /** 9.3 发布状态机：UNLISTED=私有未发布，PENDING_REVIEW=审核中，PUBLISHED=已发布。 */
 export const MARKET_LISTING_STATUSES = [
