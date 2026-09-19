@@ -25,7 +25,7 @@ export function Tooltip({ content, children, side = 'top', className }: TooltipP
     <TooltipPrimitive.Provider delayDuration={300}>
       <TooltipPrimitive.Root open={open} onOpenChange={setOpen} delayDuration={300}>
         <TooltipPrimitive.Trigger asChild>
-          <span className="inline-flex min-w-0">{children}</span>
+          <span className="inline-flex min-w-0 shrink-0">{children}</span>
         </TooltipPrimitive.Trigger>
         <TooltipPrimitive.Portal forceMount>
           <AnimatePresence>

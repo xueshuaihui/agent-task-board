@@ -3,7 +3,7 @@ import { navigate } from '@/app/router';
 import { Menu, MenuCaret, type MenuProps } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { useGroupingStore } from '@/features/board/grouping/useGroupingState';
-import { useActiveProjects } from './queries';
+import { useActiveProjects, useProjects } from './queries';
 import { ProjectGlyph } from './project-glyph';
 
 /**
@@ -84,10 +84,13 @@ export function ProjectSwitcher() {
     },
   ];
 
+  // 名字兜底查全量（含归档）：作用域里的分组刚被归档时，标签也要报得出名字。
+  const all = useProjects();
   const label = allSelected
     ? '全部分组'
     : projectIds.length === 1
-      ? (items.find((project) => project.id === projectIds[0])?.name ?? '1 个分组')
+      ? ((items.find((project) => project.id === projectIds[0]) ??
+          all.data?.items.find((project) => project.id === projectIds[0]))?.name ?? '1 个分组')
       : `${projectIds.length} 个分组`;
 
   return (

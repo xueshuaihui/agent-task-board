@@ -97,6 +97,14 @@ export const AUDIT_ACTIONS = [
   'backup',
   'restore',
   'settings_change',
+  // 0919 账号体系：与 apps/api/src/contract/enums.ts 的 AUDIT_ACTIONS 一一对应。
+  // 少一项就在审计列表里渲染成「未知（xxx）」——审计页是这张表的唯一读者。
+  'account_init',
+  'account_create',
+  'account_update',
+  'account_change_password',
+  'project_change',
+  'pref_change',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

@@ -148,6 +148,12 @@ export const AUDIT_ACTION_LABEL: Record<AuditAction, string> = {
   backup: '备份',
   restore: '恢复',
   settings_change: '设置变更',
+  account_init: '初始化账号',
+  account_create: '创建账号',
+  account_update: '编辑账号',
+  account_change_password: '修改密码',
+  project_change: '分组变更',
+  pref_change: '偏好变更',
 };
 
 /**
@@ -170,4 +176,13 @@ export function priorityLabel(priority: number): string {
 /** 列表页与卡片都显示 `P0..P3` 前缀（原型 3.8）。 */
 export function priorityText(priority: number): string {
   return `P${priority} ${priorityLabel(priority)}`;
+}
+
+/**
+ * 版本串统一加 `v` 前缀。服务端市场返回的已经是 `v1.0.0`、本地技能库的是 `1.0.0`，
+ * 模板里写死 `v{version}` 会把前者显示成 `vv1.0.0`。
+ */
+export function versionLabel(version: string): string {
+  if (!version) return '';
+  return version.startsWith('v') ? version : `v${version}`;
 }

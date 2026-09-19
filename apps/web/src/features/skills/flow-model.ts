@@ -199,23 +199,3 @@ export function setEntryBlock(content: SkillContent, blockId: string): SkillCont
   if (!findBlock(content, blockId)) return content;
   return { ...content, entryBlockId: blockId };
 }
-
-/**
- * 落库前的 content 清洗：丢掉 to 为空的 next 分支。
- *
- * 服务端 skills.dto.ts 的 blockNextSchema 要求 `to: min(1)`（空串 422），而画布/表单
- * 的多个入口会产生 to:'' 的「草稿分支」：decision 新块模板（是/否）、块编辑抽屉
- * 「添加分支」、删线（removeEdgeTarget 置空）与删块清理（removeBlockWithRefs）。
- * 这些分支本来也没有连线语义（outgoingEdges 会跳过 to 为空），不清掉会让每一次
- * PATCH（含自动保存与发布）都校验失败，用户的连线永远落不了库。
- */
-export function sanitizeForSave(content: SkillContent): SkillContent {
-  return {
-    ...content,
-    blocks: content.blocks.map((block) =>
-      block.next?.some((next) => !next.to || next.to.trim() === '')
-        ? { ...block, next: block.next.filter((next) => next.to && next.to.trim() !== '') }
-        : block,
-    ),
-  };
-}

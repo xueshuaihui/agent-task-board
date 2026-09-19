@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { BookmarkCheck, Download, Inbox, PackagePlus, Send, Wrench } from 'lucide-react';
 import { Badge, Button, Dialog, EmptyState, Field, Select, Textarea, useToast } from '@/components/ui';
 import { cn } from '@/lib/cn';
+import { versionLabel } from '@/lib/labels';
 import { formatDateTime } from '@/lib/time';
 import { navigate } from '@/app/router';
 import { useAuthStore } from '@/features/auth';
@@ -156,16 +157,16 @@ function SubscriptionRow({
       </button>
       <SourceBadge source={item.source} />
       {item.status === 'SYNCED' ? (
-        <span className="text-aux text-status-done">已同步 v{item.snapshot_version}</span>
+        <span className="text-aux text-status-done">已同步 {versionLabel(item.snapshot_version)}</span>
       ) : item.status === 'HAS_UPDATE' ? (
         <span className="inline-flex items-center gap-2 text-aux">
-          有更新 v{item.snapshot_version} → v{item.latest_version}
+          有更新 {versionLabel(item.snapshot_version)} → {versionLabel(item.latest_version)}
           <Button size="sm" variant="default" icon={<Download className="size-4" />} onClick={onUpdate}>
             更新
           </Button>
         </span>
       ) : (
-        <span className="text-aux text-text-tertiary">已下线 · 快照 v{item.snapshot_version} 可继续使用</span>
+        <span className="text-aux text-text-tertiary">已下线 · 快照 {versionLabel(item.snapshot_version)} 可继续使用</span>
       )}
       <Button size="sm" variant="ghost" onClick={onUnsubscribe}>
         取消订阅
@@ -277,7 +278,7 @@ function PublishRow({ item, isAdmin }: { item: MarketListingSummary; isAdmin: bo
         >
           <p className="truncate text-card-title text-text-primary">{item.name}</p>
           <p className="truncate text-aux text-text-tertiary">
-            {item.slug} · v{item.current_version} · {item.subscriber_count} 订阅
+            {item.slug} · {versionLabel(item.current_version)} · {item.subscriber_count} 订阅
           </p>
         </button>
         <span className={cn('rounded-badge px-2 py-0.5 text-badge', MARKET_STATUS_TONE[item.status])}>
@@ -348,7 +349,7 @@ function PublishVersionDialog({
   const skills = useSkills();
   const options = (skills.data?.items ?? []).map((skill) => ({
     value: skill.id,
-    label: `${skill.name} v${skill.current_version}`,
+    label: `${skill.name} ${versionLabel(skill.current_version)}`,
   }));
   const [skillId, setSkillId] = useState('');
 

@@ -356,6 +356,57 @@ describe('技能深化（8.4/8.6/8.7/8.8）', () => {
     expect(second.body.name.startsWith('代码评审技能')).toBe(true);
   });
 
+  it('step 小节写成段落：整段正文兜底为一条步骤，不静默丢内容', async () => {
+    const markdown = [
+      '---',
+      'name: 段落步骤技能',
+      'description: 手写文档里 step 常见段落体',
+      'version: 0.1.0',
+      'category: 研发',
+      'tags: [导入]',
+      '---',
+      '',
+      '### 结论',
+      '',
+      '<!-- atb:step -->',
+      '',
+      '先汇总要点，再给出建议。',
+    ].join('\n');
+    const res = await ui.post(`${API}/skills/import-markdown`, { filename: 'SKILL.md', content: markdown });
+    expect(res.status).toBe(201);
+    const step = res.body.content.blocks.find((block: any) => block.kind === 'step');
+    expect(step.steps).toEqual(['先汇总要点，再给出建议。']);
+  });
+
+  it('条件块终态分支 to 为空串合法；模拟运行按「终态」收口而不是报目标不存在', async () => {
+    const content = {
+      blocks: [
+        {
+          id: 'd1',
+          kind: 'decision',
+          title: '是否通过',
+          condition: '结论非空',
+          next: [
+            { when: '是', to: '' },
+            { when: '否', to: 'd1' },
+          ],
+        },
+      ],
+      entryBlockId: 'd1',
+    };
+    const created = await ui.post(`${API}/skills`, {
+      name: `终态分支技能-${Math.random().toString(36).slice(2, 8)}`,
+      type: 'flow',
+      description: '',
+      tags: [],
+      content,
+    });
+    expect(created.status).toBe(201);
+    const test = await ui.post(`${API}/skills/${created.body.id}/test`, { input: '跑一次' });
+    expect(test.status).toBe(201);
+    expect(test.body.logs.join('\n')).toContain('该分支为终态（无跳转），测试结束');
+  });
+
   it('.mdc（Cursor Rules）导入：frontmatter 元数据头剥离，description 进描述', async () => {
     const mdc = [
       '---',

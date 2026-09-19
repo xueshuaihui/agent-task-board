@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Button, Dialog, EmptyState, Field, Menu, Skeleton, Tabs, TagBadge, Textarea, useToast } from '@/components/ui';
 import { errorMessage } from '@/api';
+import { versionLabel } from '@/lib/labels';
 import { cn } from '@/lib/cn';
 import { formatDateTime, formatRelative } from '@/lib/time';
 import { navigate, useRoute } from '@/app/router';
@@ -99,7 +100,7 @@ function DetailBody({ listingId }: { listingId: string }) {
           <div className="min-w-0 flex-1">
             <h1 className="text-page-title text-text-primary">{detail.name}</h1>
             <p className="mt-0.5 truncate text-aux text-text-tertiary">
-              {detail.slug} · {detail.publisher_name} · v{detail.current_version}
+              {detail.slug} · {detail.publisher_name} · {versionLabel(detail.current_version)}
               {detail.license ? ` · ${detail.license}` : ''}
             </p>
           </div>

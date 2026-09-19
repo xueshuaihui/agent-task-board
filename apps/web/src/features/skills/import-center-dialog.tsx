@@ -69,7 +69,6 @@ export function ImportCenterDialog({
 
   const create = useCreateSkill((skill) => {
     toast.success('导入成功', `已创建技能「${skill.name}」`);
-    onImported(skill);
   });
 
   /* 每次打开重置上一次的解析结果。 */
@@ -152,17 +151,20 @@ export function ImportCenterDialog({
     return candidate;
   };
 
+  /**
+   * 逐个创建：单个文件失败不中断整批（失败项转成行级错误留在对话框里），
+   * 整批处理完才交给父级关闭对话框。
+   */
   const confirmImport = () => {
-    let importedAny = false;
-    const importNext = (index: number) => {
-      if (index >= entries.length) {
-        if (importedAny) {
-          setEntries([]);
-          setFailed([]);
-        }
+    const queue = [...entries];
+    let created: Skill | null = null;
+    const step = (index: number) => {
+      if (index >= queue.length) {
+        if (created) onImported(created);
         return;
       }
-      const entry = entries[index];
+      const entry = queue[index];
+      const drop = () => setEntries((prev) => prev.filter((item) => item.key !== entry.key));
       create.mutate(
         {
           name: entry.name.trim(),
@@ -172,14 +174,27 @@ export function ImportCenterDialog({
           content: entry.content,
         },
         {
-          onSuccess: () => {
-            importedAny = true;
-            importNext(index + 1);
+          onSuccess: (skill) => {
+            created = skill;
+            drop();
+            step(index + 1);
+          },
+          onError: (error) => {
+            drop();
+            setFailed((prev) => [
+              ...prev,
+              {
+                key: `${entry.key}-create`,
+                fileName: entry.fileName,
+                message: `创建失败：${errorMessage(error) || '未知错误'}`,
+              },
+            ]);
+            step(index + 1);
           },
         },
       );
     };
-    importNext(0);
+    step(0);
   };
 
   const hasValid = entries.length > 0;
@@ -348,7 +363,7 @@ export function ImportCenterDialog({
         {failed.length > 0 ? (
           <p className="flex items-center gap-1 text-aux text-status-failed">
             <AlertCircle className="size-3.5" />
-            存在解析失败的文件，请先移除或修正后再创建
+            存在失败的文件，请先移除或修正后再创建
           </p>
         ) : null}
       </div>
@@ -403,7 +418,9 @@ function parseAtskill(fileName: string, text: string): ParsedEntry {
     key: nextKey(),
     fileName,
     source: 'atskill',
-    name: stripExtension(fileName, '.atskill'),
+    // 名称优先取文件里的 `name`：导出的文件名是技能 ID（`skl_xxx.atskill`），
+    // 只按文件名起名会让「导出再导入」得到一个 ID 名字的技能。
+    name: payload.name?.trim() || stripExtension(fileName, '.atskill'),
     type: isSkillType(payload.type) ? payload.type : 'prompt',
     content,
     description: payload.description ?? '',

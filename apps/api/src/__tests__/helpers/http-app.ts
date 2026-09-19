@@ -7,7 +7,7 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { expect } from 'vitest';
 import { AppModule } from '../../app.module';
-import { allowedOrigins } from '../../common/origins';
+import { corsOptions } from '../../common/cors';
 import { LEASE_SWEEP_OPTIONS, LeaseService } from '../../agent/lease.service';
 import { ApiExceptionFilter } from '../../infra/api-exception.filter';
 import { applyMigrations } from '../../infra/bootstrap';
@@ -20,8 +20,9 @@ import { applyDiShim } from './nest-di-shim';
  * 三点约定：
  * 1. 端口 0（内核随机）且 host 写死 127.0.0.1 —— 15 章/验收 2 的「只绑回环」在测试里同样成立，
  *    绝不占用 7788，也不与并行 agent 的开发实例冲突。
- * 2. 请求管线（body parser / query parser / 全局异常过滤器 / CORS）照抄 `src/main.ts`：
- *    这些装配语句在 main.ts 里而不是 AppModule 里，测试不复制一遍就等于没测。
+ * 2. 请求管线（body parser / query parser / 全局异常过滤器 / CORS）与 `src/main.ts` 同源：
+ *    这些装配语句在 main.ts 里而不是 AppModule 里，测试不复制一遍就等于没测；
+ *    CORS 是唯一一份 `common/cors.ts` 的配置，两处不会各写一份而漂移。
  * 3. 每个测试文件一个进程一个库（vitest 默认 forks + isolate），互不干扰。
  */
 export interface TestApp {
@@ -108,18 +109,7 @@ export async function createTestApp(options: CreateTestAppOptions = {}): Promise
   app.set('query parser', 'extended');
   app.useGlobalFilters(new ApiExceptionFilter());
 
-  // main.ts 的 CORS 原样复制：白名单同样来自 allowedOrigins()，不各写一份。
-  const allow = new Set(allowedOrigins());
-  app.enableCors({
-    origin(origin, callback) {
-      if (!origin) return callback(null, true);
-      return callback(null, allow.has(origin));
-    },
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Authorization', 'Content-Type', 'Accept'],
-    maxAge: 600,
-    credentials: false,
-  });
+  app.enableCors(corsOptions());
 
   await app.init();
   await app.listen(0, '127.0.0.1');

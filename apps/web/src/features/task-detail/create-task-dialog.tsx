@@ -4,6 +4,7 @@ import { useActiveProjects } from '@/features/projects';
 import type { TaskCreateInput } from '@/api';
 import { Button, Dialog, Field, Input, Select, Textarea } from '@/components/ui';
 import { errorMessage } from '@/api';
+import { clearFieldError } from '@/lib/forms';
 import { priorityText } from '@/lib/labels';
 
 /**
@@ -150,7 +151,10 @@ function TaskCreateForm({
             autoFocus
             maxLength={200}
             placeholder={asRequirement ? '这个需求要达成什么' : '一句话说清要做什么'}
-            onChange={(event) => setTitle(event.target.value)}
+            onChange={(event) => {
+              setTitle(event.target.value);
+              clearFieldError(setErrors, 'title');
+            }}
           />
         </Field>
 
@@ -191,7 +195,10 @@ function TaskCreateForm({
               placeholder="不挂，作为独立任务"
               options={requirementOptions}
               invalid={Boolean(errors.parent_task_id)}
-              onChange={(event) => setParentId(event.target.value)}
+              onChange={(event) => {
+                setParentId(event.target.value);
+                clearFieldError(setErrors, 'parent_task_id');
+              }}
             />
           </Field>
         )}
@@ -209,11 +216,25 @@ function TaskCreateForm({
         </Field>
 
         <Field label="标签" hint="逗号分隔，单个 ≤ 16 字、最多 10 个（20.3）" error={errors.tags}>
-          <Input value={tagText} placeholder="后端, 缺陷修复" onChange={(event) => setTagText(event.target.value)} />
+          <Input
+            value={tagText}
+            placeholder="后端, 缺陷修复"
+            onChange={(event) => {
+              setTagText(event.target.value);
+              clearFieldError(setErrors, 'tags');
+            }}
+          />
         </Field>
 
         <Field label="描述" hint="Markdown，仅用于详情抽屉" error={errors.description}>
-          <Textarea rows={2} value={description} onChange={(event) => setDescription(event.target.value)} />
+          <Textarea
+            rows={2}
+            value={description}
+            onChange={(event) => {
+              setDescription(event.target.value);
+              clearFieldError(setErrors, 'description');
+            }}
+          />
         </Field>
 
         {errorText ? (

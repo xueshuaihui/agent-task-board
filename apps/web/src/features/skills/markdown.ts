@@ -220,6 +220,15 @@ function parseSection(title: string, text: string, resolveId: (title: string) =>
       .join('\n')
       .trim();
 
+  /** 列表项为空时把整段正文兜底成一条，避免手写文档的段落内容被静默丢弃。 */
+  const listOrBody = (items: string[], prefix: string): string[] => {
+    if (items.length > 0) return items;
+    const prose = bodyText();
+    if (!prose) return [];
+    warnings.push(`${prefix}「${title}」没有列表项，已把整段正文作为一条导入`);
+    return [prose];
+  };
+
   const block: SkillBlock = { id: '', kind, title };
   switch (kind) {
     case 'prompt':
@@ -228,15 +237,20 @@ function parseSection(title: string, text: string, resolveId: (title: string) =>
       break;
     case 'step': {
       const numbered = [...text.matchAll(/^\d+\. (.+)$/gm)].map((match) => match[1].trim());
-      block.steps = numbered.length > 0 ? numbered : listItems();
+      block.steps = listOrBody(numbered.length > 0 ? numbered : listItems(), '步骤块');
       break;
     }
     case 'decision': {
       block.condition = firstLine('判断条件：');
-      block.next = [...text.matchAll(/^[-*] 当 (.+?) → 跳转：(.+)$/gm)].map((match) => ({
-        when: match[1].trim(),
-        to: resolveId(match[2].trim().replace(/^（(.*)）$/, '$1')) || '',
-      }));
+      block.next = [...text.matchAll(/^[-*] 当 (.+?) → 跳转：(.+)$/gm)].map((match) => {
+        /* 导出把终态写成「（结束）」，导入回来同样是终态，不能算「目标找不到」。 */
+        const named = match[2].trim().replace(/^（(.*)）$/, '$1');
+        const to = resolveId(named);
+        if (named && !to && named !== '结束') {
+          warnings.push(`分支跳转目标「${named}」在文档里找不到，已保留为空，可在可视化模式补齐`);
+        }
+        return { when: match[1].trim(), to };
+      });
       if (block.next.length === 0) {
         block.next = [
           { when: '是', to: '' },
@@ -247,12 +261,12 @@ function parseSection(title: string, text: string, resolveId: (title: string) =>
     }
     case 'loop':
       block.while = firstLine('循环条件：');
-      block.steps = listItems();
+      block.steps = listOrBody(listItems(), '循环块');
       break;
     case 'parallel': {
       const merge = firstLine('合并策略：');
       block.merge = (['all', 'any', 'race'] as ParallelMerge[]).find((item) => item === merge) ?? 'all';
-      block.branches = listItems();
+      block.branches = listOrBody(listItems(), '并行块');
       break;
     }
     case 'tool': {
@@ -342,9 +356,6 @@ export function markdownToBlocks(source: string): MarkdownImportResult {
   const entryTitle = /^入口块：(.+)$/m.exec(body)?.[1]?.trim();
   const entryBlockId = entryTitle ? (titleToId.get(entryTitle) ?? built[0]?.id ?? null) : (built[0]?.id ?? null);
   if (entryTitle && !titleToId.has(entryTitle)) warnings.push(`入口块「${entryTitle}」未找到，已回退为第一个块`);
-  if (built.some((block) => block.next?.some((next) => !next.to))) {
-    warnings.push('部分条件分支的跳转目标在文档里找不到（保留为空，可在可视化模式补齐）');
-  }
 
   return {
     frontmatter,
@@ -396,6 +407,8 @@ const BLOCK_KIND_SET = new Set<SkillBlockKind>([
  *
  * 损失点：注释块的排版、步骤块编号、frontmatter 里不认识的键、### 前的正文——
  * 导入后这些信息以原文本为准的场景需要用户在编辑器里确认。
+ * 容错：step / loop / parallel 小节体没有列表项时，整段正文作为一条导入并给出提示（不静默丢内容）；
+ * 分支跳转写成 `（结束）` 表示终态，不算「目标找不到」。
  */
 export const MARKDOWN_CONVENTION_HINT = [
   'frontmatter：name / description / version / category / tags / mcp_dependencies（YAML 子集）。',

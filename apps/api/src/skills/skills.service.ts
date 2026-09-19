@@ -679,6 +679,10 @@ function runFlow(
     if (nexts.length === 0) break;
     const picked = nexts[0]!;
     logs.push(`→ 分支「${picked.when}」`);
+    if (!picked.to) {
+      logs.push('该分支为终态（无跳转），测试结束');
+      break;
+    }
     current = byId.has(picked.to) ? picked.to : null;
     if (!current) logs.push(`分支目标 ${picked.to} 不存在，测试终止`);
   }

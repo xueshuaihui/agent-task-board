@@ -4,6 +4,7 @@ import { errorMessage } from '@/api/errors';
 import { useToast } from '@/components/ui';
 import { Button, Dialog, Field, Input, Textarea } from '@/components/ui';
 import { cn } from '@/lib/cn';
+import { clearFieldError } from '@/lib/forms';
 import { useProjectMutations } from './queries';
 import type { Project, ProjectCreateInput, ProjectPatchInput } from './types';
 
@@ -112,7 +113,10 @@ function ProjectForm({ project, onClose }: { project: Project | null; onClose: (
           autoFocus
           maxLength={50}
           placeholder="例如：电商平台"
-          onChange={(event) => setName(event.target.value)}
+          onChange={(event) => {
+            setName(event.target.value);
+            clearFieldError(setErrors, 'name');
+          }}
         />
       </Field>
 
@@ -165,7 +169,10 @@ function ProjectForm({ project, onClose }: { project: Project | null; onClose: (
           value={description}
           maxLength={2000}
           placeholder="例如：电商平台核心业务"
-          onChange={(event) => setDescription(event.target.value)}
+          onChange={(event) => {
+            setDescription(event.target.value);
+            clearFieldError(setErrors, 'description');
+          }}
         />
       </Field>
 

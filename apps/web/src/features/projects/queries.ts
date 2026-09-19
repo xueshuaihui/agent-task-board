@@ -1,5 +1,6 @@
 import { useQuery, type UseQueryOptions } from '@tanstack/react-query';
 import { qk, useApiMutation } from '@/api';
+import { useGroupingStore } from '@/features/board/grouping/useGroupingState';
 import { projectsApi } from './projectsApi';
 import type {
   Project,
@@ -49,7 +50,10 @@ export function useProjectMutations() {
 
   const archive = useApiMutation<string, Project>(
     (id) => projectsApi.patch(id, { status: 'ARCHIVED' }),
-    { invalidate: [qk.projectsRoot, qk.boardRoot, qk.tasksRoot] },
+    {
+      invalidate: [qk.projectsRoot, qk.boardRoot, qk.tasksRoot],
+      onSuccess: (_data, id) => dropFromScope(id),
+    },
   );
 
   const restore = useApiMutation<string, Project>(
@@ -66,8 +70,22 @@ export function useProjectMutations() {
         strategy,
         ...(strategy === 'migrate' && targetProjectId ? { targetProjectId } : {}),
       }),
-    { invalidate: [qk.projectsRoot, qk.boardRoot, qk.tasksRoot, qk.taskAny], toastOnError: false },
+    {
+      invalidate: [qk.projectsRoot, qk.boardRoot, qk.tasksRoot, qk.taskAny],
+      toastOnError: false,
+      onSuccess: (_data, vars) => dropFromScope(vars.id),
+    },
   );
 
   return { create, patch, archive, restore, remove };
+}
+
+/**
+ * 5.1「归档的项目不出现在默认视图」：归档/删除后，看板切换器与列表页的作用域里
+ * 不该继续留着这个项目——否则看板会一直只显示一个已不存在（或已归档）分组下的任务。
+ */
+function dropFromScope(id: string): void {
+  const { projectIds, update } = useGroupingStore.getState();
+  if (!projectIds.includes(id)) return;
+  update({ projectIds: projectIds.filter((value) => value !== id) });
 }

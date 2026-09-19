@@ -8,6 +8,8 @@ import { transitions } from '@/lib/motion';
 import { Badge, Button, Checkbox, Input, Menu, MenuCaret, RadioGroup } from '@/components/ui';
 import type { MenuItem } from '@/components/ui';
 import { cn } from '@/lib/cn';
+import { useActiveProjects } from '@/features/projects';
+import { useGroupingStore } from '@/features/board/grouping/useGroupingState';
 import { PHASE_ONE_FIELD_TYPES, PRIORITY_LABEL, STATUS_LABEL, labelOf } from '@/lib/labels';
 
 /**
@@ -458,6 +460,39 @@ export function ActiveFilterSummary() {
         onClick={() => filters.reset()}
       >
         ✕ 清除全部
+      </button>
+    </div>
+  );
+}
+
+/**
+ * 列表页的分组作用域提示。
+ *
+ * 7.8 的项目切换器与列表页共用 `projectIds`，但切换器只长在看板工具栏（board/toolbar）。
+ * 从看板带着「只看某个分组」跳进列表时，这里不说清楚作用域，用户看到「共 0 条」会以为任务被删了。
+ */
+export function ActiveProjectScope() {
+  const projectIds = useGroupingStore((state) => state.projectIds);
+  const update = useGroupingStore((state) => state.update);
+  const projects = useActiveProjects();
+  if (projectIds.length === 0) return null;
+
+  const items = projects.data?.items ?? [];
+  const label =
+    projectIds.length === 1
+      ? (items.find((project) => project.id === projectIds[0])?.name ?? '1 个分组')
+      : `${projectIds.length} 个分组`;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-aux text-text-secondary">
+      <button
+        type="button"
+        title="点击恢复全部分组"
+        className="inline-flex items-center gap-1 rounded-tag border border-primary bg-primary-light px-1.5 py-px text-badge text-primary hover:text-primary-hover"
+        onClick={() => update({ projectIds: [] })}
+      >
+        分组：{label}
+        <X className="size-3" aria-hidden />
       </button>
     </div>
   );

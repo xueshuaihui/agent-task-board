@@ -161,7 +161,8 @@ function SkillNodeView({ id, data, selected }: NodeProps<SkillFlowNode>) {
           <span className="block truncate text-caption text-text-primary">{blockTitle(block, 0)}</span>
           <span className="block truncate text-[10px] text-text-tertiary">{meta.label}</span>
         </span>
-        <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        {/* 悬浮工具条浮在块右上角，不占行内宽度——留在行内会把标题挤到只剩一两个字。 */}
+        <span className="absolute -top-3 right-1 z-20 flex items-center gap-0.5 rounded-full border border-border bg-bg-surface px-0.5 opacity-0 shadow-card transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
           <IconButton
             label="编辑块"
             variant="ghost"

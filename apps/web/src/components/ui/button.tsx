@@ -61,14 +61,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   );
 });
 
-/** 顶栏与卡片 `⋯` 里的纯图标按钮（铃铛 24×24 也用它做底子）。 */
-export function IconButton({
-  label,
-  className,
-  ...props
-}: ButtonProps & { label: string }) {
+/** 顶栏与卡片 `⋯` 里的纯图标按钮（铃铛 24×24 也用它做底子）。必须转发 ref：radix 的 Trigger asChild 要靠它定位浮层。 */
+export const IconButton = forwardRef<
+  HTMLButtonElement,
+  ButtonProps & { label: string }
+>(function IconButton({ label, className, ...props }, ref) {
   return (
     <Button
+      ref={ref}
       size="icon"
       variant="ghost"
       aria-label={label}
@@ -77,4 +77,4 @@ export function IconButton({
       {...props}
     />
   );
-}
+});

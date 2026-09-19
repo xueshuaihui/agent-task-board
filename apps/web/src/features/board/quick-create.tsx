@@ -4,6 +4,7 @@ import { errorMessage, fieldErrorsOf, isApiError, useFieldDefs, useSettings } fr
 import { useActiveProjects } from '@/features/projects';
 import { useGroupingStore } from './grouping/useGroupingState';
 import { priorityText, STATUS_LABEL } from '@/lib/labels';
+import { clearFieldError } from '@/lib/forms';
 import { useToast } from '@/components/ui';
 import { Button, Dialog, Field, Input, Select, Textarea } from '@/components/ui';
 import type { BoardMutations } from './mutations';
@@ -159,7 +160,10 @@ function QuickCreateForm({ state, mutations, onClose }: QuickCreateFormProps) {
             autoFocus
             maxLength={200}
             placeholder="一句话说清要做什么"
-            onChange={(event) => setTitle(event.target.value)}
+            onChange={(event) => {
+              setTitle(event.target.value);
+              clearFieldError(setErrors, 'title');
+            }}
           />
         </Field>
 
@@ -167,7 +171,10 @@ function QuickCreateForm({ state, mutations, onClose }: QuickCreateFormProps) {
           <Textarea
             rows={2}
             value={description}
-            onChange={(event) => setDescription(event.target.value)}
+            onChange={(event) => {
+              setDescription(event.target.value);
+              clearFieldError(setErrors, 'description');
+            }}
             invalid={Boolean(errors.description)}
           />
         </Field>
@@ -178,7 +185,10 @@ function QuickCreateForm({ state, mutations, onClose }: QuickCreateFormProps) {
               value={type}
               invalid={Boolean(errors.type)}
               options={types.map((item) => ({ value: item, label: item }))}
-              onChange={(event) => setType(event.target.value)}
+              onChange={(event) => {
+                setType(event.target.value);
+                clearFieldError(setErrors, 'type');
+              }}
             />
           </Field>
           <Field label="优先级" required error={errors.priority}>
@@ -203,7 +213,14 @@ function QuickCreateForm({ state, mutations, onClose }: QuickCreateFormProps) {
         </Field>
 
         <Field label="标签" hint="逗号分隔，单个 ≤ 16 字、最多 10 个（20.3）" error={errors.tags}>
-          <Input value={tagText} placeholder="后端, 缺陷修复" onChange={(event) => setTagText(event.target.value)} />
+          <Input
+            value={tagText}
+            placeholder="后端, 缺陷修复"
+            onChange={(event) => {
+              setTagText(event.target.value);
+              clearFieldError(setErrors, 'tags');
+            }}
+          />
         </Field>
 
         {state.dependsOn ? (
@@ -220,7 +237,10 @@ function QuickCreateForm({ state, mutations, onClose }: QuickCreateFormProps) {
               defs={[...required, ...optional]}
               values={custom}
               errors={pickCustomErrors(errors)}
-              onChange={(key, value) => setCustom((current) => ({ ...current, [key]: value }))}
+              onChange={(key, value) => {
+                setCustom((current) => ({ ...current, [key]: value }));
+                clearFieldError(setErrors, `custom_fields.${key}`);
+              }}
             />
           </div>
         ) : null}

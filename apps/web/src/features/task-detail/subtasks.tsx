@@ -4,6 +4,7 @@ import { api, errorMessage, fieldErrorsOf, isApiError, qk, useApiMutation, useSe
 import type { TaskAggregate, TaskChildRef } from '@/api';
 import { Badge, Button, Field, Input, Progress, Select, StatusDot } from '@/components/ui';
 import { cn } from '@/lib/cn';
+import { clearFieldError } from '@/lib/forms';
 import { priorityText, statusLabel } from '@/lib/labels';
 import { statusStyle } from '@/lib/status-style';
 import { useShellStore } from '@/app/store/shell';
@@ -177,7 +178,10 @@ function AddSubtaskForm({ taskId, onDone }: { taskId: string; onDone: () => void
           maxLength={200}
           placeholder="一句话说清这个子任务"
           invalid={Boolean(errors.title)}
-          onChange={(event) => setTitle(event.target.value)}
+          onChange={(event) => {
+            setTitle(event.target.value);
+            clearFieldError(setErrors, 'title');
+          }}
         />
       </Field>
       <div className="grid grid-cols-2 gap-3">

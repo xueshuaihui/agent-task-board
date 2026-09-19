@@ -42,7 +42,7 @@ export function ProjectDeleteDialog({ project, onClose }: ProjectDeleteDialogPro
       });
       const action = result.strategy === 'migrate' ? '迁移' : '删除';
       toast.success(
-        `已删除分组 ${result.id}`,
+        `已删除分组 ${project.name}`,
         `${action}了 ${result.affected_tasks} 个任务${result.strategy === 'delete' ? '（含执行记录，不可恢复）' : ''}`,
       );
       onClose();

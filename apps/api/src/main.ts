@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
-import { allowedOrigins } from './common/origins';
+import { corsOptions } from './common/cors';
 import { dataDir, port } from './common/paths';
 import { resolveUiToken } from './common/ui-token';
 import { appVersion } from './common/version';
@@ -47,18 +47,7 @@ async function bootstrap(): Promise<void> {
   app.set('query parser', 'extended');
   app.useGlobalFilters(new ApiExceptionFilter());
 
-  const allow = new Set(allowedOrigins());
-  app.enableCors({
-    // 精确匹配：不回显任意 Origin，`Origin: null`（sandbox iframe）也不放行（9.4.3）。
-    origin(origin, callback) {
-      if (!origin) return callback(null, true);
-      return callback(null, allow.has(origin));
-    },
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Authorization', 'Content-Type', 'Accept'],
-    maxAge: 600,
-    credentials: false,
-  });
+  app.enableCors(corsOptions());
 
   // 未捕获异常一律记一条 error 后交还主进程重启 sidecar，不留僵尸监听。
   process.on('uncaughtException', (error) => {

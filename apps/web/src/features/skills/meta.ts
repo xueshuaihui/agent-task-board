@@ -211,7 +211,11 @@ export function emptyContent(): SkillContent {
   return { blocks: [first], entryBlockId: first.id };
 }
 
-/** 模板起步（2.md 10.3「从模板创建」的轻量实现）。 */
+/**
+ * 模板起步（2.md 10.3「从模板创建」的轻量实现）。
+ * 起步块的 next 只往前走、不回指：next 成环会被发布检查（`cyclicBlockIds`）判为 error 而永远发不出去，
+ * 需要重试语义时用 1.md 8.3 的循环块。
+ */
 export function templateContent(type: SkillType): SkillContent {
   if (type === 'prompt' || type === 'knowledge') {
     return emptyContent();
@@ -233,7 +237,6 @@ export function templateContent(type: SkillType): SkillContent {
     { when: '是', to: d.id },
     { when: '否', to: c.id },
   ];
-  c.next = [{ when: '完成', to: b.id }];
   return { blocks: [a, b, c, d], entryBlockId: a.id };
 }
 

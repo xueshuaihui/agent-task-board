@@ -57,7 +57,7 @@ import {
   isArchivedRow,
   useNowTick,
 } from './cells';
-import { ActiveFilterSummary, FilterChips, FilterPanel } from './filter-panel';
+import { ActiveFilterSummary, ActiveProjectScope, FilterChips, FilterPanel } from './filter-panel';
 import { BatchBar } from './batch-bar';
 import { CreateTaskMenu } from './create-menu';
 import { archiveErrorText } from './reason';
@@ -283,6 +283,7 @@ export function TaskListPage() {
             {sort.order === 'asc' ? '升序' : '降序'}
           </p>
         </div>
+        <ActiveProjectScope />
         <ActiveFilterSummary />
       </header>
 

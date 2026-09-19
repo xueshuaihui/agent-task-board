@@ -60,7 +60,7 @@ export interface THProps extends ThHTMLAttributes<HTMLTableCellElement> {
 export function TH({ className, sortField, sort, onSort, children, ...rest }: THProps) {
   const active = sortField !== undefined && sort?.field === sortField;
   const content = (
-    <span className="inline-flex items-center gap-1">
+    <span className="inline-flex items-center gap-1 whitespace-nowrap">
       {children}
       {sortField && onSort ? (
         active ? (

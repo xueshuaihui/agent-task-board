@@ -68,7 +68,7 @@ export const Menu = forwardRef<HTMLSpanElement, MenuProps>(function Menu(
       };
 
   return (
-    <span ref={ref} className="relative inline-flex">
+    <span ref={ref} className="relative inline-flex shrink-0">
       <DropdownMenu.Root open={open} onOpenChange={setOpen}>
         <DropdownMenu.Trigger asChild>{trigger({ open, toggle: noopToggle, id })}</DropdownMenu.Trigger>
         <AnimatePresence>

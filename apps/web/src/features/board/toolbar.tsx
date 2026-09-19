@@ -28,6 +28,7 @@ import { useGroupingStore } from './grouping/useGroupingState';
 
 /**
  * 3.4 工具栏：48px 高、左右 24px（沿用 `main` 的 padding），底边 1px。
+ * 每段都不参与收缩，装不下时整行换行成两行——最小窗口 960px 下也不能互相压字。
  *
  * 两处刻意的「没有」：
  * - 没有「看板／列表」切换（3.4 末段：列表是独立的「任务」页，不是看板的另一种显示）；
@@ -75,14 +76,14 @@ export function BoardToolbar({ onCreate, grouping, graphTasks }: BoardToolbarPro
   const viewLabel = VIEW_ORDER.find((item) => item.view === view)?.label ?? '全部';
 
   return (
-    <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border">
+    <div className="flex min-h-12 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border">
       {/* 7.8 / 4.5：项目切换器放看板工具栏最左，多选结果驱动看板请求过滤与「按项目」主分组。 */}
       <ProjectSwitcher />
       <span aria-hidden className="h-5 w-px shrink-0 bg-border" />
 
       <ViewSegmented value={view} onChange={setView} />
 
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         <PriorityChip />
         <TagChip />
         <TypeChip />
@@ -105,6 +106,9 @@ export function BoardToolbar({ onCreate, grouping, graphTasks }: BoardToolbarPro
           </span>
         ) : null}
       </div>
+
+      {/* 窄窗口（最小 960px）下整行换行，靠这段把右侧动作推到行尾。 */}
+      <span aria-hidden className="min-w-0 flex-1" />
 
       {grouping ? (
         <div className="flex shrink-0 items-center gap-2">

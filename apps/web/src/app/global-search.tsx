@@ -10,6 +10,7 @@ import { useShellStore } from './store/shell';
 
 /**
  * 2.md 2.4 全局搜索：顶栏中部搜索框，Cmd/Ctrl+K 聚焦、Esc 收起。
+ * 下拉可用 ↑↓ 在结果间移动、Enter 选中（纯键盘也能走完「⌘K → 输入 → 打开任务」）。
  *
  * 范围本期只做任务：输入 ≥1 字符防抖 300ms 后调 `GET /api/v1/tasks?keyword=…`
  * （服务端 `listQuerySchema.keyword`，上限 120，这里按同口径截断），下拉最多展示
@@ -27,11 +28,18 @@ function priorityText(priority: number): string {
   return priority >= 0 && priority <= 3 ? `P${priority}` : '优先级';
 }
 
+/** `aria-activedescendant` 指向的行 id；任务 id 里有 `#`，要转成合法的 DOM id。 */
+function optionId(taskId: string): string {
+  return `global-search-option-${taskId.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+}
+
 export function GlobalSearch() {
   const [value, setValue] = useState('');
   /** 防抖后的真值：只有它驱动请求。 */
   const [keyword, setKeyword] = useState('');
   const [open, setOpen] = useState(false);
+  /** 键盘高亮项：结果变化后回到第一条，避免停在已消失的行上。 */
+  const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const openTask = useShellStore((state) => state.openTask);
@@ -77,6 +85,9 @@ export function GlobalSearch() {
   const items: TaskListItem[] = useMemo(() => query.data?.items ?? [], [query.data]);
   /** 只有关键词就绪才叫「有结果可显」；输入框空着时不该出现空态。 */
   const showDropdown = open && debounced.length >= 1;
+  useEffect(() => {
+    setActive(0);
+  }, [debounced]);
   const onSelect = (id: string) => {
     openTask(id);
     setOpen(false);
@@ -96,6 +107,10 @@ export function GlobalSearch() {
         type="search"
         role="combobox"
         aria-expanded={showDropdown}
+        aria-controls="global-search-listbox"
+        aria-activedescendant={
+          showDropdown && items.length > 0 ? optionId(items[Math.min(active, items.length - 1)].id) : undefined
+        }
         aria-label="全局搜索任务"
         placeholder="搜索任务…"
         className={cn(
@@ -116,6 +131,21 @@ export function GlobalSearch() {
             } else {
               event.currentTarget.blur();
             }
+            return;
+          }
+          if (!showDropdown || items.length === 0) return;
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            const delta = event.key === 'ArrowDown' ? 1 : -1;
+            setActive((prev) => (prev + delta + items.length) % items.length);
+            return;
+          }
+          if (event.key === 'Enter') {
+            const row = items[Math.min(active, items.length - 1)];
+            if (row) {
+              event.preventDefault();
+              onSelect(row.id);
+            }
           }
         }}
       />
@@ -127,6 +157,7 @@ export function GlobalSearch() {
       {showDropdown ? (
         <div
           role="listbox"
+          id="global-search-listbox"
           aria-label="搜索结果"
           className="absolute left-0 right-0 top-[calc(100%+4px)] z-40 max-h-[360px] overflow-y-auto rounded-card border border-border bg-bg-surface py-1 shadow-card"
         >
@@ -140,17 +171,22 @@ export function GlobalSearch() {
           ) : items.length === 0 ? (
             <p className="px-3 py-3 text-aux text-text-secondary">没有匹配「{debounced}」的任务。</p>
           ) : (
-            items.map((row) => {
+            items.map((row, index) => {
               const status = statusStyle(row.status);
               const priority = priorityStyle(row.priority);
+              const isActive = index === Math.min(active, items.length - 1);
               return (
                 <button
                   key={row.id}
+                  id={optionId(row.id)}
                   type="button"
                   role="option"
+                  aria-selected={isActive}
+                  onMouseEnter={() => setActive(index)}
                   onClick={() => onSelect(row.id)}
                   className={cn(
                     'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors duration-120 ease-out hover:bg-primary-light',
+                    isActive && 'bg-primary-light',
                   )}
                 >
                   <StatusDot className={status.dot} />

@@ -100,6 +100,20 @@ describe('CORS 白名单精确匹配', () => {
     );
   });
 
+  it('预检：PUT 在放行方法表里（/prefs/:key 与 /skills/sources 靠它，漏了则偏好存不住）', async () => {
+    const res = await uiSender(t).send(`${API}/prefs/board.grouping`, {
+      method: 'OPTIONS',
+      token: null,
+      headers: {
+        origin: whitelist[0]!,
+        'access-control-request-method': 'PUT',
+        'access-control-request-headers': 'authorization,content-type',
+      },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-methods') ?? '').toContain('PUT');
+  });
+
   it('预检：非白名单来源同样不回显，且没有 Max-Age 可缓存', async () => {
     const res = await uiSender(t).send(`${API}/tasks/claim`, {
       method: 'OPTIONS',

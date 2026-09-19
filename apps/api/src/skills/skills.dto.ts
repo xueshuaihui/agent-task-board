@@ -36,7 +36,8 @@ const BLOCK_KINDS = [
 
 const blockNextSchema = z.object({
   when: z.string().max(200).default(''),
-  to: z.string().min(1).max(64),
+  /** 空串是合法终态（编辑器新建的条件块、SKILL.md 的「（结束）」都是 to=''），不能当成入参错误。 */
+  to: z.string().max(64),
 });
 
 /**
