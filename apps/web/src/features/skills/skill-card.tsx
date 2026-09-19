@@ -1,4 +1,4 @@
-import { MoreHorizontal, Pencil, Send, Trash2, Download } from 'lucide-react';
+import { Copy, Download, FileText, MoreHorizontal, Pencil, Send, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui';
 import { Card } from '@/components/ui';
 import { Menu } from '@/components/ui';
@@ -19,6 +19,8 @@ export interface SkillCardProps {
   onEdit: (skill: Skill) => void;
   onPublish: (skill: Skill) => void;
   onExport: (skill: Skill) => void;
+  onExportMarkdown: (skill: Skill) => void;
+  onCopy: (skill: Skill) => void;
   onDelete: (skill: Skill) => void;
   className?: string;
 }
@@ -29,6 +31,8 @@ export function SkillCard({
   onEdit,
   onPublish,
   onExport,
+  onExportMarkdown,
+  onCopy,
   onDelete,
   className,
 }: SkillCardProps) {
@@ -81,7 +85,24 @@ export function SkillCard({
                     disabled: skill.status === 'ARCHIVED',
                     onSelect: () => onPublish(skill),
                   },
-                  { id: 'export', label: '导出 .atskill', icon: <Download className="size-4" />, onSelect: () => onExport(skill) },
+                  {
+                    id: 'copy',
+                    label: '复制',
+                    icon: <Copy className="size-4" />,
+                    onSelect: () => onCopy(skill),
+                  },
+                  {
+                    id: 'export',
+                    label: '导出 .atskill',
+                    icon: <Download className="size-4" />,
+                    onSelect: () => onExport(skill),
+                  },
+                  {
+                    id: 'export-md',
+                    label: '导出 SKILL.md',
+                    icon: <FileText className="size-4" />,
+                    onSelect: () => onExportMarkdown(skill),
+                  },
                   {
                     id: 'delete',
                     label: '删除',

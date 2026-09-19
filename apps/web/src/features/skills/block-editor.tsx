@@ -1,4 +1,16 @@
-import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { ChevronDown, ChevronUp, GripVertical, Plus, Trash2 } from 'lucide-react';
 import { Button, Input, Menu } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { BLOCK_KIND_META, blockTitle, createBlock, inferVariableOptions } from './meta';
@@ -7,9 +19,10 @@ import type { SkillBlock, SkillBlockKind, SkillContent } from './types';
 
 /**
  * 可视化模式的块列表编辑（1.md 8.3 可视化模式，2.md 11.1 简化实现）：
- * - 增删块（菜单按 15 类 kind 加）、上移下移；
+ * - 增删块（菜单按 15 类 kind 加）、上移下移按钮 + 拖拽排序（dnd-kit，同列表垂直）；
+ * - 键盘：聚焦块卡片本体（非内部输入框）时 Del/Backspace 删除块，需确认；
  * - 字段表单抽到 block-fields.tsx（与结构化模式共用），文本字段带变量插入；
- * - 块间连线不画布拖线，用 next 分支的目标块下拉（decision 块可增删分支）；
+ * - 块间连线用 next 分支的目标块下拉（decision 块可增删分支）；
  * - 入口块在下拉里标记，切换入口即改 content.entryBlockId。
  */
 
@@ -25,6 +38,12 @@ export interface BlockEditorProps {
 
 export function BlockEditor({ content, onChange }: BlockEditorProps) {
   const blocks = content.blocks;
+  const [dragging, setDragging] = useState(false);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    /* 拖拽用方向键激活（Space 留给输入），拖完 Enter/空格落点。 */
+    useSensor(KeyboardSensor),
+  );
   const targetOptions = [
     { value: '', label: '（不跳转）' },
     ...blocks.map((block, index) => ({
@@ -47,6 +66,10 @@ export function BlockEditor({ content, onChange }: BlockEditorProps) {
   };
 
   const removeBlock = (id: string) => {
+    const target = blocks.find((block) => block.id === id);
+    if (!target) return;
+    const label = blockTitle(target, blocks.indexOf(target));
+    if (!window.confirm(`删除块「${label}」？该块的条件分支连线也会一并移除`)) return;
     const rest = blocks.filter((block) => block.id !== id);
     onChange({
       entryBlockId: content.entryBlockId === id ? (rest[0]?.id ?? null) : content.entryBlockId,
@@ -57,29 +80,47 @@ export function BlockEditor({ content, onChange }: BlockEditorProps) {
   const moveBlock = (index: number, delta: -1 | 1) => {
     const target = index + delta;
     if (target < 0 || target >= blocks.length) return;
-    const next = [...blocks];
-    [next[index], next[target]] = [next[target], next[index]];
-    onChange({ ...content, blocks: next });
+    onChange({ ...content, blocks: arrayMove(blocks, index, target) });
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setDragging(false);
+    if (!over || active.id === over.id) return;
+    const from = blocks.findIndex((block) => block.id === active.id);
+    const to = blocks.findIndex((block) => block.id === over.id);
+    if (from < 0 || to < 0) return;
+    onChange({ ...content, blocks: arrayMove(blocks, from, to) });
   };
 
   return (
-    <div className="flex flex-col gap-3">
-      {blocks.map((block, index) => (
-        <BlockCard
-          key={block.id}
-          block={block}
-          index={index}
-          total={blocks.length}
-          isEntry={content.entryBlockId === block.id}
-          targetOptions={targetOptions}
-          variableOptions={variableOptions}
-          onPatch={(patch) => patchBlock(block.id, patch)}
-          onSetEntry={() => onChange({ ...content, entryBlockId: block.id })}
-          onRemove={() => removeBlock(block.id)}
-          onMove={(delta) => moveBlock(index, delta)}
-        />
-      ))}
-      <div className="flex items-center gap-2">
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={() => setDragging(true)}
+      onDragCancel={() => setDragging(false)}
+      onDragEnd={handleDragEnd}
+    >
+      <SortableContext items={blocks.map((block) => block.id)} strategy={verticalListSortingStrategy}>
+        <div className={cn('flex flex-col gap-3', dragging && 'pointer-events-none select-none')}>
+          {blocks.map((block, index) => (
+            <SortableBlockCard
+              key={block.id}
+              block={block}
+              index={index}
+              total={blocks.length}
+              isEntry={content.entryBlockId === block.id}
+              targetOptions={targetOptions}
+              variableOptions={variableOptions}
+              onPatch={(patch) => patchBlock(block.id, patch)}
+              onSetEntry={() => onChange({ ...content, entryBlockId: block.id })}
+              onRemove={() => removeBlock(block.id)}
+              onMove={(delta) => moveBlock(index, delta)}
+            />
+          ))}
+        </div>
+      </SortableContext>
+      <div className="mt-3 flex items-center gap-2">
         <Menu
           width={180}
           trigger={({ toggle }) => (
@@ -99,9 +140,11 @@ export function BlockEditor({ content, onChange }: BlockEditorProps) {
         />
         {blocks.length === 0 ? (
           <span className="text-aux text-text-tertiary">还没有内容块，先添加一个</span>
-        ) : null}
+        ) : (
+          <span className="text-aux text-text-tertiary">拖动块左侧手柄可调整顺序</span>
+        )}
       </div>
-    </div>
+    </DndContext>
   );
 }
 
@@ -118,6 +161,28 @@ interface BlockCardProps {
   onMove: (delta: -1 | 1) => void;
 }
 
+function SortableBlockCard(props: BlockCardProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: props.block.id,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      className={cn(isDragging && 'z-10 opacity-80 shadow-pop')}
+    >
+      <BlockCard
+        {...props}
+        dragHandle={{
+          attributes: attributes as unknown as React.HTMLAttributes<HTMLButtonElement>,
+          listeners: (listeners ?? undefined) as unknown as React.HTMLAttributes<HTMLButtonElement> | undefined,
+        }}
+      />
+    </div>
+  );
+}
+
 function BlockCard({
   block,
   index,
@@ -129,18 +194,45 @@ function BlockCard({
   onSetEntry,
   onRemove,
   onMove,
-}: BlockCardProps) {
+  dragHandle,
+}: BlockCardProps & {
+  dragHandle: {
+    attributes: React.HTMLAttributes<HTMLButtonElement>;
+    listeners: React.HTMLAttributes<HTMLButtonElement> | undefined;
+  };
+}) {
   const meta = BLOCK_KIND_META[block.kind];
   const Icon = meta.icon;
 
+  /* 聚焦块卡片本体（tabIndex=0，而非内部输入框）时 Del/Backspace 删块，带确认。 */
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault();
+      onRemove();
+    }
+  };
+
   return (
     <div
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      aria-label={`块：${blockTitle(block, index)}，聚焦后按 Delete 可删除`}
       className={cn(
-        'rounded-card border bg-bg-surface p-3 shadow-card',
+        'rounded-card border bg-bg-surface p-3 shadow-card outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
         isEntry ? 'border-primary' : 'border-border',
       )}
     >
       <div className="flex items-center gap-2">
+        <button
+          type="button"
+          aria-label="拖拽排序"
+          className="cursor-grab touch-none text-text-tertiary hover:text-text-primary active:cursor-grabbing"
+          {...dragHandle.attributes}
+          {...dragHandle.listeners}
+        >
+          <GripVertical className="size-4" />
+        </button>
         <span className={cn('inline-flex items-center gap-1 rounded-tag px-1.5 py-0.5 text-badge', meta.kindClass)}>
           <Icon className="size-3.5" />
           {meta.label}

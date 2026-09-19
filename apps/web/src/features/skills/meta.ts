@@ -384,3 +384,113 @@ export function variableWarnings(content: SkillContent): VariableWarning[] {
   }
   return warnings;
 }
+
+/* -------------------------------- 起步模板 -------------------------------- */
+
+export interface SkillStarterTemplate {
+  id: string;
+  name: string;
+  type: SkillType;
+  description: string;
+  tags: string[];
+  content: SkillContent;
+}
+
+function seedBlocks(
+  specs: { kind: SkillBlockKind; title: string; patch?: (block: SkillBlock) => void }[],
+): SkillContent {
+  const blocks = specs.map((spec, index) => {
+    const block = createBlock(spec.kind, index);
+    block.title = spec.title;
+    spec.patch?.(block);
+    return block;
+  });
+  return { blocks, entryBlockId: blocks[0]?.id ?? null };
+}
+
+/**
+ * 内置起步模板（2.md 10.3「从模板起步」）：8 个常用场景的摘要，
+ * 选中后以模板的名称/类型/描述/标签/内容预填创建向导，均可改。
+ */
+export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
+  {
+    id: 'code-review',
+    name: '代码审查',
+    type: 'workflow',
+    description: '对一次 diff 做多维审查并输出结构化评审意见',
+    tags: ['review', 'quality'],
+    content: seedBlocks([
+      { kind: 'input', title: '输入 diff', patch: (b) => (b.name = 'diff') },
+      { kind: 'prompt', title: '逐项审查', patch: (b) => (b.prompt = '按正确性 / 安全 / 可读性 / 性能逐项检查 {{input.diff}}') },
+      { kind: 'constraint', title: '输出约定', patch: (b) => (b.rule = '每条意见给出文件、行号与严重级别') },
+    ]),
+  },
+  {
+    id: 'bug-triage',
+    name: 'Bug 定位',
+    type: 'flow',
+    description: '从报错信息出发定位根因，带条件分支与重试',
+    tags: ['debug'],
+    content: templateContent('flow'),
+  },
+  {
+    id: 'weekly-report',
+    name: '周报生成',
+    type: 'steps',
+    description: '汇总本周期任务进展生成周报草稿',
+    tags: ['report'],
+    content: seedBlocks([
+      { kind: 'step', title: '收集进展', patch: (b) => (b.steps = ['读取已完成任务', '读取进行中任务', '读取被阻塞任务']) },
+      { kind: 'step', title: '归纳要点', patch: (b) => (b.steps = ['按项目分组', '提炼风险与需要的支持']) },
+      { kind: 'output', title: '周报文本', patch: (b) => (b.name = 'report') },
+    ]),
+  },
+  {
+    id: 'doc-translate',
+    name: '文档翻译',
+    type: 'prompt',
+    description: '保持术语表一致的技术文档翻译',
+    tags: ['i18n'],
+    content: emptyContent(),
+  },
+  {
+    id: 'api-smoke',
+    name: '接口冒烟测试',
+    type: 'script',
+    description: '对目标服务的核心接口跑一轮确定性冒烟脚本',
+    tags: ['testing'],
+    content: templateContent('script'),
+  },
+  {
+    id: 'project-knowledge',
+    name: '项目知识库',
+    type: 'knowledge',
+    description: '沉淀项目架构、约定与常见坑的参考资料',
+    tags: ['knowledge'],
+    content: templateContent('knowledge'),
+  },
+  {
+    id: 'release-composite',
+    name: '发布流水线',
+    type: 'composite',
+    description: '编排测试、构建、发布三个子技能完成一次发版',
+    tags: ['release'],
+    content: seedBlocks([
+      { kind: 'subskill', title: '跑测试', patch: (b) => (b.skillRef = '接口冒烟测试') },
+      { kind: 'subskill', title: '执行构建', patch: (b) => (b.skillRef = '构建技能') },
+      { kind: 'subskill', title: '发布产物', patch: (b) => (b.skillRef = '发布技能') },
+    ]),
+  },
+  {
+    id: 'parallel-summaries',
+    name: '并行摘要',
+    type: 'workflow',
+    description: '并行汇总多份材料再合并成单一结论',
+    tags: ['summary'],
+    content: seedBlocks([
+      { kind: 'input', title: '材料列表', patch: (b) => (b.name = 'documents') },
+      { kind: 'parallel', title: '并行摘要', patch: (b) => (b.branches = ['摘要材料 A', '摘要材料 B']) },
+      { kind: 'prompt', title: '合并结论', patch: (b) => (b.prompt = '把各分支摘要合并为单一结论') },
+    ]),
+  },
+];
