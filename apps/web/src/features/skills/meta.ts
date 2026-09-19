@@ -409,8 +409,10 @@ function seedBlocks(
 }
 
 /**
- * 内置起步模板（2.md 10.3「从模板起步」）：8 个常用场景的摘要，
+ * 内置起步模板（2.md 10.3「从模板起步」）：8 个常用场景的完整正文，
  * 选中后以模板的名称/类型/描述/标签/内容预填创建向导，均可改。
+ * 每个 prompt/step 块都带可直接使用的指令正文（含 {{input.*}} / {{task.*}} 变量示例），
+ * 源码模式下导出即为完整可用的 SKILL.md。
  */
 export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
   {
@@ -420,9 +422,40 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     description: '对一次 diff 做多维审查并输出结构化评审意见',
     tags: ['review', 'quality'],
     content: seedBlocks([
-      { kind: 'input', title: '输入 diff', patch: (b) => (b.name = 'diff') },
-      { kind: 'prompt', title: '逐项审查', patch: (b) => (b.prompt = '按正确性 / 安全 / 可读性 / 性能逐项检查 {{input.diff}}') },
-      { kind: 'constraint', title: '输出约定', patch: (b) => (b.rule = '每条意见给出文件、行号与严重级别') },
+      {
+        kind: 'input',
+        title: '输入 diff',
+        patch: (b) => {
+          b.name = 'diff';
+          b.valueType = 'string';
+          b.required = true;
+        },
+      },
+      {
+        kind: 'prompt',
+        title: '逐项审查',
+        patch: (b) => {
+          b.prompt = [
+            '你是一名资深代码评审员。请针对任务「{{task.title}}」的以下改动做逐项审查：',
+            '',
+            '{{input.diff}}',
+            '',
+            '按四个维度逐一检查，每个维度先给结论（通过/有风险），再列出具体问题：',
+            '1. 正确性：边界条件、空值处理、并发与事务一致性；',
+            '2. 安全性：注入、越权、敏感信息泄露；',
+            '3. 可读性：命名、函数长度、重复代码；',
+            '4. 性能：不必要的循环嵌套、N+1 查询、大对象拷贝。',
+            '不要泛泛而谈，每条意见必须落到具体代码片段。',
+          ].join('\n');
+        },
+      },
+      {
+        kind: 'constraint',
+        title: '输出约定',
+        patch: (b) => {
+          b.rule = '每条意见必须给出文件路径、行号与严重级别（blocker/major/minor），并附修改建议；没有问题的维度明确写「通过」，不要留空。';
+        },
+      },
     ]),
   },
   {
@@ -431,7 +464,64 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     type: 'flow',
     description: '从报错信息出发定位根因，带条件分支与重试',
     tags: ['debug'],
-    content: templateContent('flow'),
+    content: seedBlocks([
+      {
+        kind: 'input',
+        title: '输入报错信息',
+        patch: (b) => {
+          b.name = 'error_report';
+          b.valueType = 'string';
+          b.required = true;
+        },
+      },
+      {
+        kind: 'prompt',
+        title: '分析报错',
+        patch: (b) => {
+          b.prompt = [
+            '请分析任务「{{task.title}}」的报错信息，提取关键线索：',
+            '',
+            '{{input.error_report}}',
+            '',
+            '依次列出：完整的错误类型与消息、发生的代码位置（文件/函数/行号）、',
+            '触发条件（什么输入或状态下出现）、以及 2-3 个最可能的根因假设，按可能性排序。',
+          ].join('\n');
+        },
+      },
+      {
+        kind: 'decision',
+        title: '根因是否明确',
+        patch: (b) => {
+          b.condition = '根据已有报错信息与代码上下文，能否确定唯一且可验证的根因？';
+          b.next = [
+            { when: '是：根因明确，可直接给出修复方案', to: '' },
+            { when: '否：存在多个假设或信息不足，需要补充排查', to: '' },
+          ];
+        },
+      },
+      {
+        kind: 'step',
+        title: '补充排查',
+        patch: (b) => {
+          b.steps = [
+            '针对每个未排除的根因假设，设计最小复现步骤（日志埋点、断点或最小用例）',
+            '逐个执行验证，记录每个假设的验证结果（成立/排除）',
+            '若所有假设均被排除，回到「分析报错」重新提取线索（最多重试 2 轮）',
+          ];
+        },
+      },
+      {
+        kind: 'step',
+        title: '输出结论',
+        patch: (b) => {
+          b.steps = [
+            '写明根因：触发路径、缺陷代码位置与成因解释',
+            '给出修复建议：具体代码改动方向与回归测试用例',
+            '标注影响面：受影响的调用方与需要同步修改的位置',
+          ];
+        },
+      },
+    ]),
   },
   {
     id: 'weekly-report',
@@ -440,9 +530,36 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     description: '汇总本周期任务进展生成周报草稿',
     tags: ['report'],
     content: seedBlocks([
-      { kind: 'step', title: '收集进展', patch: (b) => (b.steps = ['读取已完成任务', '读取进行中任务', '读取被阻塞任务']) },
-      { kind: 'step', title: '归纳要点', patch: (b) => (b.steps = ['按项目分组', '提炼风险与需要的支持']) },
-      { kind: 'output', title: '周报文本', patch: (b) => (b.name = 'report') },
+      {
+        kind: 'step',
+        title: '收集进展',
+        patch: (b) => {
+          b.steps = [
+            '读取任务「{{task.title}}」周期内的已完成任务，记录任务标题与完成时间',
+            '读取进行中任务，记录当前进度与预计完成时间',
+            '读取被阻塞任务，记录阻塞原因与需要协调的对象',
+          ];
+        },
+      },
+      {
+        kind: 'step',
+        title: '归纳要点',
+        patch: (b) => {
+          b.steps = [
+            '按项目分组，每组用一句话概括本周主线进展，突出可量化的产出',
+            '提炼风险与依赖：哪些事项需要上级决策或外部支持，写明期望的解决时间',
+          ];
+        },
+      },
+      {
+        kind: 'output',
+        title: '周报文本',
+        patch: (b) => {
+          b.name = 'report';
+          b.valueType = 'string';
+          b.required = false;
+        },
+      },
     ]),
   },
   {
@@ -451,7 +568,41 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     type: 'prompt',
     description: '保持术语表一致的技术文档翻译',
     tags: ['i18n'],
-    content: emptyContent(),
+    content: seedBlocks([
+      {
+        kind: 'input',
+        title: '输入原文',
+        patch: (b) => {
+          b.name = 'source_text';
+          b.valueType = 'string';
+          b.required = true;
+        },
+      },
+      {
+        kind: 'prompt',
+        title: '执行翻译',
+        patch: (b) => {
+          b.prompt = [
+            '请将以下技术文档翻译为中文（若原文是中文则译为英文），原文来自任务「{{task.title}}」：',
+            '',
+            '{{input.source_text}}',
+            '',
+            '翻译要求：',
+            '1. 技术术语首次出现时在括号内保留英文原文，如「容器（container）」；',
+            '2. 代码块、命令行、配置键名、专有名词不翻译；',
+            '3. 保持原文的标题层级、列表结构与段落划分，不增删信息；',
+            '4. 语气专业平实，避免口语化和过度修饰。',
+          ].join('\n');
+        },
+      },
+      {
+        kind: 'constraint',
+        title: '输出约定',
+        patch: (b) => {
+          b.rule = '只输出译文正文，不要附加翻译说明；术语表若有冲突，以术语表为准并在译文中保持全篇一致。';
+        },
+      },
+    ]),
   },
   {
     id: 'api-smoke',
@@ -459,7 +610,42 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     type: 'script',
     description: '对目标服务的核心接口跑一轮确定性冒烟脚本',
     tags: ['testing'],
-    content: templateContent('script'),
+    content: seedBlocks([
+      {
+        kind: 'input',
+        title: '输入服务地址',
+        patch: (b) => {
+          b.name = 'base_url';
+          b.valueType = 'string';
+          b.required = true;
+        },
+      },
+      {
+        kind: 'script',
+        title: '执行冒烟脚本',
+        patch: (b) => {
+          b.script = [
+            '// 冒烟：核心接口只验证可达性与状态码，不做深度断言。',
+            "const health = await fetch(`${base_url}/healthz`);",
+            "assert(health.status === 200, '健康检查失败');",
+            '',
+            "const list = await fetch(`${base_url}/api/v1/items?page_size=1`);",
+            "assert(list.status === 200, '列表接口失败');",
+            '',
+            'console.log(`smoke ok: ${base_url}`);',
+          ].join('\n');
+        },
+      },
+      {
+        kind: 'error_handler',
+        title: '失败处理',
+        patch: (b) => {
+          b.onError = 'retry';
+          b.retryCount = 2;
+          b.timeoutMs = 30000;
+        },
+      },
+    ]),
   },
   {
     id: 'project-knowledge',
@@ -467,7 +653,32 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     type: 'knowledge',
     description: '沉淀项目架构、约定与常见坑的参考资料',
     tags: ['knowledge'],
-    content: templateContent('knowledge'),
+    content: seedBlocks([
+      {
+        kind: 'knowledge',
+        title: '项目概况',
+        patch: (b) => {
+          b.prompt = [
+            '本项目是「{{project.name}}」，monorepo 结构：apps/ 下为可部署应用，packages/ 下为共享包。',
+            '技术栈：TypeScript + React（前端）、NestJS（API）、Prisma（ORM）。',
+            '提交遵循 Conventional Commits；分支命名 feature/<日期>-<主题>。',
+            '回答问题时优先引用本节约定，再给出具体建议。',
+          ].join('\n');
+        },
+      },
+      {
+        kind: 'knowledge',
+        title: '常见坑',
+        patch: (b) => {
+          b.prompt = [
+            '1. 数据库迁移必须用 `npm run prisma:migrate`，不要手改 schema 后直接 db push；',
+            '2. 前端禁止直接 import apps/api 的类型，跨端共享类型放 packages/shared；',
+            '3. 缓存失效统一走 qk.* query key 前缀，禁止散落 invalidate；',
+            '4. 环境变量新增后必须同步更新 .env.example 与部署模板。',
+          ].join('\n');
+        },
+      },
+    ]),
   },
   {
     id: 'release-composite',
@@ -476,9 +687,34 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     description: '编排测试、构建、发布三个子技能完成一次发版',
     tags: ['release'],
     content: seedBlocks([
-      { kind: 'subskill', title: '跑测试', patch: (b) => (b.skillRef = '接口冒烟测试') },
-      { kind: 'subskill', title: '执行构建', patch: (b) => (b.skillRef = '构建技能') },
-      { kind: 'subskill', title: '发布产物', patch: (b) => (b.skillRef = '发布技能') },
+      {
+        kind: 'subskill',
+        title: '跑测试',
+        patch: (b) => {
+          b.skillRef = '接口冒烟测试';
+        },
+      },
+      {
+        kind: 'constraint',
+        title: '准入条件',
+        patch: (b) => {
+          b.rule = '测试子技能必须全部通过才允许进入构建；任何失败都中止流水线并在结论中注明失败的用例名。';
+        },
+      },
+      {
+        kind: 'subskill',
+        title: '执行构建',
+        patch: (b) => {
+          b.skillRef = '构建技能';
+        },
+      },
+      {
+        kind: 'subskill',
+        title: '发布产物',
+        patch: (b) => {
+          b.skillRef = '发布技能';
+        },
+      },
     ]),
   },
   {
@@ -488,9 +724,49 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     description: '并行汇总多份材料再合并成单一结论',
     tags: ['summary'],
     content: seedBlocks([
-      { kind: 'input', title: '材料列表', patch: (b) => (b.name = 'documents') },
-      { kind: 'parallel', title: '并行摘要', patch: (b) => (b.branches = ['摘要材料 A', '摘要材料 B']) },
-      { kind: 'prompt', title: '合并结论', patch: (b) => (b.prompt = '把各分支摘要合并为单一结论') },
+      {
+        kind: 'input',
+        title: '材料列表',
+        patch: (b) => {
+          b.name = 'documents';
+          b.valueType = 'json';
+          b.required = true;
+        },
+      },
+      {
+        kind: 'parallel',
+        title: '并行摘要',
+        patch: (b) => {
+          b.merge = 'all';
+          b.branches = [
+            '摘要分支 A：对材料列表中的第 1 组文档，各写 3 句以内的要点摘要',
+            '摘要分支 B：对材料列表中的第 2 组文档，各写 3 句以内的要点摘要',
+            '摘要分支 C：单独提取所有材料中的风险项与待办事项，逐条列出',
+          ];
+        },
+      },
+      {
+        kind: 'prompt',
+        title: '合并结论',
+        patch: (b) => {
+          b.prompt = [
+            '请把各并行分支的摘要合并为围绕任务「{{task.title}}」的单一结论：',
+            '1. 用一段话概括整体要点，不超过 5 句；',
+            '2. 汇总各分支提到的重复信息并去重；',
+            '3. 单独列出风险项与待办清单，标注来源材料；',
+            '4. 若分支之间有矛盾结论，显式指出矛盾点而不是自行裁决。',
+          ].join('\n');
+        },
+      },
+      {
+        kind: 'output',
+        title: '合并结论',
+        patch: (b) => {
+          b.name = 'summary';
+          b.valueType = 'string';
+          b.required = false;
+        },
+      },
     ]),
   },
 ];

@@ -140,6 +140,14 @@ function blockToMarkdown(block: BlockLike, resolveTitle: (id: string) => string)
   return lines.join('\n');
 }
 
+/**
+ * SKILL.md 标准的 version 是纯 semver（0.1.0）：内部存储带 v 前缀（v0.1.0），
+ * 导出时去掉；导入侧 parseFrontmatter 同样归一化，两种写法都兼容。
+ */
+function toSemver(version: string): string {
+  return version.replace(/^v(?=\d)/, '');
+}
+
 /** frontmatter 用 YAML 子集：标量与单行数组，mcp_dependencies 用行内 JSON。 */
 export function blocksToMarkdown(content: SkillContent, frontmatter: SkillFrontmatter): string {
   const titleOf = (id: string) =>
@@ -148,7 +156,7 @@ export function blocksToMarkdown(content: SkillContent, frontmatter: SkillFrontm
     '---',
     `name: ${frontmatter.name}`,
     `description: ${frontmatter.description.replace(/\n/g, ' ')}`,
-    `version: ${frontmatter.version}`,
+    `version: ${toSemver(frontmatter.version)}`,
     `category: ${frontmatter.category}`,
     `tags: [${frontmatter.tags.join(', ')}]`,
   ];
@@ -199,7 +207,7 @@ export function parseFrontmatter(source: string): { frontmatter: SkillFrontmatte
     frontmatter: {
       name: get('name'),
       description: get('description'),
-      version: get('version'),
+      version: toSemver(get('version')),
       category: get('category'),
       tags: parseList('tags'),
       mcpDependencies: mcp,

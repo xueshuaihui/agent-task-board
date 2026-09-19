@@ -9,7 +9,7 @@ import {
   useSkills,
   type Skill,
 } from '@/features/skills';
-import { SKILL_TYPE_META } from '@/features/skills/meta';
+import { SKILL_STATUS_META, SKILL_TYPE_META } from '@/features/skills/meta';
 import { InlineError, LoadingBlock, Section } from '../ui-bits';
 import type { TaskDetailView, TaskSkillRefView } from '../types';
 
@@ -28,8 +28,8 @@ export function SkillsTab({ detail }: { detail: TaskDetailView }) {
   const all = useSkills();
   const [detailId, setDetailId] = useState<string | undefined>(undefined);
   const [keyword, setKeyword] = useState('');
-  // 候选只给已发布的（1.md 10.2：草稿不下发）；keyword 由前端过滤，少发请求。
-  const published = useSkills({ status: 'PUBLISHED' });
+  // 候选含 DRAFT 与 PUBLISHED（排除 ARCHIVED）：下发语义不变（后端按绑定版本下发，
+  // 10.1 未限制草稿），草稿技能可先绑定、发布后生效。keyword 由前端过滤，少发请求。
 
   const bound = useMemo(() => detail.skills ?? [], [detail.skills]);
   const byId = useMemo(
@@ -57,13 +57,13 @@ export function SkillsTab({ detail }: { detail: TaskDetailView }) {
   };
 
   const candidates = useMemo(() => {
-    const items = published.data?.items ?? [];
+    const items = (all.data?.items ?? []).filter((skill) => skill.status !== 'ARCHIVED');
     const kw = keyword.trim().toLowerCase();
     return items
       .filter((skill) => !boundIds.has(skill.id))
       .filter((skill) => (kw ? skill.name.toLowerCase().includes(kw) || skill.id.toLowerCase().includes(kw) : true))
       .slice(0, 8);
-  }, [published.data?.items, boundIds, keyword]);
+  }, [all.data?.items, boundIds, keyword]);
 
   if (all.isPending) return <LoadingBlock lines={4} />;
   if (all.isError) return <InlineError text={all.error.message} />;
@@ -96,13 +96,13 @@ export function SkillsTab({ detail }: { detail: TaskDetailView }) {
         <Input
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
-          placeholder="搜索已发布技能（名称 / ID）"
+          placeholder="搜索技能（名称 / ID，草稿与已发布）"
         />
-        {published.isPending ? (
+        {all.isPending ? (
           <LoadingBlock lines={2} />
         ) : candidates.length === 0 ? (
           <p className="mt-2 text-aux text-text-tertiary">
-            {keyword ? '没有匹配的已发布技能' : '没有可绑定的已发布技能'}
+            {keyword ? '没有匹配的技能' : '没有可绑定的技能'}
           </p>
         ) : (
           <ul className="mt-2 flex flex-col gap-1">
@@ -116,6 +116,7 @@ export function SkillsTab({ detail }: { detail: TaskDetailView }) {
                   {skill.name}
                   <span className="ml-2 font-mono text-aux text-text-tertiary">{skill.current_version}</span>
                 </button>
+                <SkillStatusBadge skill={skill} />
                 <SkillTypeBadge skill={skill} />
                 <Button
                   size="sm"
@@ -179,6 +180,13 @@ function SkillRow({
 function SkillTypeBadge({ skill }: { skill: Skill }) {
   const meta = SKILL_TYPE_META[skill.type];
   return <Badge tone="outline">{meta?.label ?? skill.type}</Badge>;
+}
+
+/** 候选行的状态徽标（草稿/已发布）：草稿可绑定但尚未下发，发布后生效。 */
+function SkillStatusBadge({ skill }: { skill: Skill }) {
+  const meta = SKILL_STATUS_META[skill.status];
+  if (!meta) return null;
+  return <Badge className={meta.className}>{meta.label}</Badge>;
 }
 
 /** 详情抽屉挂载在 Tab 内部：编辑跳技能库页的 `?edit=` 深链（路由接线见 features/skills README）。 */
