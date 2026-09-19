@@ -40,17 +40,17 @@ export function ProjectSwitcher() {
       items: [
         {
           id: 'all',
-          label: '全部项目',
+          label: '全部分组',
           icon: allSelected ? <Check className="size-3.5 text-primary" aria-hidden /> : undefined,
           onSelect: () => setSelection([]),
         },
       ],
     },
     {
-      label: '选择项目',
+      label: '选择分组',
       items:
         items.length === 0
-          ? [{ id: 'no-project', label: '还没有项目', disabled: true }]
+          ? [{ id: 'no-project', label: '还没有分组', disabled: true }]
           : items.map((project) => {
               const checked = projectIds.includes(project.id);
               return {
@@ -70,13 +70,13 @@ export function ProjectSwitcher() {
       items: [
         {
           id: 'create',
-          label: '新建项目',
+          label: '新建分组',
           icon: <FolderPlus className="size-3.5" aria-hidden />,
           onSelect: () => navigate('projects'),
         },
         {
           id: 'manage',
-          label: '管理项目',
+          label: '管理分组',
           icon: <Settings2 className="size-3.5" aria-hidden />,
           onSelect: () => navigate('projects'),
         },
@@ -85,10 +85,10 @@ export function ProjectSwitcher() {
   ];
 
   const label = allSelected
-    ? '全部项目'
+    ? '全部分组'
     : projectIds.length === 1
-      ? (items.find((project) => project.id === projectIds[0])?.name ?? '1 个项目')
-      : `${projectIds.length} 个项目`;
+      ? (items.find((project) => project.id === projectIds[0])?.name ?? '1 个分组')
+      : `${projectIds.length} 个分组`;
 
   return (
     <Menu
@@ -99,7 +99,7 @@ export function ProjectSwitcher() {
           type="button"
           onClick={onToggle}
           aria-expanded={open}
-          aria-label="选择项目"
+          aria-label="选择分组"
           className={cn(
             'inline-flex h-7 shrink-0 items-center gap-1 rounded-control border px-2 text-body transition-colors duration-120 ease-out',
             allSelected
@@ -107,7 +107,7 @@ export function ProjectSwitcher() {
               : 'border-primary bg-primary-light text-primary',
           )}
         >
-          项目: {label}
+          分组: {label}
           <MenuCaret open={open} />
         </button>
       )}

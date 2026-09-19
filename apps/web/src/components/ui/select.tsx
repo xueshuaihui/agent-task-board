@@ -35,7 +35,9 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   ref,
 ) {
   return (
-    <span className="relative inline-flex w-full items-center">
+    /* 不写 w-full：作为 flex/grid 子项时本就随上下文伸缩，写死会传染——
+     * 横向过滤条里每个 Select 被拉满整行、逐个换行（2026-09-19 线上症状）。 */
+    <span className="relative inline-flex items-center">
       <select
         ref={ref}
         aria-invalid={invalid || undefined}

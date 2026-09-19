@@ -178,7 +178,7 @@ function RequirementMetaRow({
           <span className="text-text-tertiary">暂无子任务</span>
         )}
       </MetaCell>
-      <MetaCell label="项目">
+      <MetaCell label="分组">
         <span className={cn('truncate', projectName ? 'text-text-primary' : 'text-text-tertiary')}>
           {projectName ?? '未分配'}
         </span>

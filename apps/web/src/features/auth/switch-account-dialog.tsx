@@ -79,7 +79,7 @@ export function SwitchAccountDialog({ open, onClose }: { open: boolean; onClose:
         ) : null}
 
         <p className="mt-1 text-aux text-text-tertiary">
-          ⓘ 切换后，项目、任务和技能将显示为目标账号的数据。
+          ⓘ 切换后，分组、任务和技能将显示为目标账号的数据。
         </p>
       </div>
     </Dialog>

@@ -71,7 +71,7 @@ const single = (key: string, label: string): GroupValue[] => [{ key, label }];
 export const GROUP_DIMENSIONS: Record<Exclude<GroupDimensionKey, 'none'>, GroupDimension> = {
   project: {
     key: 'project',
-    label: '项目',
+    label: '分组',
     icon: '📁',
     getValues: (task) =>
       task.project_id

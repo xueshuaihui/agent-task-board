@@ -240,25 +240,25 @@ export function SkillLibraryPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[200px] max-w-[360px] flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
           <Input
             value={keywordInput}
             placeholder="搜索名称、描述、标签…"
-            className="w-64 pl-8"
+            className="w-full pl-8"
             onChange={(event) => setKeywordInput(event.target.value)}
           />
         </div>
         <Select
-          className="w-32"
+          className="w-36"
           value={type}
           placeholder="全部类型"
           options={[{ value: '', label: '全部类型' }, ...SKILL_TYPE_OPTIONS]}
           onChange={(event) => setType(event.target.value as SkillType | '')}
         />
         <Select
-          className="w-32"
+          className="w-36"
           value={status}
           placeholder="全部状态"
           options={[

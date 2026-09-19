@@ -333,7 +333,7 @@ export function inferVariableOptions(content: SkillContent): VariableOption[] {
     { path: 'prev.output', label: '上一步输出', group: '上下文' },
     { path: 'task.title', label: '任务标题', group: '任务' },
     { path: 'task.description', label: '任务描述', group: '任务' },
-    { path: 'project.name', label: '项目名称', group: '项目' },
+    { path: 'project.name', label: '分组名称', group: '分组' },
     { path: 'review.suggestion', label: '审核意见', group: '审核' },
     { path: 'env.HOME', label: '环境变量 HOME', group: '环境' },
   ];

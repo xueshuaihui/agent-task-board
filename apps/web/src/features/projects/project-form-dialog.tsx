@@ -36,7 +36,7 @@ export interface ProjectFormDialogProps {
 
 export function ProjectFormDialog({ project, onClose }: ProjectFormDialogProps) {
   const editing = project !== null;
-  const title = editing ? `编辑项目：${project.name}` : '新建项目';
+  const title = editing ? `编辑分组：${project.name}` : '新建分组';
 
   return (
     <Dialog open size="form" title={title} onClose={onClose}>
@@ -63,7 +63,7 @@ function ProjectForm({ project, onClose }: { project: Project | null; onClose: (
     setErrors({});
     const trimmed = name.trim();
     if (!trimmed) {
-      setErrors({ name: '项目名称不能为空' });
+      setErrors({ name: '分组名称不能为空' });
       return;
     }
     try {
@@ -80,7 +80,7 @@ function ProjectForm({ project, onClose }: { project: Project | null; onClose: (
           return;
         }
         await mutations.patch.mutateAsync({ id: project.id, body });
-        toast.success('项目已更新', project.name);
+        toast.success('分组已更新', project.name);
       } else {
         const body: ProjectCreateInput = {
           name: trimmed,
@@ -89,7 +89,7 @@ function ProjectForm({ project, onClose }: { project: Project | null; onClose: (
           ...(description.trim() ? { description: description.trim() } : {}),
         };
         const created = await mutations.create.mutateAsync(body);
-        toast.success('项目已创建', created.name);
+        toast.success('分组已创建', created.name);
       }
       onClose();
     } catch (error) {
@@ -105,7 +105,7 @@ function ProjectForm({ project, onClose }: { project: Project | null; onClose: (
 
   return (
     <form className="flex flex-col gap-3" onSubmit={submit}>
-      <Field label="项目名称" required error={errors.name}>
+      <Field label="分组名称" required error={errors.name}>
         <Input
           value={name}
           invalid={Boolean(errors.name)}
@@ -159,7 +159,7 @@ function ProjectForm({ project, onClose }: { project: Project | null; onClose: (
         </div>
       </Field>
 
-      <Field label="描述" hint="可选，说明这个项目装什么">
+      <Field label="描述" hint="可选，说明这个分组装什么">
         <Textarea
           rows={2}
           value={description}

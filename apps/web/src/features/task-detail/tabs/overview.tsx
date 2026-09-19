@@ -144,7 +144,7 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
               { label: '类型', value: detail.type },
               { label: '优先级', value: priorityText(detail.priority) },
               {
-                label: '项目',
+                label: '分组',
                 value: projectName ? `${projectName.icon ? `${projectName.icon} ` : ''}${projectName.name}` : '未分配',
                 muted: !projectName,
               },
@@ -366,10 +366,10 @@ function OverviewEditForm({
           />
         </Field>
       </div>
-      <Field label="项目" hint="归档项目不出现在候选里；改为「未分配」即移出项目">
+      <Field label="分组" hint="归档分组不出现在候选里；改为「未分配」即移出分组">
         <Select
           value={projectId}
-          placeholder="未分配项目"
+          placeholder="未分配分组"
           options={projectOptions}
           onChange={(event) => setProjectId(event.target.value)}
         />

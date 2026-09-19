@@ -42,7 +42,7 @@ export function ProjectDeleteDialog({ project, onClose }: ProjectDeleteDialogPro
       });
       const action = result.strategy === 'migrate' ? '迁移' : '删除';
       toast.success(
-        `已删除项目 ${result.id}`,
+        `已删除分组 ${result.id}`,
         `${action}了 ${result.affected_tasks} 个任务${result.strategy === 'delete' ? '（含执行记录，不可恢复）' : ''}`,
       );
       onClose();
@@ -55,7 +55,7 @@ export function ProjectDeleteDialog({ project, onClose }: ProjectDeleteDialogPro
     <Dialog
       open
       size="form"
-      title={`删除项目：${project.name}`}
+      title={`删除分组：${project.name}`}
       onClose={onClose}
       footer={
         <>
@@ -68,7 +68,7 @@ export function ProjectDeleteDialog({ project, onClose }: ProjectDeleteDialogPro
             disabled={strategy === 'migrate' && !target}
             onClick={() => void confirm()}
           >
-            删除项目
+            删除分组
           </Button>
         </>
       }
@@ -76,7 +76,7 @@ export function ProjectDeleteDialog({ project, onClose }: ProjectDeleteDialogPro
       <div className="flex flex-col gap-3">
         <p className="flex items-start gap-2 text-body text-text-primary">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-status-failed" aria-hidden />
-          该项目下的任务不会凭空消失——先决定它们的去向：
+          该分组下的任务不会凭空消失——先决定它们的去向：
         </p>
 
         <RadioGroup
@@ -87,8 +87,8 @@ export function ProjectDeleteDialog({ project, onClose }: ProjectDeleteDialogPro
           options={[
             {
               value: 'migrate',
-              label: '迁移任务到其他项目',
-              description: '项目删除，任务与其执行记录完整保留',
+              label: '迁移任务到其他分组',
+              description: '分组删除，任务与其执行记录完整保留',
             },
             {
               value: 'delete',
@@ -99,12 +99,12 @@ export function ProjectDeleteDialog({ project, onClose }: ProjectDeleteDialogPro
         />
 
         {strategy === 'migrate' ? (
-          <Field label="迁移到" hint={targets.length === 0 ? '没有其他活跃项目可选' : undefined}>
+          <Field label="迁移到" hint={targets.length === 0 ? '没有其他活跃分组可选' : undefined}>
             <Select
               value={target?.id ?? ''}
               invalid={targets.length > 0 && !target}
               disabled={targets.length === 0}
-              placeholder={targets.length === 0 ? '无可选项目' : '选择目标项目'}
+              placeholder={targets.length === 0 ? '无可选分组' : '选择目标分组'}
               options={targets.map((item) => ({
                 value: item.id,
                 label: `${item.icon ?? '📁'} ${item.name}`,
@@ -114,7 +114,7 @@ export function ProjectDeleteDialog({ project, onClose }: ProjectDeleteDialogPro
           </Field>
         ) : (
           <p className="rounded-card bg-status-failed-soft px-3 py-2 text-aux text-status-failed">
-            该项目下的所有任务与其执行记录都会被删除，此操作不可恢复。
+            该分组下的所有任务与其执行记录都会被删除，此操作不可恢复。
           </p>
         )}
       </div>

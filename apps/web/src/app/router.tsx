@@ -14,7 +14,7 @@ import { skillsRouteCandidate } from '@/features/skills';
 
 export const ROUTES = {
   board: { path: '/board', label: '看板' },
-  projects: { path: '/projects', label: '项目' },
+  projects: { path: '/projects', label: '分组' },
   review: { path: '/review', label: '审核' },
   // 0919 十四章 IA：任务列表不再占顶栏入口，但路由保留（看板工具栏「列表视图」跳这里）。
   tasks: { path: '/tasks', label: '任务' },

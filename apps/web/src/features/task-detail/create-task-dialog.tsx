@@ -196,10 +196,10 @@ function TaskCreateForm({
           </Field>
         )}
 
-        <Field label="项目" hint="可选；归档项目不出现在候选里">
+        <Field label="分组" hint="可选；归档分组不出现在候选里">
           <Select
             value={projectId}
-            placeholder="未分配项目"
+            placeholder="未分配分组"
             options={(projects.data?.items ?? []).map((project) => ({
               value: project.id,
               label: `${project.icon ? `${project.icon} ` : ''}${project.name}`,

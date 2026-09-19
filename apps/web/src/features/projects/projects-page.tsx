@@ -40,7 +40,7 @@ export function ProjectsPage() {
     >
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-page-title text-text-primary">项目</h1>
+          <h1 className="text-page-title text-text-primary">分组</h1>
           <p className="text-aux text-text-secondary">
             共 {items.length} 个 · 活跃 {active.length} · 归档 {archived.length}
           </p>
@@ -51,7 +51,7 @@ export function ProjectsPage() {
           onClick={() => setFormTarget('create')}
           data-testid="create-project"
         >
-          新建项目
+          新建分组
         </Button>
       </header>
 
@@ -72,15 +72,15 @@ export function ProjectsPage() {
         <div className="flex min-h-[320px] flex-1 items-center justify-center rounded-card border border-border bg-bg-surface">
           <EmptyState
             icon={<span aria-hidden className="text-2xl leading-none">📁</span>}
-            title="还没有项目"
-            description="项目是任务的顶层容器，用来隔离不同项目的工作（5.1）"
+            title="还没有分组"
+            description="分组是任务的顶层容器，用来隔离不同的工作（5.1）"
             action={
               <Button
                 variant="primary"
                 icon={<FolderPlus className="size-4" aria-hidden />}
                 onClick={() => setFormTarget('create')}
               >
-                新建项目
+                新建分组
               </Button>
             }
           />

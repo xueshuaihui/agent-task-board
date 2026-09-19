@@ -79,9 +79,9 @@ function MarketBrowse() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-5 py-6">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-3">
         <form
-          className="relative min-w-[220px] flex-1"
+          className="relative min-w-[220px] max-w-[420px] flex-1"
           onSubmit={(event) => {
             event.preventDefault();
             setKeyword(keywordInput.trim());
@@ -97,8 +97,20 @@ function MarketBrowse() {
             onChange={(event) => setKeywordInput(event.target.value)}
           />
         </form>
+        <Button
+          size="md"
+          variant="default"
+          className="ml-auto"
+          icon={<UserRound className="size-4" />}
+          onClick={() => navigate('market', '?tab=personal')}
+        >
+          个人中心
+        </Button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
         <Select
-          className="w-32"
+          className="w-36"
           placeholder="分类"
           value={category}
           onChange={(event) => {
@@ -108,7 +120,7 @@ function MarketBrowse() {
           options={MARKET_CATEGORIES.map((item) => ({ value: item, label: item }))}
         />
         <Select
-          className="w-32"
+          className="w-36"
           placeholder="类型"
           value={type}
           onChange={(event) => {
@@ -118,7 +130,7 @@ function MarketBrowse() {
           options={SKILL_TYPE_OPTIONS}
         />
         <Select
-          className="w-28"
+          className="w-32"
           placeholder="评分"
           value={minRating}
           onChange={(event) => {
@@ -132,7 +144,7 @@ function MarketBrowse() {
           ]}
         />
         <Select
-          className="w-36"
+          className="w-40"
           placeholder="兼容客户端"
           value={client}
           onChange={(event) => {
@@ -142,7 +154,7 @@ function MarketBrowse() {
           options={COMPATIBLE_CLIENTS.map((item) => ({ value: item, label: item }))}
         />
         <Select
-          className="w-28"
+          className="w-32"
           value={sort}
           onChange={(event) => {
             setSort(event.target.value as MarketSort);
@@ -155,14 +167,6 @@ function MarketBrowse() {
             { value: 'downloads', label: '订阅数' },
           ]}
         />
-        <Button
-          size="md"
-          variant="default"
-          icon={<UserRound className="size-4" />}
-          onClick={() => navigate('market', '?tab=personal')}
-        >
-          个人中心
-        </Button>
       </div>
 
       {listQuery.isPending ? (
