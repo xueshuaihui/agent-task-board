@@ -1,4 +1,4 @@
-import { Copy, Download, FileText, MoreHorizontal, Pencil, Send, Trash2 } from 'lucide-react';
+import { Copy, Download, FileText, MoreHorizontal, Pencil, Send, Store, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui';
 import { Card } from '@/components/ui';
 import { Menu } from '@/components/ui';
@@ -18,6 +18,8 @@ export interface SkillCardProps {
   onOpen: (skill: Skill) => void;
   onEdit: (skill: Skill) => void;
   onPublish: (skill: Skill) => void;
+  /** 发布到市场（1.md 九章）：缺省时不显示该菜单项（调用方未接线）。 */
+  onPublishToMarket?: (skill: Skill) => void;
   onExport: (skill: Skill) => void;
   onExportMarkdown: (skill: Skill) => void;
   onCopy: (skill: Skill) => void;
@@ -30,6 +32,7 @@ export function SkillCard({
   onOpen,
   onEdit,
   onPublish,
+  onPublishToMarket,
   onExport,
   onExportMarkdown,
   onCopy,
@@ -84,6 +87,13 @@ export function SkillCard({
                     icon: <Send className="size-4" />,
                     disabled: skill.status === 'ARCHIVED',
                     onSelect: () => onPublish(skill),
+                  },
+                  {
+                    id: 'publish-market',
+                    label: '发布到市场',
+                    icon: <Store className="size-4" />,
+                    disabled: skill.status === 'ARCHIVED',
+                    onSelect: () => onPublishToMarket?.(skill),
                   },
                   {
                     id: 'copy',
