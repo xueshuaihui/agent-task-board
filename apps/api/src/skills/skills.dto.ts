@@ -21,10 +21,15 @@ const blockNextSchema = z.object({
   to: z.string().min(1).max(64),
 });
 
-const blockSchema = z.object({
+/**
+ * 块 schema 用 looseObject（passthrough）：content 是「内容载荷」而非入参白名单，
+ * text 等业务字段必须无损往返（创建/更新/版本发布均落库解析后的对象，strip 会静默丢字段）。
+ */
+const blockSchema = z.looseObject({
   id: z.string().min(1).max(64),
   kind: z.enum(['prompt', 'step', 'decision', 'script', 'knowledge', 'human', 'tool']),
   title: z.string().max(200).default(''),
+  text: z.string().max(20000).optional(),
   prompt: z.string().max(20000).optional(),
   condition: z.string().max(2000).optional(),
   humanInstruction: z.string().max(2000).optional(),

@@ -324,7 +324,7 @@ describe('执行中与终态的额外约束', () => {
     expect((await ui.get(`${API}/tasks/${fixture.id}`)).body.status_label).toBe('已完成');
   });
 
-  it('驳回未指定退回目标 → 422；通过却带退回目标 → 422（13 章入参校验）', async () => {
+  it('驳回未指定退回目标 → 默认退回待执行；通过却带退回目标 → 422（13 章入参校验）', async () => {
     const fixture = await taskIn(t, 'REVIEW', '审核表单校验');
     const missing = await ui.post(`${API}/tasks/${fixture.id}/review`, {
       conclusion: 'REJECT',
@@ -332,11 +332,15 @@ describe('执行中与终态的额外约束', () => {
       reason: '缺测试',
       detail: '加用例',
     });
-    expect(missing.status).toBe(422);
-    expect(errorCode(missing)).toBe('VALIDATION_FAILED');
-    expect(JSON.stringify(missing.body.error.details)).toContain('return_to');
+    // 21.5-42：驳回 → 按选择回到待执行（默认），未指定时退回 READY。
+    expect(missing.status).toBe(201);
+    expect(missing.body.status).toBe('READY');
+    expect(missing.body.status_label).toBe('待执行');
+    const reviews = await ui.get(`${API}/tasks/${fixture.id}/reviews`);
+    expect(reviews.body.items[0]).toMatchObject({ conclusion: 'REJECT', return_to: 'READY' });
 
-    const extra = await ui.post(`${API}/tasks/${fixture.id}/review`, {
+    const fixture2 = await taskIn(t, 'REVIEW', '审核表单校验-通过带退回');
+    const extra = await ui.post(`${API}/tasks/${fixture2.id}/review`, {
       conclusion: 'APPROVE',
       suggestion: '做得好',
       reason: '符合要求',
@@ -345,7 +349,31 @@ describe('执行中与终态的额外约束', () => {
     });
     expect(extra.status).toBe(422);
     expect(JSON.stringify(extra.body.error.details)).toContain('return_to');
-    // 两次校验失败都不该动任务状态。
+    // 校验失败不该动任务状态。
+    expect((await ui.get(`${API}/tasks/${fixture2.id}`)).body.status).toBe('REVIEW');
+  });
+
+  it('驳回显式传入非法退回目标 → 422；显式传需求池则退回需求池', async () => {
+    const fixture = await taskIn(t, 'REVIEW', '非法退回目标');
+    const bad = await ui.post(`${API}/tasks/${fixture.id}/review`, {
+      conclusion: 'REJECT',
+      suggestion: '补边界',
+      reason: '缺测试',
+      detail: '加用例',
+      return_to: 'DONE',
+    });
+    expect(bad.status).toBe(422);
+    expect(errorCode(bad)).toBe('VALIDATION_FAILED');
     expect((await ui.get(`${API}/tasks/${fixture.id}`)).body.status).toBe('REVIEW');
+
+    const toBacklog = await ui.post(`${API}/tasks/${fixture.id}/review`, {
+      conclusion: 'REJECT',
+      suggestion: '补边界',
+      reason: '缺测试',
+      detail: '加用例',
+      return_to: 'BACKLOG',
+    });
+    expect(toBacklog.status).toBe(201);
+    expect(toBacklog.body.status).toBe('BACKLOG');
   });
 });

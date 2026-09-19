@@ -81,6 +81,34 @@ describe('技能管理', () => {
     expect(detail.body.versions[0]).toMatchObject({ version: 'v0.1.0', current: true });
   });
 
+  it('块内容无损往返：text 等业务字段在详情与 versions 中逐字保留', async () => {
+    const text = '这是逐字保留的正文内容';
+    const created = await createSkill(ui, {
+      content: {
+        blocks: [
+          { id: 't1', kind: 'prompt', title: '正文块', text, next: [{ when: '完成', to: 't2' }] },
+          { id: 't2', kind: 'knowledge', title: '知识块', text: '知识点' },
+        ],
+        entryBlockId: 't1',
+      },
+    });
+    expect(created.content.blocks[0]).toMatchObject({ id: 't1', text, title: '正文块' });
+    expect(created.content.blocks[0].next).toEqual([{ when: '完成', to: 't2' }]);
+
+    const detail = await ui.get(`${API}/skills/${created.id}`);
+    expect(detail.body.content.blocks[0]).toEqual(created.content.blocks[0]);
+    expect(detail.body.content.blocks[1].text).toBe('知识点');
+
+    // 版本发布同样无损
+    await ui.post(`${API}/skills/${created.id}/versions`, {
+      content: created.content,
+      changelog: '保留 text 的版本',
+    });
+    const after = await ui.get(`${API}/skills/${created.id}`);
+    expect(after.body.content.blocks[0].text).toBe(text);
+    expect(after.body.versions[0]).toMatchObject({ version: 'v0.1.1', current: true });
+  });
+
   it('列表：keyword/type/status/tag 过滤', async () => {
     const a = await createSkill(ui, { name: '独特关键词技能', type: 'prompt', tags: ['专属标签'] });
     await createSkill(ui, { type: 'script' });

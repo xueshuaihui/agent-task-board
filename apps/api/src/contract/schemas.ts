@@ -123,15 +123,13 @@ export const reviewSchema = z
     suggestion: z.string().trim().max(5000).optional(),
     reason: z.string().trim().max(5000).optional(),
     detail: z.string().trim().max(5000).optional(),
+    /** 驳回未指定时由 service 默认退回「待执行」（READY，21.5-42 / 6.4 表单默认项）；显式传入仍限定在 RETURN_TARGETS。 */
     return_to: z.enum(RETURN_TARGETS).optional(),
     priority_adj: prioritySchema.optional(),
     run_id: idParam.optional(),
   })
   .superRefine((value, ctx) => {
     if (value.conclusion === 'REJECT') {
-      if (!value.return_to) {
-        ctx.addIssue({ code: 'custom', path: ['return_to'], message: '驳回必须指定退回目标' });
-      }
       for (const field of ['suggestion', 'reason', 'detail'] as const) {
         const text = value[field];
         if (!text || text.trim().length === 0) {
