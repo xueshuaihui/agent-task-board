@@ -38,7 +38,7 @@ export function AboutTab() {
       {/* 版本号为什么是 `—`：`reason` 只在没拿到主进程应答时非空（8.5 的降级说明）。 */}
       <TabHeader title="关于" description={reason ?? undefined} />
 
-      <SettingSection title="Agent Task Board">
+      <SettingSection title="Jarvis Workbench">
         <SettingRow label="主程序版本">
           <div className="flex h-8 items-center">
             <StaticValue mono muted={info.app_version === null}>

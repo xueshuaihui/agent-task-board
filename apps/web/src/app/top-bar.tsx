@@ -90,7 +90,7 @@ export function TopBar() {
     <header className="glass-bar flex h-14 shrink-0 items-center gap-6 border-b border-border pl-6 pr-4">
       <div className="flex shrink-0 items-center gap-2">
         <Diamond className="size-6 shrink-0 text-primary" aria-hidden />
-        <span className="text-logo text-text-primary">Agent Task Board</span>
+        <span className="text-logo text-text-primary">Jarvis Workbench</span>
       </div>
 
       <nav aria-label="主导航" className="flex min-w-0 flex-1 items-center gap-1">

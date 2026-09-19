@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Agent Task Board 一键打包脚本（macOS）
+# Jarvis Workbench 一键打包脚本（macOS）
 #
 # 把 README「路径 C」+《docs/发布手册.md》的构建→冒烟→校验和全流程串成一条命令：
 #   质量门禁 → 构建 api/web → 装配 sidecar → tauri build(.app) → hdiutil(.dmg)
@@ -45,7 +45,7 @@ cd "$REPO_ROOT"
 TAURI_DIR="apps/desktop/src-tauri"
 SIDECAR_RES="$TAURI_DIR/resources/sidecar"
 BUNDLE_DIR="$TAURI_DIR/target/release/bundle"
-APP_PATH="$BUNDLE_DIR/macos/Agent Task Board.app"
+APP_PATH="$BUNDLE_DIR/macos/Jarvis Workbench.app"
 SMOKE_PORT=17994
 
 step()  { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
@@ -61,9 +61,9 @@ case "$(uname -m)" in
   x86_64|i386)    ARCH_SUFFIX="x64" ;;
   *) fail "未知构建机架构：$(uname -m)" ;;
 esac
-DMG_PATH="$BUNDLE_DIR/dmg/Agent Task Board_${VERSION}_${ARCH_SUFFIX}.dmg"
+DMG_PATH="$BUNDLE_DIR/dmg/Jarvis Workbench_${VERSION}_${ARCH_SUFFIX}.dmg"
 
-echo "Agent Task Board 打包 v${VERSION}"
+echo "Jarvis Workbench 打包 v${VERSION}"
 echo "仓库：$REPO_ROOT"
 
 # ---------------------------------------------------------------- 第 0 步：前置检查
@@ -135,7 +135,7 @@ else
   step "第 5 步 · hdiutil 生成 .dmg"
   mkdir -p "$BUNDLE_DIR/dmg"
   rm -f "$DMG_PATH"
-  hdiutil create -volname "Agent Task Board" \
+  hdiutil create -volname "Jarvis Workbench" \
     -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH" > /dev/null \
     || fail "hdiutil 生成 .dmg 失败"
   ok ".dmg 产出：$DMG_PATH"

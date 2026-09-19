@@ -1,4 +1,4 @@
-# Agent Task Board — UI 重设计契约（DESIGN.md）
+# Jarvis Workbench — UI 重设计契约（DESIGN.md）
 
 > **本文件是 2026-09 UI 全面改版的唯一设计契约。** 所有页面/组件的视觉与动效实现必须遵守这里列出的
 > token、组件 API 与动效规范。《高保真原型 v1.1》中被本文件覆盖的条目（色板、圆角、阴影、动效时长）

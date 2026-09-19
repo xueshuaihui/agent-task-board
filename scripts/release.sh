@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# release.sh — Agent Task Board 一键发布
+# release.sh — Jarvis Workbench 一键发布
 #
 # 固化 docs/发布手册.md（Release SOP）的完整流程，每阶段可跳过、可单独补跑。
 # 用法：
@@ -43,8 +43,8 @@ done
 
 PKG_VERSION="$(node -e "console.log(require('./apps/desktop/src-tauri/tauri.conf.json').version)")"
 APP_DIR="apps/desktop/src-tauri/target/release/bundle"
-APP_PATH="$APP_DIR/macos/Agent Task Board.app"
-DMG_PATH="$APP_DIR/dmg/Agent Task Board_${PKG_VERSION}_x64.dmg"
+APP_PATH="$APP_DIR/macos/Jarvis Workbench.app"
+DMG_PATH="$APP_DIR/dmg/Jarvis Workbench_${PKG_VERSION}_x64.dmg"
 SUMS="/tmp/SHA256SUMS-${TAG}.txt"
 SMOKE_LOG=/tmp/atb-release-smoke.log
 
@@ -90,8 +90,8 @@ if [ "$PUBLISH_ONLY" = 0 ]; then
         echo "  ⚠️ bundle_dmg.sh 失败（SOP §5.2 已知环境限制），.app 已产出，走 hdiutil 兜底"
       fi
       mkdir -p "$APP_DIR/dmg"
-      echo "  \$ hdiutil create -volname 'Agent Task Board' -srcfolder '$APP_PATH' -ov -format UDZO '$DMG_PATH'"
-      hdiutil create -volname "Agent Task Board" \
+      echo "  \$ hdiutil create -volname 'Jarvis Workbench' -srcfolder '$APP_PATH' -ov -format UDZO '$DMG_PATH'"
+      hdiutil create -volname "Jarvis Workbench" \
         -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH"
     fi
   fi
@@ -162,7 +162,7 @@ if [ "$SKIP_PUBLISH" = 0 ]; then
 
 ## 安装
 1. 下载 \`$(basename "$DMG_PATH" | tr ' ' '.')\`，校验：\`shasum -a 256 -c SHA256SUMS.txt\`
-2. 挂载后拖入 Applications；**未签名**，首启右键→打开，或 \`xattr -cr "/Applications/Agent Task Board.app"\`
+2. 挂载后拖入 Applications；**未签名**，首启右键→打开，或 \`xattr -cr "/Applications/Jarvis Workbench.app"\`
 
 ## 变更清单
 - apps/web 表现层全面改版：浅/深双主题 token、渐变主按钮、毛玻璃顶栏、三态主题切换（light/dark/system）、弹簧微动效（reduced-motion 兜底）

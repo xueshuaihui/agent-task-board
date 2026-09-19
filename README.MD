@@ -1,4 +1,4 @@
-# Agent Task Board
+# Jarvis Workbench
 
 本地桌面任务看板：**人建任务，Agent 经 MCP / REST 认领执行，结果强制人工审核。**
 
@@ -43,9 +43,9 @@ cd apps/desktop/src-tauri
 export PATH="$HOME/.cargo/bin:$PATH"
 npx tauri build                              # ④ 打包 .app（dmg 步骤失败属预期，见下）
 cd target/release/bundle
-hdiutil create -volname "Agent Task Board" \
-  -srcfolder "macos/Agent Task Board.app" -ov -format UDZO \
-  "dmg/Agent Task Board_0.1.0_x64.dmg"       # ⑤ hdiutil 生成 .dmg
+hdiutil create -volname "Jarvis Workbench" \
+  -srcfolder "macos/Jarvis Workbench.app" -ov -format UDZO \
+  "dmg/Jarvis Workbench_0.1.0_x64.dmg"       # ⑤ hdiutil 生成 .dmg
 ```
 
 > ⚠️ 换机器 / 换架构打包前，先把对应架构的 **node 二进制**放到
@@ -255,12 +255,12 @@ npx tauri build      # .app 产出在 target/release/bundle/macos/
 
 ```bash
 cd apps/desktop/src-tauri/target/release/bundle
-hdiutil create -volname "Agent Task Board" \
-  -srcfolder "macos/Agent Task Board.app" -ov -format UDZO \
-  "dmg/Agent Task Board_0.1.0_x64.dmg"
+hdiutil create -volname "Jarvis Workbench" \
+  -srcfolder "macos/Jarvis Workbench.app" -ov -format UDZO \
+  "dmg/Jarvis Workbench_0.1.0_x64.dmg"
 ```
 
-**交付物**：`target/release/bundle/dmg/Agent Task Board_<版本>_<架构>.dmg`——dmg 后缀按**构建机架构自动判定**（Intel 机出 `_x64`，Apple Silicon 出 `_arm64`；脚本第 0 步会校验 sidecar node 架构一致性）。分发给他人只需对应架构这一个文件；或直接压缩 `.app`。CI 发布时双架构 dmg 由流水线自动出齐（见下节方式一）。
+**交付物**：`target/release/bundle/dmg/Jarvis Workbench_<版本>_<架构>.dmg`——dmg 后缀按**构建机架构自动判定**（Intel 机出 `_x64`，Apple Silicon 出 `_arm64`；脚本第 0 步会校验 sidecar node 架构一致性）。分发给他人只需对应架构这一个文件；或直接压缩 `.app`。CI 发布时双架构 dmg 由流水线自动出齐（见下节方式一）。
 
 ---
 
@@ -312,7 +312,7 @@ export GH_TOKEN=<你的 fine-grained token>        # 用完即撤销，见下⚠
   --prerelease                                   # 正式版去掉此参数
 
 ~/.local/bin/gh release upload vX.Y.Z \
-  "apps/desktop/src-tauri/target/release/bundle/dmg/Agent Task Board_<版本>_x64.dmg" \
+  "apps/desktop/src-tauri/target/release/bundle/dmg/Jarvis Workbench_<版本>_x64.dmg" \
   apps/desktop/src-tauri/target/release/bundle/SHA256SUMS.txt --clobber
 ```
 
@@ -333,7 +333,7 @@ export GH_TOKEN=<你的 fine-grained token>        # 用完即撤销，见下⚠
 
 - **首次打开被 Gatekeeper 拦截**是预期行为，两种解除方式：
   1. 右键 `.app` →「打开」→ 再点「打开」（弹窗确认一次即可，之后正常启动）；
-  2. 终端执行 `xattr -cr "/path/Agent Task Board.app"` 清除隔离属性后双击。
+  2. 终端执行 `xattr -cr "/path/Jarvis Workbench.app"` 清除隔离属性后双击。
 - `.dmg` 本身下载/拷贝不受影响，拦截发生在首次运行 `.app` 时。
 - **x86_64 架构**：当前 release 二进制为 x86_64，在 Apple Silicon 上走 Rosetta（可用，但非性能最优）。
 
@@ -378,8 +378,8 @@ npx tauri build --target aarch64-apple-darwin
 | `atb-desktop.d` | <1K | 与构建平台无关 | 构建元数据 | cargo 生成的 depfile，可忽略 |
 | `sidecar/` | ≈135M | **macOS**（node 架构与构建机一致：Intel 为 x86_64，Apple Silicon 为 arm64） | 打包中间资源 | `npm run build:sidecar` 的装配产物：`main.js`（单文件 bundle）+ `node` + `prisma/migrations` + 最小 `node_modules`；删了重新跑脚本即可 |
 | `build/` `deps/` `incremental/` `examples/` | — | 与构建平台一致 | cargo 中间产物 | 编译缓存与依赖产物，只影响增量编译速度，可随时删（删后全量重编） |
-| `bundle/macos/Agent Task Board.app` | 142M | **macOS**（10.15+，x86_64 / Apple Silicon） | **交付产物** | 自包含 .app：`Contents/MacOS/atb-desktop` + `Resources/sidecar/{main.js, node, prisma/migrations, node_modules}` + 图标，Finder 双击可独立运行 |
-| `bundle/dmg/Agent Task Board_<版本>_<架构>.dmg` | ≈56M | **macOS**（仅 macOS 可挂载） | **交付产物** | 最终分发镜像（UDZO）；`<架构>` 由构建机决定（`x64`/`arm64`），CI 发布时双架构各一份，校验和见 Release 内 `SHA256SUMS.txt` |
+| `bundle/macos/Jarvis Workbench.app` | 142M | **macOS**（10.15+，x86_64 / Apple Silicon） | **交付产物** | 自包含 .app：`Contents/MacOS/atb-desktop` + `Resources/sidecar/{main.js, node, prisma/migrations, node_modules}` + 图标，Finder 双击可独立运行 |
+| `bundle/dmg/Jarvis Workbench_<版本>_<架构>.dmg` | ≈56M | **macOS**（仅 macOS 可挂载） | **交付产物** | 最终分发镜像（UDZO）；`<架构>` 由构建机决定（`x64`/`arm64`），CI 发布时双架构各一份，校验和见 Release 内 `SHA256SUMS.txt` |
 | `bundle/dmg/bundle_dmg.sh` `bundle/dmg/icon.icns` | — | macOS（依赖 osascript） | 工具残留 | tauri 的 DMG 打包脚本及资源；无头会话下 osascript 必失败，实际 .dmg 用 `hdiutil` 兜底生成 |
 | `bundle/macos/rw.*.dmg` | — | macOS | 失败残留 | `bundle_dmg.sh` 中断留下的读写临时镜像，**可安全删除** |
 | `bundle/share/create-dmg/` | — | 与构建平台无关 | 工具残留 | create-dmg 脚本临时目录，**可安全删除** |
@@ -425,8 +425,8 @@ npx tauri build --target aarch64-apple-darwin
 
 ## 文档
 
-- `docs/Agent Task Board 产品与设计文档 v1.5.md` — 产品与技术方案
-- `docs/Agent Task Board 高保真原型 v1.1.md` — 高保真交互原型
+- `docs/Jarvis Workbench 产品与设计文档 v1.5.md` — 产品与技术方案
+- `docs/Jarvis Workbench 高保真原型 v1.1.md` — 高保真交互原型
 - `docs/系统操作使用手册.md` — 安装、配置与运维
 - `docs/发布手册.md` — Release SOP：构建 → 冒烟 → tag → GitHub Release 全流程
 - `docs/任务创建模版（Agent 协助）.md` — 发给 AI 助手即可按约束代建任务

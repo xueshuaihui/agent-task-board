@@ -63,7 +63,7 @@ export function LoginPage() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-bg-app px-4 text-text-primary">
       <div className="mb-8 flex flex-col items-center gap-2">
         <Diamond className="size-10 text-primary" aria-hidden />
-        <span className="text-logo">Agent Task Board</span>
+        <span className="text-logo">Jarvis Workbench</span>
       </div>
 
       <form
