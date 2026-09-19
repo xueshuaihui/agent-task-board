@@ -20,8 +20,10 @@ export const ROUTES = {
   tasks: { path: '/tasks', label: '任务' },
   // 0919 第十章：技能库。路由对象来自 features/skills 的候选（path/label 同形）。
   skills: skillsRouteCandidate,
-  // 0919 十四章 IA 的「市场（云端）」：本期云端市场不落地，只留占位页（features/market）。
+  // 0919 十四章 IA 的「市场（云端）」：市场首页 + 个人中心二级视图（?tab=personal）。
   market: { path: '/market', label: '市场' },
+  // 市场技能详情（13 章）：?id=<listingId>，不进主导航（NAV_ORDER 不含）。
+  marketDetail: { path: '/market/detail', label: '市场详情' },
   settings: { path: '/settings', label: '设置' },
   // 0919 三章：公开路由（登录 / 首登强制改密），不在主导航出现（NAV_ORDER 不含），
   // app.tsx 的 AppShell 按名字分流到认证页而非工作区壳。

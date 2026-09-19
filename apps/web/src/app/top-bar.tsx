@@ -38,8 +38,7 @@ function nextTheme(current: UiTheme): UiTheme {
  * `layoutId="nav-pill"` 的胶囊指示器滑动（springs.gentle）；铃铛角标数字
  * 变化带 springs.pop 弹跳。
  *
- * 「市场」是 1.md 十四章的云端入口，本期云端市场不落地（features/market 只给
- * 品牌化空状态），导航项挂「即将上线」小徽标。顶层不再有「任务」入口：任务列表
+ * 「市场」是 1.md 十四章的云端入口，已落地（features/market：首页 + 详情 + 个人中心）。顶层不再有「任务」入口：任务列表
  * 保留路由 `#/tasks`，从看板工具栏「列表视图」进入（0919 4.11）。
  *
  * 全局搜索按 0919 2.4 加在顶栏中部（Cmd/Ctrl+K），实现见 app/global-search.tsx。
@@ -123,11 +122,6 @@ export function TopBar() {
               ) : null}
               <span className="relative inline-flex items-center gap-1">
                 {ROUTES[name].label}
-                {name === 'market' ? (
-                  <span className="rounded-badge bg-primary-light px-1 text-badge text-primary">
-                    即将上线
-                  </span>
-                ) : null}
               </span>
             </button>
           );

@@ -6,7 +6,7 @@ import { ProjectsPage } from '@/features/projects';
 import { ReviewPage } from '@/features/review';
 import { SettingsPage } from '@/features/settings';
 import { SkillLibraryPage } from '@/features/skills';
-import { MarketPage } from '@/features/market';
+import { MarketDetailPage, MarketPage } from '@/features/market';
 import { TaskListPage } from '@/features/task-list';
 import { ChangePasswordPage, LoginPage, RequireAuth } from '@/features/auth';
 import { applyUiTheme } from '@/lib/theme';
@@ -34,10 +34,20 @@ const PAGES: Record<Exclude<RouteName, 'login' | 'changePassword'>, ComponentTyp
   review: ReviewPage,
   tasks: TaskListPage,
   skills: SkillLibraryPage,
-  // 0919 十四章：市场本期只是品牌化空状态占位（云端市场不落地）。
+  // 0919 十二/十四章：市场首页（含 ?tab=personal 的个人中心二级视图）。
   market: MarketPage,
+  // 0919 十三章：市场技能详情，listingId 从 ?id= 取。
+  marketDetail: MarketDetailWrapper,
   settings: SettingsPage,
 };
+
+/** 详情页从路由 search 取 listingId（?id=…）。 */
+function MarketDetailWrapper() {
+  const route = useRoute();
+  const id = route.search.get('id') ?? '';
+  if (!id) return null;
+  return <MarketDetailPage listingId={id} />;
+}
 
 /**
  * 20.9 `ui_theme` → `<html data-ui-theme>`（`lib/theme.applyUiTheme`）。
