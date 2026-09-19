@@ -6,6 +6,8 @@ import type { Duplex } from 'node:stream';
 import { WebSocket, WebSocketServer } from 'ws';
 import { constantTimeEqual } from '../common/ui-token';
 import { ApiException } from '../contract/errors';
+import { verifyJwt } from '../auth/jwt';
+import { PrismaService } from '../infra/prisma.service';
 import { AppLogger } from '../infra/logger';
 import { EventsService, type WsEvent } from '../infra/events.service';
 
@@ -62,12 +64,17 @@ export class WsGateway implements OnApplicationBootstrap, OnModuleDestroy {
   private upgradeListener: ((req: IncomingMessage, socket: Duplex, head: Buffer) => void) | null = null;
   private unregisterSink: (() => void) | null = null;
   private heartbeat: NodeJS.Timeout | null = null;
+  /** 握手鉴权通过后暂存的回显子协议（handleProtocols 在 handleUpgrade 内同步读取）。 */
+  private acceptedProtocol: string | false = false;
+  /** JWT secret 惰性缓存：env 优先，其次 settings.jwt_secret（与 AuthGuard 同一来源）。 */
+  private jwtSecret: string | null = null;
 
   constructor(
     private readonly events: EventsService,
     @Optional() private readonly adapterHost?: HttpAdapterHost,
     @Optional() private readonly logger?: AppLogger,
     @Optional() @Inject(WS_GATEWAY_OPTIONS) options?: WsGatewayOptions,
+    @Optional() private readonly prisma?: PrismaService,
   ) {
     this.path = options?.path ?? DEFAULTS.path;
     this.pingIntervalMs = options?.pingIntervalMs ?? DEFAULTS.pingIntervalMs;
@@ -79,7 +86,7 @@ export class WsGateway implements OnApplicationBootstrap, OnModuleDestroy {
       maxPayload: options?.maxPayloadBytes ?? DEFAULTS.maxPayloadBytes,
       // 浏览器 `new WebSocket(url, [token])` 会把 token 当作子协议提交，
       // 必须原样回显选中的那个，否则握手在客户端被判失败。
-      handleProtocols: (protocols) => this.pickUiProtocol(protocols),
+      handleProtocols: () => this.pickUiProtocol(),
     });
   }
 
@@ -117,7 +124,12 @@ export class WsGateway implements OnApplicationBootstrap, OnModuleDestroy {
     this.registerSink();
     if (this.httpServer === server) return;
     this.detach();
-    this.upgradeListener = (req, socket, head) => this.onUpgrade(req, socket, head);
+    this.upgradeListener = (req, socket, head) => {
+      void this.onUpgrade(req, socket, head).catch(() => {
+        // 鉴权里的 DB 异常按拒绝处理，不让 upgrade 通道挂死。
+        if (!socket.destroyed) socket.destroy();
+      });
+    };
     server.on('upgrade', this.upgradeListener);
     this.httpServer = server;
     if (!this.heartbeat) {
@@ -142,7 +154,7 @@ export class WsGateway implements OnApplicationBootstrap, OnModuleDestroy {
 
   // ------------------------------------------------------------------ 握手
 
-  private onUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
+  private async onUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
     const url = req.url ?? '';
     const pathname = url.split('?')[0] ?? '';
     if (pathname !== this.path) {
@@ -160,29 +172,60 @@ export class WsGateway implements OnApplicationBootstrap, OnModuleDestroy {
       }
     }
     const offered = parseProtocols(req.headers['sec-websocket-protocol']);
-    if (!this.matchesUiToken(offered)) {
+    // 0919：UI 会话凭证现在是「静态 Token（旧桌面壳兼容）或账号 JWT」两空间，
+    // 鉴权通过的那个子协议原样回显，否则客户端判握手失败。
+    const accepted = await this.matchUiCredential(offered);
+    if (!accepted) {
       return this.reject(
         socket,
         new ApiException('UNAUTHORIZED', 'WS 握手未通过 UI 会话 Token 校验（仅 UI 可连接，Agent Token 不适用）'),
       );
     }
-    this.server.handleUpgrade(req, socket, head, (ws) => this.track(ws));
+    this.acceptedProtocol = accepted;
+    this.server.handleUpgrade(req, socket, head, (ws) => {
+      this.acceptedProtocol = false;
+      this.track(ws);
+    });
   }
 
-  /** Agent Token 与 UI Token 是两个空间，等值比较天然把 Agent 连接挡在门外。 */
-  private matchesUiToken(offered: string[]): boolean {
+  /** 返回通过的凭证（原样回显给客户端），都不通过时返回 false。 */
+  private async matchUiCredential(offered: string[]): Promise<string | false> {
+    if (offered.length === 0) return false;
     const uiToken = process.env.ATB_UI_TOKEN ?? '';
-    if (!uiToken || offered.length === 0) return false;
-    return offered.some((protocol) => constantTimeEqual(protocol, uiToken));
-  }
-
-  private pickUiProtocol(protocols: Set<string>): string | false {
-    const uiToken = process.env.ATB_UI_TOKEN ?? '';
-    if (!uiToken) return false;
-    for (const protocol of protocols) {
-      if (constantTimeEqual(protocol, uiToken)) return protocol;
+    for (const protocol of offered) {
+      if (uiToken && constantTimeEqual(protocol, uiToken)) return protocol;
+    }
+    // Agent Token 与 UI 凭证是两个空间：JWT 校验失败自然把 Agent 连接挡在门外。
+    const secret = await this.resolveJwtSecret();
+    if (!secret) return false;
+    for (const protocol of offered) {
+      const payload = verifyJwt(protocol, secret);
+      if (!payload) continue;
+      const account = this.prisma
+        ? await this.prisma.account.findUnique({ where: { id: payload.sub } })
+        : null;
+      if (account && account.status === 'ACTIVE') return protocol;
+      return false;
     }
     return false;
+  }
+
+  private async resolveJwtSecret(): Promise<string> {
+    if (this.jwtSecret) return this.jwtSecret;
+    const fromEnv = process.env.ATB_JWT_SECRET ?? '';
+    if (fromEnv) {
+      this.jwtSecret = fromEnv;
+      return fromEnv;
+    }
+    const row = this.prisma
+      ? await this.prisma.setting.findUnique({ where: { key: 'jwt_secret' } })
+      : null;
+    this.jwtSecret = row?.value ?? '';
+    return this.jwtSecret;
+  }
+
+  private pickUiProtocol(): string | false {
+    return this.acceptedProtocol;
   }
 
   private reject(socket: Duplex, error: ApiException): void {

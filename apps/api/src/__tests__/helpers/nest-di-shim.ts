@@ -143,9 +143,9 @@ export function applyDiShim(): void {
   declare(NotificationTriggers, [PrismaService, NotificationsService]);
   declare(DependencyUnlockService, [PrismaService, EventsService, NotificationTriggers]);
 
-  // ── ws：index 1/2 标了 @Optional()，index 3 由 @Inject(WS_GATEWAY_OPTIONS) 自行声明，
+  // ── ws：index 1/2/4 标了 @Optional()，index 3 由 @Inject(WS_GATEWAY_OPTIONS) 自行声明，
   //    这里的 Object 只用来把数组撑到构造参数的个数（Nest 按 index 覆盖）。
-  declare(WsGateway, [EventsService, HttpAdapterHost, AppLogger, Object]);
+  declare(WsGateway, [EventsService, HttpAdapterHost, AppLogger, Object, PrismaService]);
 }
 
 function declare(cls: InjectableClass, tokens: unknown[]): void {
