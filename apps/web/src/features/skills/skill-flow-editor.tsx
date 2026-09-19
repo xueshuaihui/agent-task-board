@@ -313,6 +313,9 @@ export function SkillFlowEditor({ content, onChange, className }: SkillFlowEdito
       if (moved) {
         const point = clientToCanvas(upEvent.clientX, upEvent.clientY);
         addBlock(kind, point);
+      } else {
+        // 纯点击（pointerdown+pointerup 同点、无移动）：添加到画布可视区域中心附近。
+        addBlock(kind);
       }
     };
     window.addEventListener('pointermove', move);
@@ -324,9 +327,11 @@ export function SkillFlowEditor({ content, onChange, className }: SkillFlowEdito
       const current = contentRef.current;
       const seed = createBlock(kind, current.blocks.length);
       const jitter = (current.blocks.length % 5) * (FLOW_NODE_HEIGHT + FLOW_ROW_GAP);
+      const width = size.width > 0 ? size.width : (containerRef.current?.clientWidth ?? 0);
+      const height = size.height > 0 ? size.height : (containerRef.current?.clientHeight ?? 0);
       const center = {
-        x: size.width / (2 * transformRef.current.k) - transformRef.current.x / transformRef.current.k - FLOW_NODE_WIDTH / 2,
-        y: size.height / (2 * transformRef.current.k) - transformRef.current.y / transformRef.current.k - FLOW_NODE_HEIGHT / 2,
+        x: width / (2 * transformRef.current.k) - transformRef.current.x / transformRef.current.k - FLOW_NODE_WIDTH / 2,
+        y: height / (2 * transformRef.current.k) - transformRef.current.y / transformRef.current.k - FLOW_NODE_HEIGHT / 2,
       };
       seed.pos = at
         ? { x: Math.round(at.x - FLOW_NODE_WIDTH / 2), y: Math.round(at.y - FLOW_NODE_HEIGHT / 2) }
