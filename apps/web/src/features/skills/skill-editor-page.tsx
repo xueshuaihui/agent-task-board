@@ -7,12 +7,15 @@ import { usePatchSkill, useSkill } from './hooks';
 import { SKILL_STATUS_META, emptyContent } from './meta';
 import { PublishDialog } from './publish-dialog';
 import { SkillFlowView } from './skill-flow-view';
+import { SourceEditor } from './source-editor';
+import { StructuredEditor } from './structured-editor';
 import type { Skill, SkillContent } from './types';
 import { cn } from '@/lib/cn';
 
 /**
- * 技能编辑器整页（2.md 第十一章）：顶栏（返回 + 名称/版本/状态 + 保存草稿/发布）
- * + 模式 Tab（可视化 / 流程图）。内容是本地草稿态，保存走 PATCH /skills/:id，
+ * 技能编辑器整页（2.md 第十一章 + 1.md 8.3）：顶栏（返回 + 名称/版本/状态 +
+ * 保存草稿/发布）+ 模式 Tab（可视化 / 结构化 / 源码 / 流程图）。
+ * 三种编辑模式共享同一份本地草稿 blocks，切换即同步；保存走 PATCH /skills/:id，
  * 发布走发布对话框（POST /versions + PATCH status）。
  *
  * 接缝：由技能库页按 hash 查询参数 `?edit=<skillId>` 挂载（见 README 路由说明），
@@ -137,14 +140,16 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
         ariaLabel="编辑模式"
         items={[
           { value: 'visual', label: '可视化模式' },
+          { value: 'structured', label: '结构化模式' },
+          { value: 'source', label: '源码模式' },
           { value: 'flow', label: '流程图视图' },
         ]}
         className="self-start"
       />
 
-      <div className="min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col">
         {mode === 'visual' ? (
-          <div className="mx-auto max-w-3xl">
+          <div className="mx-auto w-full max-w-3xl">
             {skill ? (
               <div className="mb-4 flex flex-col gap-3 rounded-card border border-border bg-bg-raised p-4">
                 <p className="text-card-title text-text-secondary">技能信息</p>
@@ -202,6 +207,45 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
               </div>
             )}
           </div>
+        ) : mode === 'structured' ? (
+          <div className="mx-auto w-full max-w-4xl">
+            <StructuredEditor
+              content={content}
+              onChange={(next) => {
+                setContent(next);
+                setDirty(true);
+              }}
+            />
+          </div>
+        ) : mode === 'source' ? (
+          skill ? (
+            <SourceEditor
+              content={content}
+              frontmatter={{
+                name: meta.name,
+                description: meta.description,
+                version: skill.current_version,
+                category: skill.type,
+                tags: meta.tagsText
+                  .split(/[,，\s]+/)
+                  .map((tag) => tag.trim())
+                  .filter(Boolean),
+                mcpDependencies: skill.mcp_dependencies,
+              }}
+              onImport={(nextContent, frontmatter) => {
+                setContent(nextContent);
+                setMeta((prev) => ({
+                  ...prev,
+                  name: frontmatter.name || prev.name,
+                  description: frontmatter.description || prev.description,
+                  tagsText: frontmatter.tags.length > 0 ? frontmatter.tags.join(', ') : prev.tagsText,
+                }));
+                setDirty(true);
+              }}
+            />
+          ) : (
+            <Skeleton className="h-64 w-full" />
+          )
         ) : (
           <SkillFlowView content={content} className="h-[60vh]" />
         )}

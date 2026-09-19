@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useApiMutation } from '@/api';
 import type { QueryKey } from '@tanstack/react-query';
 import { skillsApi } from './api';
-import type { Skill, SkillCreateInput, SkillPatchInput, SkillQuery } from './types';
+import type { Skill, SkillCreateInput, SkillPatchInput, SkillQuery, SkillTestResult } from './types';
 
 /**
  * 技能 feature 的查询 key。技能尚未接进 src/api/keys.ts（不修改既有文件），
@@ -99,9 +99,10 @@ export function useRollbackSkill(onSuccess?: (skill: Skill) => void) {
   );
 }
 
-export function useTestSkill() {
+export function useTestSkill(onSuccess?: (result: SkillTestResult) => void) {
   return useApiMutation((vars: { id: string; input: string }) => skillsApi.test(vars.id, vars.input), {
     toastOnError: false,
+    onSuccess,
   });
 }
 

@@ -16,15 +16,26 @@ export type SkillType =
 
 export type SkillStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
 
-/** 块类型（1.md 8.3；契约只要求这七种，其余留给后端扩展）。 */
+/**
+ * 块类型（1.md 8.3 表，PRD 15 类）。后端 content 是 passthrough JSON，
+ * 前端 schema 自由扩展，后端原样存储。
+ */
 export type SkillBlockKind =
   | 'prompt'
   | 'step'
   | 'decision'
-  | 'script'
+  | 'loop'
+  | 'parallel'
+  | 'tool'
   | 'knowledge'
+  | 'script'
+  | 'subskill'
   | 'human'
-  | 'tool';
+  | 'input'
+  | 'output'
+  | 'constraint'
+  | 'error_handler'
+  | 'comment';
 
 /** 技能内容（1.md 第八章 content JSON）：块 + 入口块 id。 */
 export interface SkillContent {
@@ -37,21 +48,46 @@ export interface SkillBlockNext {
   to: string;
 }
 
+export type ParallelMerge = 'all' | 'any' | 'race';
+export type OnError = 'abort' | 'retry' | 'skip' | 'fallback' | 'continue';
+
 export interface SkillBlock {
   id: string;
   kind: SkillBlockKind;
   title: string;
-  /** prompt / decision / knowledge / human 用。 */
+  /** prompt / knowledge 块的正文（human 用 humanInstruction）。 */
   prompt?: string;
   condition?: string;
   humanInstruction?: string;
   /** decision 块的分支：{when, to}，to 是目标块 id。 */
   next?: SkillBlockNext[];
-  /** step 块的子步骤。 */
+  /** step 块的子步骤；loop 块的循环体简表。 */
   steps?: string[];
-  script?: string;
-  /** tool 块：`server/tool` 形态，与 mcp_dependencies 对应。 */
+  /** loop 块的循环条件（{while, steps[]}）。 */
+  while?: string;
+  /** parallel 块：合并策略 + 各分支描述。 */
+  merge?: ParallelMerge;
+  branches?: string[];
+  /** tool 块：server、工具名、参数模板（支持 {{变量}}）。 */
+  server?: string;
   tool?: string;
+  argsTemplate?: string;
+  script?: string;
+  /** subskill 块：引用的技能 id。 */
+  skillRef?: string;
+  /** input / output 块：变量声明（1.md 8.3 变量系统 {{input.x}} / 输出）。 */
+  name?: string;
+  /** input / output 块的值类型（string/number/boolean/json/...）。 */
+  valueType?: string;
+  required?: boolean;
+  /** constraint 块的规则。 */
+  rule?: string;
+  /** error_handler 块：失败策略 + 重试次数 + 超时毫秒。 */
+  onError?: OnError;
+  retryCount?: number;
+  timeoutMs?: number;
+  /** comment 块的说明（仅说明，不执行）。 */
+  note?: string;
 }
 
 export interface SkillMcpDependency {

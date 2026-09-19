@@ -13,18 +13,32 @@
 | `types.ts` | Skill / SkillContent（块）/ McpDependency / 各输入输出类型 |
 | `api.ts` | `skillsApi`（list/get/create/patch/remove/createVersion/rollback/test/export/import/boundTasks）+ `taskSkillsApi.set`（任务绑定） |
 | `hooks.ts` | TanStack Query 封装（`skillKeys` + use* 查询与变更） |
-| `meta.ts` | 类型/状态/块类型的展示元数据、模板起步 `templateContent`、semver 预览、连线校验 |
+| `meta.ts` | 类型/状态/块类型（PRD 15 类，1.md 8.3）的展示元数据与图标、模板起步 `templateContent`、semver 预览、连线校验、循环检测（`cyclicBlockIds`）、变量系统辅助（`inferVariableOptions`/`variableWarnings`） |
 | `skill-library-page.tsx` | 技能库页（搜索/类型/状态筛选、卡片网格、新建/导入对话框挂载、编辑器路由） |
 | `skill-card.tsx` | 技能卡片（类型徽标、版本、状态、绑定任务数、操作菜单） |
 | `create-skill-dialog.tsx` | 新建技能（2.md 10.3）：名称/类型/描述/标签/模板起步 |
 | `import-skill-dialog.tsx` | 导入 .atskill（multipart POST /skills/import） |
-| `skill-editor-page.tsx` | 编辑器整页：模式 Tab（可视化/流程图）+ 保存草稿 + 发布入口 |
-| `block-editor.tsx` | 可视化模式：块增删/上下移/设入口，按 kind 切换表单，next 分支用目标块下拉 |
+| `skill-editor-page.tsx` | 编辑器整页：模式 Tab（可视化/结构化/源码/流程图；三种编辑模式共享同一份本地草稿 blocks，切换即同步）+ 保存草稿 + 发布入口 |
+| `block-editor.tsx` | 可视化模式：块增删/上下移/设入口，字段表单共用 block-fields，next 分支用目标块下拉 |
+| `structured-editor.tsx` | 结构化模式（1.md 8.3）：表格式块列表（类型/标题/摘要 + 操作列），点行展开行内编辑完整字段，上移/下移/删除/在下方插入 |
+| `source-editor.tsx` | 源码模式（1.md 8.3）：左侧 SKILL.md 源码编辑 + 右侧实时预览（无依赖轻量渲染），双向导入/导出，损失性转换 Toast 提示 |
+| `block-fields.tsx` | 单块字段表单（可视化/结构化共用），按 15 类 kind 渲染对应字段 |
+| `variable-picker.tsx` | 变量插入下拉 + `{{变量}}` 光标处插入文本框（1.md 8.3 变量系统） |
+| `markdown.ts` | SKILL.md <-> blocks 纯函数双向转换（约定见文件末尾注释块），frontmatter 为 YAML 子集 |
 | `skill-flow-view.tsx` | 流程图视图：只读 SVG 分层拓扑（滚轮缩放、拖拽平移、适应画布） |
-| `publish-dialog.tsx` | 发布对话框（2.md 11.3）：版本号预览、changelog、MCP 依赖编辑器、发布前检查 |
+| `publish-dialog.tsx` | 发布对话框（2.md 11.3 + 1.md 8.6）：版本号预览、changelog、MCP 依赖编辑器、发布前检查（循环检测标红、变量拼写警告不阻断）、测试状态展示区 + 技能测试入口（模拟运行 POST /skills/:id/test；测试用例接口就位后按组件内接缝注释替换展示数据） |
 | `mcp-dependency-editor.tsx` | MCP 依赖声明编辑器（server/tools/required/reason） |
 | `skill-detail-drawer.tsx` | 详情抽屉：概览块预览 / 版本回滚 / 测试 / MCP 配置片段复制 / 绑定任务 / 导出 |
 | `index.ts` | 对外导出 |
+
+## SKILL.md 双向转换约定（源码模式）
+
+完整约定见 `markdown.ts` 末尾注释块（`MARKDOWN_CONVENTION_HINT` 同步展示在源码模式 UI）：
+
+- frontmatter：`name / description / version / category / tags / mcp_dependencies`（YAML 子集：标量 + `[a, b]` 单行数组，mcp_dependencies 用单行 JSON）。
+- 正文：每个块 = 一个 `### 块标题` 小节，小节首行 `<!-- atb:kind -->` 标记类型 → 有标记即可无损往返；无标记按内容形状推断（损失性，导入时 Toast 列出）。
+- 类型小节体：提示词/知识/人工/注释=段落；步骤=编号列表；条件=`判断条件：` + `- 当 x → 跳转：块标题`；循环=`循环条件：`+列表；并行=`合并策略：`+列表；工具=`工具：server/tool`(+参数模板)；脚本=围栏代码块；子技能=`引用技能：`；输入/输出=`输入：name（类型 t，必填）`；约束=`规则：`；错误处理=`失败策略：…，重试 n 次，超时 n ms`。
+- `入口块：块标题` 行声明入口块；分支跳转按块标题解析回 id，解析不到保留为空并在可视化模式补齐。
 
 ## 路由与接线（主 agent 待办）
 

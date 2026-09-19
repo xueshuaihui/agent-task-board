@@ -1,4 +1,21 @@
-import type { SkillBlock, SkillBlockKind, SkillContent, SkillStatus, SkillType } from './types';
+import type { LucideIcon } from 'lucide-react';
+import {
+  ArrowDownToLine,
+  ArrowRightLeft,
+  ArrowUpFromLine,
+  BookOpen,
+  ListChecks,
+  MessageSquare,
+  RefreshCw,
+  ShieldAlert,
+  Split,
+  StickyNote,
+  Terminal,
+  User,
+  Wrench,
+  Zap,
+} from 'lucide-react';
+import type { OnError, ParallelMerge, SkillBlock, SkillBlockKind, SkillContent, SkillStatus, SkillType } from './types';
 
 /**
  * 技能类型的展示元数据（2.md 10.1/10.2、1.md 8.2）。图标用 lucide 线性图标，
@@ -25,47 +42,124 @@ export const SKILL_STATUS_META: Record<SkillStatus, { label: string; className: 
   ARCHIVED: { label: '已归档', className: 'bg-bg-muted text-text-secondary' },
 };
 
-/** 块类型元数据（1.md 8.3 的七种契约块）。 */
+/** 块类型元数据（1.md 8.3 的 PRD 15 类；图标用 lucide，不引 emoji）。 */
 export const BLOCK_KIND_META: Record<
   SkillBlockKind,
-  { label: string; kindClass: string; summary: (block: SkillBlock) => string }
+  { label: string; kindClass: string; icon: LucideIcon; summary: (block: SkillBlock) => string }
 > = {
   prompt: {
     label: '提示词',
     kindClass: 'bg-primary-light text-primary',
+    icon: MessageSquare,
     summary: (block) => block.prompt ?? '',
   },
   step: {
     label: '步骤',
     kindClass: 'bg-status-ready-soft text-status-ready',
+    icon: ListChecks,
     summary: (block) => (block.steps ?? []).join('；'),
   },
   decision: {
     label: '条件',
     kindClass: 'bg-status-review-soft text-status-review',
+    icon: Split,
     summary: (block) => block.condition ?? '',
   },
-  script: {
-    label: '脚本',
+  loop: {
+    label: '循环',
+    kindClass: 'bg-status-review-soft text-status-review',
+    icon: RefreshCw,
+    summary: (block) => (block.while ? `当 ${block.while}` : '') + ` · ${block.steps?.length ?? 0} 步`,
+  },
+  parallel: {
+    label: '并行',
     kindClass: 'bg-status-running-soft text-status-running',
-    summary: (block) => block.script ?? '',
-  },
-  knowledge: {
-    label: '知识',
-    kindClass: 'bg-status-done-soft text-status-done',
-    summary: (block) => block.prompt ?? '',
-  },
-  human: {
-    label: '人工',
-    kindClass: 'bg-status-failed-soft text-status-failed',
-    summary: (block) => block.humanInstruction ?? '',
+    icon: ArrowRightLeft,
+    summary: (block) =>
+      `合并 ${PARALLEL_MERGE_META[block.merge ?? 'all'].label} · ${(block.branches ?? []).length} 分支`,
   },
   tool: {
     label: '工具',
     kindClass: 'bg-bg-muted text-text-secondary',
-    summary: (block) => block.tool ?? '',
+    icon: Wrench,
+    summary: (block) => [block.server, block.tool].filter(Boolean).join('/'),
+  },
+  knowledge: {
+    label: '知识',
+    kindClass: 'bg-status-done-soft text-status-done',
+    icon: BookOpen,
+    summary: (block) => block.prompt ?? '',
+  },
+  script: {
+    label: '脚本',
+    kindClass: 'bg-status-running-soft text-status-running',
+    icon: Terminal,
+    summary: (block) => block.script ?? '',
+  },
+  subskill: {
+    label: '子技能',
+    kindClass: 'bg-primary-light text-primary',
+    icon: BookOpen,
+    summary: (block) => block.skillRef ?? '',
+  },
+  human: {
+    label: '人工',
+    kindClass: 'bg-status-failed-soft text-status-failed',
+    icon: User,
+    summary: (block) => block.humanInstruction ?? '',
+  },
+  input: {
+    label: '输入',
+    kindClass: 'bg-status-ready-soft text-status-ready',
+    icon: ArrowDownToLine,
+    summary: (block) => [block.name, block.valueType].filter(Boolean).join('：'),
+  },
+  output: {
+    label: '输出',
+    kindClass: 'bg-status-done-soft text-status-done',
+    icon: ArrowUpFromLine,
+    summary: (block) => [block.name, block.valueType].filter(Boolean).join('：'),
+  },
+  constraint: {
+    label: '约束',
+    kindClass: 'bg-status-backlog-soft text-status-backlog',
+    icon: ShieldAlert,
+    summary: (block) => block.rule ?? '',
+  },
+  error_handler: {
+    label: '错误处理',
+    kindClass: 'bg-status-failed-soft text-status-failed',
+    icon: Zap,
+    summary: (block) =>
+      `${ON_ERROR_META[block.onError ?? 'abort'].label}` +
+      (block.onError === 'retry' && block.retryCount ? ` ×${block.retryCount}` : ''),
+  },
+  comment: {
+    label: '注释',
+    kindClass: 'bg-bg-muted text-text-secondary',
+    icon: StickyNote,
+    summary: (block) => block.note ?? '',
   },
 };
+
+export const PARALLEL_MERGE_META: Record<ParallelMerge, { label: string }> = {
+  all: { label: '全部完成' },
+  any: { label: '任一完成' },
+  race: { label: '竞速' },
+};
+
+export const ON_ERROR_META: Record<OnError, { label: string }> = {
+  abort: { label: '中止' },
+  retry: { label: '重试' },
+  skip: { label: '跳过' },
+  fallback: { label: '回退' },
+  continue: { label: '继续' },
+};
+
+export const VALUE_TYPE_OPTIONS = ['string', 'number', 'boolean', 'json'].map((value) => ({
+  value,
+  label: value,
+}));
 
 export function blockTitle(block: SkillBlock, index: number): string {
   return block.title || `${BLOCK_KIND_META[block.kind].label} ${index + 1}`;
@@ -75,7 +169,7 @@ export function createBlock(kind: SkillBlockKind, seedIndex: number): SkillBlock
   const id = `block-${Date.now().toString(36)}-${seedIndex}`;
   const base: SkillBlock = { id, kind, title: '' };
   if (kind === 'prompt' || kind === 'knowledge') base.prompt = '';
-  if (kind === 'step') base.steps = [];
+  if (kind === 'step' || kind === 'loop') base.steps = [];
   if (kind === 'decision') {
     base.condition = '';
     base.next = [
@@ -83,9 +177,31 @@ export function createBlock(kind: SkillBlockKind, seedIndex: number): SkillBlock
       { when: '否', to: '' },
     ];
   }
+  if (kind === 'loop') base.while = '';
+  if (kind === 'parallel') {
+    base.merge = 'all';
+    base.branches = [''];
+  }
   if (kind === 'script') base.script = '';
   if (kind === 'human') base.humanInstruction = '';
-  if (kind === 'tool') base.tool = '';
+  if (kind === 'tool') {
+    base.server = '';
+    base.tool = '';
+    base.argsTemplate = '';
+  }
+  if (kind === 'subskill') base.skillRef = '';
+  if (kind === 'input' || kind === 'output') {
+    base.name = '';
+    base.valueType = 'string';
+    base.required = kind === 'input';
+  }
+  if (kind === 'constraint') base.rule = '';
+  if (kind === 'error_handler') {
+    base.onError = 'abort';
+    base.retryCount = 3;
+    base.timeoutMs = undefined;
+  }
+  if (kind === 'comment') base.note = '';
   return base;
 }
 
@@ -141,4 +257,130 @@ export function danglingNexts(content: SkillContent): { from: string; to: string
     }
   }
   return result;
+}
+
+/**
+ * 循环检测（发布检查项）：沿 next 指针 DFS，找出仍在环上的块 id 集合。
+ * 用每个节点的「在栈上」状态做三色标记，环上节点 = 完成探索时仍在栈上的节点。
+ */
+export function cyclicBlockIds(content: SkillContent): Set<string> {
+  const blocks = new Map(content.blocks.map((block) => [block.id, block]));
+  const state = new Map<string, 1 | 2>(); // 1=在栈上 2=已完成
+  const cyclic = new Set<string>();
+  const stack: string[] = [];
+
+  const visit = (id: string) => {
+    const mark = state.get(id);
+    if (mark === 1) {
+      // 找到环：从栈里该节点起全是环成员。
+      const start = stack.indexOf(id);
+      for (let i = start; i < stack.length; i += 1) cyclic.add(stack[i]);
+      return;
+    }
+    if (mark === 2) return;
+    state.set(id, 1);
+    stack.push(id);
+    for (const next of blocks.get(id)?.next ?? []) {
+      if (next.to && blocks.has(next.to)) visit(next.to);
+    }
+    stack.pop();
+    state.set(id, 2);
+  };
+  for (const block of content.blocks) visit(block.id);
+  return cyclic;
+}
+
+/** 变量引用语法：{{input.x}} / {{prev.output}} / {{task.title}} / {{env.HOME}} ... */
+const VARIABLE_RE = /\{\{\s*([a-zA-Z_][\w]*(?:\.[\w-]+)+)\s*\}\}/g;
+
+/** 抽取一段文本里引用的所有变量路径（如 `input.diff`）。 */
+export function collectVariables(text: string): string[] {
+  const result: string[] = [];
+  for (const match of text.matchAll(VARIABLE_RE)) result.push(match[1]);
+  return result;
+}
+
+/** 遍历所有块的文本字段，返回 块id → 引用变量列表。 */
+export function blockVariableUsage(block: SkillBlock): string[] {
+  const texts: string[] = [
+    block.prompt ?? '',
+    block.condition ?? '',
+    block.humanInstruction ?? '',
+    block.while ?? '',
+    block.argsTemplate ?? '',
+    block.rule ?? '',
+    block.note ?? '',
+    ...(block.steps ?? []),
+    ...(block.branches ?? []),
+  ];
+  return texts.flatMap((text) => collectVariables(text));
+}
+
+export interface VariableOption {
+  /** 插入的完整表达式，如 `input.diff`。 */
+  path: string;
+  label: string;
+  group: string;
+}
+
+/**
+ * 变量系统辅助（1.md 8.3）：从技能 input 块与上游块输出推断可插入的变量。
+ * 轻量实现：input 块的 name 生成 `input.*`；每个块的标题生成 `<id>.output`；
+ * 其余按 PRD 固定给 task/project/review/env/prev。
+ */
+export function inferVariableOptions(content: SkillContent): VariableOption[] {
+  const options: VariableOption[] = [
+    { path: 'prev.output', label: '上一步输出', group: '上下文' },
+    { path: 'task.title', label: '任务标题', group: '任务' },
+    { path: 'task.description', label: '任务描述', group: '任务' },
+    { path: 'project.name', label: '项目名称', group: '项目' },
+    { path: 'review.suggestion', label: '审核意见', group: '审核' },
+    { path: 'env.HOME', label: '环境变量 HOME', group: '环境' },
+  ];
+  for (const block of content.blocks) {
+    if (block.kind === 'input' && block.name) {
+      options.push({ path: `input.${block.name}`, label: `输入 ${block.name}`, group: '技能输入' });
+    }
+  }
+  for (const block of content.blocks) {
+    if (block.kind !== 'input') {
+      options.push({
+        path: `${block.id}.output`,
+        label: `「${blockTitle(block, 0)}」的输出`,
+        group: '块输出',
+      });
+    }
+  }
+  // 全局变量由工作台设置提供，前端不建模，给个语法示例。
+  options.push({ path: 'global.变量名', label: '全局变量（示例）', group: '全局' });
+  return options;
+}
+
+export interface VariableWarning {
+  blockId: string;
+  variable: string;
+  message: string;
+}
+
+/**
+ * 变量拼写提示（警告，不阻断发布）：引用了 `{{...}}` 但不在可选列表里时给出。
+ * `global.*` 与 `env.*` 不校验后缀（运行时才能知道全集）。
+ */
+export function variableWarnings(content: SkillContent): VariableWarning[] {
+  const known = new Set(inferVariableOptions(content).map((option) => option.path));
+  const warnings: VariableWarning[] = [];
+  for (const block of content.blocks) {
+    for (const variable of blockVariableUsage(block)) {
+      const [root] = variable.split('.');
+      const openRoot = root === 'global' || root === 'env';
+      if (!openRoot && !known.has(variable)) {
+        warnings.push({
+          blockId: block.id,
+          variable,
+          message: `引用了未声明的变量 {{${variable}}}（来源：块「${blockTitle(block, 0)}」）`,
+        });
+      }
+    }
+  }
+  return warnings;
 }

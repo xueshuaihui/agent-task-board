@@ -1,13 +1,14 @@
 import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
-import { Button, Field, Input, Menu, Select, Textarea } from '@/components/ui';
+import { Button, Input, Menu } from '@/components/ui';
 import { cn } from '@/lib/cn';
-import { BLOCK_KIND_META, blockTitle, createBlock } from './meta';
+import { BLOCK_KIND_META, blockTitle, createBlock, inferVariableOptions } from './meta';
+import { BlockFields } from './block-fields';
 import type { SkillBlock, SkillBlockKind, SkillContent } from './types';
 
 /**
- * 可视化模式的块列表编辑（2.md 11.1 简化实现）：
- * - 增删块（菜单按 kind 加）、上移下移；
- * - 块表单按 kind 切换字段（prompt/steps/condition/script/humanInstruction/tool）；
+ * 可视化模式的块列表编辑（1.md 8.3 可视化模式，2.md 11.1 简化实现）：
+ * - 增删块（菜单按 15 类 kind 加）、上移下移；
+ * - 字段表单抽到 block-fields.tsx（与结构化模式共用），文本字段带变量插入；
  * - 块间连线不画布拖线，用 next 分支的目标块下拉（decision 块可增删分支）；
  * - 入口块在下拉里标记，切换入口即改 content.entryBlockId。
  */
@@ -31,6 +32,7 @@ export function BlockEditor({ content, onChange }: BlockEditorProps) {
       label: blockTitle(block, index),
     })),
   ];
+  const variableOptions = inferVariableOptions(content);
 
   const patchBlock = (id: string, patch: Partial<SkillBlock>) => {
     onChange({
@@ -70,6 +72,7 @@ export function BlockEditor({ content, onChange }: BlockEditorProps) {
           total={blocks.length}
           isEntry={content.entryBlockId === block.id}
           targetOptions={targetOptions}
+          variableOptions={variableOptions}
           onPatch={(patch) => patchBlock(block.id, patch)}
           onSetEntry={() => onChange({ ...content, entryBlockId: block.id })}
           onRemove={() => removeBlock(block.id)}
@@ -108,6 +111,7 @@ interface BlockCardProps {
   total: number;
   isEntry: boolean;
   targetOptions: { value: string; label: string }[];
+  variableOptions: ReturnType<typeof inferVariableOptions>;
   onPatch: (patch: Partial<SkillBlock>) => void;
   onSetEntry: () => void;
   onRemove: () => void;
@@ -120,12 +124,14 @@ function BlockCard({
   total,
   isEntry,
   targetOptions,
+  variableOptions,
   onPatch,
   onSetEntry,
   onRemove,
   onMove,
 }: BlockCardProps) {
   const meta = BLOCK_KIND_META[block.kind];
+  const Icon = meta.icon;
 
   return (
     <div
@@ -135,7 +141,10 @@ function BlockCard({
       )}
     >
       <div className="flex items-center gap-2">
-        <span className={cn('rounded-tag px-1.5 py-0.5 text-badge', meta.kindClass)}>{meta.label}</span>
+        <span className={cn('inline-flex items-center gap-1 rounded-tag px-1.5 py-0.5 text-badge', meta.kindClass)}>
+          <Icon className="size-3.5" />
+          {meta.label}
+        </span>
         <Input
           value={block.title}
           placeholder={blockTitle(block, index)}
@@ -163,120 +172,12 @@ function BlockCard({
       </div>
 
       <div className="mt-3 flex flex-col gap-3">
-        {block.kind === 'prompt' || block.kind === 'knowledge' ? (
-          <Field label="提示词内容" hint="可用 {{input.xxx}}、{{prev.output}} 等变量">
-            <Textarea
-              value={block.prompt ?? ''}
-              rows={3}
-              onChange={(event) => onPatch({ prompt: event.target.value })}
-            />
-          </Field>
-        ) : null}
-
-        {block.kind === 'step' ? (
-          <Field label="步骤列表" hint="每行一步">
-            <Textarea
-              value={(block.steps ?? []).join('\n')}
-              rows={3}
-              onChange={(event) =>
-                onPatch({ steps: event.target.value.split('\n').map((line) => line.trimEnd()) })
-              }
-            />
-          </Field>
-        ) : null}
-
-        {block.kind === 'script' ? (
-          <Field label="脚本">
-            <Textarea
-              value={block.script ?? ''}
-              rows={4}
-              className="font-mono"
-              onChange={(event) => onPatch({ script: event.target.value })}
-            />
-          </Field>
-        ) : null}
-
-        {block.kind === 'human' ? (
-          <Field label="人工指引">
-            <Textarea
-              value={block.humanInstruction ?? ''}
-              rows={3}
-              onChange={(event) => onPatch({ humanInstruction: event.target.value })}
-            />
-          </Field>
-        ) : null}
-
-        {block.kind === 'tool' ? (
-          <Field label="工具（server/tool）" hint="需与发布时的 MCP 依赖声明一致">
-            <Input
-              value={block.tool ?? ''}
-              placeholder="github/get_pull_request"
-              onChange={(event) => onPatch({ tool: event.target.value })}
-            />
-          </Field>
-        ) : null}
-
-        {block.kind === 'decision' ? (
-          <>
-            <Field label="判断条件">
-              <Input
-                value={block.condition ?? ''}
-                placeholder="例如：测试是否全部通过"
-                onChange={(event) => onPatch({ condition: event.target.value })}
-              />
-            </Field>
-            <div className="flex flex-col gap-2">
-              <p className="text-aux text-text-secondary">分支 → 目标块</p>
-              {(block.next ?? []).map((next, nextIndex) => (
-                <div key={nextIndex} className="flex items-center gap-2">
-                  <Input
-                    value={next.when}
-                    placeholder="分支条件（是/否）"
-                    className="h-7 w-40 text-aux"
-                    onChange={(event) =>
-                      onPatch({
-                        next: (block.next ?? []).map((item, i) =>
-                          i === nextIndex ? { ...item, when: event.target.value } : item,
-                        ),
-                      })
-                    }
-                  />
-                  <span className="text-aux text-text-tertiary">→</span>
-                  <Select
-                    className="h-7 flex-1 text-aux"
-                    value={next.to}
-                    options={targetOptions}
-                    onChange={(event) =>
-                      onPatch({
-                        next: (block.next ?? []).map((item, i) =>
-                          i === nextIndex ? { ...item, to: event.target.value } : item,
-                        ),
-                      })
-                    }
-                  />
-                  <Button
-                    variant="ghost"
-                    size="iconSm"
-                    aria-label="删除分支"
-                    onClick={() =>
-                      onPatch({ next: (block.next ?? []).filter((_, i) => i !== nextIndex) })
-                    }
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
-              ))}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="self-start"
-                onClick={() => onPatch({ next: [...(block.next ?? []), { when: '', to: '' }] })}
-              >
-                添加分支
-              </Button>
-            </div>
-          </>
-        ) : null}
+        <BlockFields
+          block={block}
+          variableOptions={variableOptions}
+          targetOptions={targetOptions}
+          onPatch={onPatch}
+        />
       </div>
     </div>
   );
