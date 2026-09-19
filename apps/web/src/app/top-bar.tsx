@@ -7,6 +7,7 @@ import { taskListSearch } from '@/app/store/filters';
 import { navigate, NAV_ORDER, ROUTES, useRoute } from '@/app/router';
 import { IconButton } from '@/components/ui';
 import { AccountMenu } from '@/features/auth';
+import { GlobalSearch } from '@/app/global-search';
 import { useUnreadCount } from '@/ws';
 import { springs } from '@/lib/motion';
 import { applyUiTheme } from '@/lib/theme';
@@ -30,19 +31,24 @@ function nextTheme(current: UiTheme): UiTheme {
 }
 
 /**
- * 2.2 顶栏：Logo + 应用名 / 四个导航项 / 主题三态切换 / 一个通知铃铛。
+ * 2.md 2.2 顶栏：Logo + 应用名 / 六个导航项（0919 十四章 IA：看板/项目/技能/市场/审核/设置）/
+ * 全局搜索框 / 主题三态切换 / 一个通知铃铛。
  *
  * 视觉按 DESIGN.md §3：毛玻璃顶栏（.glass-bar）；导航激活项由 motion
  * `layoutId="nav-pill"` 的胶囊指示器滑动（springs.gentle）；铃铛角标数字
  * 变化带 springs.pop 弹跳。
  *
+ * 「市场」是 1.md 十四章的云端入口，本期云端市场不落地（features/market 只给
+ * 品牌化空状态），导航项挂「即将上线」小徽标。顶层不再有「任务」入口：任务列表
+ * 保留路由 `#/tasks`，从看板工具栏「列表视图」进入（0919 4.11）。
+ *
+ * 全局搜索按 0919 2.4 加在顶栏中部（Cmd/Ctrl+K），实现见 app/global-search.tsx。
+ *
  * 主题切换即 `PATCH /settings { ui_theme }`（失效 qk.settings()，设置页与
  * useUiThemeSync 共用同一份缓存），同时乐观调用 applyUiTheme 立即生效，
  * 不等往返。深色色板在 globals.css 的 `[data-ui-theme="dark"]` 块。
  *
- * 三条刻意的「不做」（原型 2.2 末段）：不放依赖图入口（阶段二，见 lib/phase.ts）、
- * 不放全局筛选器、不放全局搜索框——筛选是页面级状态（app/store/filters.ts 一份真值），
- * 搜索属于任务列表页。全栏只有铃铛这一个角标：「审核」导航项再挂待审核数就会出现
+ * 全栏只有铃铛这一个角标：「审核」导航项再挂待审核数就会出现
  * 两个清零条件不同的数字。
  *
  * 铃铛只随 `notification.created` 变化：计数由服务端在事件载荷里算好，
@@ -93,7 +99,7 @@ export function TopBar() {
         <span className="text-logo text-text-primary">Jarvis Workbench</span>
       </div>
 
-      <nav aria-label="主导航" className="flex min-w-0 flex-1 items-center gap-1">
+      <nav aria-label="主导航" className="flex shrink-0 items-center gap-1">
         {NAV_ORDER.map((name) => {
           const active = route.name === name;
           return (
@@ -115,11 +121,23 @@ export function TopBar() {
                   transition={reducedMotion ? { duration: 0 } : springs.gentle}
                 />
               ) : null}
-              <span className="relative">{ROUTES[name].label}</span>
+              <span className="relative inline-flex items-center gap-1">
+                {ROUTES[name].label}
+                {name === 'market' ? (
+                  <span className="rounded-badge bg-primary-light px-1 text-badge text-primary">
+                    即将上线
+                  </span>
+                ) : null}
+              </span>
             </button>
           );
         })}
       </nav>
+
+      {/* 2.4：全局搜索占顶栏中部，剩余空间全给它并限最大宽。 */}
+      <div className="flex min-w-0 flex-1 justify-center px-2">
+        <GlobalSearch />
+      </div>
 
       <div className="flex shrink-0 items-center gap-1">
         <IconButton

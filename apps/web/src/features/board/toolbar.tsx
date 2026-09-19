@@ -6,6 +6,7 @@ import {
   ChevronsUpDown,
   ClipboardList,
   Layers,
+  List,
   Network,
   Plus,
   Settings2,
@@ -146,6 +147,20 @@ export function BoardToolbar({ onCreate, grouping, graphTasks }: BoardToolbarPro
             </span>
           </Tooltip>
         </div>
+      ) : null}
+
+      {/* 0919 4.11：任务列表不再是顶层导航，「列表视图」从看板工具栏进入（依赖图按钮旁）。 */}
+      {graphTasks ? (
+        <Tooltip content="切换到任务列表视图（0919 4.11）">
+          <Button
+            variant="default"
+            className="h-8 shrink-0"
+            icon={<List className="size-4" aria-hidden />}
+            onClick={() => navigate('tasks')}
+          >
+            列表视图
+          </Button>
+        </Tooltip>
       ) : null}
 
       {graphTasks ? (

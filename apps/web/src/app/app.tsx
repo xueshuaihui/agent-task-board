@@ -6,6 +6,7 @@ import { ProjectsPage } from '@/features/projects';
 import { ReviewPage } from '@/features/review';
 import { SettingsPage } from '@/features/settings';
 import { SkillLibraryPage } from '@/features/skills';
+import { MarketPage } from '@/features/market';
 import { TaskListPage } from '@/features/task-list';
 import { ChangePasswordPage, LoginPage, RequireAuth } from '@/features/auth';
 import { applyUiTheme } from '@/lib/theme';
@@ -33,6 +34,8 @@ const PAGES: Record<Exclude<RouteName, 'login' | 'changePassword'>, ComponentTyp
   review: ReviewPage,
   tasks: TaskListPage,
   skills: SkillLibraryPage,
+  // 0919 十四章：市场本期只是品牌化空状态占位（云端市场不落地）。
+  market: MarketPage,
   settings: SettingsPage,
 };
 

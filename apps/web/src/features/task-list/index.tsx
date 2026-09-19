@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
   ArchiveRestore,
+  ArrowLeft,
   ChevronDown,
   ChevronRight,
   Eye,
@@ -16,7 +17,7 @@ import { api, errorMessage, qk, useApiMutation } from '@/api';
 import { useTaskListWithProjects } from '@/features/projects';
 import type { ListSortField, TaskListItem, TaskStatus } from '@/api/types';
 import { BOARD_COLUMN_ORDER } from '@/api/types';
-import { useRouteSearchParams } from '@/app/router';
+import { navigate, useRouteSearchParams } from '@/app/router';
 import { filtersFromSearch, toListQuery, useFilterStore } from '@/app/store/filters';
 import { useIsFlashed } from '@/app/store/flash';
 import { useShellStore } from '@/app/store/shell';
@@ -264,7 +265,18 @@ export function TaskListPage() {
     <div className="flex min-h-0 w-full flex-col gap-3">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-page-title text-text-primary">任务</h1>
+          <div className="flex items-center gap-2">
+            {/* 0919 十四章：任务列表不再是顶层导航，这里给显式回看板入口（hash 路由本身也支持浏览器回退）。 */}
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<ArrowLeft className="size-4" aria-hidden />}
+              onClick={() => navigate('board')}
+            >
+              返回看板
+            </Button>
+            <h1 className="text-page-title text-text-primary">任务</h1>
+          </div>
           <p className="text-aux text-text-secondary">
             共 {total} 条 · 第 {page} 页 · 每页 {pageSize}（默认 50、上限 200）· 按
             {SORT_LABEL[sort.field]}
