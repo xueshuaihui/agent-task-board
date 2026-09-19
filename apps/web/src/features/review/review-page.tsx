@@ -338,10 +338,15 @@ function PendingRow({ row, index, reduced }: { row: TaskListItem; index: number;
           </div>
           <UpdatedCell value={row.updated_at} />
           <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
+            {/* stopPropagation 直接挂在按钮上（而不仅外层容器）：保证「审核」在任何
+                事件路径下都只开审核表单、不会误触整卡的 openTask。 */}
             <Button
               size="sm"
               variant="primary"
-              onClick={() => useShellStore.getState().openReview(row.id)}
+              onClick={(event) => {
+                event.stopPropagation();
+                useShellStore.getState().openReview(row.id);
+              }}
             >
               审核
             </Button>

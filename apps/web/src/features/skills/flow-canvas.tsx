@@ -394,6 +394,12 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
         position: livePos[block.id] ?? block.pos ?? fallbackPos.get(block.id) ?? { x: 0, y: 0 },
         selected: selectedNodeIds.has(block.id),
         style: { width: FLOW_NODE_WIDTH },
+        // 显式尺寸：MiniMap 判定「节点可画」看的是 userNode 上的宽高（measured/width/height），
+        // 而本画布的 onNodesChange 只处理 position/select、丢弃 dimensions 变更，userNode
+        // 永远拿不到 measured —— 不给显式宽高时小地图一个色块都画不出来（空白）。
+        // 宽高与节点组件的固定尺寸常量同源，画布渲染不受影响。
+        width: FLOW_NODE_WIDTH,
+        height: FLOW_NODE_HEIGHT,
         data: {
           block,
           isEntry: block.id === content.entryBlockId,

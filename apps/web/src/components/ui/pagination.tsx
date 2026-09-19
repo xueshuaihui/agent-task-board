@@ -33,11 +33,12 @@ export function Pagination({
         className,
       )}
     >
-      <span>
+      <span className="shrink-0 whitespace-nowrap">
         共 {total} 条 · 第 {current}/{pages} 页
       </span>
       {onPageSizeChange ? (
-        <label className="inline-flex items-center gap-1">
+        // shrink-0 + nowrap：flex 行太挤时「每页」会被压成竖排逐字换行（label 宽度不足）。
+        <label className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
           每页
           <Select
             className="h-7 w-[72px] px-2 text-aux"
