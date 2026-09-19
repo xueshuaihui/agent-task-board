@@ -22,7 +22,7 @@ import {
   type OnBeforeDelete,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Flag, LayoutGrid, Plus, Trash2, TriangleAlert } from 'lucide-react';
+import { Flag, LayoutGrid, Pencil, Plus, Trash2, TriangleAlert } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Button, Drawer, Field, IconButton, Input } from '@/components/ui';
 import { BLOCK_KIND_META, blockTitle, createBlock, cyclicBlockIds, inferVariableOptions } from './meta';
@@ -162,6 +162,15 @@ function SkillNodeView({ id, data, selected }: NodeProps<SkillFlowNode>) {
           <span className="block truncate text-[10px] text-text-tertiary">{meta.label}</span>
         </span>
         <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+          <IconButton
+            label="编辑块"
+            variant="ghost"
+            size="icon"
+            className="size-6"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => onOpen(id)}
+            icon={<Pencil className="size-3.5" />}
+          />
           <IconButton
             label="设为入口"
             variant="ghost"
