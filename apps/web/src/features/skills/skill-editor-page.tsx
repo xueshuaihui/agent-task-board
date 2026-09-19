@@ -7,6 +7,7 @@ import { usePatchSkill, useSkill } from './hooks';
 import { SKILL_STATUS_META, emptyContent } from './meta';
 import { PublishDialog } from './publish-dialog';
 import { SkillFlowEditor } from './skill-flow-editor';
+import { sanitizeForSave } from './flow-model';
 import { SourceEditor } from './source-editor';
 import { StructuredEditor } from './structured-editor';
 import type { Skill, SkillContent } from './types';
@@ -78,7 +79,9 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
 
   const buildBody = useCallback(
     () => ({
-      content,
+      // to:'' 的草稿分支服务端会 422，见 flow-model.sanitizeForSave——不清洗会导致
+      // 自动保存永远失败、连线永远落不了库。
+      content: sanitizeForSave(content),
       name: meta.name.trim(),
       description: meta.description.trim(),
       tags: meta.tagsText
@@ -327,7 +330,7 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
         <PublishDialog
           open={publishOpen}
           skill={skill}
-          content={content}
+          content={sanitizeForSave(content)}
           onClose={() => setPublishOpen(false)}
           onPublished={(updated) => {
             applySaved(updated);
