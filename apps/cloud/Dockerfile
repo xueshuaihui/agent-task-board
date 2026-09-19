@@ -1,4 +1,6 @@
 # node:20-alpine 小镜像：只带编译产物 + 生产依赖 + Prisma 迁移文件。
+# 构建标识由 bundle.sh 注入（GIT_REVISION/BUILD_TIME）：烙进镜像 ENV 与 OCI 标签，
+# GET /healthz 的 commit 字段与 docker image inspect 的 revision 标签都读它。
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -16,9 +18,14 @@ RUN npx prisma generate --schema prisma/schema.prisma && npx nest build
 
 FROM node:20-alpine
 WORKDIR /app
+ARG GIT_REVISION=unknown
+ARG BUILD_TIME=unknown
 ENV NODE_ENV=production \
     CLOUD_PORT=7789 \
-    CLOUD_DATA_DIR=/data
+    CLOUD_DATA_DIR=/data \
+    CLOUD_COMMIT=${GIT_REVISION}
+LABEL org.opencontainers.image.revision=${GIT_REVISION} \
+      org.opencontainers.image.created=${BUILD_TIME}
 RUN mkdir -p /data && chown -R node:node /data
 USER node
 COPY --from=build /app/node_modules ./node_modules

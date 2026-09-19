@@ -21,6 +21,7 @@
     "test": "npm run test -w @atb/api",
     "prisma": "npm run prisma -w @atb/api",
     "db:migrate": "npm run db:migrate -w @atb/api",
+    "bundle:cloud": "bash apps/cloud/deploy/bundle.sh",
     "desktop:sidecar": "npm run build -w @atb/api && npm run build -w @atb/web",
     "desktop:check": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "desktop:test": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
