@@ -4,6 +4,8 @@ export const TASK_STATUS = [
   'BACKLOG',
   'READY',
   'RUNNING',
+  // 8.4 人工块：Agent 执行到人工块时任务转人工阻塞，人工处理后回 READY 重新认领。
+  'BLOCKED',
   'REVIEW',
   'DONE',
   'FAILED',
@@ -14,6 +16,7 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
   BACKLOG: '需求池',
   READY: '待执行',
   RUNNING: '执行中',
+  BLOCKED: '人工阻塞',
   REVIEW: '待审核',
   DONE: '已完成',
   FAILED: '异常/失败',

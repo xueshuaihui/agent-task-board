@@ -306,7 +306,7 @@ export interface Fixture {
  */
 export async function taskIn(
   t: TestApp,
-  status: 'BACKLOG' | 'READY' | 'RUNNING' | 'REVIEW' | 'DONE' | 'FAILED',
+  status: 'BACKLOG' | 'READY' | 'RUNNING' | 'BLOCKED' | 'REVIEW' | 'DONE' | 'FAILED',
   title = `状态夹具 ${status}`,
 ): Promise<Fixture> {
   const id = await newTask(t, { title });
@@ -327,6 +327,18 @@ export async function taskIn(
   const claimed = await claimOk(agent, id);
   const key = triple(claimed);
   if (status === 'RUNNING') return { id, agent, key };
+
+  // 8.4 人工块夹具：Agent 上报人工块，任务转 BLOCKED（租约随之清空）。
+  if (status === 'BLOCKED') {
+    const res = await agent.claims.post(`${API}/tasks/${id}/blocked`, {
+      ...key,
+      block_id: 'b-human',
+      block_title: '夹具人工块',
+      instruction: '夹具：等待人工处理',
+    });
+    if (res.status !== 200) throw new Error(`人工块上报失败：${res.status} ${res.text}`);
+    return { id, agent, key };
+  }
 
   const reported = await agent.claims.post(
     `${API}/tasks/${id}/${status === 'FAILED' ? 'fail' : 'complete'}`,

@@ -6,21 +6,28 @@ import { nowSql, toIso } from '../contract/time';
 import type { Skill, SkillVersion } from '@prisma/client';
 import { PrismaService } from '../infra/prisma.service';
 import {
+  CLOUD_SOURCE_TYPES,
   nextPatchVersion,
   parseJson,
   type SkillContent,
   type SkillCreateInput,
   type SkillDto,
+  type SkillImportMarkdownInput,
   type SkillListQuery,
   type SkillMcpDependency,
   type SkillPatchInput,
+  type SkillSource,
   type SkillStatus,
+  type SkillTestCase,
+  type SkillTestResult,
   type SkillType,
   type SkillVersionCreateInput,
   type SkillVersionSummary,
   type TaskSkillPayload,
   type TaskSkillRef,
 } from './skills.dto';
+import { blocksToMarkdown, markdownToBlocks, parseFrontmatter } from './skill-markdown';
+import { scanDirectory } from './skill-sources';
 
 const INITIAL_VERSION = 'v0.1.0';
 const EMPTY_CONTENT: SkillContent = { blocks: [], entryBlockId: null };
@@ -28,10 +35,23 @@ const EMPTY_CONTENT: SkillContent = { blocks: [], entryBlockId: null };
 /** 导入文件硬顶：技能文件是几 KB 的 JSON，1MB 已经是千倍余量。 */
 export const SKILL_IMPORT_MAX_BYTES = 1024 * 1024;
 
+/** 8.8 技能源在 settings kv 里的键（settings 总表之外的技能模块私有键）。 */
+export const SKILL_SOURCES_SETTING_KEY = 'skill_sources';
+
+/** 8.8 内置源默认种子：不落库，GET 时若无 builtin 条目动态补一条。 */
+const BUILTIN_SOURCE: SkillSource = {
+  id: 'builtin',
+  type: 'builtin',
+  name: '内置技能',
+  path: '',
+  enabled: true,
+};
+
 interface ParsedSkill {
   content: SkillContent;
   mcpDependencies: SkillMcpDependency[];
   tags: string[];
+  testCases: SkillTestCase[];
 }
 
 function parseSkill(row: Skill): ParsedSkill {
@@ -39,6 +59,7 @@ function parseSkill(row: Skill): ParsedSkill {
     content: parseJson<SkillContent>(row.content, EMPTY_CONTENT),
     mcpDependencies: parseJson<SkillMcpDependency[]>(row.mcpDependencies, []),
     tags: parseJson<string[]>(row.tags, []),
+    testCases: parseJson<SkillTestCase[]>(row.testCases, []),
   };
 }
 
@@ -53,6 +74,7 @@ function toDto(row: Skill): SkillDto {
     tags: parsed.tags,
     current_version: row.currentVersion,
     content: parsed.content,
+    test_cases: parsed.testCases,
     mcp_dependencies: parsed.mcpDependencies,
     created_at: toIso(row.createdAt),
     updated_at: toIso(row.updatedAt),
@@ -140,6 +162,7 @@ export class SkillsService {
         tags: JSON.stringify(input.tags),
         currentVersion: INITIAL_VERSION,
         content: JSON.stringify(input.content),
+        testCases: JSON.stringify(input.test_cases ?? []),
         mcpDependencies: JSON.stringify(input.mcp_dependencies),
       },
     });
@@ -150,6 +173,7 @@ export class SkillsService {
         skillId: skill.id,
         version: INITIAL_VERSION,
         content: skill.content,
+        testCases: skill.testCases,
         mcpDependencies: skill.mcpDependencies,
         changelog: '初始版本',
       },
@@ -172,6 +196,8 @@ export class SkillsService {
     if (input.tags !== undefined) data.tags = JSON.stringify(input.tags);
     if (input.status !== undefined) data.status = input.status;
     if (input.content !== undefined) data.content = JSON.stringify(input.content);
+    // 8.6：测试用例只写当前草稿，与 content 同口径；发布时随版本快照。
+    if (input.test_cases !== undefined) data.testCases = JSON.stringify(input.test_cases);
     await this.prisma.skill.update({ where: { id }, data });
     return this.detail(id, accountId);
   }
@@ -196,7 +222,10 @@ export class SkillsService {
   ): Promise<SkillDto> {
     const row = await this.require(id, accountId);
     const version = nextPatchVersion(row.currentVersion);
-    const deps = input.mcp_dependencies ?? parseSkill(row).mcpDependencies;
+    const parsed = parseSkill(row);
+    const deps = input.mcp_dependencies ?? parsed.mcpDependencies;
+    // 8.6：测试用例随版本快照；入参缺省沿用技能当前草稿的 test_cases。
+    const testCases = input.test_cases ?? parsed.testCases;
     await this.prisma.$transaction([
       this.prisma.skillVersion.create({
         data: {
@@ -204,6 +233,7 @@ export class SkillsService {
           skillId: id,
           version,
           content: JSON.stringify(input.content),
+          testCases: JSON.stringify(testCases),
           mcpDependencies: JSON.stringify(deps),
           changelog: input.changelog,
         },
@@ -213,6 +243,7 @@ export class SkillsService {
         data: {
           currentVersion: version,
           content: JSON.stringify(input.content),
+          testCases: JSON.stringify(testCases),
           mcpDependencies: JSON.stringify(deps),
           updatedAt: nowSql(),
         },
@@ -221,7 +252,7 @@ export class SkillsService {
     return this.detail(id, accountId);
   }
 
-  /** 8.4 回滚：复制该版本内容/依赖为 current，不新增 version 记录。 */
+  /** 8.4 回滚：复制该版本内容/依赖/测试用例为 current，不新增 version 记录。 */
   async rollback(id: string, accountId: string, version: string): Promise<SkillDto> {
     await this.require(id, accountId);
     const target = await this.prisma.skillVersion.findUnique({
@@ -235,6 +266,7 @@ export class SkillsService {
       data: {
         currentVersion: version,
         content: target.content,
+        testCases: target.testCases,
         mcpDependencies: target.mcpDependencies,
         updatedAt: nowSql(),
       },
@@ -242,77 +274,33 @@ export class SkillsService {
     return this.detail(id, accountId);
   }
 
-  /** 8.5 测试运行：从 entryBlockId 沿 next 走，prompt/step 拼接文本；human 中断；script 不执行。 */
-  async test(
-    id: string,
-    accountId: string,
-    input: string,
-  ): Promise<{
-    ok: boolean;
-    logs: string[];
-    output: string;
-    blocked?: { blockId: string; instruction: string };
-  }> {
+  /** 8.5 测试运行（旧形态）：从 entryBlockId 沿 next 走，human 视为 blocked；script 等不执行。 */
+  async test(id: string, accountId: string, input: string): Promise<SkillTestResult> {
     const row = await this.require(id, accountId);
-    const content = parseSkill(row).content;
-    const byId = new Map(content.blocks.map((block) => [block.id, block]));
-    const logs: string[] = [];
-    const parts: string[] = [];
-    if (input) logs.push(`输入: ${input}`);
-    if (content.entryBlockId && !byId.has(content.entryBlockId)) {
-      logs.push(`入口块 ${content.entryBlockId} 不存在，从头遍历`);
+    const parsed = parseSkill(row);
+    // 8.6：有测试用例时逐个运行，human 块按 blocked 计（该用例不通过）。
+    if (parsed.testCases.length > 0) {
+      const results = parsed.testCases.map((testCase) => {
+        const run = runFlow(parsed.content, testCaseInputText(testCase.input));
+        return {
+          case_id: testCase.id,
+          name: testCase.name,
+          ok: run.ok,
+          logs: run.logs,
+          output: run.output,
+        };
+      });
+      return {
+        mode: 'cases',
+        results,
+        passed: results.filter((item) => item.ok).length,
+        total: results.length,
+      };
     }
-    let current: string | null =
-      content.entryBlockId && byId.has(content.entryBlockId)
-        ? content.entryBlockId
-        : (content.blocks[0]?.id ?? null);
-    const visited = new Set<string>();
-    let blocked: { blockId: string; instruction: string } | undefined;
-
-    while (current && !blocked) {
-      if (visited.has(current)) {
-        logs.push(`检测到环：块 ${current} 重复到达，测试终止`);
-        break;
-      }
-      visited.add(current);
-      const block: SkillContent['blocks'][number] = byId.get(current)!;
-      logs.push(`[${block.kind}] ${block.title || block.id}`);
-      switch (block.kind) {
-        case 'prompt':
-        case 'knowledge':
-          if (block.prompt) parts.push(block.prompt);
-          break;
-        case 'step':
-          for (const step of block.steps ?? []) parts.push(step);
-          break;
-        case 'human':
-          blocked = {
-            blockId: block.id,
-            instruction: block.humanInstruction || block.prompt || '该块需要人工处理',
-          };
-          logs.push(`需人工处理：${blocked.instruction}`);
-          continue;
-        case 'script':
-          logs.push('本地不执行脚本（桌面端测试环境）');
-          break;
-        case 'decision':
-          // 条件在测试环境无法求值：按第一个分支走并记录。
-          logs.push(`条件「${block.condition ?? ''}」无法在测试环境求值，按第一个分支继续`);
-          break;
-        case 'tool':
-          logs.push(`调用 MCP 工具 ${block.tool ?? '（未指定）'}：测试环境跳过`);
-          break;
-      }
-      const nexts: SkillContent['blocks'][number]['next'] = block.next ?? [];
-      if (nexts.length === 0) break;
-      const picked: NonNullable<SkillContent['blocks'][number]['next']>[number] = nexts[0]!;
-      logs.push(`→ 分支「${picked.when}」`);
-      current = byId.has(picked.to) ? picked.to : null;
-      if (!current) logs.push(`分支目标 ${picked.to} 不存在，测试终止`);
-    }
-
-    const output = parts.join('\n\n');
-    return blocked ? { ok: false, logs, output, blocked } : { ok: true, logs, output };
+    const run = runFlow(parsed.content, input);
+    return run.blocked
+      ? { mode: 'single', ok: false, logs: run.logs, output: run.output, blocked: run.blocked }
+      : { mode: 'single', ok: true, logs: run.logs, output: run.output };
   }
 
   // ---------------------------------------------------------------- 导出/导入
@@ -322,18 +310,19 @@ export class SkillsService {
     const parsed = parseSkill(row);
     // 文件名只用 ASCII 安全字符，非 ASCII（中文技能名）回退到 skill id。
     const safeName = /^[\w.-]+$/.test(row.name) ? row.name : row.id;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}.atskill"`);
     const payload = {
       name: row.name,
       type: row.type,
       content: parsed.content,
       version: row.currentVersion,
+      test_cases: parsed.testCases,
       mcp_dependencies: parsed.mcpDependencies,
       description: row.description,
       tags: parsed.tags,
       exported_at: new Date().toISOString(),
     };
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${safeName}.atskill"`);
     res.send(JSON.stringify(payload));
   }
 
@@ -354,6 +343,7 @@ export class SkillsService {
       name?: unknown;
       type?: unknown;
       content?: unknown;
+      test_cases?: unknown;
       mcp_dependencies?: unknown;
       mcpDependencies?: unknown;
       description?: unknown;
@@ -379,10 +369,127 @@ export class SkillsService {
         description: typeof payload.description === 'string' ? payload.description : '',
         tags: Array.isArray(payload.tags) ? (payload.tags as string[]).map(String) : [],
         content: (payload.content ?? EMPTY_CONTENT) as SkillContent,
+        // 8.6：测试用例随 .atskill 一起带走（旧文件没有该字段就是空）。
+        test_cases: Array.isArray(payload.test_cases) ? (payload.test_cases as SkillTestCase[]) : [],
         mcp_dependencies: deps,
       },
       accountId,
     );
+  }
+
+  // ---------------------------------------------------------------- SKILL.md 导入导出（8.7）
+
+  /**
+   * SKILL.md / Cursor Rules（.mdc）导入：JSON {filename, content}。
+   * frontmatter 元数据头（.mdc 同样是 frontmatter，剥掉即可）提供
+   * name/description/version/category/tags/mcp_dependencies；正文块解析约定与前端
+   * markdown.ts 的 markdownToBlocks 完全一致（api 侧镜像见 skill-markdown.ts）。
+   * 无 ### 小节时整体作一个提示词块。结果：新技能 v0.1.0 DRAFT，重名加后缀。
+   */
+  async importMarkdown(input: SkillImportMarkdownInput, accountId: string): Promise<SkillDto> {
+    const parsed = markdownToBlocks(input.content);
+    const fm = parsed.frontmatter;
+    const baseName =
+      fm?.name?.trim() ||
+      input.filename.replace(/\.(md|markdown|mdc)$/i, '').trim() ||
+      '导入技能';
+    if (parsed.content.blocks.length === 0) {
+      // 无 ### 小节：整体作提示词块（与前端「无小节正文」约定一致，服务端兜底同一条）。
+      const body = parseFrontmatter(input.content).body.trim();
+      if (!body) {
+        throw new ApiException('VALIDATION_FAILED', '文件内容为空，没有可导入的块', [
+          { path: 'content', code: 'empty_content', message: '正文为空' },
+        ]);
+      }
+      const block = {
+        id: 'block-import-0',
+        kind: 'prompt',
+        title: baseName,
+        prompt: body,
+      };
+      parsed.content = { blocks: [block as SkillContent['blocks'][number]], entryBlockId: 'block-import-0' };
+    }
+    const name = await this.availableName(baseName, accountId);
+    const tags = [
+      ...(fm?.tags ?? []),
+      // category 没有对应列，折进标签；.mdc 的 Cursor 元数据其余键随 frontmatter 剥离不导入。
+      ...(fm?.category && !fm.tags.includes(fm.category) ? [fm.category] : []),
+    ].filter((tag) => tag.length > 0 && tag.length <= 30);
+    return this.create(
+      {
+        name,
+        // 只有一个提示词块 → prompt 技能，否则按流程技能处理。
+        type: parsed.content.blocks.length === 1 && parsed.content.blocks[0].kind === 'prompt'
+          ? 'prompt'
+          : 'flow',
+        description: fm?.description ?? '',
+        tags: tags.slice(0, 20),
+        content: parsed.content,
+        test_cases: [],
+        mcp_dependencies: (fm?.mcpDependencies ?? []) as SkillMcpDependency[],
+      },
+      accountId,
+    );
+  }
+
+  /** SKILL.md 导出：text/markdown 附件（name.md），约定同前端 blocksToMarkdown。 */
+  async exportMarkdown(id: string, accountId: string, res: Response): Promise<void> {
+    const row = await this.require(id, accountId);
+    const parsed = parseSkill(row);
+    const markdown = blocksToMarkdown(parsed.content, {
+      name: row.name,
+      description: row.description.replace(/\n/g, ' '),
+      version: row.currentVersion,
+      category: '',
+      tags: parsed.tags,
+      mcpDependencies: parsed.mcpDependencies,
+    });
+    const safeName = /^[\w.-]+$/.test(row.name) ? row.name : row.id;
+    res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}.md"`);
+    res.send(markdown);
+  }
+
+  // ---------------------------------------------------------------- 技能源（8.8）
+
+  /** GET /skills/sources：settings kv 存 JSON 数组；builtin 缺条目时动态补一条（不落库）。 */
+  async listSources(): Promise<(SkillSource & { unavailable?: boolean })[]> {
+    const row = await this.prisma.setting.findUnique({ where: { key: SKILL_SOURCES_SETTING_KEY } });
+    const stored = parseJson<SkillSource[]>(row?.value, []).filter(
+      (source): source is SkillSource =>
+        !!source && typeof source.id === 'string' && typeof source.type === 'string',
+    );
+    const sources = stored.some((source) => source.type === 'builtin')
+      ? stored
+      : [BUILTIN_SOURCE, ...stored];
+    return sources.map((source) =>
+      CLOUD_SOURCE_TYPES.includes(source.type) ? { ...source, unavailable: true } : source,
+    );
+  }
+
+  /** PUT /skills/sources：整表覆盖写 kv（body 就是完整数组，PUT 语义）。 */
+  async saveSources(sources: SkillSource[]): Promise<SkillSource[]> {
+    await this.prisma.setting.upsert({
+      where: { key: SKILL_SOURCES_SETTING_KEY },
+      create: { key: SKILL_SOURCES_SETTING_KEY, value: JSON.stringify(sources) },
+      update: { value: JSON.stringify(sources), updatedAt: nowSql() },
+    });
+    return this.listSources();
+  }
+
+  /** POST /skills/sources/scan：directory 源扫描 *.atskill / *.md / *.mdc。 */
+  async scanSource(sourceId: string): Promise<{ source: SkillSource; items: ReturnType<typeof scanDirectory> }> {
+    const sources = await this.listSources();
+    const source = sources.find((row) => row.id === sourceId);
+    if (!source) throw new ApiException('NOT_FOUND', '技能源不存在', undefined, { source_id: sourceId });
+    if (CLOUD_SOURCE_TYPES.includes(source.type)) {
+      throw new ApiException('NOT_IMPLEMENTED', '第三方远程源暂未开放');
+    }
+    if (source.type === 'builtin') {
+      // 内置源随安装包预置，不走文件系统扫描。
+      return { source, items: [] };
+    }
+    return { source, items: scanDirectory(source.path) };
   }
 
   // ---------------------------------------------------------------- 任务绑定（10.3）
@@ -476,4 +583,106 @@ export class SkillsService {
       if (!taken.has(candidate)) return candidate;
     }
   }
+}
+
+/** 8.6 用例的 input 是 passthrough JSON：字符串直接用，其余 JSON 序列化成模拟输入。 */
+function testCaseInputText(input: unknown): string {
+  if (input === undefined || input === null) return '';
+  if (typeof input === 'string') return input;
+  try {
+    return JSON.stringify(input);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * 8.5 模拟运行：从 entryBlockId 沿 next 走，prompt/step 拼接文本；
+ * human 块按 blocked 中断（8.4 测试口径：human 视为 blocked）；script 等本地不执行。
+ * 8.3 的 15 类块都认识：与执行无关的类型只记日志不产出。
+ */
+function runFlow(
+  content: SkillContent,
+  input: string,
+): { ok: boolean; logs: string[]; output: string; blocked?: { blockId: string; instruction: string } } {
+  type Block = SkillContent['blocks'][number];
+  const byId = new Map(content.blocks.map((block) => [block.id, block]));
+  const logs: string[] = [];
+  const parts: string[] = [];
+  if (input) logs.push(`输入: ${input}`);
+  if (content.entryBlockId && !byId.has(content.entryBlockId)) {
+    logs.push(`入口块 ${content.entryBlockId} 不存在，从头遍历`);
+  }
+  let current: string | null =
+    content.entryBlockId && byId.has(content.entryBlockId)
+      ? content.entryBlockId
+      : (content.blocks[0]?.id ?? null);
+  const visited = new Set<string>();
+  let blocked: { blockId: string; instruction: string } | undefined;
+
+  while (current && !blocked) {
+    if (visited.has(current)) {
+      logs.push(`检测到环：块 ${current} 重复到达，测试终止`);
+      break;
+    }
+    visited.add(current);
+    const block: Block = byId.get(current)!;
+    logs.push(`[${block.kind}] ${block.title || block.id}`);
+    switch (block.kind) {
+      case 'prompt':
+      case 'knowledge':
+        if (block.prompt) parts.push(block.prompt);
+        break;
+      case 'step':
+        for (const step of block.steps ?? []) parts.push(step);
+        break;
+      case 'human':
+        blocked = {
+          blockId: block.id,
+          instruction: block.humanInstruction || block.prompt || '该块需要人工处理',
+        };
+        logs.push(`需人工处理：${blocked.instruction}`);
+        continue;
+      case 'script':
+        logs.push('本地不执行脚本（桌面端测试环境）');
+        break;
+      case 'decision':
+        // 条件在测试环境无法求值：按第一个分支走并记录。
+        logs.push(`条件「${block.condition ?? ''}」无法在测试环境求值，按第一个分支继续`);
+        break;
+      case 'loop':
+        logs.push(`循环「${block.while ?? ''}」在测试环境按单次执行`);
+        break;
+      case 'parallel':
+        logs.push(`并行块（合并 ${block.merge ?? 'all'}）在测试环境按顺序模拟`);
+        break;
+      case 'tool':
+        logs.push(`调用 MCP 工具 ${block.tool ?? '（未指定）'}：测试环境跳过`);
+        break;
+      case 'subskill':
+        logs.push(`引用技能 ${block.skillRef ?? '（未指定）'}：测试环境不展开`);
+        break;
+      case 'input':
+      case 'output':
+        logs.push(`${block.kind === 'input' ? '输入' : '输出'}变量 ${block.name ?? '（未命名）'}（${block.valueType ?? 'string'}）`);
+        break;
+      case 'constraint':
+        logs.push(`规则：${block.rule ?? ''}`);
+        break;
+      case 'error_handler':
+        logs.push(`失败策略 ${block.onError ?? 'abort'}：测试环境不注入错误`);
+        break;
+      case 'comment':
+        break;
+    }
+    const nexts: Block['next'] = block.next ?? [];
+    if (nexts.length === 0) break;
+    const picked = nexts[0]!;
+    logs.push(`→ 分支「${picked.when}」`);
+    current = byId.has(picked.to) ? picked.to : null;
+    if (!current) logs.push(`分支目标 ${picked.to} 不存在，测试终止`);
+  }
+
+  const output = parts.join('\n\n');
+  return { ok: !blocked, logs, output, blocked };
 }

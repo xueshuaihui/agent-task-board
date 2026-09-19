@@ -8,15 +8,18 @@ import { classifyTransition, REVIEW_EXIT_TARGETS } from '../transitions';
  */
 type Cell = '—' | '✅' | '❌' | '🔒review' | '🔒stop';
 
-const TARGETS: TaskStatus[] = ['BACKLOG', 'READY', 'RUNNING', 'REVIEW', 'DONE', 'FAILED'];
+const TARGETS: TaskStatus[] = [...TASK_STATUS];
 
 const MATRIX: Record<TaskStatus, Cell[]> = {
-  BACKLOG: ['—', '✅', '❌', '❌', '❌', '❌'],
-  READY: ['✅', '—', '❌', '❌', '❌', '❌'],
-  RUNNING: ['❌', '❌', '—', '❌', '❌', '🔒stop'],
-  REVIEW: ['🔒review', '🔒review', '❌', '—', '🔒review', '❌'],
-  DONE: ['❌', '❌', '❌', '❌', '—', '❌'],
-  FAILED: ['✅', '✅', '❌', '❌', '❌', '—'],
+  // 列序 = TASK_STATUS：BACKLOG, READY, RUNNING, BLOCKED, REVIEW, DONE, FAILED
+  BACKLOG: ['—', '✅', '❌', '❌', '❌', '❌', '❌'],
+  READY: ['✅', '—', '❌', '❌', '❌', '❌', '❌'],
+  RUNNING: ['❌', '❌', '—', '❌', '❌', '❌', '🔒stop'],
+  // 8.4 人工块：BLOCKED 行可回需求池/待执行；RUNNING 侧与终态语义一致。
+  BLOCKED: ['✅', '✅', '❌', '—', '❌', '❌', '❌'],
+  REVIEW: ['🔒review', '🔒review', '❌', '❌', '—', '🔒review', '❌'],
+  DONE: ['❌', '❌', '❌', '❌', '❌', '—', '❌'],
+  FAILED: ['✅', '✅', '❌', '❌', '❌', '❌', '—'],
 };
 
 function expected(cell: Cell): string {

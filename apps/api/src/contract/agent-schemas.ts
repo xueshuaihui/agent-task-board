@@ -67,6 +67,13 @@ export const failSchema = leaseTripleSchema.extend({
 
 export const heartbeatSchema = leaseTripleSchema;
 
+/** 8.4 人工块：Agent 执行到人工块时上报，任务转 BLOCKED 等人工处理。 */
+export const blockedSchema = leaseTripleSchema.extend({
+  block_id: z.string().trim().min(1).max(64),
+  block_title: z.string().max(200).default(''),
+  instruction: z.string().trim().min(1).max(2000),
+});
+
 export const reviewFeedbackQuerySchema = z.object({
   task_id: idParam,
   limit: z.coerce.number().int().min(1).max(50).default(5),

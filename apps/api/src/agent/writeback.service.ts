@@ -17,7 +17,7 @@ import { NotificationsService } from '../infra/notifications.service';
 import { PrismaService } from '../infra/prisma.service';
 import { agentOf } from './agent-auth';
 import { AgentQueryService } from './agent-query.service';
-import type { AppendLogInput, CompleteInput, FailInput, ProgressInput } from './agent-inputs';
+import type { AppendLogInput, BlockedInput, CompleteInput, FailInput, ProgressInput } from './agent-inputs';
 import type { LeaseVerdict } from './lease.service';
 import { LeaseService } from './lease.service';
 
@@ -262,6 +262,91 @@ export class WritebackService {
       run_status: orphaned ? 'ABANDONED' : 'FAILED',
       task_status: (orphaned ? verdict.task.status : 'FAILED') as TaskStatus,
       orphaned,
+    };
+  }
+
+  /**
+   * 8.4 人工块：Agent 执行到人工块时上报，任务转 BLOCKED 等人工处理。
+   * Run 置 FAILED 收口（否则任务回 READY 重新认领后它会永远挂在 RUNNING，占住
+   * 「单任务一个活动 Run」的部分唯一索引），error 记人工块指令；租约随转 BLOCKED 清空，
+   * 人工处理完成、BLOCKED→READY 之后由新的认领产生新租约。
+   * 租约已清空，重试的旧三元组与 complete/fail 一样回 410（不做幂等回放）。
+   */
+  async blocked(input: BlockedInput, auth: RequestAuth) {
+    const verdict = await this.leases.verify(input, auth);
+    if (verdict.kind !== 'ok') {
+      // verify 对非 RUNNING 任务按孤儿回写处理（Run 置 ABANDONED）；这里没有可写的状态。
+      throw new ApiException('TASK_NOT_RUNNING', '任务不在执行中，无法转人工阻塞');
+    }
+    const agent = agentOf(auth);
+    const now = nowSql();
+    const instruction = input.instruction;
+    const title = input.block_title || input.block_id;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.taskRun.update({
+        where: { id: verdict.run.id },
+        data: {
+          status: 'FAILED' as const,
+          error: `人工块「${title}」等待人工处理：${instruction}`,
+          finishedAt: now,
+          durationMs: durationMs(verdict.run.startedAt, now),
+        },
+      });
+      await tx.task.update({
+        where: { id: verdict.task.id },
+        data: {
+          status: 'BLOCKED',
+          leaseId: null,
+          leaseExpiresAt: null,
+          currentRunId: null,
+          updatedAt: now,
+        },
+      });
+      await tx.comment.create({
+        data: {
+          id: newId(),
+          taskId: verdict.task.id,
+          runId: verdict.run.id,
+          authorType: 'system',
+          type: 'status_change',
+          content: `Agent 执行到人工块「${title}」，任务转人工阻塞：${instruction.slice(0, 120)}`,
+        },
+      });
+      await tx.comment.create({
+        data: {
+          id: newId(),
+          taskId: verdict.task.id,
+          runId: verdict.run.id,
+          authorType: 'agent',
+          authorName: agent.tokenName,
+          type: 'log',
+          content: instruction,
+        },
+      });
+      await this.audit.record(
+        {
+          actorType: 'agent',
+          actorName: agent.tokenName,
+          action: 'run_writeback',
+          targetType: 'run',
+          targetId: verdict.run.id,
+          before: { status: 'RUNNING', task_status: verdict.task.status },
+          after: { status: 'FAILED', task_status: 'BLOCKED', blocked_by: input.block_id },
+        },
+        tx,
+      );
+    });
+
+    this.events.emit('task.moved', { id: verdict.task.id, from: 'RUNNING', to: 'BLOCKED' });
+    this.events.emit('task.updated', { id: verdict.task.id });
+
+    return {
+      task_id: verdict.task.id,
+      run_id: verdict.run.id,
+      task_status: 'BLOCKED' as TaskStatus,
+      idempotent: false,
+      orphaned: false,
     };
   }
 

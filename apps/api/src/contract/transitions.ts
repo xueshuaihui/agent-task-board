@@ -31,9 +31,21 @@ const MATRIX: Record<TaskStatus, Partial<Record<TaskStatus, TransitionKind>>> = 
   RUNNING: {
     BACKLOG: { kind: 'forbidden', reason: 'running-by-agent' },
     READY: { kind: 'forbidden', reason: 'running-by-agent' },
+    // 8.4 人工块：RUNNING→BLOCKED 只由 Agent 端 POST /tasks/:id/blocked 产生，
+    // 不开放给人拖拽/按钮（拖拽矩阵按「执行中由 Agent 管」拒掉，与其它出边一致）。
+    BLOCKED: { kind: 'forbidden', reason: 'running-by-agent' },
     REVIEW: { kind: 'forbidden', reason: 'running-by-agent' },
     DONE: { kind: 'forbidden', reason: 'running-by-agent' },
     FAILED: { kind: 'form', form: 'stop' },
+  },
+  // 8.4 人工块：人工处理后回 READY 重新认领（或退回需求池）；执行中仍只能由 Agent 产生。
+  BLOCKED: {
+    BACKLOG: { kind: 'direct' },
+    READY: { kind: 'direct' },
+    RUNNING: { kind: 'forbidden', reason: 'running-by-agent' },
+    REVIEW: ILLEGAL,
+    DONE: ILLEGAL,
+    FAILED: ILLEGAL,
   },
   REVIEW: {
     BACKLOG: { kind: 'form', form: 'review' },
@@ -46,6 +58,7 @@ const MATRIX: Record<TaskStatus, Partial<Record<TaskStatus, TransitionKind>>> = 
     BACKLOG: { kind: 'forbidden', reason: 'done-terminal' },
     READY: { kind: 'forbidden', reason: 'done-terminal' },
     RUNNING: { kind: 'forbidden', reason: 'done-terminal' },
+    BLOCKED: { kind: 'forbidden', reason: 'done-terminal' },
     REVIEW: { kind: 'forbidden', reason: 'done-terminal' },
     FAILED: { kind: 'forbidden', reason: 'done-terminal' },
   },

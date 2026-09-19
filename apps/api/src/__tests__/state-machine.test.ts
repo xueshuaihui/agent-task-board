@@ -37,6 +37,7 @@ const MATRIX_45: Record<TaskStatus, Record<TaskStatus, Cell>> = {
     BACKLOG: 'forbid:self',
     READY: 'direct',
     RUNNING: 'forbid:running',
+    BLOCKED: 'forbid:illegal',
     REVIEW: 'forbid:illegal',
     DONE: 'forbid:illegal',
     FAILED: 'forbid:illegal',
@@ -45,6 +46,7 @@ const MATRIX_45: Record<TaskStatus, Record<TaskStatus, Cell>> = {
     BACKLOG: 'direct',
     READY: 'forbid:self',
     RUNNING: 'forbid:running',
+    BLOCKED: 'forbid:illegal',
     REVIEW: 'forbid:illegal',
     DONE: 'forbid:illegal',
     FAILED: 'forbid:illegal',
@@ -53,14 +55,26 @@ const MATRIX_45: Record<TaskStatus, Record<TaskStatus, Cell>> = {
     BACKLOG: 'forbid:running',
     READY: 'forbid:running',
     RUNNING: 'forbid:self',
+    // 8.4：RUNNING→BLOCKED 由 Agent 端 POST /tasks/:id/blocked 产生，不走 transition。
+    BLOCKED: 'forbid:running',
     REVIEW: 'forbid:running',
     DONE: 'forbid:running',
     FAILED: 'form:stop',
+  },
+  BLOCKED: {
+    BACKLOG: 'direct',
+    READY: 'direct',
+    RUNNING: 'forbid:running',
+    BLOCKED: 'forbid:self',
+    REVIEW: 'forbid:illegal',
+    DONE: 'forbid:illegal',
+    FAILED: 'forbid:illegal',
   },
   REVIEW: {
     BACKLOG: 'form:review',
     READY: 'form:review',
     RUNNING: 'forbid:running',
+    BLOCKED: 'forbid:illegal',
     REVIEW: 'forbid:self',
     DONE: 'form:review',
     FAILED: 'forbid:illegal',
@@ -69,14 +83,15 @@ const MATRIX_45: Record<TaskStatus, Record<TaskStatus, Cell>> = {
     BACKLOG: 'forbid:done',
     READY: 'forbid:done',
     RUNNING: 'forbid:done',
+    BLOCKED: 'forbid:done',
     REVIEW: 'forbid:done',
     DONE: 'forbid:self',
     FAILED: 'forbid:done',
-  },
-  FAILED: {
+  },  FAILED: {
     BACKLOG: 'direct',
     READY: 'direct',
     RUNNING: 'forbid:running',
+    BLOCKED: 'forbid:illegal',
     REVIEW: 'forbid:illegal',
     DONE: 'forbid:illegal',
     FAILED: 'forbid:self',
@@ -211,7 +226,7 @@ describe('执行中与终态的额外约束', () => {
   });
 
   it('非执行中的任务不需要停止：stop 回 409 TASK_NOT_RUNNING', async () => {
-    for (const status of ['BACKLOG', 'READY', 'REVIEW', 'DONE', 'FAILED'] as const) {
+    for (const status of ['BACKLOG', 'READY', 'BLOCKED', 'REVIEW', 'DONE', 'FAILED'] as const) {
       const fixture = await taskIn(t, status, `无需停止 ${status}`);
       const res = await ui.post(`${API}/tasks/${fixture.id}/stop`, {});
       expect(res.status, `${status} 不该能停止`).toBe(409);
@@ -247,7 +262,7 @@ describe('执行中与终态的额外约束', () => {
   });
 
   it('只有已完成可以归档，其余五列一律 409', async () => {
-    for (const status of ['BACKLOG', 'READY', 'RUNNING', 'REVIEW', 'FAILED'] as const) {
+    for (const status of ['BACKLOG', 'READY', 'RUNNING', 'BLOCKED', 'REVIEW', 'FAILED'] as const) {
       const fixture = await taskIn(t, status, `不能归档 ${status}`);
       const res = await ui.post(`${API}/tasks/${fixture.id}/archive`, {});
       expect(res.status, `${status} 不该能归档`).toBe(409);

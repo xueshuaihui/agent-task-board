@@ -23,6 +23,8 @@ export const ERROR_STATUS = {
   LEASE_REVOKED: 410,
   VALIDATION_FAILED: 422,
   INVALID_PARAM: 422,
+  // 8.8 技能源：git/http 远程源本期不实现
+  NOT_IMPLEMENTED: 501,
   INTERNAL: 500,
 } as const satisfies Record<string, number>;
 

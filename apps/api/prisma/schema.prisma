@@ -301,6 +301,7 @@ model Skill {
   tags            String  @default("[]")
   currentVersion  String  @default("v0.1.0") @map("current_version")
   content         String  @default("{\"blocks\":[],\"entryBlockId\":null}")
+  testCases       String  @default("[]") @map("test_cases")
   mcpDependencies String  @default("[]") @map("mcp_dependencies")
   // 8.8 技能源：local（本地创作）/ market（市场订阅落地）/ builtin / git / http / directory
   source          String  @default("local") @map("source")
@@ -318,6 +319,7 @@ model SkillVersion {
   skillId         String @map("skill_id")
   version         String
   content         String @default("{\"blocks\":[],\"entryBlockId\":null}")
+  testCases       String @default("[]") @map("test_cases")
   mcpDependencies String @default("[]") @map("mcp_dependencies")
   changelog       String @default("")
   createdAt       String @default(dbgenerated("(datetime('now'))")) @map("created_at")

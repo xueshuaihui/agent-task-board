@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/com
 import { ApiException } from '../contract/errors';
 import {
   appendLogSchema,
+  blockedSchema,
   claimSchema,
   completeSchema,
   failSchema,
@@ -10,6 +11,7 @@ import {
   progressSchema,
   reviewFeedbackLimitSchema,
   type AppendLogInput,
+  type BlockedInput,
   type ClaimInput,
   type CompleteInput,
   type FailInput,
@@ -85,6 +87,18 @@ export class AgentController {
   fail(@Param('id') id: string, @Body(zod(failSchema)) input: FailInput, @Auth() auth: RequestAuth) {
     assertSameTask(id, input.task_id);
     return this.writeback.fail(input, auth);
+  }
+
+  /** 8.4 人工块：Agent 执行到人工块时上报，任务转 BLOCKED，人工处理后回 READY 重新认领。 */
+  @Post('tasks/:id/blocked')
+  @HttpCode(200)
+  blocked(
+    @Param('id') id: string,
+    @Body(zod(blockedSchema)) input: BlockedInput,
+    @Auth() auth: RequestAuth,
+  ) {
+    assertSameTask(id, input.task_id);
+    return this.writeback.blocked(input, auth);
   }
 
   @Post('tasks/:id/heartbeat')

@@ -86,6 +86,10 @@ export function applyMigrations(logger?: Pick<AppLogger, 'log' | 'error'>): numb
   const db = new DatabaseSync(paths.dbFile());
   const applied: number[] = [];
   try {
+    // 迁移期统一关闭外键（node:sqlite 默认打开）：涉及重建父表的迁移（如 0005 的 tasks）
+    // 依赖「DROP TABLE 不做隐式 DELETE 级联」，且 PRAGMA foreign_keys 无法在事务内切换，
+    // 所以必须在进入各迁移的 BEGIN 之前在连接上关掉，跑完再恢复。
+    db.exec('PRAGMA foreign_keys = OFF');
     const row = db.prepare('PRAGMA user_version').get() as { user_version?: number };
     let version = Number(row?.user_version ?? 0);
     const migrations = collectMigrations();
@@ -113,6 +117,7 @@ export function applyMigrations(logger?: Pick<AppLogger, 'log' | 'error'>): numb
       logger?.log(`已应用迁移 ${migration.name}`);
     }
   } finally {
+    db.exec('PRAGMA foreign_keys = ON');
     db.close();
   }
   return applied;

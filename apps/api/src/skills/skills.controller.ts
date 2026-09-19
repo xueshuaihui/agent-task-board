@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Res,
   UploadedFile,
@@ -19,14 +20,19 @@ import { zod } from '../infra/zod.pipe';
 import { SkillsService, SKILL_IMPORT_MAX_BYTES } from './skills.service';
 import {
   skillCreateSchema,
+  skillImportMarkdownSchema,
   skillListQuerySchema,
   skillPatchSchema,
   skillRollbackSchema,
+  skillSourceScanSchema,
+  skillSourcesSchema,
   skillTestSchema,
   skillVersionCreateSchema,
   type SkillCreateInput,
+  type SkillImportMarkdownInput,
   type SkillListQuery,
   type SkillPatchInput,
+  type SkillSourcesInput,
   type SkillVersionCreateInput,
 } from './skills.dto';
 
@@ -60,6 +66,31 @@ export class SkillsController {
   )
   import(@UploadedFile() file: Express.Multer.File | undefined, @Auth() auth: RequestAuth) {
     return this.skills.import(file, auth.accountId);
+  }
+
+  /** 8.7 SKILL.md / Cursor Rules（.mdc）导入：JSON {filename, content}。 */
+  @Post('import-markdown')
+  importMarkdown(
+    @Body(zod(skillImportMarkdownSchema)) body: SkillImportMarkdownInput,
+    @Auth() auth: RequestAuth,
+  ) {
+    return this.skills.importMarkdown(body, auth.accountId);
+  }
+
+  /** 8.8 技能源：settings kv 存 JSON 数组。静态段必须排在 `:id` 系列之前。 */
+  @Get('sources')
+  async listSources() {
+    return { items: await this.skills.listSources() };
+  }
+
+  @Put('sources')
+  async saveSources(@Body(zod(skillSourcesSchema)) body: SkillSourcesInput) {
+    return { items: await this.skills.saveSources(body) };
+  }
+
+  @Post('sources/scan')
+  scanSource(@Body(zod(skillSourceScanSchema)) body: { source_id: string }) {
+    return this.skills.scanSource(body.source_id);
   }
 
   @Get(':id')
@@ -117,5 +148,11 @@ export class SkillsController {
   @Get(':id/export')
   async export(@Param('id') id: string, @Auth() auth: RequestAuth, @Res() res: Response) {
     await this.skills.export(id, auth.accountId, res);
+  }
+
+  /** 8.7 导出 SKILL.md：text/markdown 附件（name.md）。 */
+  @Get(':id/export-markdown')
+  async exportMarkdown(@Param('id') id: string, @Auth() auth: RequestAuth, @Res() res: Response) {
+    await this.skills.exportMarkdown(id, auth.accountId, res);
   }
 }

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   appendLogSchema,
+  blockedSchema,
   claimSchema,
   completeSchema,
   failSchema,
@@ -18,6 +19,7 @@ export type ProgressInput = z.infer<typeof progressSchema>;
 export type AppendLogInput = z.infer<typeof appendLogSchema>;
 export type CompleteInput = z.infer<typeof completeSchema>;
 export type FailInput = z.infer<typeof failSchema>;
+export type BlockedInput = z.infer<typeof blockedSchema>;
 export type ReviewFeedbackInput = z.infer<typeof reviewFeedbackQuerySchema>;
 
 /** 12 章：`get_task` 是只读工具，不需要三元组（三元组只在写回侧强制）。 */
@@ -29,6 +31,7 @@ export const reviewFeedbackLimitSchema = reviewFeedbackQuerySchema.omit({ task_i
 
 export {
   appendLogSchema,
+  blockedSchema,
   claimSchema,
   completeSchema,
   failSchema,
