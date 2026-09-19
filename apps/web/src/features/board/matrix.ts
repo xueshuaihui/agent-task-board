@@ -73,6 +73,11 @@ export const DIRECT_TRANSITIONS = {
   BACKLOG: [{ key: 'confirm_ready', to: 'READY', label: '确认可执行', menuLabel: '确认可执行' }],
   READY: [{ key: 'withdraw', to: 'BACKLOG', label: '撤回', menuLabel: '移回需求池' }],
   RUNNING: [],
+  // 8.4：人工阻塞由 Agent 端 blocked 端点产生，人工处理后的出路与异常/失败一致。
+  BLOCKED: [
+    { key: 'retry', to: 'READY', label: '重试', menuLabel: '重试到待执行' },
+    { key: 'back_to_backlog', to: 'BACKLOG', label: '退回需求池', menuLabel: '移回需求池' },
+  ],
   REVIEW: [],
   DONE: [],
   FAILED: [
@@ -101,24 +106,35 @@ const FORBIDDEN: SpecialCell = { kind: 'forbidden', reason: 'illegal' };
 
 /** 4.5 表的 ❌ / 🔒 两态（4.1 列序 = 行序）。✅ 不在这里，见 `DIRECT_TRANSITIONS`。 */
 const RESTRICTIONS: { [F in TaskStatus]: Row<F> } = {
-  BACKLOG: { RUNNING: RUNNING_ONLY, REVIEW: FORBIDDEN, DONE: FORBIDDEN, FAILED: FORBIDDEN },
-  READY: { RUNNING: RUNNING_ONLY, REVIEW: FORBIDDEN, DONE: FORBIDDEN, FAILED: FORBIDDEN },
+  BACKLOG: { RUNNING: RUNNING_ONLY, BLOCKED: FORBIDDEN, REVIEW: FORBIDDEN, DONE: FORBIDDEN, FAILED: FORBIDDEN },
+  READY: { RUNNING: RUNNING_ONLY, BLOCKED: FORBIDDEN, REVIEW: FORBIDDEN, DONE: FORBIDDEN, FAILED: FORBIDDEN },
   RUNNING: {
     BACKLOG: RUNNING_ONLY,
     READY: RUNNING_ONLY,
+    // RUNNING→BLOCKED 只由 Agent 端 POST /tasks/:id/blocked 产生（8.4），UI 不提供。
+    BLOCKED: RUNNING_ONLY,
     REVIEW: RUNNING_ONLY,
     DONE: RUNNING_ONLY,
     FAILED: { kind: 'form', form: 'stop', action: FORM_ACTION.stop },
   },
+  BLOCKED: { RUNNING: RUNNING_ONLY, REVIEW: FORBIDDEN, DONE: FORBIDDEN, FAILED: FORBIDDEN },
   REVIEW: {
     BACKLOG: { kind: 'form', form: 'review', action: FORM_ACTION.reject },
     READY: { kind: 'form', form: 'review', action: FORM_ACTION.reject },
     RUNNING: RUNNING_ONLY,
+    BLOCKED: FORBIDDEN,
     DONE: { kind: 'form', form: 'review', action: FORM_ACTION.review },
     FAILED: FORBIDDEN,
   },
-  DONE: { BACKLOG: DONE_ONLY, READY: DONE_ONLY, RUNNING: DONE_ONLY, REVIEW: DONE_ONLY, FAILED: DONE_ONLY },
-  FAILED: { RUNNING: RUNNING_ONLY, REVIEW: FORBIDDEN, DONE: FORBIDDEN },
+  DONE: {
+    BACKLOG: DONE_ONLY,
+    READY: DONE_ONLY,
+    RUNNING: DONE_ONLY,
+    BLOCKED: DONE_ONLY,
+    REVIEW: DONE_ONLY,
+    FAILED: DONE_ONLY,
+  },
+  FAILED: { RUNNING: RUNNING_ONLY, BLOCKED: FORBIDDEN, REVIEW: FORBIDDEN, DONE: FORBIDDEN },
 };
 
 /**

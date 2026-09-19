@@ -241,13 +241,14 @@ function layout(content: SkillContent): {
     ids.forEach((id, rowIndex) => {
       const block = byId.get(id);
       if (!block) return;
+      /* 流程图编辑器写入的 block.pos 优先（手排位置）；没有则用 BFS 网格坐标。 */
       nodes.push({
         id,
         label: block.title || '未命名块',
         kindLabel: BLOCK_KIND_META[block.kind].label,
         kindClass: BLOCK_KIND_META[block.kind].kindClass,
-        x: level * (NODE_WIDTH + COL_GAP),
-        y: rowIndex * (NODE_HEIGHT + ROW_GAP),
+        x: block.pos?.x ?? level * (NODE_WIDTH + COL_GAP),
+        y: block.pos?.y ?? rowIndex * (NODE_HEIGHT + ROW_GAP),
       });
     });
   }
@@ -262,8 +263,7 @@ function layout(content: SkillContent): {
       edges.push({ from, to: next.to ? nodeById.get(next.to) : undefined, when: next.when });
     }
   }
-  const width = Math.max(1, ((columns.size || 1) - 1) * (NODE_WIDTH + COL_GAP) + NODE_WIDTH);
-  const rowCount = Math.max(1, ...[...columns.values()].map((ids) => ids.length));
-  const height = rowCount * NODE_HEIGHT + (rowCount - 1) * ROW_GAP;
+  const width = Math.max(1, ...nodes.map((node) => node.x + NODE_WIDTH));
+  const height = Math.max(1, ...nodes.map((node) => node.y + NODE_HEIGHT));
   return { nodes, edges, width, height };
 }

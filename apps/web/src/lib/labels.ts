@@ -22,6 +22,7 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
   BACKLOG: '需求池',
   READY: '待执行',
   RUNNING: '执行中',
+  BLOCKED: '人工阻塞',
   REVIEW: '待审核',
   DONE: '已完成',
   FAILED: '异常/失败',

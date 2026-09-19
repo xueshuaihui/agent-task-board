@@ -6,7 +6,7 @@ import { BlockEditor } from './block-editor';
 import { usePatchSkill, useSkill } from './hooks';
 import { SKILL_STATUS_META, emptyContent } from './meta';
 import { PublishDialog } from './publish-dialog';
-import { SkillFlowView } from './skill-flow-view';
+import { SkillFlowEditor } from './skill-flow-editor';
 import { SourceEditor } from './source-editor';
 import { StructuredEditor } from './structured-editor';
 import type { Skill, SkillContent } from './types';
@@ -312,7 +312,14 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
             <Skeleton className="h-64 w-full" />
           )
         ) : (
-          <SkillFlowView content={content} className="h-[60vh]" />
+          <SkillFlowEditor
+            content={content}
+            onChange={(next) => {
+              setContent(next);
+              setDirty(true);
+            }}
+            className="h-[65vh]"
+          />
         )}
       </div>
 

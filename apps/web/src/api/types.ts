@@ -13,6 +13,8 @@ export const TASK_STATUSES = [
   'BACKLOG',
   'READY',
   'RUNNING',
+  // 8.4 人工块：Agent 执行到人工块时转人工阻塞，人工处理后回 READY 重新认领。
+  'BLOCKED',
   'REVIEW',
   'DONE',
   'FAILED',

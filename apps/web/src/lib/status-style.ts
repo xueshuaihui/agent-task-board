@@ -34,6 +34,12 @@ export const STATUS_STYLE: Record<TaskStatus, StatusStyle> = {
     text: 'text-status-running',
     bar: 'bg-status-running',
   },
+  BLOCKED: {
+    dot: 'bg-status-blocked',
+    soft: 'bg-status-blocked-soft',
+    text: 'text-status-blocked',
+    bar: 'bg-status-blocked',
+  },
   REVIEW: {
     dot: 'bg-status-review',
     soft: 'bg-status-review-soft',

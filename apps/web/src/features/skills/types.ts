@@ -88,6 +88,11 @@ export interface SkillBlock {
   timeoutMs?: number;
   /** comment 块的说明（仅说明，不执行）。 */
   note?: string;
+  /**
+   * 流程图画布上的坐标（流程图视图写入；content 是 passthrough JSON，后端原样存储）。
+   * 其他模式不读不写，只透传，删块/改字段时随块对象整体保留。
+   */
+  pos?: { x: number; y: number };
 }
 
 export interface SkillMcpDependency {
