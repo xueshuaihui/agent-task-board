@@ -76,19 +76,41 @@ afterAll(async () => {
 });
 
 describe('市场：内置技能与浏览', () => {
-  it('启动种子：8 个内置技能全部 PUBLISHED，publisher 显示「官方」', async () => {
+  it('启动种子：21 个内置技能全部 PUBLISHED，publisher 显示「官方」', async () => {
     const res = await bob.get(`${API}/market/listings`);
     expect(res.status).toBe(200);
-    expect(res.body.total).toBeGreaterThanOrEqual(8);
+    expect(res.body.total).toBeGreaterThanOrEqual(21);
     const builtins = res.body.items.filter((row: any) => row.source === 'builtin');
-    expect(builtins.length).toBe(8);
+    expect(builtins.length).toBe(21);
     for (const row of builtins) {
       expect(row.status).toBe('PUBLISHED');
       expect(row.publisher_name).toBe('官方');
       expect(row.content === undefined).toBe(true); // 列表不带 content
     }
     const slugs = builtins.map((row: any) => row.slug);
-    for (const slug of ['code-review', 'bug-fix', 'unit-testing', 'performance-optimization', 'security-scan', 'regression-testing', 'deployment-pipeline', 'doc-generation']) {
+    for (const slug of [
+      'code-review',
+      'bug-fix',
+      'unit-testing',
+      'performance-optimization',
+      'security-scan',
+      'regression-testing',
+      'deployment-pipeline',
+      'doc-generation',
+      'commit-message',
+      'readme-generation',
+      'refactoring-advice',
+      'regex-explain',
+      'sql-optimization',
+      'api-design-review',
+      'code-explain',
+      'doc-translation',
+      'weekly-report',
+      'pr-description',
+      'coverage-gap-analysis',
+      'incident-postmortem',
+      'log-analysis',
+    ]) {
       expect(slugs).toContain(slug);
     }
   });
@@ -107,7 +129,7 @@ describe('市场：内置技能与浏览', () => {
     const client = await bob.get(
       `${API}/market/listings?compatible_client=${encodeURIComponent('Claude Code')}`,
     );
-    expect(client.body.items.length).toBe(8);
+    expect(client.body.items.length).toBe(21);
 
     const none = await bob.get(
       `${API}/market/listings?compatible_client=${encodeURIComponent('不存在的客户端')}`,
