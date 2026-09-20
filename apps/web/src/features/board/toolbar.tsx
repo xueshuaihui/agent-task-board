@@ -5,6 +5,7 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   ClipboardList,
+  Kanban,
   Layers,
   List,
   Network,
@@ -19,12 +20,12 @@ import { useFilterStore } from '@/app/store/filters';
 import { priorityText } from '@/lib/labels';
 import { cn } from '@/lib/cn';
 import { Button, Menu, MenuCaret, Tooltip, type MenuItem, type MenuProps } from '@/components/ui';
-import { openDependencyGraph } from '@/features/requirements';
 import { GroupSwitcher } from '@/features/groups';
 import { boardFilterCount, VIEW_ORDER } from './model';
 import { GroupSelector } from './grouping/GroupSelector';
 import { GROUP_DIMENSIONS, type GroupDimensionKey } from './grouping/dimensions';
 import { useGroupingStore } from './grouping/useGroupingState';
+import { useViewPrefsStore } from './flow/view-prefs';
 
 /**
  * 3.4 工具栏：48px 高、左右 24px（沿用 `main` 的 padding），底边 1px。
@@ -153,32 +154,10 @@ export function BoardToolbar({ onCreate, grouping, graphTasks }: BoardToolbarPro
         </div>
       ) : null}
 
-      {/* 0919 4.11：任务列表不再是顶层导航，「列表视图」从看板工具栏进入（依赖图按钮旁）。 */}
-      {graphTasks ? (
-        <Tooltip content="切换到任务列表视图（0919 4.11）">
-          <Button
-            variant="default"
-            className="h-8 shrink-0"
-            icon={<List className="size-4" aria-hidden />}
-            onClick={() => navigate('tasks')}
-          >
-            列表视图
-          </Button>
-        </Tooltip>
-      ) : null}
-
-      {graphTasks ? (
-        <Tooltip content="查看当前看板任务的依赖关系图（2.md 8.1）">
-          <Button
-            variant="default"
-            className="h-8 shrink-0"
-            icon={<Network className="size-4" aria-hidden />}
-            onClick={() => openDependencyGraph(graphTasks)}
-          >
-            依赖图
-          </Button>
-        </Tooltip>
-      ) : null}
+      {/* 0919 4.11 + v0.0.4 W5 §6.4.1：看板/列表/流程图三视图切换。
+          列表是独立路由（点击即跳转），看板/流程图是本页显示模式（记忆到用户偏好 prefs `board.view`）；
+          旧的「列表视图」「依赖图」两个按钮由这一段取代（需求抽屉里的依赖图弹窗入口不动）。 */}
+      {graphTasks ? <DisplaySegmented /> : null}
 
       <CreateMenu onCreate={onCreate} />
 
@@ -208,6 +187,54 @@ function ViewSegmented({ value, onChange }: { value: BoardView; onChange: (view:
                 : 'border-transparent text-text-secondary hover:bg-bg-muted hover:text-text-primary',
             )}
           >
+            {item.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------- 三视图切换（W5 §6.4.1） */
+
+/**
+ * 看板 / 列表 / 流程图：§6.4 布局图的段控件从依赖图弹窗升级为第三视图后，
+ * 「当前视图」由 `useViewPrefsStore.mode`（看板内）+ 路由（列表为独立页）共同决定。
+ * 活动态在列表页拿不到（列表页不挂本工具栏），段控件只在看板页出现，行为沿用 0919 4.11。
+ */
+function DisplaySegmented() {
+  const mode = useViewPrefsStore((state) => state.mode);
+  const setMode = useViewPrefsStore((state) => state.setMode);
+  const items = [
+    { id: 'board', label: '看板', icon: <Kanban className="size-3.5" aria-hidden /> },
+    { id: 'list', label: '列表', icon: <List className="size-3.5" aria-hidden /> },
+    { id: 'flow', label: '流程图', icon: <Network className="size-3.5" aria-hidden /> },
+  ] as const;
+  return (
+    <div role="group" aria-label="视图切换" className="flex shrink-0 items-center gap-1" data-testid="display-segmented">
+      {items.map((item) => {
+        const active = item.id === mode;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            aria-pressed={active}
+            data-testid={`display-${item.id}`}
+            onClick={() => {
+              if (item.id === 'list') {
+                navigate('tasks');
+                return;
+              }
+              setMode(item.id);
+            }}
+            className={cn(
+              'inline-flex h-7 shrink-0 items-center gap-1 rounded-control border px-2 text-body transition-colors duration-120 ease-out',
+              active
+                ? 'border-border-strong bg-bg-surface text-primary'
+                : 'border-transparent text-text-secondary hover:bg-bg-muted hover:text-text-primary',
+            )}
+          >
+            {item.icon}
             {item.label}
           </button>
         );

@@ -27,6 +27,9 @@ import { dropStates, dropVerdict } from './matrix';
 import { COLUMN_ORDER, isDefaultBoardView } from './model';
 import { useBoardMutations, type BoardMutations } from './mutations';
 import { QuickCreateDialog, type QuickCreateTarget } from './quick-create';
+import { FlowBoardView } from './flow/FlowBoardView';
+import { useViewPrefsStore } from './flow/view-prefs';
+import { useDependencyEdges } from '../dependency-graph/useDependencyGraph';
 import { BoardToolbar } from './toolbar';
 import { toGroupable } from './grouping/dimensions';
 import { applyLaneOrder, buildSwimlanes, filterLanes } from './grouping/grouping';
@@ -66,6 +69,13 @@ export function BoardPage() {
   const total = columns.reduce((sum, column) => sum + column.tasks.length, 0);
   /** 2.md 8.1：依赖图入口的数据 = 当前看板可见任务（六列拉平，泳道模式同源）。 */
   const graphTasks = useMemo(() => columns.flatMap((column) => column.tasks), [columns]);
+
+  /* -------------------------------------------- v0.0.4 W5 流程图第三视图（§6.4.1） */
+
+  // 显示模式记忆在 prefs `board.view`（§6.4.9「视图选择记忆到用户偏好」）。
+  const displayMode = useViewPrefsStore((state) => state.mode);
+  // 依赖边只在流程图打开时才逐任务拉取；与详情抽屉「依赖」Tab 共享缓存。
+  const dependencyEdges = useDependencyEdges(graphTasks, displayMode === 'flow');
 
   /* ------------------------------------------------------ 分组（泳道）接线 */
 
@@ -207,6 +217,15 @@ export function BoardPage() {
             />
           ))}
         </ColumnRow>
+      ) : displayMode === 'flow' ? (
+        // §6.4.1 第三视图：整页画布替换列/泳道区，工具栏与筛选、分组切换器共享不动。
+        <FlowBoardView
+          tasks={graphTasks}
+          edges={dependencyEdges.edges}
+          edgesLoading={dependencyEdges.loading}
+          mutations={mutations}
+          onRequestDelete={setDeleteTarget}
+        />
       ) : total === 0 && defaultView ? (
         // 3.6：只有「整张看板空」才替掉六列；筛选后的空态由折叠列 + 工具栏那句文案表达。
         <BoardEmpty onCreate={() => setQuick({ target: 'BACKLOG' })} />

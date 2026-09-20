@@ -436,3 +436,19 @@
 .atb-rf .react-flow__edge.selected .react-flow__edge-path {
   stroke-width: 2;
 }
+
+/* ------------------------------------------------- v0.0.4 W5 流程图第三视图 */
+
+/* §6.4.4 悬停高亮主色：BaseEdge 的 inline stroke 优先级高，用 !important 覆盖。 */
+.react-flow__edge .atb-flow-edge:hover {
+  stroke: var(--color-primary) !important;
+}
+/* 聚焦/淡出态：范围外连线降透明。 */
+.react-flow__edge .atb-flow-edge--dimmed {
+  opacity: 0.25;
+}
+/* 画布选中框（框选多选，§6.4.10 SelectionBox）：token 色描边。 */
+.react-flow__selection {
+  border: 1px solid var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
