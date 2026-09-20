@@ -12,6 +12,11 @@ import type { OnError, ParallelMerge, SkillBlock, SkillBlockKind, SkillContent, 
  */
 
 export interface SkillFrontmatter {
+  /**
+   * v0.0.4 W2 r2（§9.2）：技能唯一 ID 终身不变、随导出持久——导出必带；
+   * 无 id 的历史文件导入时可选（缺省由服务端分配）。与 api 侧 skill-markdown.ts 镜像。
+   */
+  id?: string;
   name: string;
   description: string;
   version: string;
@@ -106,6 +111,8 @@ export function blocksToMarkdown(content: SkillContent, frontmatter: SkillFrontm
     content.blocks.find((block) => block.id === id)?.title || id;
   const fmLines = [
     '---',
+    // r2：id 随行导出，分享出去的 SKILL.md 再导入按同 id 识别为同一技能。
+    ...(frontmatter.id ? [`id: ${frontmatter.id}`] : []),
     `name: ${frontmatter.name}`,
     `description: ${frontmatter.description.replace(/\n/g, ' ')}`,
     `version: ${toSemver(frontmatter.version)}`,
@@ -156,6 +163,7 @@ function parseFrontmatter(source: string): { frontmatter: SkillFrontmatter | nul
   }
   return {
     frontmatter: {
+      id: get('id') || undefined,
       name: get('name'),
       description: get('description'),
       version: toSemver(get('version')),

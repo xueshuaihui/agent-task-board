@@ -17,6 +17,13 @@ export type SkillType =
 export type SkillStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
 
 /**
+ * v0.0.4 W2 技能三来源（§9.1，与 api SKILL_ORIGINS/0010 迁移 CHECK 同词表）：
+ * default=内置默认（只读）/ custom=自定义（用户创建）/ imported=三方（手动导入）。
+ * r2：唯一性由 id 保证、name 允许重名；三方技能不再有「导入来源」概念。
+ */
+export type SkillOrigin = 'default' | 'custom' | 'imported';
+
+/**
  * 块类型（1.md 8.3 表，PRD 15 类）。后端 content 是 passthrough JSON，
  * 前端 schema 自由扩展，后端原样存储。
  */
@@ -123,6 +130,10 @@ export interface Skill {
   current_version: string;
   content: SkillContent;
   mcp_dependencies: SkillMcpDependency[];
+  /** W2 三来源标记（列表/详情展示 §9.10）。 */
+  source: SkillOrigin;
+  /** 默认技能只读（后端按 source==='default' 推导）。 */
+  readonly: boolean;
   created_at: string;
   updated_at: string;
   /** 详情接口才返回。 */
@@ -135,6 +146,8 @@ export interface SkillQuery {
   type?: SkillType | '';
   status?: SkillStatus | '';
   tag?: string;
+  /** W2：按三来源筛选。 */
+  source?: SkillOrigin | '';
 }
 
 export interface SkillListResult {
@@ -171,8 +184,9 @@ export interface SkillTestResult {
   output: string;
 }
 
-/** GET /skills/:id/export 的 .atskill 文件内容。 */
+/** GET /skills/:id/export 的 .atskill 文件内容（W2 r2：必带 id，导入按同 id 归一）。 */
 export interface SkillExportPayload {
+  id: string;
   name: string;
   type: SkillType;
   content: SkillContent;
@@ -180,6 +194,9 @@ export interface SkillExportPayload {
   mcpDependencies: SkillMcpDependency[];
   exportedAt: string;
 }
+
+/** 导入冲突策略（§9.8.4，同 ID 判定）：默认 fail=409 让用户选覆盖/跳过。 */
+export type SkillImportConflict = 'fail' | 'overwrite' | 'skip';
 
 /** 绑定任务列表（契约补充：GET /skills/:id/tasks，后端按此实现，见 README）。 */
 export interface SkillBoundTask {

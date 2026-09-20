@@ -16,11 +16,11 @@ import { CreateSkillDialog } from './create-skill-dialog';
 import { CopySkillPicker } from './copy-skill-picker';
 import { ImportCenterDialog } from './import-center-dialog';
 import { useCreateSkill, useDeleteSkill, useSkills } from './hooks';
-import { SKILL_STARTER_TEMPLATES, SKILL_STATUS_META, SKILL_TYPE_OPTIONS } from './meta';
+import { SKILL_ORIGIN_OPTIONS, SKILL_STARTER_TEMPLATES, SKILL_STATUS_META, SKILL_TYPE_OPTIONS } from './meta';
 import { SkillCard } from './skill-card';
 import { SkillDetailDrawer } from './skill-detail-drawer';
 import { SkillEditorPage } from './skill-editor-page';
-import type { Skill, SkillQuery, SkillStatus, SkillType } from './types';
+import type { Skill, SkillOrigin, SkillQuery, SkillStatus, SkillType } from './types';
 
 /**
  * 技能库页（2.md 10.1/10.2）。路由：`#/skills`；编辑器以查询参数挂载
@@ -41,16 +41,28 @@ export function SkillLibraryPage() {
   const [keywordInput, setKeywordInput] = useState('');
   const [type, setType] = useState<SkillType | ''>('');
   const [status, setStatus] = useState<SkillStatus | ''>('');
+  const [source, setSource] = useState<SkillOrigin | ''>('');
 
   /* `?edit=` 挂编辑器；其余查询参数留给后续（如 tag 深链）。 */
   const search = typeof window !== 'undefined' ? window.location.hash.split('?')[1] ?? '' : '';
   const editingId = new URLSearchParams(search).get('edit');
 
   const query: SkillQuery = useMemo(
-    () => ({ keyword: keywordInput || undefined, type: type || undefined, status: status || undefined }),
-    [keywordInput, type, status],
+    () => ({
+      keyword: keywordInput || undefined,
+      type: type || undefined,
+      status: status || undefined,
+      source: source || undefined,
+    }),
+    [keywordInput, type, status, source],
   );
   const skills = useSkills(query);
+  // r2 允许重名：同名集合驱动卡片上的 id 短后缀消歧（§9.2）。
+  const duplicateNames = useMemo(() => {
+    const seen = new Map<string, number>();
+    for (const item of skills.data?.items ?? []) seen.set(item.name, (seen.get(item.name) ?? 0) + 1);
+    return new Set([...seen.entries()].filter(([, count]) => count > 1).map(([name]) => name));
+  }, [skills.data]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createTemplateId, setCreateTemplateId] = useState<string | null | undefined>(undefined);
@@ -87,9 +99,10 @@ export function SkillLibraryPage() {
       .catch((error) => toast.error('复制失败', errorMessage(error)));
   };
 
-  /** SKILL.md 导出：markdown.ts 的 blocksToMarkdown 直接生成下载。 */
+  /** SKILL.md 导出：markdown.ts 的 blocksToMarkdown 直接生成下载（r2：frontmatter 必带 id）。 */
   const exportMarkdown = (skill: Skill) => {
     const markdown = blocksToMarkdown(skill.content, {
+      id: skill.id,
       name: skill.name,
       description: skill.description,
       version: skill.current_version,
@@ -221,7 +234,7 @@ export function SkillLibraryPage() {
     );
   }
 
-  const filtersActive = Boolean(keywordInput || type || status);
+  const filtersActive = Boolean(keywordInput || type || status || source);
   const isEmptyLibrary = !filtersActive && (skills.data?.items.length ?? 0) === 0;
 
   return (
@@ -267,6 +280,14 @@ export function SkillLibraryPage() {
             })),
           ]}
           onChange={(event) => setStatus(event.target.value as SkillStatus | '')}
+        />
+        {/* W2 §9.1：按三来源筛选（默认/自定义/三方）。 */}
+        <Select
+          className="w-36"
+          value={source}
+          placeholder="全部来源"
+          options={[{ value: '', label: '全部来源' }, ...SKILL_ORIGIN_OPTIONS]}
+          onChange={(event) => setSource(event.target.value as SkillOrigin | '')}
         />
       </div>
 
@@ -314,6 +335,7 @@ export function SkillLibraryPage() {
                 setKeywordInput('');
                 setType('');
                 setStatus('');
+                setSource('');
               }}
             >
               清除筛选
@@ -326,6 +348,7 @@ export function SkillLibraryPage() {
             <SkillCard
               key={skill.id}
               skill={skill}
+              duplicateName={duplicateNames.has(skill.name)}
               onOpen={(target) => setDetailId(target.id)}
               onEdit={openEditor}
               onPublish={openEditor}
@@ -357,7 +380,7 @@ export function SkillLibraryPage() {
           setImportOpen(false);
           setDetailId(skill.id);
         }}
-        existingNames={(skills.data?.items ?? []).map((item) => item.name)}
+        existingSkills={skills.data?.items ?? []}
         initialSource={importSource}
       />
       <CopySkillPicker

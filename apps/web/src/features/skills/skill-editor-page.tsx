@@ -91,16 +91,16 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
   );
 
   const saveDraft = useCallback(() => {
-    if (!skill || patch.isPending) return;
+    if (!skill || patch.isPending || skill.readonly) return;
     patch.mutate(
       { id: skill.id, body: buildBody() },
       { onError: (error) => toast.error('保存失败', errorMessage(error)) },
     );
   }, [skill, patch, buildBody]);
 
-  /* 脏后 3s 防抖静默自动保存（失败只记录，不打断编辑）。 */
+  /* 脏后 3s 防抖静默自动保存（失败只记录，不打断编辑；默认技能只读不自动保存）。 */
   useEffect(() => {
-    if (!dirty || !skill) return;
+    if (!dirty || !skill || skill.readonly) return;
     if (autoSaveTimer.current != null) window.clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = window.setTimeout(() => {
       patch.mutate(
@@ -142,6 +142,8 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
   };
 
   const status = skill ? SKILL_STATUS_META[skill.status] : undefined;
+  /* W2 §9.1：默认技能只读——不暴露保存/发布入口，服务端 403 兜底（SKILL_READONLY）。 */
+  const readonly = skill?.readonly ?? false;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -174,28 +176,36 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
           </div>
         ) : null}
         <div className="ml-auto flex items-center gap-2">
-          {dirty ? (
-            <span className="text-aux text-text-tertiary">有未保存修改</span>
-          ) : autoSavedAt ? (
-            <span className="text-aux tabular-nums text-text-tertiary">已自动保存 {autoSavedAt}</span>
-          ) : null}
-          <Button
-            variant="default"
-            icon={<Save className="size-4" />}
-            disabled={!skill || !dirty}
-            loading={patch.isPending}
-            onClick={saveDraft}
-          >
-            保存草稿
-          </Button>
-          <Button
-            variant="primary"
-            icon={<Send className="size-4" />}
-            disabled={!skill || skill.status === 'ARCHIVED'}
-            onClick={() => setPublishOpen(true)}
-          >
-            发布
-          </Button>
+          {readonly ? (
+            <span className="rounded-badge bg-bg-muted px-2 py-1 text-badge text-text-secondary">
+              默认技能 · 只读（随应用包更新）
+            </span>
+          ) : (
+            <>
+              {dirty ? (
+                <span className="text-aux text-text-tertiary">有未保存修改</span>
+              ) : autoSavedAt ? (
+                <span className="text-aux tabular-nums text-text-tertiary">已自动保存 {autoSavedAt}</span>
+              ) : null}
+              <Button
+                variant="default"
+                icon={<Save className="size-4" />}
+                disabled={!skill || !dirty}
+                loading={patch.isPending}
+                onClick={saveDraft}
+              >
+                保存草稿
+              </Button>
+              <Button
+                variant="primary"
+                icon={<Send className="size-4" />}
+                disabled={!skill || skill.status === 'ARCHIVED'}
+                onClick={() => setPublishOpen(true)}
+              >
+                发布
+              </Button>
+            </>
+          )}
         </div>
       </div>
 

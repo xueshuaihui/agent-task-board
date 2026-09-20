@@ -4,8 +4,11 @@ import {
   ArrowRightLeft,
   ArrowUpFromLine,
   BookOpen,
+  Inbox,
+  Laptop,
   ListChecks,
   MessageSquare,
+  Package,
   RefreshCw,
   ShieldAlert,
   Split,
@@ -15,7 +18,7 @@ import {
   Wrench,
   Zap,
 } from 'lucide-react';
-import type { OnError, ParallelMerge, SkillBlock, SkillBlockKind, SkillContent, SkillStatus, SkillType } from './types';
+import type { OnError, ParallelMerge, SkillBlock, SkillBlockKind, SkillContent, SkillOrigin, SkillStatus, SkillType } from './types';
 
 /**
  * 技能类型的展示元数据（2.md 10.1/10.2、1.md 8.2）。图标用 lucide 线性图标，
@@ -41,6 +44,25 @@ export const SKILL_STATUS_META: Record<SkillStatus, { label: string; className: 
   PUBLISHED: { label: '已发布', className: 'bg-status-done-soft text-status-done' },
   ARCHIVED: { label: '已归档', className: 'bg-bg-muted text-text-secondary' },
 };
+
+/**
+ * v0.0.4 W2 §9.1/§9.10 三来源展示元数据（对应 api SKILL_ORIGINS）：
+ * default 内置默认（应用预置只读）/ custom 自定义 / imported 三方（手动导入）。
+ * PRD 图标 📦/💻/📥 按本文件惯例折算成 lucide 线性图标。
+ */
+export const SKILL_ORIGIN_META: Record<
+  SkillOrigin,
+  { label: string; icon: LucideIcon; className: string }
+> = {
+  default: { label: '默认技能', icon: Package, className: 'bg-bg-muted text-text-secondary' },
+  custom: { label: '自定义技能', icon: Laptop, className: 'bg-primary-light text-primary' },
+  imported: { label: '三方技能', icon: Inbox, className: 'bg-status-ready-soft text-status-ready' },
+};
+
+export const SKILL_ORIGIN_OPTIONS = (Object.keys(SKILL_ORIGIN_META) as SkillOrigin[]).map((origin) => ({
+  value: origin,
+  label: SKILL_ORIGIN_META[origin].label,
+}));
 
 /** 块类型元数据（1.md 8.3 的 PRD 15 类；图标用 lucide，不引 emoji）。 */
 export const BLOCK_KIND_META: Record<

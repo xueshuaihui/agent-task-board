@@ -3,6 +3,7 @@ import type {
   Skill,
   SkillBoundTaskList,
   SkillCreateInput,
+  SkillImportConflict,
   SkillListResult,
   SkillPatchInput,
   SkillQuery,
@@ -50,12 +51,23 @@ export const skillsApi = {
     saveBlob(result.blob, result.filename ?? `${name || 'skill'}.atskill`);
   },
 
-  /** 导入 .atskill：后端 multipart 或 JSON body 均可，这里走 multipart。 */
-  import: (file: File) => {
+  /**
+   * 导入 .atskill：走后端 multipart 端点（W2：导入技能 source=imported，
+   * 同 ID 冲突按 on_conflict 处置——fail 时后端回 409 SKILL_ID_CONFLICT）。
+   */
+  import: (file: File, onConflict?: SkillImportConflict) => {
     const form = new FormData();
     form.append('file', file);
-    return http.form<Skill>('/skills/import', form);
+    const query = onConflict ? `?on_conflict=${onConflict}` : '';
+    return http.form<Skill>(`/skills/import${query}`, form);
   },
+
+  /** SKILL.md / .mdc 导入：后端解析 frontmatter（含 id）并按同一套冲突规则落库。 */
+  importMarkdown: (input: { filename: string; content: string }, onConflict?: SkillImportConflict) =>
+    http.post<Skill>(
+      `/skills/import-markdown${onConflict ? `?on_conflict=${onConflict}` : ''}`,
+      input,
+    ),
 
   /**
    * 绑定任务列表。契约只给了 stats.boundTaskCount，列表端点是本 feature 的

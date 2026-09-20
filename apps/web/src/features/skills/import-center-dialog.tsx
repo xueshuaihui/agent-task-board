@@ -4,26 +4,27 @@ import { Badge, Button, Dialog, useToast } from '@/components/ui';
 import { errorMessage } from '@/api';
 import { cn } from '@/lib/cn';
 import { markdownToBlocks } from './markdown';
+import { skillsApi } from './api';
 import { SKILL_TYPE_META } from './meta';
-import { useCreateSkill } from './hooks';
-import type { Skill, SkillContent, SkillType } from './types';
+import type { Skill, SkillContent, SkillImportConflict, SkillType } from './types';
 
 /**
- * 统一导入中心（替代单一 .atskill 导入）：拖拽区 + 点击选择，接受
- * .atskill / SKILL.md(.md) / Cursor Rules(.mdc) 多文件，按扩展名分流解析：
- * - .atskill：JSON（导出载荷或完整技能），前端直接解析；
- * - .md / .mdc：markdownToBlocks 前端解析（.mdc 的 Cursor frontmatter 先剥掉，
- *   description 进描述，UI 标注「Cursor Rules」来源）。
- * 解析后进入预览（名称/类型/块数/标签/来源），可改名，确认后统一 POST /skills；
- * 与现有技能重名时提示并给出改名建议；解析失败给出行级错误。
+ * 统一导入中心（v0.0.4 W2 口径，§9.8）：拖拽区 + 点击选择，接受
+ * .atskill / SKILL.md(.md) / Cursor Rules(.mdc) 多文件，前端解析仅做预览；
+ * 确认导入一律走后端 /skills/import（multipart）与 /skills/import-markdown，
+ * 保证落库 source=imported（三方技能）。
+ *
+ * r2 冲突语义：同名不是冲突（直接共存、列表消歧）；按技能 `id` 判冲突——
+ * 同 ID（已存在）默认「覆盖更新为新版本」，可切换「跳过」（§9.8.4/§20.5-17）。
+ * 名称等元数据以文件为准，预览不提供改名。
  */
 
 export interface ImportCenterDialogProps {
   open: boolean;
   onClose: () => void;
   onImported: (skill: Skill) => void;
-  /** 现有技能名列表，用于重名提示与改名建议。 */
-  existingNames: string[];
+  /** 库内现有技能：同 ID 冲突判定与同名共存提示的数据源。 */
+  existingSkills: Skill[];
   /** 入口预选（菜单区分 .atskill / SKILL.md / Cursor Rules 进入时提示对应格式）。 */
   initialSource?: SourceKind;
 }
@@ -40,6 +41,13 @@ interface ParsedEntry {
   description: string;
   tags: string[];
   warnings: string[];
+  /** 文件声明的技能 id（§9.2 r2；旧文件可能没有）。 */
+  fileId: string | null;
+  /** 原文件与文本：确认导入时原样交给后端解析落库。 */
+  file: File;
+  text: string;
+  /** 同 ID 冲突的处置选择（默认覆盖更新）。 */
+  strategy: Exclude<SkillImportConflict, 'fail'>;
 }
 
 interface FailedEntry {
@@ -58,7 +66,7 @@ export function ImportCenterDialog({
   open,
   onClose,
   onImported,
-  existingNames,
+  existingSkills,
   initialSource,
 }: ImportCenterDialogProps) {
   const toast = useToast();
@@ -66,10 +74,16 @@ export function ImportCenterDialog({
   const [dragOver, setDragOver] = useState(false);
   const [entries, setEntries] = useState<ParsedEntry[]>([]);
   const [failed, setFailed] = useState<FailedEntry[]>([]);
+  const [busy, setBusy] = useState(false);
 
-  const create = useCreateSkill((skill) => {
-    toast.success('导入成功', `已创建技能「${skill.name}」`);
-  });
+  const existingById = useMemo(
+    () => new Map(existingSkills.map((skill) => [skill.id, skill])),
+    [existingSkills],
+  );
+  const existingNames = useMemo(
+    () => new Set(existingSkills.map((skill) => skill.name)),
+    [existingSkills],
+  );
 
   /* 每次打开重置上一次的解析结果。 */
   useEffect(() => {
@@ -89,11 +103,11 @@ export function ImportCenterDialog({
         try {
           const text = await file.text();
           if (lower.endsWith('.atskill')) {
-            nextEntries.push(parseAtskill(file.name, text));
+            nextEntries.push(parseAtskill(file, text));
           } else if (lower.endsWith('.mdc')) {
-            nextEntries.push(parseCursorRules(file.name, text));
+            nextEntries.push(parseCursorRules(file, text));
           } else if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
-            nextEntries.push(parseMarkdown(file.name, text, 'markdown'));
+            nextEntries.push(parseMarkdown(file, text, 'markdown'));
           } else {
             nextFailed.push({
               key: `${file.name}-ext`,
@@ -115,25 +129,8 @@ export function ImportCenterDialog({
     [],
   );
 
-  /* 重名检测：与库中已有技能或本批已加条目同名。 */
-  const takenNames = useMemo(
-    () => new Set([...existingNames, ...entries.map((entry) => entry.name.trim())]),
-    [existingNames, entries],
-  );
-
-  const duplicateKeys = useMemo(() => {
-    const seen = new Set<string>(existingNames);
-    const dup = new Set<string>();
-    for (const entry of entries) {
-      const name = entry.name.trim();
-      if (seen.has(name)) dup.add(entry.key);
-      seen.add(name);
-    }
-    return dup;
-  }, [entries, existingNames]);
-
-  const renameEntry = (key: string, name: string) => {
-    setEntries((prev) => prev.map((entry) => (entry.key === key ? { ...entry, name } : entry)));
+  const setStrategy = (key: string, strategy: ParsedEntry['strategy']) => {
+    setEntries((prev) => prev.map((entry) => (entry.key === key ? { ...entry, strategy } : entry)));
   };
 
   const removeEntry = (key: string) => {
@@ -141,64 +138,53 @@ export function ImportCenterDialog({
     setFailed((prev) => prev.filter((entry) => entry.key !== key));
   };
 
-  const suggestName = (base: string): string => {
-    let candidate = `${base}-2`;
-    let index = 2;
-    while (takenNames.has(candidate)) {
-      index += 1;
-      candidate = `${base}-${index}`;
-    }
-    return candidate;
-  };
-
   /**
-   * 逐个创建：单个文件失败不中断整批（失败项转成行级错误留在对话框里），
-   * 整批处理完才交给父级关闭对话框。
+   * 逐个导入：全部走后端导入端点（source=imported、同 ID 冲突按策略处置）；
+   * 「跳过」的同 ID 行不发请求、静默移除（§9.8.4：跳过=原技能不动）。
+   * 单个文件失败不中断整批（失败项转行级错误留在对话框里）。
    */
-  const confirmImport = () => {
+  const confirmImport = async () => {
     const queue = [...entries];
-    let created: Skill | null = null;
-    const step = (index: number) => {
-      if (index >= queue.length) {
-        if (created) onImported(created);
-        return;
-      }
-      const entry = queue[index];
+    let last: Skill | null = null;
+    setBusy(true);
+    for (const entry of queue) {
       const drop = () => setEntries((prev) => prev.filter((item) => item.key !== entry.key));
-      create.mutate(
-        {
-          name: entry.name.trim(),
-          type: entry.type,
-          description: entry.description,
-          tags: entry.tags,
-          content: entry.content,
-        },
-        {
-          onSuccess: (skill) => {
-            created = skill;
-            drop();
-            step(index + 1);
+      if (entry.fileId && existingById.has(entry.fileId) && entry.strategy === 'skip') {
+        drop();
+        continue;
+      }
+      const conflict = entry.fileId && existingById.has(entry.fileId);
+      try {
+        const skill =
+          entry.source === 'atskill'
+            ? await skillsApi.import(entry.file, conflict ? entry.strategy : undefined)
+            : await skillsApi.importMarkdown(
+                { filename: entry.fileName, content: entry.text },
+                conflict ? entry.strategy : undefined,
+              );
+        last = skill;
+        drop();
+      } catch (error) {
+        drop();
+        setFailed((prev) => [
+          ...prev,
+          {
+            key: `${entry.key}-create`,
+            fileName: entry.fileName,
+            message: `导入失败：${errorMessage(error) || '未知错误'}`,
           },
-          onError: (error) => {
-            drop();
-            setFailed((prev) => [
-              ...prev,
-              {
-                key: `${entry.key}-create`,
-                fileName: entry.fileName,
-                message: `创建失败：${errorMessage(error) || '未知错误'}`,
-              },
-            ]);
-            step(index + 1);
-          },
-        },
-      );
-    };
-    step(0);
+        ]);
+      }
+    }
+    setBusy(false);
+    if (last) {
+      toast.success('导入成功', `已导入技能「${last.name}」（三方技能）`);
+      onImported(last);
+    }
   };
 
   const hasValid = entries.length > 0;
-  const allValid = hasValid && failed.length === 0 && duplicateKeys.size === 0;
+  const allValid = hasValid && failed.length === 0;
 
   return (
     <Dialog
@@ -213,10 +199,10 @@ export function ImportCenterDialog({
           <Button
             variant="primary"
             disabled={!hasValid || !allValid}
-            loading={create.isPending}
-            onClick={confirmImport}
+            loading={busy}
+            onClick={() => void confirmImport()}
           >
-            {hasValid ? `创建 ${entries.length} 个技能` : '创建'}
+            {hasValid ? `导入 ${entries.length} 个技能` : '导入'}
           </Button>
         </>
       }
@@ -298,7 +284,8 @@ export function ImportCenterDialog({
 
         {/* 解析预览列表。 */}
         {entries.map((entry) => {
-          const duplicate = duplicateKeys.has(entry.key);
+          const existing = entry.fileId ? existingById.get(entry.fileId) : undefined;
+          const nameNote = !existing && existingNames.has(entry.name.trim());
           return (
             <div key={entry.key} className="rounded-card border border-border bg-bg-surface p-3">
               <div className="flex items-start gap-2">
@@ -310,28 +297,50 @@ export function ImportCenterDialog({
                       {SOURCE_META[entry.source].label}
                     </span>
                     <span className="text-aux text-text-tertiary">{entry.content.blocks.length} 个块</span>
+                    {entry.fileId ? (
+                      <span className="rounded-badge bg-bg-muted px-1.5 py-0.5 text-badge text-text-tertiary" title="技能唯一 ID（r2）">
+                        {entry.fileId}
+                      </span>
+                    ) : null}
                     {entry.tags.map((tag) => (
                       <span key={tag} className="rounded-badge bg-bg-muted px-1.5 py-0.5 text-badge text-text-tertiary">
                         {tag}
                       </span>
                     ))}
                   </div>
-                  <div className="mt-2 flex items-center gap-2">
-                    <input
-                      value={entry.name}
-                      aria-label="技能名称"
-                      onChange={(event) => renameEntry(entry.key, event.target.value)}
-                      className={cn(
-                        'h-7 w-56 rounded-control border bg-bg-surface px-2 text-body text-text-primary outline-none focus:border-primary',
-                        (duplicate || entry.name.trim().length === 0) && 'border-status-failed',
-                      )}
-                    />
-                    {duplicate ? (
-                      <span className="text-aux text-status-failed">
-                        与现有技能重名，建议改为「{suggestName(entry.name.trim() || 'skill')}」
+                  <p className="mt-1 text-body text-text-primary">{entry.name}</p>
+                  {existing ? (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1 text-aux text-status-review">
+                        <AlertCircle className="size-3.5" />
+                        同 ID（已存在「{existing.name}」，当前 {existing.current_version}）
                       </span>
-                    ) : null}
-                  </div>
+                      {/* §9.8.3：覆盖更新为新版本（默认）/ 跳过。 */}
+                      <label className="inline-flex items-center gap-1 text-aux text-text-secondary">
+                        <input
+                          type="radio"
+                          name={`conflict-${entry.key}`}
+                          checked={entry.strategy === 'overwrite'}
+                          onChange={() => setStrategy(entry.key, 'overwrite')}
+                        />
+                        覆盖更新为新版本
+                      </label>
+                      <label className="inline-flex items-center gap-1 text-aux text-text-secondary">
+                        <input
+                          type="radio"
+                          name={`conflict-${entry.key}`}
+                          checked={entry.strategy === 'skip'}
+                          onChange={() => setStrategy(entry.key, 'skip')}
+                        />
+                        跳过
+                      </label>
+                    </div>
+                  ) : nameNote ? (
+                    /* r2：同名不同 ID 不是冲突——直接共存，列表靠 id 短后缀消歧。 */
+                    <p className="mt-1 text-aux text-text-tertiary">
+                      库中已有同名技能：不同 ID 视为不同技能，直接共存
+                    </p>
+                  ) : null}
                   {entry.description ? (
                     <p className="mt-1 line-clamp-2 text-aux text-text-secondary">{entry.description}</p>
                   ) : null}
@@ -357,13 +366,13 @@ export function ImportCenterDialog({
 
         {entries.length === 0 && failed.length === 0 ? (
           <p className="text-center text-aux text-text-tertiary">
-            解析完全在前端完成：预览名称、类型与块数后再创建，不会直接写入。
+            解析预览后由服务端导入落库，导入后作为「三方技能」，可编辑、可绑定任务。
           </p>
         ) : null}
         {failed.length > 0 ? (
           <p className="flex items-center gap-1 text-aux text-status-failed">
             <AlertCircle className="size-3.5" />
-            存在失败的文件，请先移除或修正后再创建
+            存在失败的文件，请先移除或修正后再导入
           </p>
         ) : null}
       </div>
@@ -386,8 +395,15 @@ function nextKey(): string {
   return `import-${Date.now().toString(36)}-${importKey}`;
 }
 
-/** .atskill：导出载荷 {name,type,content,...} 或完整 Skill JSON。 */
-function parseAtskill(fileName: string, text: string): ParsedEntry {
+function baseEntry(file: File, text: string, source: SourceKind): Pick<
+  ParsedEntry,
+  'key' | 'fileName' | 'source' | 'file' | 'text' | 'strategy'
+> {
+  return { key: nextKey(), fileName: file.name, source, file, text, strategy: 'overwrite' };
+}
+
+/** .atskill：导出载荷 {id?,name,type,content,...} 或完整技能 JSON（预览用；落库走后端）。 */
+function parseAtskill(file: File, text: string): ParsedEntry {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -395,6 +411,7 @@ function parseAtskill(fileName: string, text: string): ParsedEntry {
     throw new Error(`JSON 解析失败：${error instanceof Error ? error.message : '格式不合法'}`);
   }
   const payload = parsed as {
+    id?: string;
     name?: string;
     type?: SkillType;
     content?: SkillContent;
@@ -415,42 +432,40 @@ function parseAtskill(fileName: string, text: string): ParsedEntry {
     throw new Error('技能内容为空（blocks 为空数组）');
   }
   return {
-    key: nextKey(),
-    fileName,
-    source: 'atskill',
+    ...baseEntry(file, text, 'atskill'),
     // 名称优先取文件里的 `name`：导出的文件名是技能 ID（`skl_xxx.atskill`），
     // 只按文件名起名会让「导出再导入」得到一个 ID 名字的技能。
-    name: payload.name?.trim() || stripExtension(fileName, '.atskill'),
+    name: payload.name?.trim() || stripExtension(file.name, '.atskill'),
     type: isSkillType(payload.type) ? payload.type : 'prompt',
     content,
     description: payload.description ?? '',
     tags: Array.isArray(payload.tags) ? payload.tags : [],
     warnings: [],
+    fileId: typeof payload.id === 'string' && payload.id.trim() ? payload.id.trim() : null,
   };
 }
 
-/** SKILL.md / .md：markdownToBlocks 前端解析。 */
-function parseMarkdown(fileName: string, text: string, source: SourceKind): ParsedEntry {
+/** SKILL.md / .md：markdownToBlocks 前端预览解析。 */
+function parseMarkdown(file: File, text: string, source: SourceKind): ParsedEntry {
   const result = markdownToBlocks(text);
   if (result.content.blocks.length === 0) {
     throw new Error('没有解析出任何内容块：正文需要「### 块标题」小节');
   }
-  const name = result.frontmatter?.name?.trim() || stripExtension(fileName, '.md');
+  const name = result.frontmatter?.name?.trim() || stripExtension(file.name, '.md');
   return {
-    key: nextKey(),
-    fileName,
-    source,
+    ...baseEntry(file, text, source),
     name,
     type: source === 'cursor-rules' ? 'prompt' : guessType(result),
     content: result.content,
     description: result.frontmatter?.description?.trim() ?? '',
     tags: result.frontmatter?.tags ?? [],
     warnings: [...result.warnings],
+    fileId: result.frontmatter?.id?.trim() || null,
   };
 }
 
 /** Cursor Rules .mdc：剥 Cursor frontmatter（description/globs/alwaysApply）再走同一 markdown 转换。 */
-function parseCursorRules(fileName: string, text: string): ParsedEntry {
+function parseCursorRules(file: File, text: string): ParsedEntry {
   let body = text;
   let description = '';
   const fm = /^---\n([\s\S]*?)\n---\n?/.exec(text);
@@ -459,12 +474,12 @@ function parseCursorRules(fileName: string, text: string): ParsedEntry {
     const descLine = fm[1].split('\n').find((line) => line.startsWith('description:'));
     description = descLine ? descLine.slice('description:'.length).trim() : '';
   }
-  /* Cursor Rules 正文没有 ### 小节时整体作为一个提示词块导入。 */
+  /* Cursor Rules 正文没有 ### 小节时整体作为一个提示词块预览。 */
   const normalized = body.includes('### ')
     ? body
-    : ['---', `name: ${stripExtension(fileName, '.mdc')}`, `description: ${description.replace(/\n/g, ' ')}`, '---', '', `### 规则`, '', `<!-- atb:prompt -->`, '', body.trim()].join('\n');
-  const parsed = parseMarkdown(fileName, normalized, 'cursor-rules');
-  parsed.name = stripExtension(fileName, '.mdc');
+    : ['---', `name: ${stripExtension(file.name, '.mdc')}`, `description: ${description.replace(/\n/g, ' ')}`, '---', '', `### 规则`, '', `<!-- atb:prompt -->`, '', body.trim()].join('\n');
+  const parsed = parseMarkdown(file, normalized, 'cursor-rules');
+  parsed.name = stripExtension(file.name, '.mdc');
   parsed.description = description || parsed.description;
   parsed.warnings = ['Cursor Rules 按「提示词块」整体导入，可在编辑器中拆分为多个块', ...parsed.warnings];
   return parsed;
@@ -479,7 +494,7 @@ function isSkillType(value: unknown): value is SkillType {
   return typeof value === 'string' && value in SKILL_TYPE_META;
 }
 
-/** 无 frontmatter 类型信息时按块形状粗略推断类型。 */
+/** 无 frontmatter 类型信息时按块形状粗略推断类型（仅预览；服务端导入按 prompt/flow 归一）。 */
 function guessType(result: ReturnType<typeof markdownToBlocks>): SkillType {
   const blocks = result.content.blocks;
   if (blocks.some((block) => block.kind === 'decision' || block.kind === 'loop')) return 'flow';

@@ -6,7 +6,7 @@ import { cn } from '@/lib/cn';
 import { formatDateTime } from '@/lib/time';
 import { skillsApi } from './api';
 import { useRollbackSkill, useSkill, useSkillBoundTasks, useTestSkill } from './hooks';
-import { BLOCK_KIND_META, SKILL_STATUS_META, SKILL_TYPE_META } from './meta';
+import { BLOCK_KIND_META, SKILL_ORIGIN_META, SKILL_STATUS_META, SKILL_TYPE_META } from './meta';
 import type { Skill } from './types';
 
 /**
@@ -39,7 +39,8 @@ export function SkillDetailDrawer({ skillId, open, onClose, onEdit }: SkillDetai
           {skill?.name ?? '技能详情'}
           {skill ? (
             <span className="text-aux tabular-nums text-text-tertiary">
-              {SKILL_TYPE_META[skill.type]?.label ?? skill.type} · {skill.current_version}
+              {SKILL_TYPE_META[skill.type]?.label ?? skill.type} · {skill.current_version} ·{' '}
+              {SKILL_ORIGIN_META[skill.source]?.label ?? skill.source}
             </span>
           ) : null}
         </span>
@@ -65,8 +66,9 @@ export function SkillDetailDrawer({ skillId, open, onClose, onEdit }: SkillDetai
       footer={
         <div className="flex items-center gap-2">
           {skill && onEdit ? (
+            /* W2：默认技能只读，入口文案改「查看」（编辑器内无保存/发布）。 */
             <Button size="sm" onClick={() => onEdit(skill)}>
-              编辑
+              {skill.readonly ? '查看' : '编辑'}
             </Button>
           ) : null}
           <Button
