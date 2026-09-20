@@ -165,7 +165,7 @@ describe('技能深化（8.4/8.6/8.7/8.8）', () => {
     expect(rolled.body.test_cases[0].id).toBe('v2');
   });
 
-  it('创建时带 test_cases 落库，导出 .atskill 携带、导入带回', async () => {
+  it('创建时带 test_cases 落库，导出 .atskill 携带（含 id）、同 ID 覆盖导入带回', async () => {
     const skill = await createSkill(ui, {
       name: '用例导出技能',
       test_cases: [{ id: 'e1', name: '导出用例', input: 'in', expected: 'exp' }],
@@ -174,11 +174,21 @@ describe('技能深化（8.4/8.6/8.7/8.8）', () => {
     const payload = JSON.parse(res.text);
     expect(payload.test_cases).toHaveLength(1);
     expect(payload.test_cases[0]).toMatchObject({ id: 'e1' });
+    // r2（§9.9）：导出必带 id——同 ID 再导入按同一技能处置。
+    expect(payload.id).toBe(skill.id);
 
-    const form = new FormData();
-    form.append('file', new Blob([JSON.stringify(payload)], { type: 'application/json' }), 'x.atskill');
-    const imported = await ui.send(`${API}/skills/import`, { method: 'POST', raw: form });
+    const sendImport = async (query: string) => {
+      const form = new FormData();
+      form.append('file', new Blob([JSON.stringify(payload)], { type: 'application/json' }), 'x.atskill');
+      return ui.send(`${API}/skills/import${query}`, { method: 'POST', raw: form });
+    };
+    // 默认策略：同 ID 冲突 409，不动原技能。
+    expect((await sendImport('')).status).toBe(409);
+    // 覆盖更新：记为新版本，test_cases 随文件带回。
+    const imported = await sendImport('?on_conflict=overwrite');
     expect(imported.status).toBe(201);
+    expect(imported.body.id).toBe(skill.id);
+    expect(imported.body.current_version).toBe('v0.1.1');
     expect(imported.body.test_cases[0]).toMatchObject({ id: 'e1', name: '导出用例' });
   });
 
@@ -304,7 +314,7 @@ describe('技能深化（8.4/8.6/8.7/8.8）', () => {
 
   // ---------------------------------------------------------------- 8.7 SKILL.md 导入导出
 
-  it('SKILL.md 导入：frontmatter + 正文块 → v0.1.0 DRAFT，重名加后缀', async () => {
+  it('SKILL.md 导入：frontmatter + 正文块 → 三方技能 v0.1.0 DRAFT，同名直接共存（r2）', async () => {
     const markdown = [
       '---',
       'name: 代码评审技能',
@@ -346,9 +356,37 @@ describe('技能深化（8.4/8.6/8.7/8.8）', () => {
     expect(first.body.content.blocks[1]).toMatchObject({ kind: 'step', title: '步骤', steps: ['读 diff', '写意见'] });
     expect(first.body.content.entryBlockId).toBe(first.body.content.blocks[0].id);
     const second = await send();
+    // r2：同名不同 ID 不是冲突——不加后缀、直接共存。
     expect(second.status).toBe(201);
-    expect(second.body.name).not.toBe('代码评审技能');
-    expect(second.body.name.startsWith('代码评审技能')).toBe(true);
+    expect(second.body.name).toBe('代码评审技能');
+    expect(second.body.id).not.toBe(first.body.id);
+    expect(second.body.source).toBe('imported');
+  });
+
+  it('SKILL.md frontmatter 带 id：同 ID 冲突 409/覆盖，陌生 id 原样保留', async () => {
+    const markdownFor = (id: string) =>
+      ['---', `id: ${id}`, 'name: 带ID导入技能', 'description: 带身份的文件', '---', '', '### 正文', '', '<!-- atb:prompt -->', '', '内容'].join('\n');
+    const fresh = await ui.post(`${API}/skills/import-markdown`, {
+      filename: 'SKILL.md',
+      content: markdownFor('skl_md-preset-01'),
+    });
+    expect(fresh.status).toBe(201);
+    expect(fresh.body.id).toBe('skl_md-preset-01');
+    // 同 ID（库内已存在）：默认 409。
+    const conflict = await ui.post(`${API}/skills/import-markdown`, {
+      filename: 'SKILL.md',
+      content: markdownFor('skl_md-preset-01'),
+    });
+    expect(conflict.status).toBe(409);
+    expect(conflict.body.error.code).toBe('SKILL_ID_CONFLICT');
+    // skip：原样返回。
+    const skipped = await ui.send(`${API}/skills/import-markdown?on_conflict=skip`, {
+      method: 'POST',
+      body: { filename: 'SKILL.md', content: markdownFor('skl_md-preset-01') },
+    });
+    expect(skipped.status).toBe(201);
+    expect(skipped.body.id).toBe('skl_md-preset-01');
+    expect(skipped.body.description).toBe('带身份的文件');
   });
 
   it('step 小节写成段落：整段正文兜底为一条步骤，不静默丢内容', async () => {
@@ -453,20 +491,32 @@ describe('技能深化（8.4/8.6/8.7/8.8）', () => {
     expect(res.headers.get('content-disposition')).toContain('export-ok.md');
     expect(res.headers.get('content-type')).toContain('text/markdown');
     expect(res.text).toContain('name: export-ok');
+    // r2（§9.9）：SKILL.md 导出 frontmatter 必带 id。
+    expect(res.text).toContain(`id: ${skill.id}`);
     expect(res.text).toContain('description: 导出用描述');
     expect(res.text).toContain('<!-- atb:decision -->');
     expect(res.text).toContain('<!-- atb:human -->');
     expect(res.text).toContain('入口块：开场');
   });
 
-  it('往返一致性：blocks → markdown → blocks 逐块相等（decision/loop/parallel/tool/human 等）', async () => {
+  it('往返一致性：blocks → markdown → 同 ID 覆盖导入回同一技能，逐块相等（decision/loop/parallel/tool/human 等）', async () => {
     const skill = await createSkill(ui, { name: 'round-trip', content: RICH_CONTENT });
     const exported = await ui.send(`${API}/skills/${skill.id}/export-markdown`);
-    const imported = await ui.post(`${API}/skills/import-markdown`, {
+    // 导出文本带原技能 id：默认导入按同 ID 识别为同一技能 → 409（r2）。
+    const conflict = await ui.post(`${API}/skills/import-markdown`, {
       filename: 'round-trip.md',
       content: exported.text,
     });
+    expect(conflict.status).toBe(409);
+    expect(conflict.body.error.code).toBe('SKILL_ID_CONFLICT');
+    const imported = await ui.send(`${API}/skills/import-markdown?on_conflict=overwrite`, {
+      method: 'POST',
+      body: { filename: 'round-trip.md', content: exported.text },
+    });
     expect(imported.status).toBe(201);
+    // 导出→导入闭环回到同一个 id（§9.9），版本记为新版本。
+    expect(imported.body.id).toBe(skill.id);
+    expect(imported.body.current_version).toBe('v0.1.1');
     const before = (skill.content.blocks as any[]);
     const after = imported.body.content.blocks as any[];
     expect(after).toHaveLength(before.length);

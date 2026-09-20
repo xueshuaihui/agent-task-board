@@ -15,6 +15,7 @@ import {
   type SkillImportMarkdownInput,
   type SkillListQuery,
   type SkillMcpDependency,
+  type SkillOrigin,
   type SkillPatchInput,
   type SkillSource,
   type SkillStatus,
@@ -65,6 +66,9 @@ function parseSkill(row: Skill): ParsedSkill {
 
 function toDto(row: Skill): SkillDto {
   const parsed = parseSkill(row);
+  const source: SkillOrigin = (row.sourceType === 'default' || row.sourceType === 'imported')
+    ? row.sourceType
+    : 'custom';
   return {
     id: row.id,
     name: row.name,
@@ -76,6 +80,9 @@ function toDto(row: Skill): SkillDto {
     content: parsed.content,
     test_cases: parsed.testCases,
     mcp_dependencies: parsed.mcpDependencies,
+    source,
+    // §9.1 默认技能只读：服务层守卫同样按此判定，列上不存 readonly。
+    readonly: source === 'default',
     created_at: toIso(row.createdAt),
     updated_at: toIso(row.updatedAt),
   };
@@ -95,6 +102,7 @@ export class SkillsService {
       .filter((row) => {
         if (query.type && row.type !== query.type) return false;
         if (query.status && row.status !== query.status) return false;
+        if (query.source && toDto(row).source !== query.source) return false;
         if (keyword) {
           const hit =
             row.name.toLowerCase().includes(keyword) || row.description.toLowerCase().includes(keyword);
@@ -145,13 +153,19 @@ export class SkillsService {
 
   // ---------------------------------------------------------------- 写入
 
-  async create(input: SkillCreateInput): Promise<SkillDto> {
-    // 名称唯一约束在库上（uniq_skills_name，W1a 去账号维度后的单列唯一）；这里先给出人话错误而不是 P2002。
-    const dup = await this.prisma.skill.findFirst({ where: { name: input.name } });
-    if (dup) throw new ApiException('SKILL_NAME_TAKEN', `技能名「${input.name}」已存在`);
+  /**
+   * 建技能。W2 r2（§9.2）：name 允许重名、不再查重，唯一性由 id（主键）保证。
+   * origin：UI 直接创建=custom，导入=imported；presetId 仅用于「带 id 的导入文件
+   * 且库内无同 ID」——id 终身不变，导出→分享→导入按同 id 归一（§9.9）。
+   */
+  async create(
+    input: SkillCreateInput,
+    origin: SkillOrigin = 'custom',
+    presetId?: string,
+  ): Promise<SkillDto> {
     const skill = await this.prisma.skill.create({
       data: {
-        id: `skl_${uuidv7()}`,
+        id: presetId ?? `skl_${uuidv7()}`,
         name: input.name,
         type: input.type,
         status: 'DRAFT',
@@ -161,6 +175,7 @@ export class SkillsService {
         content: JSON.stringify(input.content),
         testCases: JSON.stringify(input.test_cases ?? []),
         mcpDependencies: JSON.stringify(input.mcp_dependencies),
+        sourceType: origin,
       },
     });
     // 创建即 v0.1.0：versions 里同步落一条，发布/回滚都从这条起步。
@@ -181,14 +196,10 @@ export class SkillsService {
   /** PATCH：基础字段 + status；content 只写 skills 当前草稿，不动 versions（8.2 口径）。 */
   async patch(id: string, input: SkillPatchInput): Promise<SkillDto> {
     const row = await this.require(id);
+    this.assertWritable(row, '默认技能不可编辑');
     const data: Record<string, string> = { updatedAt: nowSql() };
-    if (input.name !== undefined) {
-      if (input.name !== row.name) {
-        const dup = await this.prisma.skill.findFirst({ where: { name: input.name } });
-        if (dup) throw new ApiException('SKILL_NAME_TAKEN', `技能名「${input.name}」已存在`);
-      }
-      data.name = input.name;
-    }
+    // r2（§16.2）：重名不再受限，改名不查重。
+    if (input.name !== undefined) data.name = input.name;
     if (input.description !== undefined) data.description = input.description;
     if (input.tags !== undefined) data.tags = JSON.stringify(input.tags);
     if (input.status !== undefined) data.status = input.status;
@@ -199,9 +210,10 @@ export class SkillsService {
     return this.detail(id);
   }
 
-  /** DELETE：有绑定任务时 409，提示先解绑。 */
+  /** DELETE：默认技能拒删（§9.1）；有绑定任务时 409，提示先解绑。 */
   async remove(id: string): Promise<void> {
-    await this.require(id);
+    const row = await this.require(id);
+    this.assertWritable(row, '默认技能不可删除');
     const bound = await this.boundTaskCount(id);
     if (bound > 0) {
       throw new ApiException('SKILL_BOUND', `该技能仍被 ${bound} 个任务绑定，请先解绑`, undefined, {
@@ -217,6 +229,8 @@ export class SkillsService {
     input: SkillVersionCreateInput,
   ): Promise<SkillDto> {
     const row = await this.require(id);
+    // §9.6：仅自定义/三方技能有版本；默认技能无版本历史。
+    this.assertWritable(row, '默认技能无版本管理');
     const version = nextPatchVersion(row.currentVersion);
     const parsed = parseSkill(row);
     const deps = input.mcp_dependencies ?? parsed.mcpDependencies;
@@ -248,9 +262,10 @@ export class SkillsService {
     return this.detail(id);
   }
 
-  /** 8.4 回滚：复制该版本内容/依赖/测试用例为 current，不新增 version 记录。 */
+  /** 8.4 回滚：复制该版本内容/依赖/测试用例为 current，不新增 version 记录。默认技能拒回滚。 */
   async rollback(id: string, version: string): Promise<SkillDto> {
-    await this.require(id);
+    const row = await this.require(id);
+    this.assertWritable(row, '默认技能无版本管理');
     const target = await this.prisma.skillVersion.findUnique({
       where: { skillId_version: { skillId: id, version } },
     });
@@ -309,6 +324,8 @@ export class SkillsService {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${safeName}.atskill"`);
     const payload = {
+      // r2（§9.9）：导出必带 id——分享再导入按同 id 识别为同一技能，形成闭环。
+      id: row.id,
       name: row.name,
       type: row.type,
       content: parsed.content,
@@ -317,14 +334,21 @@ export class SkillsService {
       mcp_dependencies: parsed.mcpDependencies,
       description: row.description,
       tags: parsed.tags,
+      source: row.sourceType,
       exported_at: new Date().toISOString(),
     };
     res.send(JSON.stringify(payload));
   }
 
-  /** 导入 .atskill（multipart，字段 file）：解析后建新技能 v0.1.0 DRAFT，重名加后缀。 */
+  /**
+   * 导入 .atskill（multipart，字段 file）：解析后建新三方技能 v0.1.0 DRAFT。
+   * W2 r2（§9.8.4）：冲突按文件 `id` 判定（同名不是冲突、直接共存）——
+   * 同 ID 且库内已存在时按 on_conflict 处置：fail=409（UI 拿 detail 再问用户）、
+   * overwrite=覆盖更新（记为新版本）、skip=不动原技能返回既有行。
+   */
   async import(
     file: { buffer?: Buffer; originalname?: string } | undefined,
+    onConflict: 'fail' | 'overwrite' | 'skip' = 'fail',
   ): Promise<SkillDto> {
     if (!file?.buffer?.length) {
       throw new ApiException('VALIDATION_FAILED', '缺少 file 字段（multipart 单文件）', [
@@ -335,6 +359,7 @@ export class SkillsService {
       throw new ApiException('VALIDATION_FAILED', '技能文件超过 1MB 上限');
     }
     let payload: {
+      id?: unknown;
       name?: unknown;
       type?: unknown;
       content?: unknown;
@@ -355,32 +380,34 @@ export class SkillsService {
     if (typeof payload.type !== 'string') {
       throw new ApiException('VALIDATION_FAILED', '技能文件缺少 type 字段');
     }
-    const name = await this.availableName(payload.name.trim());
     const deps = (payload.mcp_dependencies ?? payload.mcpDependencies ?? []) as SkillMcpDependency[];
-    return this.create(
-      {
-        name,
-        type: payload.type as SkillType,
-        description: typeof payload.description === 'string' ? payload.description : '',
-        tags: Array.isArray(payload.tags) ? (payload.tags as string[]).map(String) : [],
-        content: (payload.content ?? EMPTY_CONTENT) as SkillContent,
-        // 8.6：测试用例随 .atskill 一起带走（旧文件没有该字段就是空）。
-        test_cases: Array.isArray(payload.test_cases) ? (payload.test_cases as SkillTestCase[]) : [],
-        mcp_dependencies: deps,
-      },
-    );
+    const data = {
+      name: payload.name.trim(),
+      type: payload.type as SkillType,
+      description: typeof payload.description === 'string' ? payload.description : '',
+      tags: Array.isArray(payload.tags) ? (payload.tags as string[]).map(String) : [],
+      content: (payload.content ?? EMPTY_CONTENT) as SkillContent,
+      // 8.6：测试用例随 .atskill 一起带走（旧文件没有该字段就是空）。
+      test_cases: Array.isArray(payload.test_cases) ? (payload.test_cases as SkillTestCase[]) : [],
+      mcp_dependencies: deps,
+    };
+    const fileId = this.normalizeFileId(payload.id);
+    const existing = fileId ? await this.prisma.skill.findUnique({ where: { id: fileId } }) : null;
+    if (existing) return this.applyIdConflict(existing, data, onConflict);
+    return this.create(data, 'imported', fileId ?? undefined);
   }
-
-  // ---------------------------------------------------------------- SKILL.md 导入导出（8.7）
 
   /**
    * SKILL.md / Cursor Rules（.mdc）导入：JSON {filename, content}。
    * frontmatter 元数据头（.mdc 同样是 frontmatter，剥掉即可）提供
-   * name/description/version/category/tags/mcp_dependencies；正文块解析约定与前端
+   * id/name/description/version/category/tags/mcp_dependencies；正文块解析约定与前端
    * markdown.ts 的 markdownToBlocks 完全一致（api 侧镜像见 skill-markdown.ts）。
-   * 无 ### 小节时整体作一个提示词块。结果：新技能 v0.1.0 DRAFT，重名加后缀。
+   * 结果：新三方技能 v0.1.0 DRAFT；同名直接共存，同 ID 按 on_conflict 处置（r2）。
    */
-  async importMarkdown(input: SkillImportMarkdownInput): Promise<SkillDto> {
+  async importMarkdown(
+    input: SkillImportMarkdownInput,
+    onConflict: 'fail' | 'overwrite' | 'skip' = 'fail',
+  ): Promise<SkillDto> {
     const parsed = markdownToBlocks(input.content);
     const fm = parsed.frontmatter;
     const baseName =
@@ -403,33 +430,37 @@ export class SkillsService {
       };
       parsed.content = { blocks: [block as SkillContent['blocks'][number]], entryBlockId: 'block-import-0' };
     }
-    const name = await this.availableName(baseName);
     const tags = [
       ...(fm?.tags ?? []),
       // category 没有对应列，折进标签；.mdc 的 Cursor 元数据其余键随 frontmatter 剥离不导入。
       ...(fm?.category && !fm.tags.includes(fm.category) ? [fm.category] : []),
     ].filter((tag) => tag.length > 0 && tag.length <= 30);
-    return this.create(
-      {
-        name,
-        // 只有一个提示词块 → prompt 技能，否则按流程技能处理。
-        type: parsed.content.blocks.length === 1 && parsed.content.blocks[0].kind === 'prompt'
-          ? 'prompt'
-          : 'flow',
-        description: fm?.description ?? '',
-        tags: tags.slice(0, 20),
-        content: parsed.content,
-        test_cases: [],
-        mcp_dependencies: (fm?.mcpDependencies ?? []) as SkillMcpDependency[],
-      },
-    );
+    const data: SkillCreateInput = {
+      name: baseName,
+      // 只有一个提示词块 → prompt 技能，否则按流程技能处理。
+      type: parsed.content.blocks.length === 1 && parsed.content.blocks[0].kind === 'prompt'
+        ? 'prompt'
+        : 'flow',
+      description: fm?.description ?? '',
+      tags: tags.slice(0, 20),
+      content: parsed.content,
+      test_cases: [] as SkillTestCase[],
+      mcp_dependencies: (fm?.mcpDependencies ?? []) as SkillMcpDependency[],
+    };
+    const fileId = this.normalizeFileId(fm?.id);
+    const existing = fileId ? await this.prisma.skill.findUnique({ where: { id: fileId } }) : null;
+    if (existing) return this.applyIdConflict(existing, data, onConflict);
+    return this.create(data, 'imported', fileId ?? undefined);
   }
 
-  /** SKILL.md 导出：text/markdown 附件（name.md），约定同前端 blocksToMarkdown。 */
+  // ---------------------------------------------------------------- SKILL.md 导入导出（8.7）
+
+  /** SKILL.md 导出：text/markdown 附件（name.md），约定同前端 blocksToMarkdown；frontmatter 必带 id（r2）。 */
   async exportMarkdown(id: string, res: Response): Promise<void> {
     const row = await this.require(id);
     const parsed = parseSkill(row);
     const markdown = blocksToMarkdown(parsed.content, {
+      id: row.id,
       name: row.name,
       description: row.description.replace(/\n/g, ' '),
       version: row.currentVersion,
@@ -555,25 +586,75 @@ export class SkillsService {
     return row;
   }
 
+  /** §9.1 默认技能只读：改/删/发版统一守卫（readonly 由 source==='default' 推导）。 */
+  private assertWritable(row: Skill, what: string): void {
+    if (toDto(row).readonly) {
+      throw new ApiException('SKILL_READONLY', `${what}（内置默认技能，随应用包更新）`, undefined, {
+        skill_id: row.id,
+      });
+    }
+  }
+
+  /** 导入文件里的 id：仅接受非空短字符串；坏值按无 id 处理（新分配，不炸导入）。 */
+  private normalizeFileId(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 && trimmed.length <= 64 ? trimmed : null;
+  }
+
+  /** 同 ID 冲突处置（§9.8.4）：fail=409 / skip=原样返回 / overwrite=覆盖并记新版本。 */
+  private async applyIdConflict(
+    existing: Skill,
+    data: SkillCreateInput,
+    onConflict: 'fail' | 'overwrite' | 'skip',
+  ): Promise<SkillDto> {
+    if (onConflict === 'skip') return toDto(existing);
+    if (onConflict === 'fail') {
+      throw new ApiException(
+        'SKILL_ID_CONFLICT',
+        `技能 ${existing.id}（「${existing.name}」）已存在：请选择覆盖更新或跳过`,
+        undefined,
+        { skill_id: existing.id, name: existing.name, current_version: existing.currentVersion },
+      );
+    }
+    this.assertWritable(existing, '默认技能不可被导入覆盖');
+    // 覆盖更新为新版本（§20.5-17）：semver patch 自增 + 版本快照，同 createVersion 口径。
+    const version = nextPatchVersion(existing.currentVersion);
+    await this.prisma.$transaction([
+      this.prisma.skillVersion.create({
+        data: {
+          id: `slv_${uuidv7()}`,
+          skillId: existing.id,
+          version,
+          content: JSON.stringify(data.content),
+          testCases: JSON.stringify(data.test_cases ?? []),
+          mcpDependencies: JSON.stringify(data.mcp_dependencies),
+          changelog: '导入覆盖更新',
+        },
+      }),
+      this.prisma.skill.update({
+        where: { id: existing.id },
+        data: {
+          name: data.name,
+          description: data.description,
+          tags: JSON.stringify(data.tags),
+          content: JSON.stringify(data.content),
+          testCases: JSON.stringify(data.test_cases ?? []),
+          mcpDependencies: JSON.stringify(data.mcp_dependencies),
+          currentVersion: version,
+          updatedAt: nowSql(),
+        },
+      }),
+    ]);
+    return this.detail(existing.id);
+  }
+
   private async boundTaskCount(id: string): Promise<number> {
     const rows = await this.prisma.$queryRawUnsafe<{ count: number | bigint }[]>(
       `SELECT COUNT(*) AS count FROM tasks WHERE skills LIKE ?`,
       `%"${id}"%`,
     );
     return Number(rows[0]?.count ?? 0);
-  }
-
-  private async availableName(name: string): Promise<string> {
-    const existing = await this.prisma.skill.findMany({
-      where: { name: { startsWith: name } },
-      select: { name: true },
-    });
-    const taken = new Set(existing.map((row) => row.name));
-    if (!taken.has(name)) return name;
-    for (let i = 2; ; i += 1) {
-      const candidate = `${name} (${i})`;
-      if (!taken.has(candidate)) return candidate;
-    }
   }
 }
 

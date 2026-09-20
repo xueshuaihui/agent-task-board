@@ -15,6 +15,17 @@ export type SkillType = (typeof SKILL_TYPES)[number];
 export const SKILL_STATUSES = ['DRAFT', 'PUBLISHED', 'ARCHIVED'] as const;
 export type SkillStatus = (typeof SKILL_STATUSES)[number];
 
+/**
+ * v0.0.4 W2 技能三来源（§9.1，0010 迁移 `source_type` 列的 CHECK 词表）：
+ * default=内置默认技能（应用预置只读）/ custom=自定义技能（用户创建）/
+ * imported=三方技能（用户手动导入的技能文件；r2：不区分导入来源）。
+ */
+export const SKILL_ORIGINS = ['default', 'custom', 'imported'] as const;
+export type SkillOrigin = (typeof SKILL_ORIGINS)[number];
+
+/** 默认技能固定版本口径（§9.6/§21.1）：不提供独立版本，导出/展示均为 builtin。 */
+export const DEFAULT_SKILL_VERSION = 'builtin';
+
 /** 8.3 块类型：契约（web features/skills types.ts）15 类，与前端 SkillBlockKind 一致。 */
 const BLOCK_KINDS = [
   'prompt',
@@ -190,8 +201,16 @@ export const skillListQuerySchema = z.object({
   type: z.enum(SKILL_TYPES).optional(),
   status: z.enum(SKILL_STATUSES).optional(),
   tag: z.string().trim().max(30).optional(),
+  /** W2 §16.2：按三来源筛选。 */
+  source: z.enum(SKILL_ORIGINS).optional(),
 });
 export type SkillListQuery = z.infer<typeof skillListQuerySchema>;
+
+/** 导入冲突策略（§9.8.4，r2 按同 ID 判定）：fail=默认（409）/ overwrite=覆盖更新为新版本 / skip=跳过返回既有技能。 */
+export const skillImportQuerySchema = z.object({
+  on_conflict: z.enum(['fail', 'overwrite', 'skip']).default('fail'),
+});
+export type SkillImportQuery = z.infer<typeof skillImportQuerySchema>;
 
 /** 10.3 任务侧绑定引用（PATCH /tasks/:id 的 skills 字段元素）。 */
 export const taskSkillRefSchema = z.object({
@@ -220,6 +239,10 @@ export interface SkillDto {
   content: SkillContent;
   test_cases: SkillTestCase[];
   mcp_dependencies: SkillMcpDependency[];
+  /** W2 三来源（0010 source_type）。 */
+  source: SkillOrigin;
+  /** 默认技能只读（§9.1）：服务层按 source==='default' 推导，不落列。 */
+  readonly: boolean;
   created_at: string | null;
   updated_at: string | null;
   versions?: SkillVersionSummary[];

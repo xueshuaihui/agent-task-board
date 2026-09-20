@@ -185,6 +185,8 @@ describe('技能管理', () => {
     expect(res.headers.get('content-disposition')).toContain('export-ok.atskill');
     const payload = JSON.parse(res.text);
     expect(payload).toMatchObject({
+      // r2（§9.9）：导出必带 id，分享再导入按同 id 归一。
+      id: skill.id,
       name: 'export-ok',
       type: 'flow',
       version: 'v0.1.0',
@@ -195,8 +197,8 @@ describe('技能管理', () => {
     expect(typeof payload.exported_at).toBe('string');
   });
 
-  it('导入：multipart 建 v0.1.0 DRAFT，重名加后缀', async () => {
-    const payload = {
+  it('导入：multipart 建三方技能（source=imported）、同名共存、同 ID 冲突按 on_conflict 处置', async () => {
+    const payload: Record<string, unknown> = {
       name: '导入技能',
       type: 'steps',
       description: '来自文件',
@@ -206,20 +208,48 @@ describe('技能管理', () => {
       mcp_dependencies: [{ server: 'web', tools: [], required: true }],
       exported_at: new Date().toISOString(),
     };
-    const sendImport = async () => {
+    const sendImport = async (body: Record<string, unknown>, query = '') => {
       const form = new FormData();
-      form.append('file', new Blob([JSON.stringify(payload)], { type: 'application/json' }), 'x.atskill');
-      return ui.send(`${API}/skills/import`, { method: 'POST', raw: form });
+      form.append('file', new Blob([JSON.stringify(body)], { type: 'application/json' }), 'x.atskill');
+      return ui.send(`${API}/skills/import${query}`, { method: 'POST', raw: form });
     };
-    const first = await sendImport();
+    const first = await sendImport(payload);
     expect(first.status).toBe(201);
-    expect(first.body).toMatchObject({ name: '导入技能', status: 'DRAFT', current_version: 'v0.1.0' });
+    expect(first.body).toMatchObject({
+      name: '导入技能',
+      status: 'DRAFT',
+      current_version: 'v0.1.0',
+      source: 'imported',
+      readonly: false,
+    });
     expect(first.body.mcp_dependencies[0].server).toBe('web');
-    // 重名：不冲突，加后缀
-    const second = await sendImport();
+    // r2（§9.8.4）：同名不是冲突——直接共存、不加后缀，id 各自唯一。
+    const second = await sendImport(payload);
     expect(second.status).toBe(201);
-    expect(second.body.name).not.toBe('导入技能');
-    expect(second.body.name.startsWith('导入技能')).toBe(true);
+    expect(second.body.name).toBe('导入技能');
+    expect(second.body.id).not.toBe(first.body.id);
+    // 同 ID（r2）：默认识别为同一技能 → 409，回 detail 给 UI 出「覆盖更新/跳过」。
+    const withId = { ...payload, id: first.body.id };
+    const conflict = await sendImport(withId);
+    expect(conflict.status).toBe(409);
+    expect(conflict.body.error.code).toBe('SKILL_ID_CONFLICT');
+    expect(conflict.body.error.skill_id).toBe(first.body.id);
+    // skip：原技能不动。
+    const skipped = await sendImport({ ...withId, description: '不该写入' }, '?on_conflict=skip');
+    expect(skipped.status).toBe(201);
+    expect(skipped.body.id).toBe(first.body.id);
+    expect(skipped.body.current_version).toBe('v0.1.0');
+    expect(skipped.body.description).toBe('来自文件');
+    // overwrite：覆盖更新并记为新版本（§20.5-17）。
+    const overwritten = await sendImport({ ...withId, description: '覆盖后描述' }, '?on_conflict=overwrite');
+    expect(overwritten.status).toBe(201);
+    expect(overwritten.body.id).toBe(first.body.id);
+    expect(overwritten.body.current_version).toBe('v0.1.1');
+    expect(overwritten.body.description).toBe('覆盖后描述');
+    // 带库内不存在 id 的文件：id 原样保留（终身不变，导出→导入闭环）。
+    const preset = await sendImport({ ...payload, id: 'skl_preset-import-01', name: '保留ID导入' });
+    expect(preset.status).toBe(201);
+    expect(preset.body.id).toBe('skl_preset-import-01');
     // 缺 file：422
     const none = await ui.send(`${API}/skills/import`, { method: 'POST' });
     expect(none.status).toBe(422);
@@ -352,16 +382,56 @@ describe('技能管理', () => {
     expect(claim.body.task.skills[0].content.blocks).toHaveLength(3);
   });
 
-  it('重名：创建返回 409（uniq_skills_name 单列唯一保留，去唯一是 W2）', async () => {
-    const skill = await createSkill(admin);
+  it('W2 r2：重名可共存（唯一性收敛到 id），列表按来源筛选', async () => {
+    const skill = await createSkill(admin, { name: '同名共存' });
+    expect(skill.source).toBe('custom');
     const dup = await admin.post(`${API}/skills`, {
-      name: skill.name,
+      name: '同名共存',
       type: 'prompt',
       description: '',
       tags: [],
     });
-    expect(dup.status).toBe(409);
-    expect(dup.body.error.code).toBe('SKILL_NAME_TAKEN');
+    expect(dup.status).toBe(201);
+    expect(dup.body.id).not.toBe(skill.id);
+    // 改名撞名同样放行（§16.2：重名不再受限）。
+    const renamed = await admin.patch(`${API}/skills/${dup.body.id}`, { name: skill.name });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.name).toBe('同名共存');
+    const customOnly = await admin.get(`${API}/skills?source=custom`);
+    expect(customOnly.body.items.length).toBeGreaterThanOrEqual(2);
+    expect(customOnly.body.items.every((row: any) => row.source === 'custom')).toBe(true);
+    const importedOnly = await admin.get(`${API}/skills?source=imported`);
+    expect(importedOnly.body.items.every((row: any) => row.source === 'imported')).toBe(true);
+    const bad = await admin.get(`${API}/skills?source=market`);
+    expect(bad.status).toBe(422);
+  });
+
+  it('W2 §9.1/§9.6：默认技能只读——拒改、拒删、拒发版，版本固定 builtin', async () => {
+    const skill = await createSkill(admin, { name: '内置默认技能' });
+    // 应用预置行由安装包/后续种子写入；这里直接落库模拟 source_type=default。
+    await t.prisma.skill.update({
+      where: { id: skill.id },
+      data: { sourceType: 'default', currentVersion: 'builtin' },
+    });
+    const detail = await admin.get(`${API}/skills/${skill.id}`);
+    expect(detail.body.source).toBe('default');
+    expect(detail.body.readonly).toBe(true);
+    expect(detail.body.current_version).toBe('builtin');
+    const deniedPatch = await admin.patch(`${API}/skills/${skill.id}`, { description: '想改' });
+    expect(deniedPatch.status).toBe(403);
+    expect(deniedPatch.body.error.code).toBe('SKILL_READONLY');
+    const deniedDelete = await admin.del(`${API}/skills/${skill.id}`);
+    expect(deniedDelete.status).toBe(403);
+    expect(deniedDelete.body.error.code).toBe('SKILL_READONLY');
+    const deniedVersion = await admin.post(`${API}/skills/${skill.id}/versions`, {
+      content: skillContent(),
+    });
+    expect(deniedVersion.body.error.code).toBe('SKILL_READONLY');
+    const deniedRollback = await admin.post(`${API}/skills/${skill.id}/rollback`, { version: 'v0.1.0' });
+    expect(deniedRollback.body.error.code).toBe('SKILL_READONLY');
+    // 可读、可导出（附件里 version 即 builtin）。
+    const exported = await admin.send(`${API}/skills/${skill.id}/export`);
+    expect(JSON.parse(exported.text).version).toBe('builtin');
   });
 
   it('Agent Token 不能调用技能接口（UI 凭证组跨组拒绝）', async () => {

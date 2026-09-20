@@ -21,6 +21,7 @@ import { SkillsService, SKILL_IMPORT_MAX_BYTES } from './skills.service';
 import {
   skillCreateSchema,
   skillImportMarkdownSchema,
+  skillImportQuerySchema,
   skillListQuerySchema,
   skillPatchSchema,
   skillRollbackSchema,
@@ -30,6 +31,7 @@ import {
   skillVersionCreateSchema,
   type SkillCreateInput,
   type SkillImportMarkdownInput,
+  type SkillImportQuery,
   type SkillListQuery,
   type SkillPatchInput,
   type SkillSourcesInput,
@@ -65,14 +67,20 @@ export class SkillsController {
       limits: { files: 1, fileSize: SKILL_IMPORT_MAX_BYTES + 1024 * 1024 },
     }),
   )
-  import(@UploadedFile() file: Express.Multer.File | undefined) {
-    return this.skills.import(file);
+  import(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Query(zod(skillImportQuerySchema)) query: SkillImportQuery,
+  ) {
+    return this.skills.import(file, query.on_conflict);
   }
 
-  /** 8.7 SKILL.md / Cursor Rules（.mdc）导入：JSON {filename, content}。 */
+  /** 8.7 SKILL.md / Cursor Rules（.mdc）导入：JSON {filename, content}；同 ID 冲突按 ?on_conflict= 处置（r2）。 */
   @Post('import-markdown')
-  importMarkdown(@Body(zod(skillImportMarkdownSchema)) body: SkillImportMarkdownInput) {
-    return this.skills.importMarkdown(body);
+  importMarkdown(
+    @Body(zod(skillImportMarkdownSchema)) body: SkillImportMarkdownInput,
+    @Query(zod(skillImportQuerySchema)) query: SkillImportQuery,
+  ) {
+    return this.skills.importMarkdown(body, query.on_conflict);
   }
 
   /** 8.8 技能源：settings kv 存 JSON 数组。静态段必须排在 `:id` 系列之前。 */

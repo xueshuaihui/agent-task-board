@@ -15,7 +15,11 @@ export const ERROR_STATUS = {
   FIELD_IN_USE: 409,
   // 0919：技能管理（8 章）
   SKILL_BOUND: 409,
-  SKILL_NAME_TAKEN: 409,
+  // v0.0.4 W2（§9.2 r2）：重名不再受限（唯一性收敛到 id）；SKILL_NAME_TAKEN 随 0010 迁移移除。
+  // 同 ID 导入冲突（§9.8.4）：409 回给 UI「覆盖更新/跳过」选项。
+  SKILL_ID_CONFLICT: 409,
+  // 默认技能只读（§9.1）：拒改拒删拒发版本。
+  SKILL_READONLY: 403,
   // v0.0.4 W1b §5.5：活跃分组达到上限 50 后拒绝新建。
   GROUP_LIMIT_REACHED: 409,
   // v0.0.4 W1-D1 §5.2/§5.5：预置「默认」分组不可删除；§5.6 口径下同样不可归档。
