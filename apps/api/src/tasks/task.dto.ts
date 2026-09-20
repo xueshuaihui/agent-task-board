@@ -27,9 +27,9 @@ export interface TaskRawRow {
   run_count: number;
   created_at: string | null;
   updated_at: string | null;
-  // 0919 项目/父子扩展列（t.* 原样带回；测试造行可缺省）。
+  // 0919 分组/父子扩展列（t.* 原样带回；测试造行可缺省）。
   skills?: string;
-  project_id?: string | null;
+  group_id?: string | null;
   parent_task_id?: string | null;
   sort_order?: number;
 }
@@ -106,7 +106,7 @@ export interface TaskCardDto {
   run_count: number;
   due_at: string | null;
   updated_at: string | null;
-  project_id: string | null;
+  group_id: string | null;
   blocked: { count: number; by: { id: string; title: string }[] };
   artifacts: CardArtifact[];
   artifact_count: number;
@@ -236,7 +236,7 @@ export function toCardDto(
     artifacts: extra.artifacts ?? [],
     artifact_count: toNum(row.artifact_count ?? extra.artifacts?.length),
     custom_fields: extra.cardFields ?? {},
-    project_id: row.project_id ?? null,
+    group_id: row.group_id ?? null,
     parent: extra.parent ?? null,
   };
 }

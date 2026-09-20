@@ -41,7 +41,7 @@ async function seed(id: string, tags: string[], customFields: unknown): Promise<
 
 beforeAll(async () => {
   dir = mkdtempSync(path.join(tmpdir(), 'atb-json-filter-'));
-  const url = `file:${path.join(dir, 'atb.db')}`;
+  const url = `file:${path.join(dir, 'jarvis.db')}`;
   try {
     execFileSync('npx', ['prisma', 'db', 'push', '--skip-generate'], {
       cwd: apiRoot,

@@ -18,7 +18,7 @@ import { WritebackService } from '../writeback.service';
 
 /**
  * 每个测试文件一个独立临时库：ATB_DATA_DIR 指到 mkdtemp 目录后 PrismaService 的连接串
- * 就落在该目录的 atb.db 上，绝不连共享的 apps/api/prisma/dev.db（并行开发的同事都在写那张表）。
+ * 就落在该目录的 jarvis.db 上，绝不连共享的 apps/api/prisma/dev.db（并行开发的同事都在写那张表）。
  * 建表直接跑 prisma/migrations 的权威 DDL，含 11 章手写的部分唯一索引 uniq_active_run——
  * 它不在 schema.prisma 里，用 `db push` 生成的库反而测不出认领的兜底行为。
  */

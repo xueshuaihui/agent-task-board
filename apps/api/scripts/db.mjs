@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Prisma CLI 包装：把 DATABASE_URL 指到与运行时同一个库文件（数据目录下的 atb.db）。
-// 目的：迁移与 sidecar 读写同一个库，避免「迁移跑在 prisma/dev.db、应用跑在 ~/.agent-board/atb.db」。
+// Prisma CLI 包装：把 DATABASE_URL 指到与运行时同一个库文件（数据目录下的 jarvis.db）。
+// 目的：迁移与 sidecar 读写同一个库，避免「迁移跑在 prisma/dev.db、应用跑在 ~/.jarvis-workbench/jarvis.db」。
+// v0.0.4 W1b（需求.md §21.1）：目录/库名与 src/common/paths.ts 同步改齐，改一边要改另一边。
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdirSync } from 'node:fs';
@@ -15,14 +16,14 @@ function resolveDataDir() {
   if (fromEnv) return path.resolve(fromEnv);
   if (process.platform === 'win32') {
     const appData = process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming');
-    return path.join(appData, 'agent-board');
+    return path.join(appData, 'jarvis-workbench');
   }
-  return path.join(os.homedir(), '.agent-board');
+  return path.join(os.homedir(), '.jarvis-workbench');
 }
 
 const dataDir = resolveDataDir();
 mkdirSync(dataDir, { recursive: true });
-process.env.DATABASE_URL = `file:${path.join(dataDir, 'atb.db')}`;
+process.env.DATABASE_URL = `file:${path.join(dataDir, 'jarvis.db')}`;
 
 const candidates = [
   path.resolve(here, '..', '..', '..', 'node_modules', '.bin', 'prisma'),

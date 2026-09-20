@@ -1,15 +1,17 @@
 import { z } from 'zod';
 
-export const projectCreateSchema = z.object({
+/** v0.0.4 W1b：术语迁移 Project→Group（需求.md §21.1），本文件的 `project*` 标识符一律改 `group*`。 */
+
+export const groupCreateSchema = z.object({
   name: z.string().trim().min(1).max(50),
   color: z.string().trim().max(16).optional(),
   icon: z.string().trim().max(16).optional(),
   description: z.string().trim().max(2000).optional(),
   sort: z.number().int().optional(),
 });
-export type ProjectCreateInput = z.infer<typeof projectCreateSchema>;
+export type GroupCreateInput = z.infer<typeof groupCreateSchema>;
 
-export const projectPatchSchema = z
+export const groupPatchSchema = z
   .object({
     name: z.string().trim().min(1).max(50).optional(),
     color: z.string().trim().max(16).nullable().optional(),
@@ -19,13 +21,14 @@ export const projectPatchSchema = z
     sort: z.number().int().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: '没有需要更新的字段' });
-export type ProjectPatchInput = z.infer<typeof projectPatchSchema>;
+export type GroupPatchInput = z.infer<typeof groupPatchSchema>;
 
-export const projectDeleteQuerySchema = z.object({
-  strategy: z.enum(['migrate', 'delete']).default('delete'),
-  targetProjectId: z.string().trim().min(1).max(64).optional(),
+/** §16.2 `DELETE /api/v1/groups/{id}?strategy=migrate|cascade`（§5.4 的两种任务处理）。 */
+export const groupDeleteQuerySchema = z.object({
+  strategy: z.enum(['migrate', 'cascade']).default('cascade'),
+  targetGroupId: z.string().trim().min(1).max(64).optional(),
 });
-export type ProjectDeleteQuery = z.infer<typeof projectDeleteQuerySchema>;
+export type GroupDeleteQuery = z.infer<typeof groupDeleteQuerySchema>;
 
 export const prefPutSchema = z.object({
   value: z.unknown(),

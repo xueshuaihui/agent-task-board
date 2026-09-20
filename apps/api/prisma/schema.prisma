@@ -24,7 +24,9 @@ model UserPreference {
   @@map("user_preferences")
 }
 
-model Project {
+// v0.0.4 W1b：术语迁移 Project→Group（需求.md §21.1）——表 `projects`→`groups`、
+// `tasks.project_id`→`group_id`，索引随之改名；列语义未变。
+model Group {
   id          String  @id
   name        String
   color       String?
@@ -36,50 +38,50 @@ model Project {
   updatedAt   String  @default(dbgenerated("(datetime('now'))")) @map("updated_at")
   tasks       Task[]
 
-  @@unique([name], map: "uniq_projects_name")
-  @@index([status, sort], map: "idx_projects_status")
-  @@map("projects")
+  @@unique([name], map: "uniq_groups_name")
+  @@index([status, sort], map: "idx_groups_status")
+  @@map("groups")
 }
 
 model Task {
-  id                   String    @id
-  project              Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  projectId            String?   @map("project_id")
-  parent               Task?     @relation("ParentChild", fields: [parentTaskId], references: [id])
-  parentTaskId         String?   @map("parent_task_id")
-  children             Task[]    @relation("ParentChild")
-  sortOrder            Int       @default(0) @map("sort_order")
-  type                 String    @default("需求")
+  id                   String  @id
+  group                Group?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  groupId              String? @map("group_id")
+  parent               Task?   @relation("ParentChild", fields: [parentTaskId], references: [id])
+  parentTaskId         String? @map("parent_task_id")
+  children             Task[]  @relation("ParentChild")
+  sortOrder            Int     @default(0) @map("sort_order")
+  type                 String  @default("需求")
   title                String
   description          String?
-  status               String    @default("BACKLOG")
-  priority             Int       @default(3)
-  tags                 String?   @default("[]")
-  requiredCapabilities String?   @default("[]") @map("required_capabilities")
-  skills               String    @default("[]")
-  customFields         String?   @default("{}") @map("custom_fields")
-  pinned               Int       @default(0)
-  dueAt                String?   @map("due_at")
-  archivedAt           String?   @map("archived_at")
-  leaseId              String?   @map("lease_id")
-  leaseExpiresAt       String?   @map("lease_expires_at")
-  leaseRevokedAt       String?   @map("lease_revoked_at")
-  stopReason           String?   @map("stop_reason")
-  currentRunId         String?   @map("current_run_id")
-  claimedAt            String?   @map("claimed_at")
-  runCount             Int       @default(0) @map("run_count")
-  createdAt            String    @default(dbgenerated("(datetime('now'))")) @map("created_at")
-  updatedAt            String    @default(dbgenerated("(datetime('now'))")) @map("updated_at")
+  status               String  @default("BACKLOG")
+  priority             Int     @default(3)
+  tags                 String? @default("[]")
+  requiredCapabilities String? @default("[]") @map("required_capabilities")
+  skills               String  @default("[]")
+  customFields         String? @default("{}") @map("custom_fields")
+  pinned               Int     @default(0)
+  dueAt                String? @map("due_at")
+  archivedAt           String? @map("archived_at")
+  leaseId              String? @map("lease_id")
+  leaseExpiresAt       String? @map("lease_expires_at")
+  leaseRevokedAt       String? @map("lease_revoked_at")
+  stopReason           String? @map("stop_reason")
+  currentRunId         String? @map("current_run_id")
+  claimedAt            String? @map("claimed_at")
+  runCount             Int     @default(0) @map("run_count")
+  createdAt            String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  updatedAt            String  @default(dbgenerated("(datetime('now'))")) @map("updated_at")
 
   runs             TaskRun[]
   reviews          Review[]
   comments         Comment[]
   artifacts        Artifact[]
   notifications    Notification[]
-  dependenciesFrom TaskDependency[]     @relation("Dependents")
-  dependenciesTo   TaskDependency[]     @relation("Dependencies")
+  dependenciesFrom TaskDependency[] @relation("Dependents")
+  dependenciesTo   TaskDependency[] @relation("Dependencies")
 
-  @@index([projectId], map: "idx_tasks_project")
+  @@index([groupId], map: "idx_tasks_group")
   @@index([parentTaskId], map: "idx_tasks_parent")
   @@index([status], map: "idx_tasks_status")
   @@index([status, pinned, priority, createdAt], map: "idx_tasks_ready")
@@ -88,13 +90,13 @@ model Task {
 }
 
 model TaskDependency {
-  id         String   @id
-  taskId     String   @map("task_id")
-  dependsOn  String   @map("depends_on")
-  type       String   @default("blocks")
-  createdAt  String   @default(dbgenerated("(datetime('now'))")) @map("created_at")
-  task       Task     @relation("Dependents", fields: [taskId], references: [id], onDelete: Cascade)
-  depends    Task     @relation("Dependencies", fields: [dependsOn], references: [id], onDelete: Cascade)
+  id        String @id
+  taskId    String @map("task_id")
+  dependsOn String @map("depends_on")
+  type      String @default("blocks")
+  createdAt String @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  task      Task   @relation("Dependents", fields: [taskId], references: [id], onDelete: Cascade)
+  depends   Task   @relation("Dependencies", fields: [dependsOn], references: [id], onDelete: Cascade)
 
   @@unique([taskId, dependsOn])
   @@index([taskId], map: "idx_deps_task")
@@ -103,55 +105,55 @@ model TaskDependency {
 }
 
 model TaskTemplate {
-  id          String   @id
+  id          String  @id
   name        String
   description String?
   preset      String
-  sortOrder   Int?     @map("sort_order")
-  createdAt   String   @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  sortOrder   Int?    @map("sort_order")
+  createdAt   String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
 
   @@map("task_templates")
 }
 
 model CustomFieldDef {
-  id           String   @id
-  key          String   @unique
+  id           String  @id
+  key          String  @unique
   label        String
   type         String
-  required     Int      @default(0)
-  defaultValue String?  @map("default_value")
+  required     Int     @default(0)
+  defaultValue String? @map("default_value")
   options      String?
-  appliesTo    String?  @default("[]") @map("applies_to")
-  showOnCard   Int      @default(0) @map("show_on_card")
-  sortOrder    Int?     @map("sort_order")
-  enabled      Int      @default(1)
-  createdAt    String   @default(dbgenerated("(datetime('now'))")) @map("created_at")
-  updatedAt    String   @default(dbgenerated("(datetime('now'))")) @map("updated_at")
+  appliesTo    String? @default("[]") @map("applies_to")
+  showOnCard   Int     @default(0) @map("show_on_card")
+  sortOrder    Int?    @map("sort_order")
+  enabled      Int     @default(1)
+  createdAt    String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  updatedAt    String  @default(dbgenerated("(datetime('now'))")) @map("updated_at")
 
   @@map("custom_field_defs")
 }
 
 model TaskRun {
-  id           String    @id
-  taskId       String    @map("task_id")
-  agentName    String?   @map("agent_name")
-  tokenId      String?   @map("token_id")
-  runNumber    Int       @map("run_number")
-  status       String    @default("RUNNING")
-  triggerType  String    @default("agent_poll") @map("trigger_type")
-  leaseId      String?   @map("lease_id")
-  startedAt    String    @default(dbgenerated("(datetime('now'))")) @map("started_at")
-  finishedAt   String?   @map("finished_at")
-  durationMs   Int?      @map("duration_ms")
-  output       String?
-  summary      String?
-  error        String?
-  progress     Int?
-  progressMsg  String?   @map("progress_msg")
-  task         Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  token        ApiToken? @relation(fields: [tokenId], references: [id])
-  artifacts    Artifact[]
-  comments     Comment[]
+  id          String     @id
+  taskId      String     @map("task_id")
+  agentName   String?    @map("agent_name")
+  tokenId     String?    @map("token_id")
+  runNumber   Int        @map("run_number")
+  status      String     @default("RUNNING")
+  triggerType String     @default("agent_poll") @map("trigger_type")
+  leaseId     String?    @map("lease_id")
+  startedAt   String     @default(dbgenerated("(datetime('now'))")) @map("started_at")
+  finishedAt  String?    @map("finished_at")
+  durationMs  Int?       @map("duration_ms")
+  output      String?
+  summary     String?
+  error       String?
+  progress    Int?
+  progressMsg String?    @map("progress_msg")
+  task        Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  token       ApiToken?  @relation(fields: [tokenId], references: [id])
+  artifacts   Artifact[]
+  comments    Comment[]
 
   @@unique([taskId, runNumber])
   @@index([taskId], map: "idx_runs_task")
@@ -159,34 +161,34 @@ model TaskRun {
 }
 
 model Artifact {
-  id         String   @id
-  runId      String   @map("run_id")
-  taskId     String   @map("task_id")
-  type       String
-  uri        String
-  sizeBytes  Int?     @map("size_bytes")
-  mimeType   String?  @map("mime_type")
-  metadata   String?  @default("{}")
-  createdAt  String   @default(dbgenerated("(datetime('now'))")) @map("created_at")
-  run        TaskRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
-  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  id        String  @id
+  runId     String  @map("run_id")
+  taskId    String  @map("task_id")
+  type      String
+  uri       String
+  sizeBytes Int?    @map("size_bytes")
+  mimeType  String? @map("mime_type")
+  metadata  String? @default("{}")
+  createdAt String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  run       TaskRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  task      Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([runId], map: "idx_artifacts_run")
   @@map("artifacts")
 }
 
 model Review {
-  id          String   @id
-  taskId      String   @map("task_id")
-  runId       String?  @map("run_id")
+  id          String  @id
+  taskId      String  @map("task_id")
+  runId       String? @map("run_id")
   conclusion  String
   suggestion  String
   reason      String
   detail      String
-  returnTo    String?  @map("return_to")
-  priorityAdj Int?     @map("priority_adj")
-  createdAt   String   @default(dbgenerated("(datetime('now'))")) @map("created_at")
-  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  returnTo    String? @map("return_to")
+  priorityAdj Int?    @map("priority_adj")
+  createdAt   String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  task        Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([taskId, createdAt], map: "idx_reviews_task")
   @@map("reviews")
@@ -229,15 +231,15 @@ model Setting {
 }
 
 model AuditLog {
-  id         Int      @id @default(autoincrement())
-  actorType  String   @map("actor_type")
-  actorName  String?  @map("actor_name")
+  id         Int     @id @default(autoincrement())
+  actorType  String  @map("actor_type")
+  actorName  String? @map("actor_name")
   action     String
-  targetType String   @map("target_type")
-  targetId   String?  @map("target_id")
+  targetType String  @map("target_type")
+  targetId   String? @map("target_id")
   before     String?
   after      String?
-  createdAt  String   @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  createdAt  String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
 
   @@map("audit_logs")
 }
@@ -250,13 +252,13 @@ model IdSequence {
 }
 
 model Notification {
-  id        String   @id
+  id        String  @id
   kind      String
-  taskId    String?  @map("task_id")
+  taskId    String? @map("task_id")
   message   String
-  readAt    String?  @map("read_at")
-  createdAt String   @default(dbgenerated("(datetime('now'))")) @map("created_at")
-  task      Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  readAt    String? @map("read_at")
+  createdAt String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  task      Task?   @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([readAt], map: "idx_notif_read")
   @@map("notifications")
@@ -264,24 +266,24 @@ model Notification {
 
 // 0919：技能管理（迁移 0003_skills）。JSON 列是文本，客户端 parse/stringify。
 model Skill {
-  id              String  @id
+  id              String         @id
   name            String
   type            String
-  status          String  @default("DRAFT")
-  description     String  @default("")
-  tags            String  @default("[]")
-  currentVersion  String  @default("v0.1.0") @map("current_version")
-  content         String  @default("{\"blocks\":[],\"entryBlockId\":null}")
-  testCases       String  @default("[]") @map("test_cases")
-  mcpDependencies String  @default("[]") @map("mcp_dependencies")
+  status          String         @default("DRAFT")
+  description     String         @default("")
+  tags            String         @default("[]")
+  currentVersion  String         @default("v0.1.0") @map("current_version")
+  content         String         @default("{\"blocks\":[],\"entryBlockId\":null}")
+  testCases       String         @default("[]") @map("test_cases")
+  mcpDependencies String         @default("[]") @map("mcp_dependencies")
   // 8.8 技能源标记（来源枚举收敛见 v0.0.4 W2，本任务不动）。
-  source          String  @default("local") @map("source")
-  createdAt       String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
-  updatedAt       String  @default(dbgenerated("(datetime('now'))")) @map("updated_at")
+  source          String         @default("local") @map("source")
+  createdAt       String         @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  updatedAt       String         @default(dbgenerated("(datetime('now'))")) @map("updated_at")
   versions        SkillVersion[]
 
-  @@index([status], map: "idx_skills_status")
   @@unique([name], map: "uniq_skills_name")
+  @@index([status], map: "idx_skills_status")
   @@map("skills")
 }
 

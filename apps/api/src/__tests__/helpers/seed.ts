@@ -46,7 +46,7 @@ export interface NewTaskInput {
   title?: string;
   type?: string;
   parent_task_id?: string;
-  project_id?: string;
+  group_id?: string;
   priority?: number;
   required_capabilities?: string[];
   custom_fields?: Record<string, unknown>;
@@ -72,7 +72,7 @@ export async function newTask(t: TestApp, input: NewTaskInput = {}): Promise<str
   // 13 章创建入参的 description 是 optional 而非 nullable，缺省就别带。
   if (input.description !== undefined) payload.description = input.description;
   if (input.parent_task_id !== undefined) payload.parent_task_id = input.parent_task_id;
-  if (input.project_id !== undefined) payload.project_id = input.project_id;
+  if (input.group_id !== undefined) payload.group_id = input.group_id;
   const res = await ui.post(`${API}/tasks`, payload);
   if (res.status !== 201) throw new Error(`建任务失败：${res.status} ${res.text}`);
   return res.body.id as string;

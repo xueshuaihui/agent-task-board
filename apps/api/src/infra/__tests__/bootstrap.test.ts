@@ -31,7 +31,7 @@ describe('applyMigrations 水位对齐', () => {
     const dir = makeDataDir();
     const applied = applyMigrations();
     expect(applied.length).toBeGreaterThan(0);
-    const db = new DatabaseSync(path.join(dir, 'atb.db'), { readOnly: true });
+    const db = new DatabaseSync(path.join(dir, 'jarvis.db'), { readOnly: true });
     const row = db.prepare('PRAGMA user_version').get() as { user_version: number };
     expect(row.user_version).toBe(applied[applied.length - 1]);
     db.close();
@@ -41,14 +41,14 @@ describe('applyMigrations 水位对齐', () => {
     const dir = makeDataDir();
     // 先用官方迁移建一个「开发期库」，再抹掉水位，模拟 db.mjs（prisma migrate deploy）的产物。
     applyMigrations();
-    const db = new DatabaseSync(path.join(dir, 'atb.db'));
+    const db = new DatabaseSync(path.join(dir, 'jarvis.db'));
     db.exec('PRAGMA user_version = 0');
     db.close();
 
     const applied = applyMigrations();
     expect(applied).toEqual([]); // 不应重放任何迁移
 
-    const check = new DatabaseSync(path.join(dir, 'atb.db'), { readOnly: true });
+    const check = new DatabaseSync(path.join(dir, 'jarvis.db'), { readOnly: true });
     const row = check.prepare('PRAGMA user_version').get() as { user_version: number };
     const maxOrder = Math.max(
       ...applyMigrationsBundleNames().map((name) => Number(name.split('_')[0])),
@@ -59,7 +59,7 @@ describe('applyMigrations 水位对齐', () => {
 
   it('既有库（有表、无账本）：对齐到全量水位、不重放', () => {
     const dir = makeDataDir();
-    const db = new DatabaseSync(path.join(dir, 'atb.db'));
+    const db = new DatabaseSync(path.join(dir, 'jarvis.db'));
     db.exec('CREATE TABLE tasks (id TEXT PRIMARY KEY, title TEXT NOT NULL)');
     db.close();
 

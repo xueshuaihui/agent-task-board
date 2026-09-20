@@ -116,14 +116,14 @@ export class TasksService {
     // 6.9.2：必填的拦截点是「拖到待执行」，创建时只校验已提交值的类型与登记情况。
     const customFields = await this.normalizeCustomFields(input.type, input.custom_fields, false);
     const parentId = input.parent_task_id ? await this.assertParent(input.parent_task_id) : null;
-    if (input.project_id) await this.assertProject(input.project_id);
+    if (input.group_id) await this.assertGroup(input.group_id);
 
     const id = await this.prisma.$transaction(async (tx) => {
       const taskId = await nextTaskId(tx);
       await tx.task.create({
         data: {
           id: taskId,
-          projectId: input.project_id ?? null,
+          groupId: input.group_id ?? null,
           parentTaskId: parentId,
           sortOrder: input.sort_order ?? 0,
           type: input.type,
@@ -170,12 +170,12 @@ export class TasksService {
     if (input.priority !== undefined) data.priority = Number(input.priority);
     if (input.pinned !== undefined) data.pinned = input.pinned ? 1 : 0;
     if (input.due_at !== undefined) data.dueAt = input.due_at ? toDateOnly(input.due_at) : null;
-    if (input.project_id !== undefined) {
-      if (input.project_id) {
-        await this.assertProject(input.project_id);
-        data.project = { connect: { id: input.project_id } };
+    if (input.group_id !== undefined) {
+      if (input.group_id) {
+        await this.assertGroup(input.group_id);
+        data.group = { connect: { id: input.group_id } };
       } else {
-        data.project = { disconnect: true };
+        data.group = { disconnect: true };
       }
     }
     if (input.parent_task_id !== undefined) {
@@ -821,9 +821,9 @@ export class TasksService {
     const where: Prisma.TaskWhereInput = {};
     if (query.archived === 'false') where.archivedAt = null;
     if (query.archived === 'true') where.archivedAt = { not: null };
-    if (query.project_id !== undefined) {
-      // `none`：未分配项目的任务。
-      where.projectId = query.project_id === 'none' ? null : query.project_id;
+    if (query.group_id !== undefined) {
+      // `none`：未分配分组的任务。
+      where.groupId = query.group_id === 'none' ? null : query.group_id;
     }
     if (query.status?.length) where.status = { in: query.status };
     const priorities = (query.priority ?? []).map(Number).filter((value) => !Number.isNaN(value));
@@ -1106,9 +1106,9 @@ export class TasksService {
     return parent.id;
   }
 
-  private async assertProject(projectId: string): Promise<void> {
-    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
-    if (!project) throw new ApiException('NOT_FOUND', `项目 ${projectId} 不存在`);
+  private async assertGroup(groupId: string): Promise<void> {
+    const group = await this.prisma.group.findUnique({ where: { id: groupId } });
+    if (!group) throw new ApiException('NOT_FOUND', `分组 ${groupId} 不存在`);
   }
 
   /**
@@ -1401,13 +1401,13 @@ export class TasksService {
     );
   }
 
-  private async buildFilters(query: BoardQuery & { project_id?: string }): Promise<{ predicate: Prisma.Sql }> {
+  private async buildFilters(query: BoardQuery & { group_id?: string }): Promise<{ predicate: Prisma.Sql }> {
     const parts: Prisma.Sql[] = [];
-    if (query.project_id !== undefined) {
+    if (query.group_id !== undefined) {
       parts.push(
-        query.project_id === 'none'
-          ? Prisma.sql`t.project_id IS NULL`
-          : Prisma.sql`t.project_id = ${query.project_id}`,
+        query.group_id === 'none'
+          ? Prisma.sql`t.group_id IS NULL`
+          : Prisma.sql`t.group_id = ${query.group_id}`,
       );
     }
     const priorities = (query.priority ?? []).map(Number).filter((value) => !Number.isNaN(value));

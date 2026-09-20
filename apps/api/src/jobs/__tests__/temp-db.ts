@@ -7,7 +7,7 @@ import { nowSql } from '../../contract/time';
 
 /**
  * 独立临时库：ATB_DATA_DIR 指到 mkdtemp 目录后，PrismaService 的连接串就落在
- * 该目录的 atb.db 上，绝不碰 apps/api/prisma/dev.db（并行 agent 共用同一个工作区）。
+ * 该目录的 jarvis.db 上，绝不碰 apps/api/prisma/dev.db（并行 agent 共用同一个工作区）。
  * 建表直接跑 prisma/migrations 的权威 DDL，比 `prisma db push` 快一个量级。
  */
 export interface TempDb {

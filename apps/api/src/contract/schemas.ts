@@ -74,8 +74,8 @@ export const taskCreateSchema = z.object({
   depends_on: z.array(idParam).max(50).default([]),
   dependency_type: z.enum(DEP_TYPES).default('blocks'),
   pinned: z.boolean().default(false),
-  // 0919：项目归属 + 需求/子任务父子（父必须是需求类型、嵌套最多 2 层）。项目 id 是 UUID，用 64 位宽。
-  project_id: z.string().trim().min(1).max(64).optional(),
+  // 0919：分组归属 + 需求/子任务父子（父必须是需求类型、嵌套最多 2 层）。分组 id 是 UUID，用 64 位宽。
+  group_id: z.string().trim().min(1).max(64).optional(),
   parent_task_id: idParam.optional(),
   sort_order: z.number().int().optional(),
 });
@@ -93,7 +93,7 @@ export const taskPatchSchema = z
     custom_fields: customFieldsSchema.optional(),
     due_at: dateInputSchema.nullable().optional(),
     pinned: z.boolean().optional(),
-    project_id: z.string().trim().min(1).max(64).nullable().optional(),
+    group_id: z.string().trim().min(1).max(64).nullable().optional(),
     /** 0919 跨分组移动：挂到需求 / 置 null 脱离需求（归属校验在服务层 assertParent）。 */
     parent_task_id: idParam.nullable().optional(),
     sort_order: z.number().int().optional(),
@@ -303,8 +303,8 @@ export type CustomFieldFilter = z.infer<typeof customFieldFilterSchema>;
 
 export const boardQuerySchema = z.object({
   view: z.enum(BOARD_VIEWS).default('all'),
-  // 0919：按项目过滤；`none` 表示「未分配项目」。
-  project_id: z.string().trim().max(64).optional(),
+  // 0919：按分组过滤；`none` 表示「未分配分组」。
+  group_id: z.string().trim().max(64).optional(),
   priority: priorityListSchema.optional(),
   type: stringListSchema.optional(),
   tags: stringListSchema.optional(),
@@ -314,7 +314,7 @@ export type BoardQuery = z.infer<typeof boardQuerySchema>;
 
 export const listQuerySchema = z.object({
   status: enumList(TASK_STATUS as unknown as readonly [string, ...string[]]).optional(),
-  project_id: z.string().trim().max(64).optional(),
+  group_id: z.string().trim().max(64).optional(),
   keyword: z.string().trim().max(120).optional(),
   priority: priorityListSchema.optional(),
   type: stringListSchema.optional(),

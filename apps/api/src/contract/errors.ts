@@ -16,6 +16,8 @@ export const ERROR_STATUS = {
   // 0919：技能管理（8 章）
   SKILL_BOUND: 409,
   SKILL_NAME_TAKEN: 409,
+  // v0.0.4 W1b §5.5：活跃分组达到上限 50 后拒绝新建。
+  GROUP_LIMIT_REACHED: 409,
   ARTIFACT_TOO_LARGE: 413,
   LEASE_EXPIRED: 410,
   LEASE_REVOKED: 410,

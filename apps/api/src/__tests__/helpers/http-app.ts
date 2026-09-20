@@ -26,7 +26,7 @@ import { applyDiShim } from './nest-di-shim';
  * 3. 每个测试文件一个进程一个库（vitest 默认 forks + isolate），互不干扰。
  */
 export interface TestApp {
-  /** 临时数据目录（atb.db / artifacts / backups 都在这下面）。 */
+  /** 临时数据目录（jarvis.db / artifacts / backups 都在这下面）。 */
   dir: string;
   /** `http://127.0.0.1:{随机端口}` */
   origin: string;

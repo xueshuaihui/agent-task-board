@@ -1,13 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import type { Project } from '@prisma/client';
+import type { Group } from '@prisma/client';
 import { ApiException } from '../contract/errors';
 import { newId } from '../contract/ids';
 import { nowSql, toIso } from '../contract/time';
 import { AuditService } from '../infra/audit.service';
 import { PrismaService } from '../infra/prisma.service';
-import type { ProjectCreateInput, ProjectDeleteQuery, ProjectPatchInput } from './project.dto';
+import type { GroupCreateInput, GroupDeleteQuery, GroupPatchInput } from './group.dto';
 
-export interface ProjectDto {
+/** §5.5 约束：分组数量上限 50（仅计活跃分组，归档分组不占额）。 */
+export const GROUP_LIMIT = 50;
+
+export interface GroupDto {
   id: string;
   name: string;
   color: string | null;
@@ -19,15 +22,15 @@ export interface ProjectDto {
   updated_at: string | null;
 }
 
-export interface ProjectDeleteResult {
+export interface GroupDeleteResult {
   id: string;
   deleted: boolean;
-  strategy: 'migrate' | 'delete';
-  /** strategy=delete 时同步删除的任务数；migrate 时为迁移过去的数量。 */
+  strategy: 'migrate' | 'cascade';
+  /** strategy=cascade 时同步删除的任务数；migrate 时为迁移过去的数量。 */
   affected_tasks: number;
 }
 
-function toDto(row: Project): ProjectDto {
+function toDto(row: Group): GroupDto {
   return {
     id: row.id,
     name: row.name,
@@ -42,24 +45,25 @@ function toDto(row: Project): ProjectDto {
 }
 
 @Injectable()
-export class ProjectsService {
+export class GroupsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
   ) {}
 
-  async list(includeArchived = true): Promise<{ items: ProjectDto[] }> {
-    const rows = await this.prisma.project.findMany({
+  async list(includeArchived = true): Promise<{ items: GroupDto[] }> {
+    const rows = await this.prisma.group.findMany({
       where: includeArchived ? {} : { status: 'ACTIVE' },
       orderBy: [{ sort: 'asc' }, { createdAt: 'asc' }],
     });
     return { items: rows.map(toDto) };
   }
 
-  async create(input: ProjectCreateInput): Promise<ProjectDto> {
+  async create(input: GroupCreateInput): Promise<GroupDto> {
     await this.assertNameFree(input.name);
+    await this.assertLimitFree();
     const id = newId();
-    await this.prisma.project.create({
+    await this.prisma.group.create({
       data: {
         id,
         name: input.name,
@@ -73,18 +77,18 @@ export class ProjectsService {
     });
     await this.audit.record({
       actorType: 'user',
-      action: 'project_change',
-      targetType: 'project',
+      action: 'group_change',
+      targetType: 'group',
       targetId: id,
       after: { name: input.name },
     });
     return toDto(await this.get(id));
   }
 
-  async patch(id: string, input: ProjectPatchInput): Promise<ProjectDto> {
+  async patch(id: string, input: GroupPatchInput): Promise<GroupDto> {
     await this.get(id);
     if (input.name !== undefined) await this.assertNameFree(input.name, id);
-    await this.prisma.project.update({
+    await this.prisma.group.update({
       where: { id },
       data: {
         ...(input.name === undefined ? {} : { name: input.name }),
@@ -98,8 +102,8 @@ export class ProjectsService {
     });
     await this.audit.record({
       actorType: 'user',
-      action: 'project_change',
-      targetType: 'project',
+      action: 'group_change',
+      targetType: 'group',
       targetId: id,
       after: { ...input },
     });
@@ -107,46 +111,46 @@ export class ProjectsService {
   }
 
   /**
-   * 删除项目：`?strategy=migrate&targetProjectId=xxx` 把任务迁去目标项目（不含已归档的也一并迁），
-   * 默认 `?strategy=delete` 连任务一起删（任务删除会级联 runs/artifacts）。
+   * 删除分组：`?strategy=migrate&targetGroupId=xxx` 把任务迁去目标分组（含已归档的也一并迁），
+   * 默认 `?strategy=cascade` 连任务一起删（任务删除会级联 runs/artifacts）。
    * 有子任务挂在待删任务下时由任务删除侧的「父任务不可删」规则拦下。
    */
-  async remove(id: string, query: ProjectDeleteQuery): Promise<ProjectDeleteResult> {
+  async remove(id: string, query: GroupDeleteQuery): Promise<GroupDeleteResult> {
     const row = await this.get(id);
     let affected = 0;
     if (query.strategy === 'migrate') {
-      if (!query.targetProjectId) {
-        throw new ApiException('VALIDATION_FAILED', '迁移目标项目不能为空', [
-          { path: 'targetProjectId', code: 'required', message: 'strategy=migrate 必须提供' },
+      if (!query.targetGroupId) {
+        throw new ApiException('VALIDATION_FAILED', '迁移目标分组不能为空', [
+          { path: 'targetGroupId', code: 'required', message: 'strategy=migrate 必须提供' },
         ]);
       }
-      if (query.targetProjectId === id) {
-        throw new ApiException('VALIDATION_FAILED', '迁移目标不能是本项目');
+      if (query.targetGroupId === id) {
+        throw new ApiException('VALIDATION_FAILED', '迁移目标不能是本分组');
       }
-      const target = await this.get(query.targetProjectId);
+      const target = await this.get(query.targetGroupId);
       const moved = await this.prisma.task.updateMany({
-        where: { projectId: id },
-        data: { projectId: target.id, updatedAt: nowSql() },
+        where: { groupId: id },
+        data: { groupId: target.id, updatedAt: nowSql() },
       });
       affected = moved.count;
     } else {
-      const childCount = await this.prisma.task.count({ where: { projectId: id } });
+      const childCount = await this.prisma.task.count({ where: { groupId: id } });
       if (childCount > 0) {
         const parents = await this.prisma.task.count({
-          where: { projectId: id, children: { some: {} } },
+          where: { groupId: id, children: { some: {} } },
         });
         if (parents > 0) {
-          throw new ApiException('ILLEGAL_TRANSITION', '项目下存在带子任务的任务，请先处理或改用迁移');
+          throw new ApiException('ILLEGAL_TRANSITION', '分组下存在带子任务的任务，请先处理或改用迁移');
         }
       }
-      const deleted = await this.prisma.task.deleteMany({ where: { projectId: id } });
+      const deleted = await this.prisma.task.deleteMany({ where: { groupId: id } });
       affected = deleted.count;
     }
-    await this.prisma.project.delete({ where: { id } });
+    await this.prisma.group.delete({ where: { id } });
     await this.audit.record({
       actorType: 'user',
-      action: 'project_change',
-      targetType: 'project',
+      action: 'group_change',
+      targetType: 'group',
       targetId: id,
       before: { name: row.name },
       after: { deleted: true, strategy: query.strategy, affected_tasks: affected },
@@ -154,18 +158,31 @@ export class ProjectsService {
     return { id, deleted: true, strategy: query.strategy, affected_tasks: affected };
   }
 
-  private async get(id: string): Promise<Project> {
-    const row = await this.prisma.project.findUnique({ where: { id } });
-    if (!row) throw new ApiException('NOT_FOUND', `项目 ${id} 不存在`);
+  private async get(id: string): Promise<Group> {
+    const row = await this.prisma.group.findUnique({ where: { id } });
+    if (!row) throw new ApiException('NOT_FOUND', `分组 ${id} 不存在`);
     return row;
   }
 
   private async assertNameFree(name: string, excludeId?: string): Promise<void> {
-    const rows = await this.prisma.project.findMany({ where: { name } });
+    const rows = await this.prisma.group.findMany({ where: { name } });
     if (rows.some((row) => row.id !== excludeId)) {
-      throw new ApiException('VALIDATION_FAILED', `项目名「${name}」已存在`, [
-        { path: 'name', code: 'duplicate_name', message: '项目名不能重复' },
+      throw new ApiException('VALIDATION_FAILED', `分组名「${name}」已存在`, [
+        { path: 'name', code: 'duplicate_name', message: '分组名不能重复' },
       ]);
+    }
+  }
+
+  /** §5.5 / §20.1-1：活跃分组达到 50 时拒绝创建（归档分组不占额；归档本身属 W4）。 */
+  private async assertLimitFree(): Promise<void> {
+    const active = await this.prisma.group.count({ where: { status: 'ACTIVE' } });
+    if (active >= GROUP_LIMIT) {
+      throw new ApiException(
+        'GROUP_LIMIT_REACHED',
+        `分组数量已达上限 ${GROUP_LIMIT} 个，请先删除不用的分组`,
+        undefined,
+        { limit: GROUP_LIMIT, active },
+      );
     }
   }
 }

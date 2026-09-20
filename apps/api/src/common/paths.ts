@@ -7,6 +7,9 @@ export const DEFAULT_PORT = 7788;
 
 /**
  * 数据目录：ATB_DATA_DIR 优先（Tauri 主进程注入），否则按平台取默认值（PRD 20.6）。
+ * v0.0.4 W1b（需求.md §21.1）：默认目录由 `~/.agent-board/atb.db` 迁移至
+ * `~/.jarvis-workbench/jarvis.db`；旧位置的一次性自动搬迁与只读指引文件在升级首启
+ * bootstrap 中执行（依赖桌面端 paths.rs 同步改名，本侧常量先改齐）。
  * 迁移脚本 scripts/db.mjs 有同一份逻辑，改这里要一起改。
  */
 export function dataDir(): string {
@@ -14,17 +17,17 @@ export function dataDir(): string {
   if (fromEnv) return path.resolve(fromEnv);
   if (process.platform === 'win32') {
     const appData = process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming');
-    return path.join(appData, 'agent-board');
+    return path.join(appData, 'jarvis-workbench');
   }
-  return path.join(os.homedir(), '.agent-board');
+  return path.join(os.homedir(), '.jarvis-workbench');
 }
 
 export const paths = {
   dataDir,
-  dbFile: () => path.join(dataDir(), 'atb.db'),
+  dbFile: () => path.join(dataDir(), 'jarvis.db'),
   /** 连接参数是认领并发的前提，见 infra/prisma.service.ts 的注释。 */
   datasourceUrl: () =>
-    `file:${path.join(dataDir(), 'atb.db')}?journal_mode=WAL&foreign_keys=On&busy_timeout=5000&connection_limit=1`,
+    `file:${path.join(dataDir(), 'jarvis.db')}?journal_mode=WAL&foreign_keys=On&busy_timeout=5000&connection_limit=1`,
   artifactsDir: () => path.join(dataDir(), 'artifacts'),
   backupsDir: () => path.join(dataDir(), 'backups'),
   /**

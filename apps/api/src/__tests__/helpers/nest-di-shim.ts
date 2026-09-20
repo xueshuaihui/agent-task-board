@@ -25,9 +25,9 @@ import { EventsService } from '../../infra/events.service';
 import { AppLogger } from '../../infra/logger';
 import { NotificationsService } from '../../infra/notifications.service';
 import { PrismaService } from '../../infra/prisma.service';
-import { PrefsController } from '../../projects/prefs.controller';
-import { ProjectsController } from '../../projects/projects.controller';
-import { ProjectsService } from '../../projects/projects.service';
+import { PrefsController } from '../../groups/prefs.controller';
+import { GroupsController } from '../../groups/groups.controller';
+import { GroupsService } from '../../groups/groups.service';
 import { SettingsService } from '../../infra/settings.service';
 import { AutoArchiveJob } from '../../jobs/auto-archive.job';
 import { DependencyUnlockService } from '../../jobs/dependency-unlock.service';
@@ -76,10 +76,10 @@ export function applyDiShim(): void {
   declare(AuditService, [PrismaService]);
   declare(NotificationsService, [PrismaService, EventsService]);
 
-  // ── auth / 0919 项目与偏好
+  // ── auth / 0919 分组与偏好
   declare(AuthGuard, [Reflector, PrismaService]);
-  declare(ProjectsService, [PrismaService, AuditService]);
-  declare(ProjectsController, [ProjectsService]);
+  declare(GroupsService, [PrismaService, AuditService]);
+  declare(GroupsController, [GroupsService]);
   declare(PrefsController, [PrismaService]);
 
   // ── agent / mcp

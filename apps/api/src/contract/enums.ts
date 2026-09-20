@@ -98,7 +98,7 @@ export const AUDIT_ACTIONS = [
   'backup',
   'restore',
   'settings_change',
-  'project_change',
+  'group_change',
   'pref_change',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -113,7 +113,7 @@ export const AUDIT_TARGET_TYPES = [
   'token',
   'settings',
   'data',
-  'project',
+  'group',
   'preference',
 ] as const;
 export type AuditTargetType = (typeof AUDIT_TARGET_TYPES)[number];
