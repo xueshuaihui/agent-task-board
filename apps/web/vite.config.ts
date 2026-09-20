@@ -14,9 +14,9 @@ function resolveDataDir(): string {
   if (fromEnv) return path.resolve(fromEnv);
   if (process.platform === 'win32') {
     const appData = process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming');
-    return path.join(appData, 'agent-board');
+    return path.join(appData, 'jarvis-workbench');
   }
-  return path.join(os.homedir(), '.agent-board');
+  return path.join(os.homedir(), '.jarvis-workbench');
 }
 
 function resolveApiPort(): number {

@@ -52,12 +52,13 @@ function currentPlatform(): Platform {
   return 'linux';
 }
 
-/** 9.3 + 20.6 的目录约定（Windows 走 %APPDATA%，Linux 日志走 XDG_STATE_HOME）。 */
+/** 9.3 + 20.6 的目录约定（Windows 走 %APPDATA%，Linux 日志走 XDG_STATE_HOME）。
+ * v0.0.4 W1b（需求.md §21.1）：默认数据目录 `~/.agent-board` → `~/.jarvis-workbench`。 */
 function conventionDirs(
   platform: Platform,
 ): Omit<SystemInfo, 'dirs_from_convention' | 'app_version' | 'sidecar_version' | 'port' | 'sidecar_alive' | 'pid'> {
   if (platform === 'win32') {
-    const root = '%APPDATA%\\agent-board';
+    const root = '%APPDATA%\\jarvis-workbench';
     return {
       data_dir: `${root}\\`,
       artifacts_dir: `${root}\\artifacts\\`,
@@ -67,16 +68,16 @@ function conventionDirs(
   }
   if (platform === 'darwin') {
     return {
-      data_dir: '~/.agent-board/',
-      artifacts_dir: '~/.agent-board/artifacts/',
-      backup_dir: '~/.agent-board/backups/',
+      data_dir: '~/.jarvis-workbench/',
+      artifacts_dir: '~/.jarvis-workbench/artifacts/',
+      backup_dir: '~/.jarvis-workbench/backups/',
       logs_dir: '~/Library/Logs/AgentTaskBoard/',
     };
   }
   return {
-    data_dir: '~/.agent-board/',
-    artifacts_dir: '~/.agent-board/artifacts/',
-    backup_dir: '~/.agent-board/backups/',
+    data_dir: '~/.jarvis-workbench/',
+    artifacts_dir: '~/.jarvis-workbench/artifacts/',
+    backup_dir: '~/.jarvis-workbench/backups/',
     logs_dir: '~/.local/state/AgentTaskBoard/logs',
   };
 }
