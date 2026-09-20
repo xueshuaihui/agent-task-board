@@ -1109,9 +1109,21 @@ export class TasksService {
     return parent.id;
   }
 
+  /**
+   * 分组归属校验。v0.0.4 W4 §5.6：归档分组转只读——不能再向该组建任务，也不能把
+   * 任务移动进去（创建/迁移的目标组必须活跃）；404 语义保持不变（不存在的组仍是 NOT_FOUND）。
+   */
   private async assertGroup(groupId: string): Promise<void> {
     const group = await this.prisma.group.findUnique({ where: { id: groupId } });
     if (!group) throw new ApiException('NOT_FOUND', `分组 ${groupId} 不存在`);
+    if (group.status === 'ARCHIVED') {
+      throw new ApiException(
+        'GROUP_ARCHIVED',
+        `分组「${group.name}」已归档，只读；不能向该组建任务或移动任务进来`,
+        undefined,
+        { group_id: group.id },
+      );
+    }
   }
 
   /**
@@ -1412,6 +1424,11 @@ export class TasksService {
           ? Prisma.sql`t.group_id IS NULL`
           : Prisma.sql`t.group_id = ${query.group_id}`,
       );
+    } else {
+      // §5.6（W4）：归档分组从看板默认隐藏——未显式按分组过滤时排除归档组任务；
+      // 显式 `group_id=<归档组>` 仍可见（泳道归档折叠区展开该组时用的就是这个口）。
+      parts.push(Prisma.sql`NOT EXISTS (
+        SELECT 1 FROM groups g WHERE g.id = t.group_id AND g.status = 'ARCHIVED')`);
     }
     const priorities = (query.priority ?? []).map(Number).filter((value) => !Number.isNaN(value));
     if (priorities.length > 0) parts.push(Prisma.sql`t.priority IN (${Prisma.join(priorities)})`);

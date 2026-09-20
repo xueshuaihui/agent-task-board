@@ -78,7 +78,7 @@ export function applyDiShim(): void {
 
   // ── auth / 0919 分组与偏好
   declare(AuthGuard, [Reflector, PrismaService]);
-  declare(GroupsService, [PrismaService, AuditService]);
+  declare(GroupsService, [PrismaService, AuditService, EventsService]);
   declare(GroupsController, [GroupsService]);
   declare(PrefsController, [PrismaService]);
 

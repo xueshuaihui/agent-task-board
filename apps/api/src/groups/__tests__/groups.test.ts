@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestApp, errorCode, type TestApp } from '../../__tests__/helpers/http-app';
 import { API, newTask, uiSender } from '../../__tests__/helpers/seed';
+import { EventsService, type WsEvent } from '../../infra/events.service';
 import { GROUP_LIMIT } from '../groups.service';
 
 /**
@@ -224,5 +225,230 @@ describe('预置「默认」分组（§5.2 / 验收 7）', () => {
     const explicitId = await newTask(t, { title: '带分组的任务', group_id: other!.id });
     const detail = await ui.get<{ group_id: string }>(`${API}/tasks/${explicitId}`);
     expect(detail.body.group_id).toBe(other!.id);
+  });
+});
+
+/**
+ * v0.0.4 W4 分组归档（需求.md §5.6 / §16.2 archive/unarchive / §19.12-72、73、78，r3 闭环）。
+ * 前置用例已把活跃名额占满，这里先用数据面放倒占位分组腾额度
+ * （夹具不是用户操作，不走带校验的归档接口）；随后各用例走真实 HTTP 入口。
+ */
+describe('§5.6 分组归档（W4）', () => {
+  async function freeActiveQuota(slots = 6): Promise<void> {
+    const active = await t.prisma.group.count({ where: { status: 'ACTIVE' } });
+    if (active <= GROUP_LIMIT - slots) return;
+    const fillers = await t.prisma.group.findMany({
+      where: { name: { startsWith: '占位分组' }, status: 'ACTIVE' },
+      take: active - (GROUP_LIMIT - slots),
+    });
+    for (const filler of fillers) {
+      await t.prisma.group.update({
+        where: { id: filler.id },
+        data: { status: 'ARCHIVED', archivedAt: '2026-09-20 00:00:00' },
+      });
+    }
+  }
+
+  function collectWsEvents(): { list: WsEvent[]; stop: () => void } {
+    const events = t.app.get(EventsService, { strict: false });
+    const list: WsEvent[] = [];
+    const stop = events.registerSink((event: WsEvent) => list.push(event));
+    return { list, stop };
+  }
+
+  it('组内还有未完成任务时拒绝归档：409 GROUP_NOT_ALL_DONE 且带剩余数（§5.6 置灰提示的数据源）', async () => {
+    await freeActiveQuota();
+    const group = await createGroup('归档校验组');
+    const done = await newTask(t, { title: '组内已完成', group_id: group.body.id });
+    await t.prisma.task.update({ where: { id: done }, data: { status: 'DONE' } });
+    await newTask(t, { title: '组内未完成', group_id: group.body.id });
+
+    const denied = await ui.post(`${API}/groups/${group.body.id}/archive`, {});
+    expect(denied.status).toBe(409);
+    expect(errorCode(denied)).toBe('GROUP_NOT_ALL_DONE');
+    expect((denied.body.error as { remaining?: number }).remaining).toBe(1);
+
+    // 「已归档」也算处理完：数据面直接给剩余任务盖归档戳（任务归档入口本身要求 DONE）。
+    const pending = await t.prisma.task.findFirstOrThrow({
+      where: { groupId: group.body.id, status: 'BACKLOG' },
+    });
+    await t.prisma.task.update({ where: { id: pending.id }, data: { archivedAt: '2026-09-20 00:00:00' } });
+    const ok = await ui.post<{ status: string; archived_at: string | null }>(
+      `${API}/groups/${group.body.id}/archive`,
+      {},
+    );
+    expect(ok.status).toBe(201);
+    expect(ok.body.status).toBe('ARCHIVED');
+    expect(ok.body.archived_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('默认分组不可归档：专门端点同样 409 GROUP_DEFAULT_PROTECTED（§5.6 末行）', async () => {
+    const row = await t.prisma.group.findFirstOrThrow({ where: { isDefault: 1 } });
+    const denied = await ui.post(`${API}/groups/${row.id}/archive`, {});
+    expect(denied.status).toBe(409);
+    expect(errorCode(denied)).toBe('GROUP_DEFAULT_PROTECTED');
+  });
+
+  it('归档分组转只读：建任务 / 迁入 409 GROUP_ARCHIVED，迁出不受限（§5.6 归档效果）', async () => {
+    await freeActiveQuota(2);
+    const group = await createGroup('只读验证组');
+    const outside = await createGroup('外面组');
+    await ui.post(`${API}/groups/${group.body.id}/archive`, {});
+
+    const created = await ui.post(`${API}/tasks`, {
+      title: '往归档组建任务',
+      type: '需求',
+      group_id: group.body.id,
+    });
+    expect(created.status).toBe(409);
+    expect(errorCode(created)).toBe('GROUP_ARCHIVED');
+
+    const mover = await newTask(t, { title: '想迁进去', group_id: outside.body.id });
+    const moved = await ui.patch(`${API}/tasks/${mover}`, { group_id: group.body.id });
+    expect(moved.status).toBe(409);
+    expect(errorCode(moved)).toBe('GROUP_ARCHIVED');
+
+    // 迁出归档组不受限：数据面造一个「归档前就在组内」的行，再走真实 PATCH 迁出。
+    const inside = await t.prisma.task.create({
+      data: { id: 'T-arch-inside', title: '组内存量', groupId: group.body.id, status: 'DONE' },
+    });
+    const out = await ui.patch<{ group_id: string }>(`${API}/tasks/${inside.id}`, {
+      group_id: outside.body.id,
+    });
+    expect(out.status).toBe(200);
+    expect(out.body.group_id).toBe(outside.body.id);
+  });
+
+  it('看板默认隐藏归档组任务；显式 group_id 仍可见（§5.6 归档泳道折叠区的数据面）', async () => {
+    await freeActiveQuota(2);
+    const group = await createGroup('泳道隐藏组');
+    const id = await newTask(t, { title: '归档组看板行', group_id: group.body.id });
+    await t.prisma.task.update({ where: { id }, data: { status: 'DONE' } });
+
+    const visible = (board: { columns: { tasks: { id: string }[] }[] }) =>
+      board.columns.some((column) => column.tasks.some((task) => task.id === id));
+
+    const before = await ui.get<{ columns: { tasks: { id: string }[] }[] }>(`${API}/board`);
+    expect(visible(before.body)).toBe(true);
+
+    await ui.post(`${API}/groups/${group.body.id}/archive`, {});
+    const hidden = await ui.get<{ columns: { tasks: { id: string }[] }[] }>(`${API}/board`);
+    expect(visible(hidden.body)).toBe(false);
+    const scoped = await ui.get<{ columns: { tasks: { id: string }[] }[] }>(
+      `${API}/board?group_id=${group.body.id}`,
+    );
+    expect(visible(scoped.body)).toBe(true);
+  });
+
+  it('反归档：恢复 ACTIVE、archived_at 清回 null；上限已满时拒绝恢复（§5.6 查看与恢复）', async () => {
+    await freeActiveQuota(2);
+    const group = await createGroup('可恢复组');
+    await ui.post(`${API}/groups/${group.body.id}/archive`, {});
+
+    // 把活跃分组填回 50（数据面夹具），恢复必须撞上限。
+    const active = await t.prisma.group.count({ where: { status: 'ACTIVE' } });
+    for (let index = active; index < GROUP_LIMIT; index += 1) {
+      await t.prisma.group.create({
+        data: { id: `grp_fill_${index}`, name: `补位分组 ${index}`, status: 'ACTIVE' },
+      });
+    }
+    const blocked = await ui.post(`${API}/groups/${group.body.id}/unarchive`, {});
+    expect(blocked.status).toBe(409);
+    expect(errorCode(blocked)).toBe('GROUP_LIMIT_REACHED');
+
+    await t.prisma.group.delete({ where: { id: `grp_fill_${GROUP_LIMIT - 1}` } });
+    // 上限夹具收尾清场，后面的用例不需要再和 50 名额搏斗。
+    await t.prisma.group.deleteMany({ where: { id: { startsWith: 'grp_fill_' } } });
+    const restored = await ui.post<{ status: string; archived_at: string | null }>(
+      `${API}/groups/${group.body.id}/unarchive`,
+      {},
+    );
+    expect(restored.status).toBe(201);
+    expect(restored.body.status).toBe('ACTIVE');
+    expect(restored.body.archived_at).toBeNull();
+  });
+
+  it('GET /groups 默认不含归档组，?archived=true 含（§16.2 r3）；列表带 task_count/unfinished_count', async () => {
+    await freeActiveQuota(2);
+    const group = await createGroup('筛选验证组');
+    await newTask(t, { title: '筛选未完成', group_id: group.body.id });
+    const before = await ui.get<{ items: { id: string }[] }>(`${API}/groups`);
+    expect(before.body.items.some((item) => item.id === group.body.id)).toBe(true);
+
+    const withArchived = await ui.get<{
+      items: {
+        id: string;
+        status: string;
+        archived_at: string | null;
+        task_count: number;
+        unfinished_count: number;
+      }[];
+    }>(`${API}/groups?archived=true`);
+    const dto = withArchived.body.items.find((item) => item.id === group.body.id);
+    expect(dto).toMatchObject({ status: 'ACTIVE', task_count: 1, unfinished_count: 1 });
+    expect(dto?.archived_at).toBeNull();
+
+    await t.prisma.task.updateMany({
+      where: { groupId: group.body.id },
+      data: { status: 'DONE', archivedAt: '2026-09-20 00:00:00' },
+    });
+    await ui.post(`${API}/groups/${group.body.id}/archive`, {});
+    const defaults = await ui.get<{ items: { id: string }[] }>(`${API}/groups`);
+    expect(defaults.body.items.some((item) => item.id === group.body.id)).toBe(false);
+    const all = await ui.get<{ items: { id: string; status: string; archived_at: string | null }[] }>(
+      `${API}/groups?archived=true`,
+    );
+    const archivedDto = all.body.items.find((item) => item.id === group.body.id);
+    expect(archivedDto?.status).toBe('ARCHIVED');
+    expect(archivedDto?.archived_at).toMatch(/^\d{4}-/);
+  });
+
+  it('归档/恢复记 group_archive / group_unarchive 审计，并推 group.archived / group.unarchived WS（§5.6 r3）', async () => {
+    await freeActiveQuota(2);
+    const group = await createGroup('事件验证组');
+    const { list, stop } = collectWsEvents();
+    try {
+      await ui.post(`${API}/groups/${group.body.id}/archive`, {});
+      await ui.post(`${API}/groups/${group.body.id}/unarchive`, {});
+    } finally {
+      stop();
+    }
+    expect(
+      list.filter((event) => event.event === 'group.archived').map((event) => event.data),
+    ).toEqual([{ id: group.body.id }]);
+    expect(
+      list.filter((event) => event.event === 'group.unarchived').map((event) => event.data),
+    ).toEqual([{ id: group.body.id }]);
+    const rows = await t.prisma.auditLog.findMany({
+      where: { targetType: 'group', targetId: group.body.id, action: { in: ['group_archive', 'group_unarchive'] } },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(rows.map((row) => row.action)).toEqual(['group_archive', 'group_unarchive']);
+  });
+
+  it('PATCH status 直改仍走同一套归档语义：未完成拒绝、archived_at 同步、重复归档幂等', async () => {
+    await freeActiveQuota(2);
+    const group = await createGroup('PATCH口径组');
+    await newTask(t, { title: 'PATCH 未完成', group_id: group.body.id });
+    const denied = await ui.patch(`${API}/groups/${group.body.id}`, { status: 'ARCHIVED' });
+    expect(denied.status).toBe(409);
+    expect(errorCode(denied)).toBe('GROUP_NOT_ALL_DONE');
+
+    await t.prisma.task.updateMany({ where: { groupId: group.body.id }, data: { status: 'DONE' } });
+    const via = await ui.patch<{ status: string; archived_at: string | null }>(
+      `${API}/groups/${group.body.id}`,
+      { status: 'ARCHIVED' },
+    );
+    expect(via.status).toBe(200);
+    expect(via.body.archived_at).toMatch(/^\d{4}-/);
+
+    // 幂等：重复归档（POST 入口）返回当前值，不再产生第二条归档审计。
+    const again = await ui.post<{ status: string }>(`${API}/groups/${group.body.id}/archive`, {});
+    expect(again.status).toBe(201);
+    expect(again.body.status).toBe('ARCHIVED');
+    const audits = await t.prisma.auditLog.count({
+      where: { action: 'group_archive', targetId: group.body.id },
+    });
+    expect(audits).toBe(1);
   });
 });

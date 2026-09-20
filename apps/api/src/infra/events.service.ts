@@ -12,6 +12,9 @@ export const WS_EVENTS = [
   'run.log',
   'lease.expired',
   'notification.created',
+  // v0.0.4 W4 §5.6（r3 闭环）：分组归档/反归档，载荷带分组 id（事件只当失效信号）。
+  'group.archived',
+  'group.unarchived',
 ] as const;
 
 export type WsEventName = (typeof WS_EVENTS)[number];

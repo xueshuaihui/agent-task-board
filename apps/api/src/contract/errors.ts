@@ -24,6 +24,10 @@ export const ERROR_STATUS = {
   GROUP_LIMIT_REACHED: 409,
   // v0.0.4 W1-D1 §5.2/§5.5：预置「默认」分组不可删除；§5.6 口径下同样不可归档。
   GROUP_DEFAULT_PROTECTED: 409,
+  // v0.0.4 W4 §5.6：组内还有未完成/未归档任务时拒绝归档（上下文带 remaining 剩余数）。
+  GROUP_NOT_ALL_DONE: 409,
+  // v0.0.4 W4 §5.6：归档分组转为只读——不能再向该组建任务/移动任务进来。
+  GROUP_ARCHIVED: 409,
   ARTIFACT_TOO_LARGE: 413,
   LEASE_EXPIRED: 410,
   LEASE_REVOKED: 410,

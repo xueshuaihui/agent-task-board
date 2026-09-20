@@ -30,6 +30,15 @@ export const groupDeleteQuerySchema = z.object({
 });
 export type GroupDeleteQuery = z.infer<typeof groupDeleteQuerySchema>;
 
+/**
+ * §5.6/§16.2（r3）`GET /api/v1/groups?archived=true`：默认只回活跃分组
+ * （归档分组从分组切换器/泳道默认隐藏），`archived=true` 连归档组一起给。
+ */
+export const groupListQuerySchema = z.object({
+  archived: z.enum(['true']).optional(),
+});
+export type GroupListQuery = z.infer<typeof groupListQuerySchema>;
+
 export const prefPutSchema = z.object({
   value: z.unknown(),
 });

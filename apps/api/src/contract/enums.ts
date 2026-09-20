@@ -109,6 +109,10 @@ export const AUDIT_ACTIONS = [
   'migration_completed',
   'settings_change',
   'group_change',
+  // v0.0.4 W4 §5.6 r3：归档/反归档的专门审计动作（原文 group.archive / group.unarchive，
+  // 本表动作名统一 snake_case）。
+  'group_archive',
+  'group_unarchive',
   'pref_change',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
