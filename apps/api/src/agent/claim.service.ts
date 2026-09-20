@@ -215,12 +215,19 @@ export class ClaimService {
   }
 }
 
-/** 5.4 的阻塞过滤 + 5.6 的抓取顺序；能力子集留在 Node 侧（9.3）。 */
+/**
+ * 5.4 的阻塞过滤 + 5.6 的抓取顺序；能力子集留在 Node 侧（9.3）。
+ * v0.0.4 W4 §5.6（r3 拍板，验收 78）：归档分组（groups.status='ARCHIVED'）的任务
+ * 从 claim_next_task / list_ready_tasks 候选中排除（LEFT JOIN：group_id 为空的任务不受影响）；
+ * 取消归档后 status 回到 ACTIVE，谓词自动放行（「恢复可领取」）。
+ */
 const CANDIDATE_SELECT = `
   SELECT t.id, t.type, t.required_capabilities, t.run_count
   FROM tasks t
+  LEFT JOIN groups g ON g.id = t.group_id
   WHERE t.status = 'READY'
     AND t.archived_at IS NULL
+    AND (g.id IS NULL OR g.status != 'ARCHIVED')
     -- 0919：父任务（需求）不进 Agent 池，只以子任务被领取
     AND NOT EXISTS (SELECT 1 FROM tasks c WHERE c.parent_task_id = t.id)
     AND (t.lease_id IS NULL OR t.lease_expires_at <= datetime('now'))
@@ -249,6 +256,8 @@ const CLAIM_UPDATE_SQL = `
   WHERE id = ?
     AND status = 'READY'
     AND archived_at IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM groups g WHERE g.id = tasks.group_id AND g.status = 'ARCHIVED')
     AND (lease_id IS NULL OR lease_expires_at <= datetime('now'))
     AND NOT EXISTS (
       SELECT 1 FROM task_dependencies d

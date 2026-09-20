@@ -213,6 +213,61 @@ describe('list_ready_tasks（与认领共用同一套过滤）', () => {
   });
 });
 
+/**
+ * v0.0.4 W4 §5.6（r3 拍板，验收 78）：归档分组（groups.status='ARCHIVED'）的任务
+ * 从 claim_next_task / list_ready_tasks 候选中排除；取消归档（status 回 ACTIVE）恢复可领。
+ * 这里直接建行改行——领取侧只看数据，服务层归档校验的闭环在 groups e2e 覆盖。
+ */
+describe('归档分组退出领取候选（§5.6 r3）', () => {
+  async function seedGroup(id: string, status: 'ACTIVE' | 'ARCHIVED') {
+    await h.prisma.group.create({
+      data: {
+        id,
+        name: `${id} 归档排除组`,
+        status,
+        archivedAt: status === 'ARCHIVED' ? '2026-09-20 00:00:00' : null,
+      },
+    });
+  }
+
+  it('归档组任务不可领、不进列表；无其他候选时零写入', async () => {
+    await seedGroup('grp_arch', 'ARCHIVED');
+    await seedTask(h.prisma, 'T-in-arch', { groupId: 'grp_arch' });
+
+    const listed = await h.claims.listReady(listReadyQuerySchema.parse({}), agentA);
+    expect(listed.items).toEqual([]);
+    expect(listed.count).toBe(0);
+
+    const miss = await h.claims.claim(claimInput, agentA);
+    expect(miss).toEqual({ task: null, reason: 'no_ready_task' });
+    expect(await h.prisma.taskRun.count()).toBe(0);
+    expect(await h.prisma.auditLog.count()).toBe(0);
+    expect((await taskRow('T-in-arch')).status).toBe('READY');
+  });
+
+  it('取消归档后恢复可领取；活跃组与无组任务不受影响', async () => {
+    await seedGroup('grp_arch2', 'ARCHIVED');
+    await seedGroup('grp_live', 'ACTIVE');
+    await seedTask(h.prisma, 'T-arch2', { groupId: 'grp_arch2' });
+    await seedTask(h.prisma, 'T-live', { groupId: 'grp_live' });
+    await seedTask(h.prisma, 'T-nogroup');
+
+    const first = await h.claims.claim(claimInput, agentA);
+    expect(['T-live', 'T-nogroup']).toContain(first.task?.id);
+    const second = await h.claims.claim(claimInput, agentA);
+    expect(['T-live', 'T-nogroup']).toContain(second.task?.id);
+    expect((await taskRow('T-arch2')).status).toBe('READY');
+
+    // 反归档（同 groups.service.unarchive 的写入面）→ 恢复可领。
+    await h.prisma.group.update({
+      where: { id: 'grp_arch2' },
+      data: { status: 'ACTIVE', archivedAt: null },
+    });
+    const third = await h.claims.claim(claimInput, agentA);
+    expect(third.task?.id).toBe('T-arch2');
+  });
+});
+
 /** 认领返回的三元组在写回侧要用，顺手确认 run_id 是 R- 短号、lease_id 是无括号 UUID。 */
 it('租约三元组的形态符合 20.1', async () => {
   await seedTask(h.prisma, 'T-1');
