@@ -88,7 +88,8 @@ export function SkillCard({
             groups={[
               {
                 items: [
-                  { id: 'edit', label: skill.readonly ? '查看（默认技能只读）' : '编辑', icon: <Pencil className="size-4" />, disabled: skill.readonly, onSelect: () => onEdit(skill) },
+                  /* W3：默认技能也进编辑器——整页只读态呈现（守卫在页面与服务端）。 */
+                  { id: 'edit', label: skill.readonly ? '查看（只读）' : '编辑', icon: <Pencil className="size-4" />, onSelect: () => onEdit(skill) },
                   {
                     id: 'publish',
                     label: '发布新版本',

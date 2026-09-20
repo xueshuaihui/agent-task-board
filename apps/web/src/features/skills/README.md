@@ -1,7 +1,7 @@
 # features/skills — 技能管理前端
 
-对应需求：`docs/0919/1.md` 第八章（技能管理）、10.2/10.3（技能推荐与随任务下发）；
-`docs/0919/2.md` 第十章（技能库）、第十一章（技能编辑器）、第十三章（技能详情）。
+对应需求：`docs/v0.0.4/需求.md` 第九章（技能管理，§9.3/9.4 编辑器三模式与块类型体系）、10.x（技能随任务下发）；
+历史文档 `docs/0919/1.md` 8.3、`docs/0919/2.md` 第十一/十三章（编辑器细化）。
 
 **只新增文件，未改动任何既有文件。** 后端尚未实现，前端按本目录 `api.ts` 的契约调用，
 联调时后端按同一契约实现即可。
@@ -15,15 +15,15 @@
 | `hooks.ts` | TanStack Query 封装（`skillKeys` + use* 查询与变更） |
 | `meta.ts` | 类型/状态/块类型（PRD 15 类，1.md 8.3）的展示元数据与图标、模板起步 `templateContent`、semver 预览、连线校验、循环检测（`cyclicBlockIds`）、变量系统辅助（`inferVariableOptions`/`variableWarnings`） |
 | `skill-library-page.tsx` | 技能库页（搜索/类型/状态筛选、卡片网格、新建/导入对话框挂载、编辑器路由） |
-| `skill-card.tsx` | 技能卡片（类型徽标、三来源徽标 §9.10、版本、状态、绑定任务数、操作菜单；默认技能只读置灰、同名追加 id 短后缀消歧） |
+| `skill-card.tsx` | 技能卡片（类型徽标、三来源徽标 §9.10、版本、状态、绑定任务数、操作菜单；默认技能菜单项为「查看（只读）」进只读编辑器、同名追加 id 短后缀消歧） |
 | `create-skill-dialog.tsx` | 新建技能两步向导：①名称/类型/起步方式（8 个内置模板摘要）②可选描述/标签，Enter 推进/提交 |
 | `import-center-dialog.tsx` | 统一导入中心（W2 口径）：拖拽/选择 .atskill、SKILL.md、Cursor Rules .mdc，前端解析预览后走后端导入端点落库为「三方技能」；同名不算冲突直接共存，同 ID 冲突行内选「覆盖更新为新版本/跳过」（§9.8.4 r2） |
 | `copy-skill-picker.tsx` | 复制技能选择器：GET /skills/:id 拿内容后 POST /skills 创建「副本」 |
-| `skill-editor-page.tsx` | 编辑器整页：模式 Tab（可视化/结构化/源码/流程图；三种编辑模式共享同一份本地草稿 blocks，切换即同步）+ 保存草稿 + 发布入口 |
-| `block-editor.tsx` | 可视化模式：块增删/上下移/设入口，字段表单共用 block-fields，next 分支用目标块下拉 |
-| `structured-editor.tsx` | 结构化模式（1.md 8.3）：表格式块列表（类型/标题/摘要 + 操作列），点行展开行内编辑完整字段，上移/下移/删除/在下方插入 |
-| `source-editor.tsx` | 源码模式（1.md 8.3）：左侧 SKILL.md 源码编辑 + 右侧实时预览（无依赖轻量渲染），双向导入/导出，损失性转换 Toast 提示 |
-| `block-fields.tsx` | 单块字段表单（可视化/结构化共用），按 15 类 kind 渲染对应字段 |
+| `skill-editor-page.tsx` | 编辑器整页（v0.0.4 W3 三模式，§9.4 内容实时同步）：模式 Tab（可视化/结构化/源码 + 流程图视图）共享同一份本地草稿 blocks + 保存草稿 + 发布入口；默认技能（source=default）进整页只读态——横幅提示 + 各模式禁用编辑，服务端 SKILL_READONLY 403 兜底 |
+| `block-editor.tsx` | 可视化模式：块增删/上下移/设入口 + dnd-kit 拖拽排序，字段表单共用 block-fields，next 分支用目标块下拉；readOnly 时隐藏全部操作、字段禁用 |
+| `structured-editor.tsx` | 结构化模式（1.md 8.3）：表格式块列表（类型/标题/摘要 + 操作列），点行展开行内编辑完整字段，上移/下移/删除/在下方插入；readOnly 时撤操作列、展开行只读 |
+| `source-editor.tsx` | 源码模式（1.md 8.3）：左侧 SKILL.md 源码编辑 + 右侧实时预览（无依赖轻量渲染），双向导入/导出，损失性转换 Toast 提示；readOnly 时源码只读、禁导入（导出/下载仍可用） |
+| `block-fields.tsx` | 单块字段表单（可视化/结构化/流程图抽屉共用），按 15 类 kind 渲染对应字段；readOnly 用 fieldset disabled 统一禁用 |
 | `variable-picker.tsx` | 变量插入下拉 + `{{变量}}` 光标处插入文本框（1.md 8.3 变量系统） |
 | `markdown.ts` | SKILL.md <-> blocks 纯函数双向转换（约定见文件末尾注释块），frontmatter 为 YAML 子集 |
 | `skill-flow-view.tsx` | 流程图视图：只读 SVG 分层拓扑（滚轮缩放、拖拽平移、适应画布） |

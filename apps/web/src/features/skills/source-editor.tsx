@@ -15,11 +15,13 @@ import type { SkillContent } from './types';
 export interface SourceEditorProps {
   content: SkillContent;
   frontmatter: SkillFrontmatter;
+  /** W3 §9.1：只读态——源码不可改、不可导入回 blocks；导出/下载仍可用。 */
+  readOnly?: boolean;
   /** 导入成功后回写 blocks（与 frontmatter 变更）；warnings 由本组件 Toast。 */
   onImport: (content: SkillContent, frontmatter: SkillFrontmatter) => void;
 }
 
-export function SourceEditor({ content, frontmatter, onImport }: SourceEditorProps) {
+export function SourceEditor({ content, frontmatter, readOnly = false, onImport }: SourceEditorProps) {
   const toast = useToast();
   const [md, setMd] = useState(() => blocksToMarkdown(content, frontmatter));
   const [dirty, setDirty] = useState(false);
@@ -42,6 +44,7 @@ export function SourceEditor({ content, frontmatter, onImport }: SourceEditorPro
   };
 
   const importMarkdown = () => {
+    if (readOnly) return;
     const result = markdownToBlocks(md);
     lastSyncRef.current = result.content;
     onImport(result.content, result.frontmatter ?? frontmatter);
@@ -64,7 +67,7 @@ export function SourceEditor({ content, frontmatter, onImport }: SourceEditorPro
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" icon={<FileUp className="size-4" />} onClick={importMarkdown}>
+        <Button size="sm" icon={<FileUp className="size-4" />} disabled={readOnly} onClick={importMarkdown}>
           从 SKILL.md 导入
         </Button>
         <Button size="sm" variant="default" icon={<Download className="size-4" />} onClick={exportMarkdown}>
@@ -73,6 +76,7 @@ export function SourceEditor({ content, frontmatter, onImport }: SourceEditorPro
         <Button size="sm" variant="ghost" onClick={downloadMarkdown}>
           下载 .md 文件
         </Button>
+        {readOnly ? <span className="text-aux text-text-tertiary">默认技能只读：源码可看可导出，不可编辑导入</span> : null}
         {dirty ? <span className="text-aux text-text-tertiary">源码有未导入修改（预览实时，blocks 需导入）</span> : null}
         <span className="ml-auto max-w-md text-aux text-text-tertiary">{MARKDOWN_CONVENTION_HINT}</span>
       </div>
@@ -80,8 +84,9 @@ export function SourceEditor({ content, frontmatter, onImport }: SourceEditorPro
         <textarea
           value={md}
           spellCheck={false}
+          readOnly={readOnly}
           className="atb-scroll h-full min-h-[360px] w-full resize-none rounded-card border border-border bg-bg p-3 font-mono text-code leading-relaxed text-text-primary outline-none focus:border-primary"
-          aria-label="SKILL.md 源码"
+          aria-label={readOnly ? 'SKILL.md 源码（只读）' : 'SKILL.md 源码'}
           onChange={(event) => {
             setMd(event.target.value);
             setDirty(true);

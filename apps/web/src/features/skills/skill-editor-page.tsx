@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Save, Send } from 'lucide-react';
+import { ArrowLeft, Package, Save, Send } from 'lucide-react';
 import { Button, Field, Input, Skeleton, Tabs, Textarea, useToast } from '@/components/ui';
 import { errorMessage } from '@/api';
 import { BlockEditor } from './block-editor';
@@ -142,8 +142,21 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
   };
 
   const status = skill ? SKILL_STATUS_META[skill.status] : undefined;
-  /* W2 §9.1：默认技能只读——不暴露保存/发布入口，服务端 403 兜底（SKILL_READONLY）。 */
+  /* W2 §9.1：默认技能只读——不暴露保存/发布入口，服务端 403 兜底（SKILL_READONLY）。
+     W3：只读贯穿三模式与流程画布（块增删/排序/字段/源码导入全部禁用），页顶横幅说明。 */
   const readonly = skill?.readonly ?? false;
+
+  /* 只读态兜底：任何子编辑器回调都不改草稿（正常路径下子组件已不发变更）。 */
+  const applyContent = (next: SkillContent) => {
+    if (readonly) return;
+    setContent(next);
+    setDirty(true);
+  };
+  const applyMeta = (patch: Partial<typeof meta>) => {
+    if (readonly) return;
+    setMeta((prev) => ({ ...prev, ...patch }));
+    setDirty(true);
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -223,6 +236,16 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
         className="self-start"
       />
 
+      {readonly ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-card border border-border bg-bg-raised px-4 py-2.5 text-aux text-text-secondary">
+          <Package className="size-4 shrink-0 text-text-tertiary" />
+          <span>
+            默认技能为只读（随应用安装包更新），三模式与流程图仅供查看。需要调整内容？到技能库用该技能的
+            「复制」创建自定义技能副本后编辑。
+          </span>
+        </div>
+      ) : null}
+
       <div className="flex min-h-0 flex-1 flex-col">
         {mode === 'visual' ? (
           <div className="mx-auto w-full max-w-3xl">
@@ -233,10 +256,8 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
                   <Input
                     id="skill-edit-name"
                     value={meta.name}
-                    onChange={(event) => {
-                      setMeta((prev) => ({ ...prev, name: event.target.value }));
-                      setDirty(true);
-                    }}
+                    disabled={readonly}
+                    onChange={(event) => applyMeta({ name: event.target.value })}
                   />
                 </Field>
                 <Field
@@ -249,32 +270,22 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
                     value={meta.description}
                     rows={3}
                     placeholder="这个技能解决什么问题、怎么用"
-                    onChange={(event) => {
-                      setMeta((prev) => ({ ...prev, description: event.target.value }));
-                      setDirty(true);
-                    }}
+                    disabled={readonly}
+                    onChange={(event) => applyMeta({ description: event.target.value })}
                   />
                 </Field>
                 <Field label="标签" hint="逗号或空格分隔">
                   <Input
                     value={meta.tagsText}
                     placeholder="review, quality"
-                    onChange={(event) => {
-                      setMeta((prev) => ({ ...prev, tagsText: event.target.value }));
-                      setDirty(true);
-                    }}
+                    disabled={readonly}
+                    onChange={(event) => applyMeta({ tagsText: event.target.value })}
                   />
                 </Field>
               </div>
             ) : null}
             {skill ? (
-              <BlockEditor
-                content={content}
-                onChange={(next) => {
-                  setContent(next);
-                  setDirty(true);
-                }}
-              />
+              <BlockEditor content={content} readOnly={readonly} onChange={applyContent} />
             ) : (
               <div className="flex flex-col gap-3">
                 <Skeleton className="h-20 w-full" />
@@ -285,17 +296,12 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
           </div>
         ) : mode === 'structured' ? (
           <div className="mx-auto w-full max-w-4xl">
-            <StructuredEditor
-              content={content}
-              onChange={(next) => {
-                setContent(next);
-                setDirty(true);
-              }}
-            />
+            <StructuredEditor content={content} readOnly={readonly} onChange={applyContent} />
           </div>
         ) : mode === 'source' ? (
           skill ? (
             <SourceEditor
+              readOnly={readonly}
               content={content}
               frontmatter={{
                 name: meta.name,
@@ -309,6 +315,7 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
                 mcpDependencies: skill.mcp_dependencies,
               }}
               onImport={(nextContent, frontmatter) => {
+                if (readonly) return;
                 setContent(nextContent);
                 setMeta((prev) => ({
                   ...prev,
@@ -325,10 +332,8 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
         ) : (
           <SkillFlowEditor
             content={content}
-            onChange={(next) => {
-              setContent(next);
-              setDirty(true);
-            }}
+            readOnly={readonly}
+            onChange={applyContent}
             className="h-[65vh]"
           />
         )}

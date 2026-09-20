@@ -34,9 +34,11 @@ const KIND_OPTIONS = (Object.keys(BLOCK_KIND_META) as SkillBlockKind[]).map((kin
 export interface BlockEditorProps {
   content: SkillContent;
   onChange: (next: SkillContent) => void;
+  /** W3 §9.1：默认技能只读——隐藏增删/排序/入口操作，字段表单只读呈现。 */
+  readOnly?: boolean;
 }
 
-export function BlockEditor({ content, onChange }: BlockEditorProps) {
+export function BlockEditor({ content, onChange, readOnly = false }: BlockEditorProps) {
   const blocks = content.blocks;
   const [dragging, setDragging] = useState(false);
   const sensors = useSensors(
@@ -54,6 +56,7 @@ export function BlockEditor({ content, onChange }: BlockEditorProps) {
   const variableOptions = inferVariableOptions(content);
 
   const patchBlock = (id: string, patch: Partial<SkillBlock>) => {
+    if (readOnly) return;
     onChange({
       ...content,
       blocks: blocks.map((block) => (block.id === id ? { ...block, ...patch } : block)),
@@ -61,11 +64,13 @@ export function BlockEditor({ content, onChange }: BlockEditorProps) {
   };
 
   const addBlock = (kind: SkillBlockKind) => {
+    if (readOnly) return;
     const block = createBlock(kind, blocks.length);
     onChange({ ...content, blocks: [...blocks, block] });
   };
 
   const removeBlock = (id: string) => {
+    if (readOnly) return;
     const target = blocks.find((block) => block.id === id);
     if (!target) return;
     const label = blockTitle(target, blocks.indexOf(target));
@@ -112,6 +117,7 @@ export function BlockEditor({ content, onChange }: BlockEditorProps) {
               isEntry={content.entryBlockId === block.id}
               targetOptions={targetOptions}
               variableOptions={variableOptions}
+              readOnly={readOnly}
               onPatch={(patch) => patchBlock(block.id, patch)}
               onSetEntry={() => onChange({ ...content, entryBlockId: block.id })}
               onRemove={() => removeBlock(block.id)}
@@ -121,24 +127,28 @@ export function BlockEditor({ content, onChange }: BlockEditorProps) {
         </div>
       </SortableContext>
       <div className="mt-3 flex items-center gap-2">
-        <Menu
-          width={180}
-          trigger={({ toggle }) => (
-            <Button size="sm" icon={<Plus className="size-4" />} onClick={toggle}>
-              添加块
-            </Button>
-          )}
-          groups={[
-            {
-              items: KIND_OPTIONS.map((option) => ({
-                id: option.value,
-                label: option.label,
-                onSelect: () => addBlock(option.value as SkillBlockKind),
-              })),
-            },
-          ]}
-        />
-        {blocks.length === 0 ? (
+        {!readOnly ? (
+          <Menu
+            width={180}
+            trigger={({ toggle }) => (
+              <Button size="sm" icon={<Plus className="size-4" />} onClick={toggle}>
+                添加块
+              </Button>
+            )}
+            groups={[
+              {
+                items: KIND_OPTIONS.map((option) => ({
+                  id: option.value,
+                  label: BLOCK_KIND_META[option.value as SkillBlockKind].label,
+                  onSelect: () => addBlock(option.value as SkillBlockKind),
+                })),
+              },
+            ]}
+          />
+        ) : null}
+        {readOnly ? (
+          <span className="text-aux text-text-tertiary">默认技能只读，内容展示不可修改；可在技能库「复制」为自定义技能后编辑</span>
+        ) : blocks.length === 0 ? (
           <span className="text-aux text-text-tertiary">还没有内容块，先添加一个</span>
         ) : (
           <span className="text-aux text-text-tertiary">拖动块左侧手柄可调整顺序</span>
@@ -155,6 +165,7 @@ interface BlockCardProps {
   isEntry: boolean;
   targetOptions: { value: string; label: string }[];
   variableOptions: ReturnType<typeof inferVariableOptions>;
+  readOnly?: boolean;
   onPatch: (patch: Partial<SkillBlock>) => void;
   onSetEntry: () => void;
   onRemove: () => void;
@@ -164,6 +175,7 @@ interface BlockCardProps {
 function SortableBlockCard(props: BlockCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: props.block.id,
+    disabled: props.readOnly,
   });
 
   return (
@@ -190,6 +202,7 @@ function BlockCard({
   isEntry,
   targetOptions,
   variableOptions,
+  readOnly = false,
   onPatch,
   onSetEntry,
   onRemove,
@@ -217,22 +230,28 @@ function BlockCard({
     <div
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      aria-label={`块：${blockTitle(block, index)}，聚焦后按 Delete 可删除`}
+      aria-label={
+        readOnly
+          ? `块：${blockTitle(block, index)}`
+          : `块：${blockTitle(block, index)}，聚焦后按 Delete 可删除`
+      }
       className={cn(
         'rounded-card border bg-bg-surface p-3 shadow-card outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
         isEntry ? 'border-primary' : 'border-border',
       )}
     >
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          aria-label="拖拽排序"
-          className="cursor-grab touch-none text-text-tertiary hover:text-text-primary active:cursor-grabbing"
-          {...dragHandle.attributes}
-          {...dragHandle.listeners}
-        >
-          <GripVertical className="size-4" />
-        </button>
+        {!readOnly ? (
+          <button
+            type="button"
+            aria-label="拖拽排序"
+            className="cursor-grab touch-none text-text-tertiary hover:text-text-primary active:cursor-grabbing"
+            {...dragHandle.attributes}
+            {...dragHandle.listeners}
+          >
+            <GripVertical className="size-4" />
+          </button>
+        ) : null}
         <span className={cn('inline-flex items-center gap-1 rounded-tag px-1.5 py-0.5 text-badge', meta.kindClass)}>
           <Icon className="size-3.5" />
           {meta.label}
@@ -241,26 +260,33 @@ function BlockCard({
           value={block.title}
           placeholder={blockTitle(block, index)}
           className="h-7 flex-1 text-aux"
+          disabled={readOnly}
           onChange={(event) => onPatch({ title: event.target.value })}
         />
-        <Button variant="ghost" size="iconSm" aria-label="上移" disabled={index === 0} onClick={() => onMove(-1)}>
-          <ChevronUp className="size-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="iconSm"
-          aria-label="下移"
-          disabled={index === total - 1}
-          onClick={() => onMove(1)}
-        >
-          <ChevronDown className="size-4" />
-        </Button>
-        <Button variant="ghost" size="iconSm" aria-label="设为入口" disabled={isEntry} onClick={onSetEntry}>
-          入口
-        </Button>
-        <Button variant="ghost" size="iconSm" aria-label="删除块" onClick={onRemove}>
-          <Trash2 className="size-4" />
-        </Button>
+        {!readOnly ? (
+          <>
+            <Button variant="ghost" size="iconSm" aria-label="上移" disabled={index === 0} onClick={() => onMove(-1)}>
+              <ChevronUp className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="iconSm"
+              aria-label="下移"
+              disabled={index === total - 1}
+              onClick={() => onMove(1)}
+            >
+              <ChevronDown className="size-4" />
+            </Button>
+            <Button variant="ghost" size="iconSm" aria-label="设为入口" disabled={isEntry} onClick={onSetEntry}>
+              入口
+            </Button>
+            <Button variant="ghost" size="iconSm" aria-label="删除块" onClick={onRemove}>
+              <Trash2 className="size-4" />
+            </Button>
+          </>
+        ) : isEntry ? (
+          <span className="rounded-badge bg-primary-light px-2 py-0.5 text-badge text-primary">入口</span>
+        ) : null}
       </div>
 
       <div className="mt-3 flex flex-col gap-3">
@@ -268,6 +294,7 @@ function BlockCard({
           block={block}
           variableOptions={variableOptions}
           targetOptions={targetOptions}
+          readOnly={readOnly}
           onPatch={onPatch}
         />
       </div>

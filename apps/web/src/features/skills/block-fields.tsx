@@ -24,11 +24,16 @@ export interface BlockFieldsProps {
   variableOptions: VariableMenuProps['options'];
   /** decision 分支跳转的目标块下拉选项。 */
   targetOptions: { value: string; label: string }[];
+  /** W3 §9.1 只读态：fieldset disabled 统一禁掉块内全部输入控件与变量/分支按钮。 */
+  readOnly?: boolean;
   onPatch: (patch: Partial<SkillBlock>) => void;
 }
 
-export function BlockFields({ block, variableOptions, targetOptions, onPatch }: BlockFieldsProps) {
-  switch (block.kind) {
+export function BlockFields({ block, variableOptions, targetOptions, readOnly = false, onPatch }: BlockFieldsProps) {
+  return <fieldset disabled={readOnly} className="contents">{renderFields()}</fieldset>;
+
+  function renderFields() {
+    switch (block.kind) {
     case 'prompt':
     case 'knowledge':
       return (
@@ -273,5 +278,6 @@ export function BlockFields({ block, variableOptions, targetOptions, onPatch }: 
           <Textarea value={block.note ?? ''} rows={2} onChange={(event) => onPatch({ note: event.target.value })} />
         </Field>
       );
+    }
   }
 }

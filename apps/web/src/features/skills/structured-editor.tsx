@@ -21,9 +21,11 @@ const KIND_OPTIONS = (Object.keys(BLOCK_KIND_META) as SkillBlockKind[]).map((kin
 export interface StructuredEditorProps {
   content: SkillContent;
   onChange: (next: SkillContent) => void;
+  /** W3 §9.1：默认技能只读——操作列/插入按钮隐藏，展开行为只读字段。 */
+  readOnly?: boolean;
 }
 
-export function StructuredEditor({ content, onChange }: StructuredEditorProps) {
+export function StructuredEditor({ content, onChange, readOnly = false }: StructuredEditorProps) {
   const blocks = content.blocks;
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const targetOptions = [
@@ -33,6 +35,7 @@ export function StructuredEditor({ content, onChange }: StructuredEditorProps) {
   const variableOptions = inferVariableOptions(content);
 
   const patchBlock = (id: string, patch: Partial<SkillBlock>) => {
+    if (readOnly) return;
     onChange({
       ...content,
       blocks: blocks.map((block) => (block.id === id ? { ...block, ...patch } : block)),
@@ -40,6 +43,7 @@ export function StructuredEditor({ content, onChange }: StructuredEditorProps) {
   };
 
   const addBlock = (kind: SkillBlockKind, afterId?: string) => {
+    if (readOnly) return;
     const block = createBlock(kind, blocks.length);
     if (afterId) {
       const index = blocks.findIndex((item) => item.id === afterId);
@@ -53,6 +57,7 @@ export function StructuredEditor({ content, onChange }: StructuredEditorProps) {
   };
 
   const removeBlock = (id: string) => {
+    if (readOnly) return;
     const rest = blocks.filter((block) => block.id !== id);
     onChange({
       entryBlockId: content.entryBlockId === id ? (rest[0]?.id ?? null) : content.entryBlockId,
@@ -62,6 +67,7 @@ export function StructuredEditor({ content, onChange }: StructuredEditorProps) {
   };
 
   const moveBlock = (index: number, delta: -1 | 1) => {
+    if (readOnly) return;
     const target = index + delta;
     if (target < 0 || target >= blocks.length) return;
     const next = [...blocks];
@@ -79,7 +85,7 @@ export function StructuredEditor({ content, onChange }: StructuredEditorProps) {
               <TH>标题</TH>
               <TH className="hidden md:table-cell">关键字段摘要</TH>
               <TH className="w-16 text-center">入口</TH>
-              <TH className="w-36 text-right">操作</TH>
+              {!readOnly ? <TH className="w-36 text-right">操作</TH> : null}
             </TR>
           </THead>
           <TBody>
@@ -113,8 +119,9 @@ export function StructuredEditor({ content, onChange }: StructuredEditorProps) {
                         <CornerUpLeft className="ml-auto mr-auto size-3.5 text-primary" aria-label="入口块" />
                       ) : null}
                     </TD>
-                    <TD>
-                      <div className="flex items-center justify-end gap-0.5" onClick={(event) => event.stopPropagation()}>
+                    {!readOnly ? (
+                      <TD>
+                        <div className="flex items-center justify-end gap-0.5" onClick={(event) => event.stopPropagation()}>
                         <Button
                           variant="ghost"
                           size="iconSm"
@@ -157,18 +164,20 @@ export function StructuredEditor({ content, onChange }: StructuredEditorProps) {
                         <Button variant="ghost" size="iconSm" aria-label="删除块" onClick={() => removeBlock(block.id)}>
                           <Trash2 className="size-4" />
                         </Button>
-                      </div>
-                    </TD>
+                        </div>
+                      </TD>
+                    ) : null}
                   </TR>
                   {expanded ? (
                     <TR>
-                      <TD colSpan={5} className="bg-bg-raised">
+                      <TD colSpan={readOnly ? 4 : 5} className="bg-bg-raised">
                         <div className="p-3">
                           <div className="mb-3 flex items-center gap-2">
                             <Input
                               value={block.title}
                               placeholder={`${meta.label} ${index + 1}`}
                               className="h-7 w-64 text-aux"
+                              disabled={readOnly}
                               onChange={(event) => patchBlock(block.id, { title: event.target.value })}
                             />
                           </div>
@@ -176,6 +185,7 @@ export function StructuredEditor({ content, onChange }: StructuredEditorProps) {
                             block={block}
                             variableOptions={variableOptions}
                             targetOptions={targetOptions}
+                            readOnly={readOnly}
                             onPatch={(patch) => patchBlock(block.id, patch)}
                           />
                         </div>
@@ -187,31 +197,35 @@ export function StructuredEditor({ content, onChange }: StructuredEditorProps) {
             })}
             {blocks.length === 0 ? (
               <TR>
-                <TD colSpan={5} className="text-center text-aux text-text-tertiary">
-                  还没有内容块，用下方按钮添加
+                <TD colSpan={readOnly ? 4 : 5} className="text-center text-aux text-text-tertiary">
+                  {readOnly ? '默认技能没有内容块' : '还没有内容块，用下方按钮添加'}
                 </TD>
               </TR>
             ) : null}
           </TBody>
         </Table>
       </div>
-      <Menu
-        width={180}
-        trigger={({ toggle }) => (
-          <Button size="sm" icon={<Plus className="size-4" />} onClick={toggle} className="self-start">
-            添加块
-          </Button>
-        )}
-        groups={[
-          {
-            items: KIND_OPTIONS.map((option) => ({
-              id: option.value,
-              label: option.label,
-              onSelect: () => addBlock(option.value as SkillBlockKind),
-            })),
-          },
-        ]}
-      />
+      {!readOnly ? (
+        <Menu
+          width={180}
+          trigger={({ toggle }) => (
+            <Button size="sm" icon={<Plus className="size-4" />} onClick={toggle} className="self-start">
+              添加块
+            </Button>
+          )}
+          groups={[
+            {
+              items: KIND_OPTIONS.map((option) => ({
+                id: option.value,
+                label: option.label,
+                onSelect: () => addBlock(option.value as SkillBlockKind),
+              })),
+            },
+          ]}
+        />
+      ) : (
+        <p className="text-aux text-text-tertiary">默认技能只读：点击行可展开查看块字段，不可修改</p>
+      )}
     </div>
   );
 }

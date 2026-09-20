@@ -118,6 +118,7 @@ interface SkillNodeData extends Record<string, unknown> {
   block: SkillBlock;
   isEntry: boolean;
   isCyclic: boolean;
+  readOnly: boolean;
   onSetEntry: (id: string) => void;
   onDelete: (id: string) => void;
   onOpen: (id: string) => void;
@@ -126,7 +127,7 @@ interface SkillNodeData extends Record<string, unknown> {
 type SkillFlowNode = Node<SkillNodeData, 'skill'>;
 
 function SkillNodeView({ id, data, selected }: NodeProps<SkillFlowNode>) {
-  const { block, isEntry, isCyclic, onSetEntry, onDelete, onOpen } = data;
+  const { block, isEntry, isCyclic, readOnly, onSetEntry, onDelete, onOpen } = data;
   const meta = BLOCK_KIND_META[block.kind];
   const Icon = meta.icon;
   const nexts = block.next ?? [];
@@ -139,18 +140,21 @@ function SkillNodeView({ id, data, selected }: NodeProps<SkillFlowNode>) {
   return (
     <div
       className={cn(
-        'group h-full cursor-grab rounded-[10px] border bg-bg-surface px-2.5 shadow-node active:cursor-grabbing',
+        'group h-full rounded-[10px] border bg-bg-surface px-2.5 shadow-node',
+        !readOnly && 'cursor-grab active:cursor-grabbing',
         isEntry ? 'border-primary' : 'border-border',
         isCyclic && 'rf-cyclic-node border-dashed',
         selected && 'ring-2 ring-primary ring-offset-1 ring-offset-bg-raised',
       )}
       style={{ height: FLOW_NODE_HEIGHT }}
-      onDoubleClick={() => onOpen(id)}
+      onDoubleClick={() => {
+        if (!readOnly) onOpen(id);
+      }}
       onContextMenu={(event) => {
         event.preventDefault();
-        if (!isEntry) onSetEntry(id);
+        if (!readOnly && !isEntry) onSetEntry(id);
       }}
-      title="拖拽移动 · 双击编辑 · 右键设为入口"
+      title={readOnly ? '默认技能只读，仅查看' : '拖拽移动 · 双击编辑 · 右键设为入口'}
     >
       <Handle type="target" position={Position.Top} id="in" className="rf-handle" isConnectableStart={false} />
       <div className="flex h-full items-center gap-2">
@@ -161,7 +165,8 @@ function SkillNodeView({ id, data, selected }: NodeProps<SkillFlowNode>) {
           <span className="block truncate text-caption text-text-primary">{blockTitle(block, 0)}</span>
           <span className="block truncate text-[10px] text-text-tertiary">{meta.label}</span>
         </span>
-        {/* 悬浮工具条浮在块右上角，不占行内宽度——留在行内会把标题挤到只剩一两个字。 */}
+        {/* 悬浮工具条浮在块右上角，不占行内宽度——留在行内会把标题挤到只剩一两个字。只读态隐藏。 */}
+        {!readOnly ? (
         <span className="absolute -top-3 right-1 z-20 flex items-center gap-0.5 rounded-full border border-border bg-bg-surface px-0.5 opacity-0 shadow-card transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
           <IconButton
             label="编辑块"
@@ -192,6 +197,7 @@ function SkillNodeView({ id, data, selected }: NodeProps<SkillFlowNode>) {
             icon={<Trash2 className="size-3.5" />}
           />
         </span>
+        ) : null}
       </div>
       {isEntry ? (
         <span className="absolute -top-2 left-2 z-10 rounded-badge bg-primary px-1.5 py-px text-[9px] text-white">
@@ -230,6 +236,7 @@ interface FlowEdgeData extends Record<string, unknown> {
   branchIndex: number;
   when: string;
   cyclic: boolean;
+  readOnly: boolean;
   onDelete: (fromId: string, branchIndex: number) => void;
 }
 
@@ -270,7 +277,7 @@ function FlowEdgeView({ id, sourceX, sourceY, targetX, targetY, sourcePosition, 
                 {data.when}
               </span>
             ) : null}
-            {selected ? (
+            {selected && !data.readOnly ? (
               <button
                 type="button"
                 aria-label="删除连线"
@@ -300,17 +307,19 @@ export interface SkillFlowEditorProps {
   content: SkillContent;
   onChange: (next: SkillContent) => void;
   className?: string;
+  /** W3 §9.1：默认技能只读——画布不可拖拽/连线/增删，仅查看拓扑。 */
+  readOnly?: boolean;
 }
 
-export function SkillFlowEditor({ content, onChange, className }: SkillFlowEditorProps) {
+export function SkillFlowEditor({ content, onChange, className, readOnly = false }: SkillFlowEditorProps) {
   return (
     <ReactFlowProvider>
-      <FlowCanvas content={content} onChange={onChange} className={className} />
+      <FlowCanvas content={content} onChange={onChange} className={className} readOnly={readOnly} />
     </ReactFlowProvider>
   );
 }
 
-function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
+function FlowCanvas({ content, onChange, className, readOnly = false }: SkillFlowEditorProps) {
   const { screenToFlowPosition, fitView } = useReactFlow();
 
   /* refs 镜像最新值，供稳定回调里读取而不吃陈旧闭包（onChange 是页面内联函数，不稳定）。 */
@@ -318,6 +327,14 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
   contentRef.current = content;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
+
+  /** 所有对草稿的写回统一走 emit：只读态直接吞掉（双保险，UI 层同时隐藏操作）。 */
+  const emit = useCallback((next: SkillContent) => {
+    if (readOnlyRef.current) return;
+    onChangeRef.current(next);
+  }, []);
 
   const [livePos, setLivePos] = useState<Record<string, { x: number; y: number }>>({});
   const livePosRef = useRef(livePos);
@@ -343,7 +360,7 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
 
   /* 进入画布时给缺 pos 的块自动分层落位（写回共享草稿，pos 随自动保存持久化）。 */
   useEffect(() => {
-    if (blocks.some((block) => !block.pos)) onChangeRef.current(ensureBlockPos(contentRef.current));
+    if (blocks.some((block) => !block.pos)) emit(ensureBlockPos(contentRef.current));
   }, [blocks]);
 
   /* 拖拽过程中的位置覆盖在松手/整理后清掉。 */
@@ -356,7 +373,7 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
 
   const patchBlock = useCallback((id: string, patch: Partial<SkillBlock>) => {
     const current = contentRef.current;
-    onChangeRef.current({
+    emit({
       ...current,
       blocks: current.blocks.map((block) => (block.id === id ? { ...block, ...patch } : block)),
     });
@@ -366,18 +383,18 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
     const block = contentRef.current.blocks.find((item) => item.id === id);
     if (!block) return;
     if (!window.confirm(`删除块「${blockTitle(block, 0)}」？指向它的连线会一并清掉`)) return;
-    onChangeRef.current(removeBlockWithRefs(contentRef.current, id));
+    emit(removeBlockWithRefs(contentRef.current, id));
     setEditingId((prev) => (prev === id ? null : prev));
   }, []);
 
   const setEntry = useCallback((id: string) => {
-    onChangeRef.current(setEntryBlock(contentRef.current, id));
+    emit(setEntryBlock(contentRef.current, id));
   }, []);
 
   const openEditor = useCallback((id: string) => setEditingId(id), []);
 
   const deleteEdge = useCallback((fromId: string, branchIndex: number) => {
-    onChangeRef.current(removeEdgeTarget(contentRef.current, fromId, branchIndex));
+    emit(removeEdgeTarget(contentRef.current, fromId, branchIndex));
   }, []);
 
   const onSetEntryRef = useRef(setEntry);
@@ -405,12 +422,13 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
           block,
           isEntry: block.id === content.entryBlockId,
           isCyclic: cyclic.has(block.id),
+          readOnly,
           onSetEntry: (id: string) => onSetEntryRef.current(id),
           onDelete: (id: string) => onDeleteRef.current(id),
           onOpen: openEditor,
         },
       })),
-    [blocks, livePos, selectedNodeIds, fallbackPos, content.entryBlockId, cyclic, openEditor],
+    [blocks, livePos, selectedNodeIds, fallbackPos, content.entryBlockId, cyclic, readOnly, openEditor],
   );
 
   const edges: SkillFlowEdge[] = useMemo(
@@ -428,10 +446,11 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
           branchIndex: edge.branchIndex,
           when: edge.when,
           cyclic: cyclic.has(edge.fromId) && cyclic.has(edge.toId),
+          readOnly,
           onDelete: deleteEdge,
         },
       })),
-    [edgesRef, selectedEdgeIds, cyclic, deleteEdge],
+    [edgesRef, selectedEdgeIds, cyclic, readOnly, deleteEdge],
   );
 
   /* ---------------- 受控变更：拖拽位置 / 选中镜像 ---------------- */
@@ -490,7 +509,7 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
           ),
         };
       }
-      onChangeRef.current(current);
+      emit(current);
       clearLivePos();
     },
     [clearLivePos],
@@ -501,7 +520,7 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
   const onConnect = useCallback((connection: { source: string | null; target: string | null; sourceHandle: string | null | undefined }) => {
     if (!connection.source || !connection.target) return;
     if (connection.source === connection.target) return;
-    onChangeRef.current(
+    emit(
       setEdgeTarget(contentRef.current, connection.source, branchOfHandle(connection.sourceHandle), connection.target),
     );
   }, []);
@@ -527,7 +546,7 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
     (deleted: SkillFlowNode[]) => {
       let current = contentRef.current;
       for (const node of deleted) current = removeBlockWithRefs(current, node.id);
-      onChangeRef.current(current);
+      emit(current);
       const deletedIds = new Set(deleted.map((node) => node.id));
       setEditingId((prev) => (prev && deletedIds.has(prev) ? null : prev));
     },
@@ -537,7 +556,7 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
   const onEdgesDelete = useCallback((deleted: SkillFlowEdge[]) => {
     let current = contentRef.current;
     for (const edge of deleted) current = removeEdgeTarget(current, edge.source, branchIndexOfEdge(edge.id));
-    onChangeRef.current(current);
+    emit(current);
   }, []);
 
   /* ---------------- 添加块：面板点击 / HTML5 拖放 ---------------- */
@@ -557,7 +576,7 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
         const jitter = (current.blocks.length % 5) * (FLOW_NODE_HEIGHT + 28);
         seed.pos = { x: Math.round(center.x + jitter), y: Math.round(center.y + jitter) };
       }
-      onChangeRef.current({
+      emit({
         blocks: [...current.blocks, seed],
         entryBlockId: current.entryBlockId ?? seed.id,
       });
@@ -568,6 +587,7 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
   const onDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       event.preventDefault();
+      if (readOnlyRef.current) return;
       const kind = event.dataTransfer.getData(DND_KIND_MIME) as SkillBlockKind;
       setDropHint(null);
       if (!KIND_ORDER.includes(kind)) return;
@@ -580,7 +600,7 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
   /* ---------------- 自动整理 / 适应画布 ---------------- */
 
   const autoLayout = useCallback(() => {
-    onChangeRef.current(autoLayoutBlocks(contentRef.current));
+    emit(autoLayoutBlocks(contentRef.current));
     clearLivePos();
     window.setTimeout(() => void fitView({ padding: 0.2, duration: 200 }), 50);
   }, [clearLivePos, fitView]);
@@ -599,7 +619,8 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
 
   return (
     <div className={cn('flex min-h-0 gap-3', className)}>
-      {/* 左侧块类型面板：15 类，点击添加 / 拖到画布落点（HTML5 DnD）。 */}
+      {/* 左侧块类型面板：15 类，点击添加 / 拖到画布落点（HTML5 DnD）。只读态不渲染。 */}
+      {!readOnly ? (
       <aside className="atb-scroll flex w-36 shrink-0 flex-col gap-1 overflow-y-auto rounded-card border border-border bg-bg-raised p-2">
         <p className="px-1 pb-1 text-aux text-text-tertiary">块类型</p>
         {KIND_ORDER.map((kind) => {
@@ -628,6 +649,7 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
           );
         })}
       </aside>
+      ) : null}
 
       <div
         className="atb-rf relative min-h-0 flex-1 rounded-card border border-border bg-bg-raised"
@@ -650,8 +672,10 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
           onBeforeDelete={onBeforeDelete}
           onNodesDelete={onNodesDelete}
           onEdgesDelete={onEdgesDelete}
-          deleteKeyCode={['Delete', 'Backspace']}
+          deleteKeyCode={readOnly ? null : ['Delete', 'Backspace']}
           multiSelectionKeyCode={['Meta', 'Shift']}
+          nodesDraggable={!readOnly}
+          nodesConnectable={!readOnly}
           snapToGrid
           snapGrid={[8, 8]}
           minZoom={0.2}
@@ -659,7 +683,6 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
           fitView
           fitViewOptions={{ padding: 0.2 }}
           proOptions={{ hideAttribution: false }}
-          nodesConnectable
           elevateEdgesOnSelect
         >
           <Background variant={BackgroundVariant.Dots} gap={24} size={1.5} color="var(--color-border)" />
@@ -684,6 +707,7 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
             </Panel>
           ) : null}
 
+          {!readOnly ? (
           <Panel position="top-left">
             <Button
               variant="default"
@@ -695,12 +719,13 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
               自动整理
             </Button>
           </Panel>
+          ) : null}
         </ReactFlow>
 
         {blocks.length === 0 ? (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 text-text-tertiary">
             <Plus className="size-6" />
-            <p className="text-body">从左侧面板添加第一个流程块</p>
+            <p className="text-body">{readOnly ? '该技能没有流程块' : '从左侧面板添加第一个流程块'}</p>
           </div>
         ) : null}
 
@@ -727,6 +752,7 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
                     id="flow-block-title"
                     value={editingBlock.title}
                     placeholder={BLOCK_KIND_META[editingBlock.kind].label}
+                    disabled={readOnly}
                     onChange={(event) => patchBlock(editingBlock.id, { title: event.target.value })}
                   />
                 </Field>
@@ -734,14 +760,17 @@ function FlowCanvas({ content, onChange, className }: SkillFlowEditorProps) {
                   block={editingBlock}
                   variableOptions={variableOptions}
                   targetOptions={targetOptions}
+                  readOnly={readOnly}
                   onPatch={(patch) => patchBlock(editingBlock.id, patch)}
                 />
               </div>
             </div>
             <footer className="flex items-center justify-between border-t border-border px-5 py-3">
+              {!readOnly ? (
               <Button variant="ghost" size="sm" icon={<Trash2 className="size-4" />} className="text-status-failed hover:text-status-failed" onClick={() => deleteBlockConfirmed(editingBlock.id)}>
                 删除块
               </Button>
+              ) : <span />}
               <Button variant="primary" size="sm" onClick={() => setEditingId(null)}>
                 完成
               </Button>
