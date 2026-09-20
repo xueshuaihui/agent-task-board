@@ -68,6 +68,8 @@ export const ERROR_CODE_COPY: Record<ErrorCode, string> = {
   INVALID_BACKUP_NAME: '备份文件名不合法',
   GROUP_LIMIT_REACHED: '分组数量已达上限，先删除不用的分组',
   GROUP_DEFAULT_PROTECTED: '「默认」分组是任务的兜底归属，不可删除或归档',
+  GROUP_NOT_ALL_DONE: '组内还有任务未完成或归档，全部处理完才能归档',
+  GROUP_ARCHIVED: '该分组已归档，转为只读',
   BACKUP_NOT_FOUND: '备份文件已不在磁盘上',
   INTERNAL: '本地服务内部错误',
   NETWORK_ERROR: COPY.sidecarDown,

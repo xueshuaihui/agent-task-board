@@ -24,6 +24,11 @@ export function keysForEvent(frame: WsFrame): readonly (readonly unknown[])[] {
     case 'task.deleted':
       // 删除后既没有 board 里的那张卡，也没有可缓存的抽屉数据；顺带清掉被解锁的下游任务。
       return [qk.boardRoot, qk.tasksRoot, qk.taskAny];
+    case 'group.archived':
+    case 'group.unarchived':
+      // v0.0.4 W4 §5.6 r3：归档/恢复改变分组集合与看板泳道（归档组默认隐藏、
+      // claim 排除不改变任务行本身），分组列表与两棵任务树一起失效。
+      return [qk.groupsRoot, qk.boardRoot, qk.tasksRoot];
     default:
       return taskIds.length
         ? [qk.boardRoot, qk.tasksRoot, ...taskIds.map((id) => qk.taskRoot(id))]
@@ -50,6 +55,8 @@ export function applyEvent(queryClient: QueryClient, frame: WsFrame): void {
   for (const key of keysForEvent(frame)) {
     void queryClient.invalidateQueries({ queryKey: key });
   }
+  // 分组事件的 `id` 是分组 id，不是任务 id——闪卡名单只收任务侧事件。
+  if (frame.event === 'group.archived' || frame.event === 'group.unarchived') return;
   const ids = taskIdsOf(frame);
   if (ids.length > 0) useFlashStore.getState().mark(ids);
 }
@@ -63,6 +70,8 @@ export function refreshAfterReconnect(queryClient: QueryClient): void {
   void queryClient.invalidateQueries({ queryKey: qk.boardRoot, refetchType: 'active' });
   void queryClient.invalidateQueries({ queryKey: qk.tasksRoot, refetchType: 'active' });
   void queryClient.invalidateQueries({ queryKey: qk.notificationsRoot, refetchType: 'active' });
+  // W4：断线期间错过 group.archived/unarchived 时，分组集合（含归档折叠区）也要回服务端真相。
+  void queryClient.invalidateQueries({ queryKey: qk.groupsRoot, refetchType: 'active' });
   // 打开着的抽屉也要回到服务端真相。
   for (const query of queryClient.getQueryCache().getAll()) {
     const key = query.queryKey;

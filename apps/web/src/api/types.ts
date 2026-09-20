@@ -100,6 +100,9 @@ export const AUDIT_ACTIONS = [
   'restore',
   'settings_change',
   'group_change',
+  // v0.0.4 W4 §5.6 r3：分组归档/反归档（服务端动作名统一 snake_case）。
+  'group_archive',
+  'group_unarchive',
   'pref_change',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -169,6 +172,9 @@ export const ERROR_CODES = [
   'INVALID_BACKUP_NAME',
   'GROUP_LIMIT_REACHED',
   'GROUP_DEFAULT_PROTECTED',
+  // v0.0.4 W4 §5.6：归档前置校验未过（context.remaining 带剩余任务数）；归档分组只读。
+  'GROUP_NOT_ALL_DONE',
+  'GROUP_ARCHIVED',
   'BACKUP_NOT_FOUND',
   'INTERNAL',
   'NETWORK_ERROR',
@@ -741,6 +747,9 @@ export const WS_EVENT_NAMES = [
   'run.log',
   'lease.expired',
   'notification.created',
+  // v0.0.4 W4 §5.6 r3：分组归档/反归档，载荷只带分组 id（事件当失效信号的同一口径）。
+  'group.archived',
+  'group.unarchived',
 ] as const;
 export type WsEventName = (typeof WS_EVENT_NAMES)[number];
 
@@ -765,6 +774,8 @@ export interface WsEventPayloads {
     task_id: string | null;
     unread_count: number;
   };
+  'group.archived': { id: string };
+  'group.unarchived': { id: string };
 }
 
 /**

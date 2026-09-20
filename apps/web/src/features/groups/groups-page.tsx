@@ -17,8 +17,9 @@ import { GROUP_LIMIT, type Group } from './types';
  * 创建时间、状态；操作是「打开」（把该分组的过滤写进看板分组偏好后跳看板）与 `⋯`
  * 菜单（编辑 / 归档或恢复 / 删除）。
  *
- * 「任务数」列暂缺：`GET /groups` 不返回计数（GroupDto 无 task_count），
- * 为每个分组再发一次 `/tasks` 只为凑一个数字不值得——等接口带上后补这一列。
+ * v0.0.4 W4 §5.6：卡片带上任务数与归档时刻（`GET /groups` 列表顺路返回
+ * `task_count` / `unfinished_count`）；组内还有未完成任务时「归档」置灰并提示
+ * 剩余数（服务端 GROUP_NOT_ALL_DONE 409 兜底）。
  */
 export function GroupsPage() {
   const groups = useGroups();
@@ -169,7 +170,10 @@ function GroupCard({
       </p>
 
       <div className="flex items-center justify-between gap-2">
-        <span className="text-aux text-text-tertiary">创建于 {formatDateTime(group.created_at)}</span>
+        <span className="min-w-0 truncate text-aux text-text-tertiary">
+          {group.task_count !== undefined ? `${group.task_count} 任务 · ` : ''}
+          {archived ? `归档于 ${formatDateTime(group.archived_at)} · ` : ''}创建于 {formatDateTime(group.created_at)}
+        </span>
         {archived ? null : (
           <Button size="sm" variant="ghost" className="text-primary" onClick={open}>
             打开
@@ -198,6 +202,8 @@ function GroupMenu({
   const busy =
     mutations.archive.isPending && mutations.archive.variables === group.id ||
     mutations.restore.isPending && mutations.restore.variables === group.id;
+  /** §5.6：组内还有未完成/未归档任务时归档入口置灰并提示剩余数（服务端 409 兜底）。 */
+  const remaining = group.unfinished_count ?? 0;
 
   return (
     <Menu
@@ -226,7 +232,8 @@ function GroupMenu({
                         id: 'archive',
                         label: '归档',
                         icon: <Archive className="size-3.5" aria-hidden />,
-                        hint: '移出默认视图',
+                        hint: remaining > 0 ? `还剩 ${remaining} 个任务` : '需全部完成',
+                        disabled: remaining > 0,
                         onSelect: () => mutations.archive.mutate(group.id),
                       },
                   {

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { ChevronDown, ChevronRight, GripVertical } from 'lucide-react';
+import { Badge } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import type { Swimlane } from './grouping';
 import type { GroupingOptions } from './useGroupingState';
@@ -115,6 +116,10 @@ export function SwimlaneHead({
           </button>
           <span aria-hidden>{lane.icon}</span>
           <span className="text-section-title text-text-primary">{lane.label}</span>
+          {/* v0.0.4 W4 §6.2.2：分组维度的「默认 / 已归档」小徽标（headBadge 由调用方填）。 */}
+          {lane.headBadge ? (
+            <Badge tone={lane.headBadge === '已归档' ? 'neutral' : 'soft'}>{lane.headBadge}</Badge>
+          ) : null}
         </div>
         {isRequirement && !collapsed && <LaneMetaLine lane={lane} onViewRequirement={onViewRequirement} />}
       </div>

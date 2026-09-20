@@ -149,6 +149,8 @@ export const AUDIT_ACTION_LABEL: Record<AuditAction, string> = {
   restore: '恢复',
   settings_change: '设置变更',
   group_change: '分组变更',
+  group_archive: '分组归档',
+  group_unarchive: '分组取消归档',
   pref_change: '偏好变更',
 };
 

@@ -44,6 +44,11 @@ export interface Swimlane {
   count: number;
   reviewCount: number;
   groups: LaneGroup[];
+  /**
+   * v0.0.4 W4 §6.2.2：泳道头小徽标（「默认」「已归档」）。分组引擎不认识分组实体，
+   * 由调用方（GroupedBoard 拿着分组缓存）在泳道构建后填，buildSwimlanes 不产出。
+   */
+  headBadge?: string;
 }
 
 export interface GroupingInput {

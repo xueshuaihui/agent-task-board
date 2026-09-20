@@ -15,10 +15,15 @@ export type { Group, GroupCreateInput, GroupDeleteResult, GroupPatchInput };
 /** 与 api/queries.ts 的 Options 同一形状（分组查询只会用到这几个键）。 */
 type Options<TData> = Pick<UseQueryOptions<TData, Error, TData>, 'enabled' | 'staleTime' | 'placeholderData'>;
 
+/**
+ * v0.0.4 W4 §16.2：服务端默认列表已不含归档组，这里固定 `archived=true` 取全量——
+ * groups-page 的「已归档」区、看板归档折叠区、分组名兜底都读这一份缓存；
+ * 「只要活跃」的口径交给 useActiveGroups。
+ */
 export function useGroups(options?: Options<{ items: Group[] }>) {
   return useQuery({
     queryKey: qk.groups(),
-    queryFn: groupsApi.list,
+    queryFn: () => groupsApi.list({ archived: 'true' }),
     staleTime: 30_000,
     ...options,
   });
@@ -48,18 +53,19 @@ export function useGroupMutations() {
     { invalidate: [qk.groupsRoot, qk.boardRoot, qk.tasksRoot], toastOnError: false },
   );
 
-  const archive = useApiMutation<string, Group>(
-    (id) => groupsApi.patch(id, { status: 'ARCHIVED' }),
-    {
-      invalidate: [qk.groupsRoot, qk.boardRoot, qk.tasksRoot],
-      onSuccess: (_data, id) => dropFromScope(id),
-    },
-  );
+  /**
+   * v0.0.4 W4 §5.6：归档/恢复改走专门端点（POST /groups/:id/archive|unarchive）——
+   * 全部完成校验、默认组保护、恢复重新占额都在服务端，失败 409 走默认 Toast
+   * （文案带剩余任务数等上下文，见 api/errors.ts）。
+   */
+  const archive = useApiMutation<string, Group>(groupsApi.archive, {
+    invalidate: [qk.groupsRoot, qk.boardRoot, qk.tasksRoot],
+    onSuccess: (_data, id) => dropFromScope(id),
+  });
 
-  const restore = useApiMutation<string, Group>(
-    (id) => groupsApi.patch(id, { status: 'ACTIVE' }),
-    { invalidate: [qk.groupsRoot] },
-  );
+  const restore = useApiMutation<string, Group>(groupsApi.unarchive, {
+    invalidate: [qk.groupsRoot, qk.boardRoot, qk.tasksRoot],
+  });
 
   const remove = useApiMutation<
     { id: string; strategy: 'migrate' | 'cascade'; targetGroupId?: string },

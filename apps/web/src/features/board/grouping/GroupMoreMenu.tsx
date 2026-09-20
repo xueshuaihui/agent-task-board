@@ -25,6 +25,15 @@ export interface GroupMoreMenuProps {
   onExport?: () => void;
   /** 接缝：7.6「归档该分组已完成任务」。 */
   onArchiveDone?: () => void;
+  /**
+   * v0.0.4 W4 §5.6：泳道头「归档分组」（仅分组维度）。缺省不渲染该项；
+   * `disabled` + `hint`（还剩 N 个）表达置灰口径，服务端 409 兜底。
+   */
+  archiveGroup?: {
+    onSelect: () => void;
+    disabled?: boolean;
+    hint?: string;
+  };
 }
 
 export function GroupMoreMenu({
@@ -36,6 +45,7 @@ export function GroupMoreMenu({
   onRename,
   onExport,
   onArchiveDone,
+  archiveGroup,
 }: GroupMoreMenuProps): ReactNode {
   const toggleLaneCollapsed = useGroupingStore((state) => state.toggleLaneCollapsed);
   const setLaneFilter = useGroupingStore((state) => state.setLaneFilter);
@@ -99,6 +109,19 @@ export function GroupMoreMenu({
               onSelect: onArchiveDone,
               disabled: !onArchiveDone,
             },
+            // v0.0.4 W4 §5.6「泳道头更多操作 → 归档分组」：整组归档入口只在分组维度、
+            // 且调用方给了回调时出现；未完成数 >0 置灰并提示剩余（服务端另有 409 兜底）。
+            ...(archiveGroup
+              ? [
+                  {
+                    id: 'archive-group',
+                    label: '归档分组',
+                    hint: archiveGroup.hint,
+                    onSelect: archiveGroup.onSelect,
+                    disabled: archiveGroup.disabled,
+                  },
+                ]
+              : []),
           ],
         },
       ]}

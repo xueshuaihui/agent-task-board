@@ -16,9 +16,11 @@ import type { FieldDef, TaskPatchInput } from '@/api/types';
 import { errorMessage } from '@/api';
 import { useShellStore } from '@/app/store/shell';
 import { Button, Dialog, useToast } from '@/components/ui';
+import { useGroupMutations, useGroups } from '@/features/groups';
 import type { CardActions } from './card-actions';
 import type { BoardMutations } from './mutations';
 import { SwimlaneView } from './grouping/Swimlane';
+import { ArchivedGroupsSection } from './grouping/ArchivedGroupsSection';
 import { GroupMoreMenu } from './grouping/GroupMoreMenu';
 import { useCrossGroupDrag } from './grouping/useCrossGroupDrag';
 import { toGroupable, type GroupableTask } from './grouping/dimensions';
@@ -63,6 +65,15 @@ export function GroupedBoard({ tasks, defs, actions, mutations, overlayOf }: Gro
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
 
+  /* --------------------------------------------------- 分组缓存（W4 徽标/归档） */
+
+  const groupsQuery = useGroups();
+  const groupById = useMemo(
+    () => new Map((groupsQuery.data?.items ?? []).map((group) => [group.id, group])),
+    [groupsQuery.data?.items],
+  );
+  const groupMutations = useGroupMutations();
+
   /* ------------------------------------------------------------- 泳道构建 */
 
   const lanes = useMemo(() => {
@@ -78,8 +89,25 @@ export function GroupedBoard({ tasks, defs, actions, mutations, overlayOf }: Gro
       showEmptyLanes: options.showEmptyLanes,
     });
     if (options.rememberOrder) built = applyLaneOrder(built, laneOrder[primary] ?? []);
-    return filterLanes(built, laneFilter);
-  }, [tasks, primary, secondary, options, laneOrder, laneFilter, laneSort]);
+    let result = filterLanes(built, laneFilter);
+    if (primary === 'group') {
+      // v0.0.4 W4 §6.2.2：分组维度用分组缓存装饰泳道头——「默认 / 已归档」小徽标。
+      // 「已归档」只出现在显式选中归档组的场合（默认看板数据已在服务端排除）。
+      result = result.map((lane) => {
+        const group = groupById.get(lane.key);
+        if (!group) return lane;
+        return {
+          ...lane,
+          headBadge:
+            group.status === 'ARCHIVED' ? '已归档' : group.is_default === 1 ? '默认' : undefined,
+        };
+      });
+      // §6.2.2 / 验收 75 口径：默认分组泳道固定排在最后（用户记忆顺序只作用于其余泳道）。
+      const isDefaultLane = (lane: Swimlane) => groupById.get(lane.key)?.is_default === 1;
+      result = [...result.filter((lane) => !isDefaultLane(lane)), ...result.filter(isDefaultLane)];
+    }
+    return result;
+  }, [tasks, primary, secondary, options, laneOrder, laneFilter, laneSort, groupById]);
 
   const laneItems = useMemo(() => lanes.map((lane) => `lane:${lane.key}`), [lanes]);
 
@@ -204,12 +232,42 @@ export function GroupedBoard({ tasks, defs, actions, mutations, overlayOf }: Gro
     useShellStore.getState().openTask(lane.key);
   }, []);
 
+  /**
+   * §5.6 泳道头「归档分组」菜单项（仅分组维度泳道）：
+   * 默认分组 / 已归档 / 非分组泳道（未分类）不出现该项；组内还有未完成任务时置灰
+   * 并提示剩余数——剩余数以服务端 `unfinished_count` 为准（看板筛选可能藏掉任务，
+   * 泳道计数只作缓存缺数时的兜底）；真按了但服务端判不过，409 走默认 Toast。
+   */
+  const archiveGroupOf = useCallback(
+    (lane: Swimlane) => {
+      if (lane.dimension !== 'group') return undefined;
+      const group = groupById.get(lane.key);
+      if (!group || group.is_default === 1 || group.status === 'ARCHIVED') return undefined;
+      const remaining =
+        group.unfinished_count ??
+        laneTasks(lane).filter((task) => task.status !== 'DONE').length;
+      return {
+        disabled: remaining > 0,
+        hint: remaining > 0 ? `还剩 ${remaining} 个` : undefined,
+        onSelect: () => groupMutations.archive.mutate(group.id),
+      };
+    },
+    // laneTasks 是每次渲染重建的纯读函数，不进依赖（与上方 archiveDone 同一处理）。
+    [groupById, groupMutations],
+  );
+
   /* --------------------------------------------------------------- 渲染 */
 
   if (lanes.length === 0) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center">
+      <div className="atb-scroll flex min-h-0 flex-1 flex-col items-center justify-center gap-4 overflow-y-auto pt-3">
         <p className="text-body text-text-tertiary">当前分组与筛选下没有泳道</p>
+        {/* 任务全在归档分组时会走到这里——折叠区仍出现，查看/恢复入口不能藏（§5.6）。 */}
+        {primary === 'group' ? (
+          <div className="w-full">
+            <ArchivedGroupsSection />
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -242,6 +300,7 @@ export function GroupedBoard({ tasks, defs, actions, mutations, overlayOf }: Gro
                     laneKeys={laneItems.map((item) => item.slice('lane:'.length))}
                     onExport={() => toast.info('暂未开放', '分组导出能力将在后续版本提供')}
                     onArchiveDone={() => archiveDone(lane)}
+                    archiveGroup={archiveGroupOf(lane)}
                   />
                 }
                 onViewRequirement={lane.dimension === 'requirement' ? () => openRequirement(lane) : undefined}
@@ -271,6 +330,9 @@ export function GroupedBoard({ tasks, defs, actions, mutations, overlayOf }: Gro
           ) : null}
         </DragOverlay>
       </DndContext>
+
+      {/* v0.0.4 W4 §5.6 / §6.2.2：归档分组折叠区（折叠态 + 计数 + 查看 / 恢复），仅分组维度。 */}
+      {primary === 'group' ? <ArchivedGroupsSection /> : null}
 
       {/* 4.9 跨分组拖拽确认（现有 Dialog）：确认才发归属 / 流转请求。 */}
       <Dialog
