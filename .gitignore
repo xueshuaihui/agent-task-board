@@ -10,10 +10,6 @@ coverage/
 apps/api/prisma/dev.db
 apps/api/prisma/*.db
 apps/api/prisma/*.db-journal
-# 云端市场 Prisma client 自定义输出（generate 产物，含引擎二进制，不入库）
-apps/cloud/prisma/generated/
-# 云端服务本地库（CLOUD_DATA_DIR 默认在 ~/.agent-board-cloud，仓库内兜底）
-apps/cloud/*.db
 .turbo/
 .vite/
 
