@@ -161,6 +161,27 @@ describe('技能管理', () => {
     expect(missing.status).toBe(404);
   });
 
+  it('W3 版本快照：GET /skills/:id/versions/:version 返回定版内容（编辑器 diff 用），不存在 404', async () => {
+    const skill = await createSkill(ui);
+    await ui.post(`${API}/skills/${skill.id}/versions`, {
+      content: skillContent(false),
+      changelog: '去掉人工确认块',
+    });
+    // v0.1.0 = 创建时 4 块；v0.1.1 = 发布时 3 块。版本号含 `.` 走路径参数无歧义。
+    const first = await ui.get(`${API}/skills/${skill.id}/versions/v0.1.0`);
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ version: 'v0.1.0', changelog: '初始版本' });
+    expect(first.body.content.blocks).toHaveLength(4);
+    expect(first.body.content.entryBlockId).toBe('b1');
+    expect(first.body.mcp_dependencies[0]).toMatchObject({ server: 'fs' });
+    const second = await ui.get(`${API}/skills/${skill.id}/versions/v0.1.1`);
+    expect(second.body.content.blocks).toHaveLength(3);
+    expect(second.body.changelog).toBe('去掉人工确认块');
+    const missing = await ui.get(`${API}/skills/${skill.id}/versions/v9.9.9`);
+    expect(missing.status).toBe(404);
+    expect(missing.body.error.code).toBe('NOT_FOUND');
+  });
+
   it('测试运行：文本块拼接、human 中断标记、script 不执行', async () => {
     const skill = await createSkill(ui);
     const blocked = await ui.post(`${API}/skills/${skill.id}/test`, { input: '登录流程' });

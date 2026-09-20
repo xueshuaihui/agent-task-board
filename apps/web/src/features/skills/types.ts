@@ -116,6 +116,15 @@ export interface SkillVersionSummary {
   current: boolean;
 }
 
+/** GET /skills/:id/versions/:version 快照（W3 §9.6 编辑器版本 diff 用，服务端原样存的 SkillContent）。 */
+export interface SkillVersionSnapshot {
+  version: string;
+  changelog?: string;
+  created_at: string;
+  content: SkillContent;
+  mcp_dependencies: SkillMcpDependency[];
+}
+
 export interface SkillStats {
   bound_task_count: number;
 }

@@ -19,7 +19,9 @@
 | `create-skill-dialog.tsx` | 新建技能两步向导：①名称/类型/起步方式（8 个内置模板摘要）②可选描述/标签，Enter 推进/提交 |
 | `import-center-dialog.tsx` | 统一导入中心（W2 口径）：拖拽/选择 .atskill、SKILL.md、Cursor Rules .mdc，前端解析预览后走后端导入端点落库为「三方技能」；同名不算冲突直接共存，同 ID 冲突行内选「覆盖更新为新版本/跳过」（§9.8.4 r2） |
 | `copy-skill-picker.tsx` | 复制技能选择器：GET /skills/:id 拿内容后 POST /skills 创建「副本」 |
-| `skill-editor-page.tsx` | 编辑器整页（v0.0.4 W3 三模式，§9.4 内容实时同步）：模式 Tab（可视化/结构化/源码 + 流程图视图）共享同一份本地草稿 blocks + 保存草稿 + 发布入口；默认技能（source=default）进整页只读态——横幅提示 + 各模式禁用编辑，服务端 SKILL_READONLY 403 兜底 |
+| `skill-editor-page.tsx` | 编辑器整页（v0.0.4 W3 三模式，§9.4 内容实时同步）：模式 Tab（可视化/结构化/源码 + 流程图视图）共享同一份本地草稿 blocks + 保存草稿 + 发布 + 版本历史入口；默认技能（source=default）进整页只读态——横幅提示 + 各模式禁用编辑，服务端 SKILL_READONLY 403 兜底 |
+| `skill-version-history.tsx` | W3 §9.6 编辑器版本工作流：头部「版本 n」按钮 → 历史列表（changelog/时间/当前标记）、「与当前对比」（拉快照做块级 diff）、「回滚到此版」（POST rollback，成功后草稿整体替换）；默认技能/无版本不渲染 |
+| `version-diff.ts` | 版本 diff 纯函数：历史快照 vs 当前草稿按块 id 对齐（新增/删除/字段级修改/顺序/入口），`pos` 不计内容差异 |
 | `block-editor.tsx` | 可视化模式：块增删/上下移/设入口 + dnd-kit 拖拽排序，字段表单共用 block-fields，next 分支用目标块下拉；readOnly 时隐藏全部操作、字段禁用 |
 | `structured-editor.tsx` | 结构化模式（1.md 8.3）：表格式块列表（类型/标题/摘要 + 操作列），点行展开行内编辑完整字段，上移/下移/删除/在下方插入；readOnly 时撤操作列、展开行只读 |
 | `source-editor.tsx` | 源码模式（1.md 8.3）：左侧 SKILL.md 源码编辑 + 右侧实时预览（无依赖轻量渲染），双向导入/导出，损失性转换 Toast 提示；readOnly 时源码只读、禁导入（导出/下载仍可用） |
@@ -27,6 +29,7 @@
 | `variable-picker.tsx` | 变量插入下拉 + `{{变量}}` 光标处插入文本框（1.md 8.3 变量系统） |
 | `markdown.ts` | SKILL.md <-> blocks 纯函数双向转换（约定见文件末尾注释块），frontmatter 为 YAML 子集 |
 | `skill-flow-view.tsx` | 流程图视图：只读 SVG 分层拓扑（滚轮缩放、拖拽平移、适应画布） |
+| `flow-canvas.tsx` | 流程图编辑画布（@xyflow/react，flow 类型技能按 §9.3 用流程图编辑器）：调色板点击/拖放加块、拖拽布点、拖线建分支、双击开块编辑抽屉；readOnly 时撤全部编辑交互 |
 | `publish-dialog.tsx` | 发布对话框（2.md 11.3 + 1.md 8.6）：版本号预览、changelog、MCP 依赖编辑器、发布前检查（循环检测标红、变量拼写警告不阻断）、测试状态展示区 + 技能测试入口（模拟运行 POST /skills/:id/test；测试用例接口就位后按组件内接缝注释替换展示数据） |
 | `mcp-dependency-editor.tsx` | MCP 依赖声明编辑器（server/tools/required/reason） |
 | `skill-detail-drawer.tsx` | 详情抽屉：概览块预览 / 版本回滚 / 测试 / MCP 配置片段复制 / 绑定任务 / 导出 |
@@ -96,6 +99,8 @@ key 并入 `api/keys.ts`（`hooks.ts` 顶部有注释标注了引用点），即
 3. `POST /skills/import` 前端固定走 multipart（`file` 字段），后端任选其一实现即可。
 4. 发布 = `POST /versions`（服务端自增 semver 并设 current）+ `PATCH {status: 'PUBLISHED'}`，
    两条顺序执行；`previewNextVersion` 只是 UI 预告，真实版本号以后端返回为准。
+5. W3 已实现：`GET /skills/:id/versions/:version` 版本快照（编辑器 diff 用；只读接口，
+   默认技能也可读，仅无版本记录时 404）。
 
 ## 测试联调提示
 

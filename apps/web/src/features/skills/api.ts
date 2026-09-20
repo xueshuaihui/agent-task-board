@@ -9,6 +9,7 @@ import type {
   SkillQuery,
   SkillTestResult,
   SkillVersionCreateInput,
+  SkillVersionSnapshot,
 } from './types';
 
 /**
@@ -42,6 +43,10 @@ export const skillsApi = {
 
   rollback: (id: string, version: string) =>
     http.post<Skill>(`/skills/${enc(id)}/rollback`, { version }),
+
+  /** W3 §9.6：单版本内容快照（编辑器版本历史「与当前对比」）。 */
+  versionSnapshot: (id: string, version: string) =>
+    http.get<SkillVersionSnapshot>(`/skills/${enc(id)}/versions/${enc(version)}`),
 
   test: (id: string, input: string) => http.post<SkillTestResult>(`/skills/${enc(id)}/test`, { input }),
 

@@ -228,6 +228,15 @@ export interface SkillVersionSummary {
   current: boolean;
 }
 
+/** v0.0.4 W3 §9.6：GET /skills/:id/versions/:version 快照（编辑器版本 diff 用）。 */
+export interface SkillVersionSnapshotDto {
+  version: string;
+  changelog: string;
+  created_at: string | null;
+  content: SkillContent;
+  mcp_dependencies: SkillMcpDependency[];
+}
+
 export interface SkillDto {
   id: string;
   name: string;

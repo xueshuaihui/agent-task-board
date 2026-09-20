@@ -7,6 +7,7 @@ import { usePatchSkill, useSkill } from './hooks';
 import { SKILL_STATUS_META, emptyContent } from './meta';
 import { PublishDialog } from './publish-dialog';
 import { SkillFlowEditor } from './flow-canvas';
+import { SkillVersionHistory } from './skill-version-history';
 import { SourceEditor } from './source-editor';
 import { StructuredEditor } from './structured-editor';
 import type { Skill, SkillContent } from './types';
@@ -195,6 +196,9 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
             </span>
           ) : (
             <>
+              {skill ? (
+                <SkillVersionHistory skill={skill} draft={content} onRolledBack={applySaved} />
+              ) : null}
               {dirty ? (
                 <span className="text-aux text-text-tertiary">有未保存修改</span>
               ) : autoSavedAt ? (

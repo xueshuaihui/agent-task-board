@@ -127,6 +127,12 @@ export class SkillsController {
     return this.skills.createVersion(id, body);
   }
 
+  /** v0.0.4 W3 §9.6：版本快照（编辑器「与当前对比」按需拉取，只读接口不受 SKILL_READONLY 限制）。 */
+  @Get(':id/versions/:version')
+  versionSnapshot(@Param('id') id: string, @Param('version') version: string) {
+    return this.skills.versionSnapshot(id, version);
+  }
+
   @Post(':id/rollback')
   rollback(
     @Param('id') id: string,

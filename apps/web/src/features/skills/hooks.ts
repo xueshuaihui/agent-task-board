@@ -16,6 +16,8 @@ export const skillKeys = {
   list: (query?: SkillQuery) => ['skills', 'list', query ?? {}] as const,
   detail: (id: string) => ['skills', 'detail', id] as const,
   boundTasks: (id: string) => ['skills', 'detail', id, 'bound-tasks'] as const,
+  versionSnapshot: (id: string, version: string) =>
+    ['skills', 'detail', id, 'version', version] as const,
 };
 
 type Options = { enabled?: boolean };
@@ -41,6 +43,16 @@ export function useSkillBoundTasks(id: string | undefined, options?: Options) {
     queryKey: skillKeys.boundTasks(id ?? ''),
     queryFn: () => skillsApi.boundTasks(id as string),
     enabled: Boolean(id) && (options?.enabled ?? true),
+  });
+}
+
+/** W3 §9.6：版本快照（历史版本定版不可变，缓存可以很长）。 */
+export function useSkillVersionSnapshot(id: string | undefined, version: string | undefined) {
+  return useQuery({
+    queryKey: skillKeys.versionSnapshot(id ?? '', version ?? ''),
+    queryFn: () => skillsApi.versionSnapshot(id as string, version as string),
+    enabled: Boolean(id) && Boolean(version),
+    staleTime: 10 * 60 * 1000,
   });
 }
 

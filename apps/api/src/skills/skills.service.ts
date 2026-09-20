@@ -23,6 +23,7 @@ import {
   type SkillTestResult,
   type SkillType,
   type SkillVersionCreateInput,
+  type SkillVersionSnapshotDto,
   type SkillVersionSummary,
   type TaskSkillPayload,
   type TaskSkillRef,
@@ -260,6 +261,27 @@ export class SkillsService {
       }),
     ]);
     return this.detail(id);
+  }
+
+  /**
+   * v0.0.4 W3 §9.6：单版本快照——编辑器「版本历史 / 与当前对比」按需拉取。
+   * 只读接口不触发 SKILL_READONLY 守卫；默认技能无版本记录，查不到即 404。
+   */
+  async versionSnapshot(id: string, version: string): Promise<SkillVersionSnapshotDto> {
+    await this.require(id);
+    const target = await this.prisma.skillVersion.findUnique({
+      where: { skillId_version: { skillId: id, version } },
+    });
+    if (!target) {
+      throw new ApiException('NOT_FOUND', `版本 ${version} 不存在`, undefined, { version });
+    }
+    return {
+      version: target.version,
+      changelog: target.changelog,
+      created_at: toIso(target.createdAt),
+      content: JSON.parse(target.content) as SkillContent,
+      mcp_dependencies: JSON.parse(target.mcpDependencies) as SkillMcpDependency[],
+    };
   }
 
   /** 8.4 回滚：复制该版本内容/依赖/测试用例为 current，不新增 version 记录。默认技能拒回滚。 */
