@@ -15,9 +15,14 @@ let h: AgentHarness;
 let agent: RequestAuth;
 let client: Client;
 
-/** 12 章工具表的原文清单，顺序不敏感但一条都不能多、不能少。 */
+/**
+ * §12 + §16.1 W6 已落地子集（9 基础 + block_task + wait_for_resume）；
+ * 技能三工具与策略二工具、`board.*` 全套分别在同文件与后续切片补齐。
+ * 顺序不敏感但一条都不能多、不能少。
+ */
 const CHAPTER_12_TOOLS = [
   'append_log',
+  'block_task',
   'claim_next_task',
   'complete_task',
   'fail_task',
@@ -26,6 +31,7 @@ const CHAPTER_12_TOOLS = [
   'heartbeat',
   'list_ready_tasks',
   'update_progress',
+  'wait_for_resume',
 ];
 
 beforeAll(async () => {
@@ -164,5 +170,123 @@ describe('MCP 工具面', () => {
     expect(buildAgentTools({ claims: h.claims, leases: h.leases, writeback: h.writeback, query: h.query }).map((tool) => tool.name).sort()).toEqual(
       CHAPTER_12_TOOLS,
     );
+  });
+
+  // ------------------------------------------------------------ v0.0.4 W6 §16.1：block_task / wait_for_resume
+
+  it('block_task 走同一 writeback.blocked：任务转 BLOCKED、租约清空、Run 收口 FAILED', async () => {
+    await seedTask(h.prisma, 'T-1');
+    const claimed = structured(await call('claim_next_task'))!;
+    const lease = claimed.lease as { run_id: string; lease_id: string };
+
+    const blocked = await call('block_task', {
+      task_id: 'T-1',
+      run_id: lease.run_id,
+      lease_id: lease.lease_id,
+      block_id: 'h1',
+      block_title: '需要产品确认',
+      instruction: '请确认字段规则后回 READY',
+    });
+    expect(structured(blocked)).toMatchObject({
+      task_id: 'T-1',
+      run_id: lease.run_id,
+      task_status: 'BLOCKED',
+      idempotent: false,
+      orphaned: false,
+    });
+    const stored = await h.prisma.task.findUniqueOrThrow({ where: { id: 'T-1' } });
+    expect([stored.status, stored.leaseId, stored.leaseExpiresAt, stored.currentRunId]).toEqual([
+      'BLOCKED',
+      null,
+      null,
+      null,
+    ]);
+    const run = await h.prisma.taskRun.findUniqueOrThrow({ where: { id: lease.run_id } });
+    expect([run.status, run.error]).toEqual(['FAILED', '人工块「需要产品确认」等待人工处理：请确认字段规则后回 READY']);
+  });
+
+  it('block_task 需要三元组：非持有租约时回 LEASE_EXPIRED/TASK_GONE', async () => {
+    const err = await call('block_task', {
+      task_id: 'T-9',
+      run_id: 'R-1',
+      lease_id: '01947c3e-6f2a-7a11-9c31-8d5f2e1b7c40',
+      block_id: 'h1',
+      block_title: '',
+      instruction: '没认领就想 block',
+    });
+    expect(err.isError).toBe(true);
+    expect(structured(err)!.code).toBe('TASK_GONE');
+  });
+
+  it('wait_for_resume 只读：任务非 BLOCKED 时立即回，resumed=false / timed_out=false', async () => {
+    await seedTask(h.prisma, 'T-1'); // READY
+    const result = await call('wait_for_resume', { task_id: 'T-1', timeout_seconds: 5 });
+    expect(structured(result)).toMatchObject({
+      task_id: 'T-1',
+      status: 'READY',
+      resumed: false,
+      timed_out: false,
+      waited_seconds: 0,
+    });
+    expect(await h.prisma.taskRun.count()).toBe(0);
+  });
+
+  it('wait_for_resume 命中 BLOCKED→READY 的 task.moved 事件即解挂，resumed=true', async () => {
+    await seedTask(h.prisma, 'T-1');
+    const claimed = structured(await call('claim_next_task'))!;
+    const lease = claimed.lease as { run_id: string; lease_id: string };
+    await call('block_task', {
+      task_id: 'T-1',
+      run_id: lease.run_id,
+      lease_id: lease.lease_id,
+      block_id: 'h1',
+      block_title: '人工确认',
+      instruction: '等人工',
+    });
+
+    // 30ms 后模拟 tasks.service.transition 的 BLOCKED→READY 广播：先落库再 emit，
+    // 与生产实现（`setStatus` 先完成，`emit('task.moved')` 后发）同序，避免与 waitResume
+    // 里事件唤醒后再读一次的语义打架。
+    setTimeout(() => {
+      void h.prisma.task
+        .update({ where: { id: 'T-1' }, data: { status: 'READY' } })
+        .then(() => h.events.emit('task.moved', { id: 'T-1', from: 'BLOCKED', to: 'READY' }));
+    }, 30);
+
+    const result = await call('wait_for_resume', { task_id: 'T-1', timeout_seconds: 5 });
+    expect(structured(result)).toMatchObject({
+      task_id: 'T-1',
+      status: 'READY',
+      resumed: true,
+      timed_out: false,
+    });
+  });
+
+  it('wait_for_resume 超时未解挂：resumed=false / timed_out=true', async () => {
+    await seedTask(h.prisma, 'T-1');
+    const claimed = structured(await call('claim_next_task'))!;
+    const lease = claimed.lease as { run_id: string; lease_id: string };
+    await call('block_task', {
+      task_id: 'T-1',
+      run_id: lease.run_id,
+      lease_id: lease.lease_id,
+      block_id: 'h1',
+      block_title: '仍待人工',
+      instruction: '没人来处理',
+    });
+
+    const result = await call('wait_for_resume', { task_id: 'T-1', timeout_seconds: 1 });
+    expect(structured(result)).toMatchObject({
+      task_id: 'T-1',
+      status: 'BLOCKED',
+      resumed: false,
+      timed_out: true,
+    });
+  });
+
+  it('wait_for_resume 未知任务：TASK_GONE 而不是 500', async () => {
+    const err = await call('wait_for_resume', { task_id: 'T-404', timeout_seconds: 2 });
+    expect(err.isError).toBe(true);
+    expect(structured(err)).toMatchObject({ code: 'TASK_GONE', task_id: 'T-404' });
   });
 });

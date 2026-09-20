@@ -3,6 +3,7 @@ import { ApiException } from '../contract/errors';
 import type { RequestAuth } from '../auth/auth.scope';
 import {
   appendLogSchema,
+  blockedSchema,
   claimSchema,
   completeSchema,
   failSchema,
@@ -11,7 +12,9 @@ import {
   listReadyQuerySchema,
   progressSchema,
   reviewFeedbackQuerySchema,
+  waitForResumeSchema,
   type AppendLogInput,
+  type BlockedInput,
   type ClaimInput,
   type CompleteInput,
   type FailInput,
@@ -20,6 +23,7 @@ import {
   type ListReadyInput,
   type ProgressInput,
   type ReviewFeedbackInput,
+  type WaitResumeInput,
 } from '../agent/agent-inputs';
 import type { AgentQueryService } from '../agent/agent-query.service';
 import type { ClaimService } from '../agent/claim.service';
@@ -41,7 +45,8 @@ export interface AgentTool {
 }
 
 /**
- * 12 章的九个工具。业务逻辑全在 Agent 服务层，这里只做「工具名 → 服务方法」的映射，
+ * 12 章的九个基础工具 + v0.0.4 W6 §16.1 的人工块/恢复工具（block_task、wait_for_resume）。
+ * 业务逻辑全在 Agent 服务层，这里只做「工具名 → 服务方法」的映射，
  * 因此 REST 与 MCP 共用同一套校验与错误语义（13 章错误码只有一份实现）。
  */
 export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
@@ -99,6 +104,18 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
       description: '获取最近审核意见（6.6）',
       input: reviewFeedbackQuerySchema,
       run: (args, auth) => ctx.query.reviewFeedback(args as ReviewFeedbackInput, auth),
+    },
+    {
+      name: 'block_task',
+      description: '上报人工块：任务转人工阻塞（BLOCKED）等人工处理，租约随之清空（§4.1/§8.4）',
+      input: blockedSchema,
+      run: (args, auth) => ctx.writeback.blocked(args as BlockedInput, auth),
+    },
+    {
+      name: 'wait_for_resume',
+      description: '等待人工处理完成：长轮询直到 BLOCKED 转回其它状态或超时（§16.1）',
+      input: waitForResumeSchema,
+      run: (args, auth) => ctx.writeback.waitResume(args as WaitResumeInput, auth),
     },
   ];
 }

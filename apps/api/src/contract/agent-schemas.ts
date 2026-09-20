@@ -74,6 +74,18 @@ export const blockedSchema = leaseTripleSchema.extend({
   instruction: z.string().trim().min(1).max(2000),
 });
 
+/**
+ * v0.0.4 W6 §16.1 `wait_for_resume`：长轮询等待 BLOCKED 解除。
+ * 不需要三元组：`block_task` 已把租约清空，等待侧只是只读的事件订阅。
+ * 超时上限 300 秒（5 分钟）是本地信任模型下 HTTP 长连接与 Agent 端友好度的折中；
+ * 更长的等待由 Agent 端循环调用实现。缺省 60 秒覆盖绝大多数「人工点一下」场景。
+ */
+export const waitForResumeSchema = z.object({
+  task_id: idParam,
+  timeout_seconds: z.coerce.number().int().min(1).max(300).default(60),
+});
+export type WaitResumeInput = z.infer<typeof waitForResumeSchema>;
+
 export const reviewFeedbackQuerySchema = z.object({
   task_id: idParam,
   limit: z.coerce.number().int().min(1).max(50).default(5),

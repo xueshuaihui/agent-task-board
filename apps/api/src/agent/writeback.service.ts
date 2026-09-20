@@ -17,7 +17,7 @@ import { NotificationsService } from '../infra/notifications.service';
 import { PrismaService } from '../infra/prisma.service';
 import { agentOf } from './agent-auth';
 import { AgentQueryService } from './agent-query.service';
-import type { AppendLogInput, BlockedInput, CompleteInput, FailInput, ProgressInput } from './agent-inputs';
+import type { AppendLogInput, BlockedInput, CompleteInput, FailInput, ProgressInput, WaitResumeInput } from './agent-inputs';
 import type { LeaseVerdict } from './lease.service';
 import { LeaseService } from './lease.service';
 
@@ -348,6 +348,65 @@ export class WritebackService {
       idempotent: false,
       orphaned: false,
     };
+  }
+
+  /**
+   * v0.0.4 W6 §16.1 `wait_for_resume`：只读的长轮询，等任务离开 BLOCKED。
+   * 语义：`block_task` 之后 Agent 侧不结束循环——挂在这一个 tools/call 上，直到人工
+   * 在 UI 上把 BLOCKED 转回 READY / BACKLOG（`tasks.service.transition` 会 emit
+   * `task.moved`，本方法按 `from='BLOCKED'` 命中），或到达 `timeout_seconds`。
+   * 无三元组：block 已清空租约，等待方只读事件不改写库；恢复后 Agent 走新一次
+   * `claim_next_task` 拿新租约，与 complete/fail 的回执通道不重叠。
+   */
+  async waitResume(input: WaitResumeInput, auth: RequestAuth) {
+    agentOf(auth);
+    const task = await this.prisma.task.findUnique({ where: { id: input.task_id } });
+    if (!task) throw new ApiException('TASK_GONE', '任务不存在', undefined, { task_id: input.task_id });
+    if (task.status !== 'BLOCKED') {
+      // 未处于 BLOCKED（READY/RUNNING/REVIEW/DONE/FAILED/BACKLOG）时立即回，避免白占一条长连接。
+      return {
+        task_id: task.id,
+        status: task.status as TaskStatus,
+        resumed: false,
+        timed_out: false,
+        waited_seconds: 0,
+      };
+    }
+    const started = Date.now();
+    const outcome = await this.awaitBlockedExit(task.id, input.timeout_seconds);
+    const latest = await this.prisma.task.findUnique({ where: { id: input.task_id } });
+    const waitedSeconds = Math.round((Date.now() - started) / 100) / 10;
+    const stillBlocked = (latest?.status ?? 'BLOCKED') === 'BLOCKED';
+    return {
+      task_id: input.task_id,
+      status: (latest?.status ?? 'BLOCKED') as TaskStatus,
+      resumed: outcome === 'moved' && !stillBlocked,
+      timed_out: outcome === 'timeout' && stillBlocked,
+      waited_seconds: waitedSeconds,
+    };
+  }
+
+  /** 长轮询的内部实现：sink + 定时器二选一落地，两者都需在返回前回收。 */
+  private awaitBlockedExit(taskId: string, timeoutSeconds: number): Promise<'moved' | 'timeout'> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (value: 'moved' | 'timeout') => {
+        if (settled) return;
+        settled = true;
+        off();
+        clearTimeout(timer);
+        resolve(value);
+      };
+      const off = this.events.registerSink((event) => {
+        if (event.event !== 'task.moved') return;
+        if (event.data.id !== taskId) return;
+        if (event.data.from !== 'BLOCKED') return;
+        finish('moved');
+      });
+      const timer = setTimeout(() => finish('timeout'), timeoutSeconds * 1000);
+      // 定时器不能拖住进程退出（vitest 收尾与优雅停机依赖这一点，与 LeaseService 扫描同口径）。
+      timer.unref?.();
+    });
   }
 
   /**

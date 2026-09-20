@@ -43,9 +43,13 @@ import {
  * 拆成独立用例就只剩「某个请求返回了 200」，链路断在哪儿反而看不出来。
  */
 
-/** 12 章工具表原文。与内存传输那份各写一份是有意的：两边都得独立对表，不互相引用。 */
+/**
+ * §12 + §16.1 W6 已落地子集（9 基础 + block_task + wait_for_resume）。
+ * 与内存传输那份各写一份是有意的：两边都得独立对表，不互相引用。
+ */
 const CHAPTER_12_TOOLS = [
   'append_log',
+  'block_task',
   'claim_next_task',
   'complete_task',
   'fail_task',
@@ -54,6 +58,7 @@ const CHAPTER_12_TOOLS = [
   'heartbeat',
   'list_ready_tasks',
   'update_progress',
+  'wait_for_resume',
 ];
 
 let t: TestApp;

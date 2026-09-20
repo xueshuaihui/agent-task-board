@@ -9,6 +9,7 @@ import {
   listReadyQuerySchema,
   progressSchema,
   reviewFeedbackQuerySchema,
+  waitForResumeSchema,
 } from '../contract/agent-schemas';
 import { idLike } from '../contract/schemas';
 
@@ -21,6 +22,7 @@ export type CompleteInput = z.infer<typeof completeSchema>;
 export type FailInput = z.infer<typeof failSchema>;
 export type BlockedInput = z.infer<typeof blockedSchema>;
 export type ReviewFeedbackInput = z.infer<typeof reviewFeedbackQuerySchema>;
+export type WaitResumeInput = z.infer<typeof waitForResumeSchema>;
 
 /** 12 章：`get_task` 是只读工具，不需要三元组（三元组只在写回侧强制）。 */
 export const getTaskSchema = z.object({ task_id: idLike });
@@ -39,4 +41,5 @@ export {
   listReadyQuerySchema,
   progressSchema,
   reviewFeedbackQuerySchema,
+  waitForResumeSchema,
 };
