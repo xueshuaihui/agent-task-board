@@ -66,6 +66,7 @@ export const ERROR_CODE_COPY: Record<ErrorCode, string> = {
   IMPORT_ID_CONFLICT: '导入存在 ID 冲突，请选择处理策略',
   FIELD_IN_USE: '字段已被任务引用，不能删除',
   INVALID_BACKUP_NAME: '备份文件名不合法',
+  GROUP_LIMIT_REACHED: '分组数量已达上限，先删除不用的分组',
   BACKUP_NOT_FOUND: '备份文件已不在磁盘上',
   INTERNAL: '本地服务内部错误',
   NETWORK_ERROR: COPY.sidecarDown,

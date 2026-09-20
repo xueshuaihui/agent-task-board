@@ -417,7 +417,7 @@ function clientSnippet(client: ClientKind, url: string, token: string): string {
 
 const CLIENT_NOTES: Record<ClientKind, string> = {
   qoder: 'Qoder：客户端内置定时任务周期调用 claim_next_task，无需额外调度。',
-  claude: 'Claude Code：内置定时任务或 hooks 触发；配置写入项目的 .mcp.json 同样有效。',
+  claude: 'Claude Code：内置定时任务或 hooks 触发；配置写入代码仓库的 .mcp.json 同样有效。',
   codex: 'Codex：MCP 客户端配置在 config.toml；Token 走环境变量，别写进仓库。',
   cursor:
     'Cursor：没有到点自动调 MCP 工具的调度器——需外部调度（launchd / 任务计划程序）周期调用 REST POST /api/v1/tasks/claim，或在 .cursor/rules/*.mdc 写「会话开始先 list_ready_tasks」的规则；后者不是无人值守。且只支持本地会话（127.0.0.1 不对外暴露）。',

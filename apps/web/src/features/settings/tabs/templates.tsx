@@ -239,7 +239,7 @@ function TemplateDialog({
 
   const stale = useMemo(
     () => collectStale(preset, taskTypes, defs),
-    // 表单里改过的项目以提交前重算为准，这里只报存量问题（7.5 的 ⚠ 提示）
+    // 表单里改过的条目以提交前重算为准，这里只报存量问题（7.5 的 ⚠ 提示）
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [preset, taskTypes, defs],
   );

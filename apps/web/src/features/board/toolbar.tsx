@@ -20,7 +20,7 @@ import { priorityText } from '@/lib/labels';
 import { cn } from '@/lib/cn';
 import { Button, Menu, MenuCaret, Tooltip, type MenuItem, type MenuProps } from '@/components/ui';
 import { openDependencyGraph } from '@/features/requirements';
-import { ProjectSwitcher } from '@/features/projects';
+import { GroupSwitcher } from '@/features/groups';
 import { boardFilterCount, VIEW_ORDER } from './model';
 import { GroupSelector } from './grouping/GroupSelector';
 import { GROUP_DIMENSIONS, type GroupDimensionKey } from './grouping/dimensions';
@@ -77,8 +77,8 @@ export function BoardToolbar({ onCreate, grouping, graphTasks }: BoardToolbarPro
 
   return (
     <div className="flex min-h-12 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border">
-      {/* 7.8 / 4.5：项目切换器放看板工具栏最左，多选结果驱动看板请求过滤与「按项目」主分组。 */}
-      <ProjectSwitcher />
+      {/* 7.8 / 4.5：分组切换器放看板工具栏最左，多选结果驱动看板请求过滤与「按分组」主分组。 */}
+      <GroupSwitcher />
       <span aria-hidden className="h-5 w-px shrink-0 bg-border" />
 
       <ViewSegmented value={view} onChange={setView} />

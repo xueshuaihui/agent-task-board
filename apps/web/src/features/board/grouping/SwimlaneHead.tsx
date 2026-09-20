@@ -21,19 +21,19 @@ export interface SwimlaneHeadProps {
   onViewRequirement?: () => void;
 }
 
-/** 需求泳道头第二行：项目 · 优先级 · 进度（12px 灰，原型 4.2）。 */
+/** 需求泳道头第二行：分组 · 优先级 · 进度（12px 灰，原型 4.2）。 */
 function LaneMetaLine({ lane, onViewRequirement }: { lane: Swimlane; onViewRequirement?: () => void }) {
   if (!lane.meta) return null;
   const meta = lane.meta;
   const parts: ReactNode[] = [];
-  if (meta.projectName) {
+  if (meta.groupName) {
     parts.push(
-      <span key="project" className="inline-flex items-center gap-1">
+      <span key="group" className="inline-flex items-center gap-1">
         <span
           className="inline-block size-2 rounded-full"
-          style={meta.projectColor ? { backgroundColor: meta.projectColor } : undefined}
+          style={meta.groupColor ? { backgroundColor: meta.groupColor } : undefined}
         />
-        {meta.projectName}
+        {meta.groupName}
       </span>,
     );
   }

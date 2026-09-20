@@ -2,7 +2,7 @@ import { useEffect, type ComponentType } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { useSettings } from '@/api';
 import { BoardPage } from '@/features/board';
-import { ProjectsPage } from '@/features/projects';
+import { GroupsPage } from '@/features/groups';
 import { ReviewPage } from '@/features/review';
 import { SettingsPage } from '@/features/settings';
 import { SkillLibraryPage } from '@/features/skills';
@@ -28,7 +28,7 @@ import { TopBar } from './top-bar';
  */
 const PAGES: Record<RouteName, ComponentType> = {
   board: BoardPage,
-  projects: ProjectsPage,
+  groups: GroupsPage,
   review: ReviewPage,
   tasks: TaskListPage,
   skills: SkillLibraryPage,

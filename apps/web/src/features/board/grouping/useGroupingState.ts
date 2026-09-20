@@ -4,7 +4,7 @@ import { api } from '@/api';
 import type { GroupDimensionKey } from './dimensions';
 
 /**
- * 7.1–7.8 分组状态：主/次维度、泳道折叠、分组筛选、多项目、排序与偏好持久化。
+ * 7.1–7.8 分组状态：主/次维度、泳道折叠、分组筛选、多分组、排序与偏好持久化。
  * 持久化走 `useGroupingPrefs`（约定 GET/PUT /api/v1/prefs/:key），当前是 localStorage 实现。
  */
 
@@ -29,8 +29,8 @@ export interface GroupingPrefs {
   collapsed: Record<string, boolean>;
   /** 7.6 筛选分组：选中的泳道 key，空数组 = 全部。 */
   laneFilter: string[];
-  /** 4.5 项目多选：空数组 = 全部项目；选中 >1 时看板自动按项目分组（原型 4.5）。 */
-  projectIds: string[];
+  /** 4.5 分组多选：空数组 = 全部分组；选中 >1 时看板自动按分组泳道（原型 4.5）。 */
+  groupIds: string[];
   /** 7.6 更多菜单里的组内排序。 */
   laneSort: 'manual' | 'priority' | 'updated_at';
 }
@@ -48,7 +48,7 @@ export const DEFAULT_GROUPING_PREFS: GroupingPrefs = {
   laneOrder: {},
   collapsed: {},
   laneFilter: [],
-  projectIds: [],
+  groupIds: [],
   laneSort: 'manual',
 };
 
@@ -139,7 +139,7 @@ export interface GroupingState extends GroupingPrefs {
   setLaneOrder: (dimension: GroupDimensionKey, order: readonly string[]) => void;
   toggleLaneFilter: (laneKey: string) => void;
   setLaneFilter: (keys: readonly string[]) => void;
-  toggleProject: (projectId: string) => void;
+  toggleGroup: (groupId: string) => void;
   reset: () => void;
 }
 
@@ -160,7 +160,7 @@ export const useGroupingStore = create<GroupingState>((set, get) => ({
         laneOrder: state.laneOrder,
         collapsed: state.collapsed,
         laneFilter: state.laneFilter,
-        projectIds: state.projectIds,
+        groupIds: state.groupIds,
         laneSort: state.laneSort,
         ...patch,
       };
@@ -207,13 +207,13 @@ export const useGroupingStore = create<GroupingState>((set, get) => ({
       persist({ ...pickPrefs(state), laneFilter: [...keys] });
       return { laneFilter: [...keys] };
     }),
-  toggleProject: (projectId) =>
+  toggleGroup: (groupId) =>
     set((state) => {
-      const projectIds = state.projectIds.includes(projectId)
-        ? state.projectIds.filter((id) => id !== projectId)
-        : [...state.projectIds, projectId];
-      persist({ ...pickPrefs(state), projectIds });
-      return { projectIds };
+      const groupIds = state.groupIds.includes(groupId)
+        ? state.groupIds.filter((id) => id !== groupId)
+        : [...state.groupIds, groupId];
+      persist({ ...pickPrefs(state), groupIds });
+      return { groupIds };
     }),
   reset: () => {
     persist(DEFAULT_GROUPING_PREFS);
@@ -230,7 +230,7 @@ function pickPrefs(state: GroupingState): GroupingPrefs {
     laneOrder: state.laneOrder,
     collapsed: state.collapsed,
     laneFilter: state.laneFilter,
-    projectIds: state.projectIds,
+    groupIds: state.groupIds,
     laneSort: state.laneSort,
   };
 }

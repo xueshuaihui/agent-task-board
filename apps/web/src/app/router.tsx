@@ -14,7 +14,7 @@ import { skillsRouteCandidate } from '@/features/skills';
 
 export const ROUTES = {
   board: { path: '/board', label: '看板' },
-  projects: { path: '/projects', label: '分组' },
+  groups: { path: '/groups', label: '分组' },
   review: { path: '/review', label: '审核' },
   // 0919 十四章 IA：任务列表不再占顶栏入口，但路由保留（看板工具栏「列表视图」跳这里）。
   tasks: { path: '/tasks', label: '任务' },
@@ -31,7 +31,7 @@ const PATH_TO_NAME = new Map<string, RouteName>(
 );
 
 /** 17.2：「依赖图」是阶段二入口，阶段一不渲染该项（见 lib/phase.ts）。 */
-export const NAV_ORDER: readonly RouteName[] = ['board', 'projects', 'skills', 'review', 'settings'];
+export const NAV_ORDER: readonly RouteName[] = ['board', 'groups', 'skills', 'review', 'settings'];
 
 interface RouterState {
   /** 形如 `/tasks?status=REVIEW`。 */

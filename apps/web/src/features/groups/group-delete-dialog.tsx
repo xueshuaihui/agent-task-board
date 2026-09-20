@@ -3,47 +3,47 @@ import { AlertTriangle } from 'lucide-react';
 import { errorMessage } from '@/api/errors';
 import { useToast } from '@/components/ui';
 import { Button, Dialog, Field, RadioGroup, Select } from '@/components/ui';
-import { useActiveProjects, useProjectMutations } from './queries';
-import type { Project } from './types';
+import { useActiveGroups, useGroupMutations } from './queries';
+import type { Group } from './types';
 
 /**
- * 5.1「删除项目需处理其下任务（迁移或一并删除）」：删除前二选一——
- * - 迁移：该项目下的任务整体挪到另一个活跃项目（默认，任务不丢）；
- * - 一并删除：任务与其执行记录随项目删除，**不可恢复**，按钮与警示都描红。
+ * 5.1「删除分组需处理其下任务（迁移或一并删除）」：删除前二选一——
+ * - 迁移：该分组下的任务整体挪到另一个活跃分组（默认，任务不丢）；
+ * - 一并删除：任务与其执行记录随分组删除，**不可恢复**，按钮与警示都描红。
  * 成功 Toast 用服务端返回的 `affected_tasks` 报真实数量（4.3.1 规则 4 的口径）。
  */
-export interface ProjectDeleteDialogProps {
-  project: Project | null;
+export interface GroupDeleteDialogProps {
+  group: Group | null;
   onClose: () => void;
 }
 
-export function ProjectDeleteDialog({ project, onClose }: ProjectDeleteDialogProps) {
+export function GroupDeleteDialog({ group, onClose }: GroupDeleteDialogProps) {
   const toast = useToast();
-  const mutations = useProjectMutations();
-  const active = useActiveProjects();
+  const mutations = useGroupMutations();
+  const active = useActiveGroups();
 
-  const [strategy, setStrategy] = useState<'migrate' | 'delete'>('migrate');
+  const [strategy, setStrategy] = useState<'migrate' | 'cascade'>('migrate');
   const targets = useMemo(
-    () => (active.data?.items ?? []).filter((item) => item.id !== project?.id),
-    [active.data?.items, project?.id],
+    () => (active.data?.items ?? []).filter((item) => item.id !== group?.id),
+    [active.data?.items, group?.id],
   );
   const [targetId, setTargetId] = useState('');
   const target = targets.find((item) => item.id === targetId) ?? targets[0];
 
-  if (!project) return null;
+  if (!group) return null;
 
   const confirm = async () => {
     if (strategy === 'migrate' && !target) return;
     try {
       const result = await mutations.remove.mutateAsync({
-        id: project.id,
+        id: group.id,
         strategy,
-        ...(strategy === 'migrate' && target ? { targetProjectId: target.id } : {}),
+        ...(strategy === 'migrate' && target ? { targetGroupId: target.id } : {}),
       });
       const action = result.strategy === 'migrate' ? '迁移' : '删除';
       toast.success(
-        `已删除分组 ${project.name}`,
-        `${action}了 ${result.affected_tasks} 个任务${result.strategy === 'delete' ? '（含执行记录，不可恢复）' : ''}`,
+        `已删除分组 ${group.name}`,
+        `${action}了 ${result.affected_tasks} 个任务${result.strategy === 'cascade' ? '（含执行记录，不可恢复）' : ''}`,
       );
       onClose();
     } catch (error) {
@@ -55,7 +55,7 @@ export function ProjectDeleteDialog({ project, onClose }: ProjectDeleteDialogPro
     <Dialog
       open
       size="form"
-      title={`删除分组：${project.name}`}
+      title={`删除分组：${group.name}`}
       onClose={onClose}
       footer={
         <>
@@ -83,7 +83,7 @@ export function ProjectDeleteDialog({ project, onClose }: ProjectDeleteDialogPro
           layout="column"
           name="delete-strategy"
           value={strategy}
-          onChange={(value) => setStrategy(value as 'migrate' | 'delete')}
+          onChange={(value) => setStrategy(value as 'migrate' | 'cascade')}
           options={[
             {
               value: 'migrate',
@@ -91,7 +91,7 @@ export function ProjectDeleteDialog({ project, onClose }: ProjectDeleteDialogPro
               description: '分组删除，任务与其执行记录完整保留',
             },
             {
-              value: 'delete',
+              value: 'cascade',
               label: '连同任务一起删除',
               description: '任务、执行记录与产物一并删除，不可恢复',
             },

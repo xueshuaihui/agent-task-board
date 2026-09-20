@@ -17,7 +17,7 @@ import { useShellStore } from './store/shell';
  * 8 条（编号 + 标题 + 状态色点 + 优先级），点击复用壳层的 `openTask` 打开详情抽屉
  * （overlay-slot 只挂一份 TaskDetailDrawer，见 app/overlay-slot.tsx）。
  *
- * 技能 / 项目 / 命令分组是 2.4 原型的完整形态：技能与项目各有自己的检索端点规划、
+ * 技能 / 分组 / 命令分组是 2.4 原型的完整形态：技能与分组各有自己的检索端点规划、
  * 命令是调色板能力，本期服务端与调色板不落地，先不渲染空分组。
  */
 const DEBOUNCE_MS = 300;

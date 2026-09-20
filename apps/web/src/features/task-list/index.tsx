@@ -14,7 +14,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import { api, errorMessage, qk, useApiMutation } from '@/api';
-import { useTaskListWithProjects } from '@/features/projects';
+import { useTaskListWithGroups } from '@/features/groups';
 import type { ListSortField, TaskListItem, TaskStatus } from '@/api/types';
 import { BOARD_COLUMN_ORDER } from '@/api/types';
 import { navigate, useRouteSearchParams } from '@/app/router';
@@ -57,7 +57,7 @@ import {
   isArchivedRow,
   useNowTick,
 } from './cells';
-import { ActiveFilterSummary, ActiveProjectScope, FilterChips, FilterPanel } from './filter-panel';
+import { ActiveFilterSummary, ActiveGroupScope, FilterChips, FilterPanel } from './filter-panel';
 import { BatchBar } from './batch-bar';
 import { CreateTaskMenu } from './create-menu';
 import { archiveErrorText } from './reason';
@@ -149,8 +149,8 @@ export function TaskListPage() {
     () => toListQuery(filters, { page, page_size: pageSize, sort: sort.field, order: sort.order }),
     [filters, page, pageSize, sort],
   );
-  // 7.8：项目多选时每项目一次 `project_id` 服务端过滤请求再按页合并（useProjectScoped）。
-  const list = useTaskListWithProjects(params);
+  // 7.8：分组多选时每分组一次 `group_id` 服务端过滤请求再按页合并（useGroupScoped）。
+  const list = useTaskListWithGroups(params);
   const rows = useMemo(() => list.data?.items ?? [], [list.data]);
   const total = list.data?.total ?? 0;
 
@@ -283,7 +283,7 @@ export function TaskListPage() {
             {sort.order === 'asc' ? '升序' : '降序'}
           </p>
         </div>
-        <ActiveProjectScope />
+        <ActiveGroupScope />
         <ActiveFilterSummary />
       </header>
 

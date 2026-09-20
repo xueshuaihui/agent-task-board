@@ -40,7 +40,7 @@ import type { RunOverlay } from './use-run-overlay';
  * - 归属补丁翻译：`patchForLane` 的接缝字段 → 服务端 `PATCH /tasks/:id` 字段。
  */
 export interface GroupedBoardProps {
-  /** 已按多项目偏好过滤过的卡片。 */
+  /** 已按多分组偏好过滤过的卡片。 */
   tasks: readonly GroupableTask[];
   defs: readonly FieldDef[];
   actions: CardActions;
@@ -96,7 +96,7 @@ export function GroupedBoard({ tasks, defs, actions, mutations, overlayOf }: Gro
 
   /**
    * `patchForLane` 的接缝字段 → 服务端 PATCH 字段（apps/api/src/contract/schemas.ts 的
-   * `taskPatchSchema`：project_id / priority / tags / type 可写；parent_task_id 与
+   * `taskPatchSchema`：group_id / priority / tags / type 可写；parent_task_id 与
    * agent 不在白名单，跨需求 / 跨 Agent 移动暂不开放，走 Toast 提示）。
    */
   const onChangeGroup = useCallback(
@@ -106,7 +106,7 @@ export function GroupedBoard({ tasks, defs, actions, mutations, overlayOf }: Gro
       const body: Record<string, unknown> = {};
       let blocked: string | null = null;
       for (const [key, value] of Object.entries(patch)) {
-        if (key === 'project_id') body.project_id = value;
+        if (key === 'group_id') body.group_id = value;
         else if (key === 'priority') body.priority = value;
         else if (key === 'type') body.type = value;
         else if (key === 'requirement_id') blocked = '跨需求移动（父子关系调整）暂未开放';

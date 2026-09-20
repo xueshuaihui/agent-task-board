@@ -5,16 +5,16 @@ import { useToast } from '@/components/ui';
 import { Button, Dialog, Field, Input, Textarea } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { clearFieldError } from '@/lib/forms';
-import { useProjectMutations } from './queries';
-import type { Project, ProjectCreateInput, ProjectPatchInput } from './types';
+import { useGroupMutations } from './queries';
+import type { Group, GroupCreateInput, GroupPatchInput } from './types';
 
 /**
- * 5.2 新建/编辑项目对话框。颜色与图标的口径：
+ * 5.2 新建/编辑分组对话框。颜色与图标的口径：
  * - 颜色从现有状态色 token 调色板里选（`COLOR_OPTIONS`），不引第二套色；
  * - 图标是简单 emoji 单选（7.8 的 📁 语义），超出候选时保留原值原样显示。
  */
 
-/** 取自 globals.css `@theme` 的状态色（1.1），作为项目标识色。 */
+/** 取自 globals.css `@theme` 的状态色（1.1），作为分组标识色。 */
 export const COLOR_OPTIONS: readonly { value: string; label: string }[] = [
   { value: '#5a51e8', label: '主色' },
   { value: '#3b82f6', label: '蓝' },
@@ -26,35 +26,35 @@ export const COLOR_OPTIONS: readonly { value: string; label: string }[] = [
   { value: '#6b7280', label: '灰' },
 ];
 
-/** 原型 7.8 的 📁 加常用项目语义，8 个封顶——图标是锦上添花，不是必填。 */
+/** 原型 7.8 的 📁 加常用分组语义，8 个封顶——图标是锦上添花，不是必填。 */
 export const ICON_OPTIONS: readonly string[] = ['📁', '🚀', '🛠️', '📊', '🧪', '🎨', '💼', '🌐'];
 
-export interface ProjectFormDialogProps {
-  /** 传 null = 新建；传项目 = 编辑。 */
-  project: Project | null;
+export interface GroupFormDialogProps {
+  /** 传 null = 新建；传分组 = 编辑。 */
+  group: Group | null;
   onClose: () => void;
 }
 
-export function ProjectFormDialog({ project, onClose }: ProjectFormDialogProps) {
-  const editing = project !== null;
-  const title = editing ? `编辑分组：${project.name}` : '新建分组';
+export function GroupFormDialog({ group, onClose }: GroupFormDialogProps) {
+  const editing = group !== null;
+  const title = editing ? `编辑分组：${group.name}` : '新建分组';
 
   return (
     <Dialog open size="form" title={title} onClose={onClose}>
-      <ProjectForm project={project} onClose={onClose} />
+      <GroupForm group={group} onClose={onClose} />
     </Dialog>
   );
 }
 
-function ProjectForm({ project, onClose }: { project: Project | null; onClose: () => void }) {
+function GroupForm({ group, onClose }: { group: Group | null; onClose: () => void }) {
   const toast = useToast();
-  const mutations = useProjectMutations();
-  const editing = project !== null;
+  const mutations = useGroupMutations();
+  const editing = group !== null;
 
-  const [name, setName] = useState(project?.name ?? '');
-  const [color, setColor] = useState(project?.color ?? COLOR_OPTIONS[0].value);
-  const [icon, setIcon] = useState(project?.icon ?? '📁');
-  const [description, setDescription] = useState(project?.description ?? '');
+  const [name, setName] = useState(group?.name ?? '');
+  const [color, setColor] = useState(group?.color ?? COLOR_OPTIONS[0].value);
+  const [icon, setIcon] = useState(group?.icon ?? '📁');
+  const [description, setDescription] = useState(group?.description ?? '');
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const busy = mutations.create.isPending || mutations.patch.isPending;
@@ -68,22 +68,22 @@ function ProjectForm({ project, onClose }: { project: Project | null; onClose: (
       return;
     }
     try {
-      if (editing && project) {
-        const body: ProjectPatchInput = {};
-        if (trimmed !== project.name) body.name = trimmed;
-        if (color !== project.color) body.color = color;
-        if (icon !== project.icon) body.icon = icon || null;
-        if (description.trim() !== (project.description ?? '')) {
+      if (editing && group) {
+        const body: GroupPatchInput = {};
+        if (trimmed !== group.name) body.name = trimmed;
+        if (color !== group.color) body.color = color;
+        if (icon !== group.icon) body.icon = icon || null;
+        if (description.trim() !== (group.description ?? '')) {
           body.description = description.trim() === '' ? null : description.trim();
         }
         if (Object.keys(body).length === 0) {
           onClose();
           return;
         }
-        await mutations.patch.mutateAsync({ id: project.id, body });
-        toast.success('分组已更新', project.name);
+        await mutations.patch.mutateAsync({ id: group.id, body });
+        toast.success('分组已更新', group.name);
       } else {
-        const body: ProjectCreateInput = {
+        const body: GroupCreateInput = {
           name: trimmed,
           color,
           ...(icon ? { icon } : {}),

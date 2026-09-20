@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Network } from 'lucide-react';
-import { useActiveProjects } from '@/features/projects';
+import { useActiveGroups } from '@/features/groups';
 import { useTaskOverview } from '@/features/task-detail/queries';
 import { SubtasksSection } from '@/features/task-detail/subtasks';
 import { CommentsTab } from '@/features/task-detail/tabs/comments';
@@ -72,9 +72,9 @@ export function RequirementDrawer({ requirementId, onClose }: RequirementDrawerP
 
 function RequirementDrawerBody({ detail, onClose }: { detail: TaskDetail; onClose: () => void }) {
   const [tab, setTab] = useState<RequirementTab>('subtasks');
-  const projects = useActiveProjects();
-  const project = detail.project_id
-    ? (projects.data?.items ?? []).find((item) => item.id === detail.project_id)
+  const groups = useActiveGroups();
+  const group = detail.group_id
+    ? (groups.data?.items ?? []).find((item) => item.id === detail.group_id)
     : undefined;
 
   const title = (
@@ -93,7 +93,7 @@ function RequirementDrawerBody({ detail, onClose }: { detail: TaskDetail; onClos
       onClose={onClose}
       headerExtra={
         <>
-          <RequirementMetaRow detail={detail} projectName={project?.name ?? null} />
+          <RequirementMetaRow detail={detail} groupName={group?.name ?? null} />
           <div className="mt-2 border-b border-border px-5 pb-0">
             <Tabs
               variant="underline"
@@ -143,13 +143,13 @@ function RequirementDrawerBody({ detail, onClose }: { detail: TaskDetail; onClos
   );
 }
 
-/** 6.1 头部：需求徽标、优先级、聚合状态、项目、聚合进度条。 */
+/** 6.1 头部：需求徽标、优先级、聚合状态、分组、聚合进度条。 */
 function RequirementMetaRow({
   detail,
-  projectName,
+  groupName,
 }: {
   detail: TaskDetail;
-  projectName: string | null;
+  groupName: string | null;
 }) {
   const priority = priorityStyle(detail.priority);
   const aggregate = detail.aggregate;
@@ -179,8 +179,8 @@ function RequirementMetaRow({
         )}
       </MetaCell>
       <MetaCell label="分组">
-        <span className={cn('truncate', projectName ? 'text-text-primary' : 'text-text-tertiary')}>
-          {projectName ?? '未分配'}
+        <span className={cn('truncate', groupName ? 'text-text-primary' : 'text-text-tertiary')}>
+          {groupName ?? '未分配'}
         </span>
       </MetaCell>
       {percent !== null ? (

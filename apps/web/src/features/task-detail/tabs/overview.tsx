@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Pencil } from 'lucide-react';
 import { fieldErrorsOf, useFieldDefs, useSettings, useTags } from '@/api';
-import { useActiveProjects } from '@/features/projects';
+import { useActiveGroups } from '@/features/groups';
 import type { FieldDef, TaskDetail, TaskTab } from '@/api';
 import { Badge, Button, Field, Input, Progress, Select, TagBadge, Textarea } from '@/components/ui';
 import { priorityText, statusLabel } from '@/lib/labels';
@@ -59,11 +59,11 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
     [fieldDefs.data, detail.type],
   );
   const defByKey = useMemo(() => new Map(defs.map((def) => [def.key, def])), [defs]);
-  // 0919 五章：基本信息里带出所属项目（详情接口的卡片 DTO 已有 project_id）。
-  const projects = useActiveProjects();
-  const projectName = useMemo(
-    () => (detail.project_id ? (projects.data?.items ?? []).find((p) => p.id === detail.project_id) : undefined),
-    [projects.data?.items, detail.project_id],
+  // 0919 五章：基本信息里带出所属分组（详情接口的卡片 DTO 已有 group_id）。
+  const groups = useActiveGroups();
+  const groupName = useMemo(
+    () => (detail.group_id ? (groups.data?.items ?? []).find((p) => p.id === detail.group_id) : undefined),
+    [groups.data?.items, detail.group_id],
   );
 
   const editable = detail.status !== 'RUNNING';
@@ -125,9 +125,9 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
             defs={defs}
             typeOptions={typeOptions}
             tagCandidates={tags.data?.tags ?? []}
-            projectOptions={(projects.data?.items ?? []).map((project) => ({
-              value: project.id,
-              label: `${project.icon ? `${project.icon} ` : ''}${project.name}`,
+            groupOptions={(groups.data?.items ?? []).map((group) => ({
+              value: group.id,
+              label: `${group.icon ? `${group.icon} ` : ''}${group.name}`,
             }))}
             onCancel={() => {
               setEditing(false);
@@ -145,8 +145,8 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
               { label: '优先级', value: priorityText(detail.priority) },
               {
                 label: '分组',
-                value: projectName ? `${projectName.icon ? `${projectName.icon} ` : ''}${projectName.name}` : '未分配',
-                muted: !projectName,
+                value: groupName ? `${groupName.icon ? `${groupName.icon} ` : ''}${groupName.name}` : '未分配',
+                muted: !groupName,
               },
               {
                 label: '标签',
@@ -285,8 +285,8 @@ interface EditFormProps {
   defs: FieldDef[];
   typeOptions: { value: string; label: string }[];
   tagCandidates: string[];
-  /** 0919 五章：项目候选（仅活跃项目；归档中的项目不再出现，原值仍可保留/清空）。 */
-  projectOptions: { value: string; label: string }[];
+  /** 0919 五章：分组候选（仅活跃分组；归档中的分组不再出现，原值仍可保留/清空）。 */
+  groupOptions: { value: string; label: string }[];
   onCancel: () => void;
   onSubmit: (body: DrawerTaskPatch) => void;
   pending: boolean;
@@ -300,7 +300,7 @@ function OverviewEditForm({
   defs,
   typeOptions,
   tagCandidates,
-  projectOptions,
+  groupOptions,
   onCancel,
   onSubmit,
   pending,
@@ -313,7 +313,7 @@ function OverviewEditForm({
   const [tagsValue, setTagsValue] = useState<string[]>(detail.tags);
   const [capabilities, setCapabilities] = useState<string[]>(detail.required_capabilities);
   const [dueAt, setDueAt] = useState(detail.due_at ?? '');
-  const [projectId, setProjectId] = useState(detail.project_id ?? '');
+  const [groupId, setGroupId] = useState(detail.group_id ?? '');
   const [custom, setCustom] = useState<FieldDraft>(() => draftFromValues(defs, detail.custom_fields ?? {}));
 
   const save = () => {
@@ -330,7 +330,7 @@ function OverviewEditForm({
       body.required_capabilities = capabilities;
     }
     if (dueAt !== (detail.due_at ?? '')) body.due_at = dueAt === '' ? null : dueAt;
-    if (projectId !== (detail.project_id ?? '')) body.project_id = projectId === '' ? null : projectId;
+    if (groupId !== (detail.group_id ?? '')) body.group_id = groupId === '' ? null : groupId;
 
     const changed: Record<string, unknown> = {};
     for (const def of defs) {
@@ -368,10 +368,10 @@ function OverviewEditForm({
       </div>
       <Field label="分组" hint="归档分组不出现在候选里；改为「未分配」即移出分组">
         <Select
-          value={projectId}
+          value={groupId}
           placeholder="未分配分组"
-          options={projectOptions}
-          onChange={(event) => setProjectId(event.target.value)}
+          options={groupOptions}
+          onChange={(event) => setGroupId(event.target.value)}
         />
       </Field>
       <Field label="标签" hint="回车添加；候选来自历史标签的实时聚合（20.3）">

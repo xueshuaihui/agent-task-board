@@ -2,12 +2,12 @@ import type { TaskCard, TaskStatus } from '@/api/types';
 import { STATUS_LABEL, PRIORITY_LABEL } from '@/lib/labels';
 
 /**
- * 7.2 分组维度定义。取值函数只从卡片 DTO 读字段；project / requirement 两维
+ * 7.2 分组维度定义。取值函数只从卡片 DTO 读字段；group / requirement 两维
  * 20.7 的 TaskCard 还没有——先在 GroupableTask 上补可选字段（接缝：
- * 等 board 接口带上 project_id / requirement_* 后删掉本地扩展即可，下游不用改）。
+ * 等 board 接口带上 group_id / requirement_* 后删掉本地扩展即可，下游不用改）。
  */
 export type GroupDimensionKey =
-  | 'project'
+  | 'group'
   | 'requirement'
   | 'type'
   | 'priority'
@@ -24,13 +24,13 @@ export interface GroupValue {
 
 /**
  * 卡片 + 分组所需的归属字段。
- * 接缝：0919 起 TaskCard 已带 `project_id`（必填 string|null）与 `parent` 摘要
- * （apps/api/src/tasks/task.dto.ts），project_id 直接继承、不再重复声明；
- * 其余展示用扩展字段（project_name / requirement_*）仍由本类型补齐。
+ * 接缝：0919 起 TaskCard 已带 `group_id`（必填 string|null）与 `parent` 摘要
+ * （apps/api/src/tasks/task.dto.ts），group_id 直接继承、不再重复声明；
+ * 其余展示用扩展字段（group_name / requirement_*）仍由本类型补齐。
  */
 export interface GroupableTask extends TaskCard {
-  project_name?: string | null;
-  project_color?: string | null;
+  group_name?: string | null;
+  group_color?: string | null;
   /** 需求 = 父任务（5.2）：泳道按父任务聚合子任务。 */
   requirement_id?: string | null;
   requirement_title?: string | null;
@@ -49,10 +49,10 @@ export interface GroupDimension {
   meta?: (task: GroupableTask) => GroupLaneMeta | null;
 }
 
-/** 需求泳道头的元信息行：项目 · 优先级 · 进度。 */
+/** 需求泳道头的元信息行：分组 · 优先级 · 进度。 */
 export interface GroupLaneMeta {
-  projectName?: string | null;
-  projectColor?: string | null;
+  groupName?: string | null;
+  groupColor?: string | null;
   priority?: number | null;
   progress?: { done: number; total: number } | null;
 }
@@ -69,13 +69,13 @@ export const FALLBACK_LABEL = '未设置';
 const single = (key: string, label: string): GroupValue[] => [{ key, label }];
 
 export const GROUP_DIMENSIONS: Record<Exclude<GroupDimensionKey, 'none'>, GroupDimension> = {
-  project: {
-    key: 'project',
+  group: {
+    key: 'group',
     label: '分组',
     icon: '📁',
     getValues: (task) =>
-      task.project_id
-        ? single(task.project_id, task.project_name ?? task.project_id)
+      task.group_id
+        ? single(task.group_id, task.group_name ?? task.group_id)
         : single(UNASSIGNED_KEY, FALLBACK_LABEL),
   },
   requirement: {
@@ -87,8 +87,8 @@ export const GROUP_DIMENSIONS: Record<Exclude<GroupDimensionKey, 'none'>, GroupD
         ? single(task.requirement_id, task.requirement_title ?? task.requirement_id)
         : single(UNASSIGNED_KEY, UNASSIGNED_LABEL),
     meta: (task) => ({
-      projectName: task.requirement_id ? (task.project_name ?? null) : null,
-      projectColor: task.project_color ?? null,
+      groupName: task.requirement_id ? (task.group_name ?? null) : null,
+      groupColor: task.group_color ?? null,
       priority: task.priority,
       progress: task.requirement_progress ?? null,
     }),
@@ -136,7 +136,7 @@ export const GROUP_DIMENSIONS: Record<Exclude<GroupDimensionKey, 'none'>, GroupD
 
 /** 分组选择器的候选顺序（7.7），「不分组」单独处理。 */
 export const GROUPABLE_KEYS = [
-  'project',
+  'group',
   'requirement',
   'type',
   'priority',
@@ -150,15 +150,15 @@ export function dimensionOf(key: GroupDimensionKey): GroupDimension | null {
 }
 
 /**
- * 20.7 卡片 to GroupableTask：project / requirement（父任务）摘要在接缝处对齐。
- * 后端 TaskCardDto 带的是 `project_id` 与 `parent { id, title, done, total }`
- * （apps/api/src/tasks/task.dto.ts）；grouping 引擎读的 project / requirement 系列
+ * 20.7 卡片 to GroupableTask：group / requirement（父任务）摘要在接缝处对齐。
+ * 后端 TaskCardDto 带的是 `group_id` 与 `parent { id, title, done, total }`
+ * （apps/api/src/tasks/task.dto.ts）；grouping 引擎读的 group / requirement 系列
  * 字段在这里只做一次翻译。卡片 DTO 直接带这几个字段后可整体删掉本函数。
  */
 export function toGroupable(card: TaskCard): GroupableTask {
   return {
     ...card,
-    project_name: card.project_id ?? null,
+    group_name: card.group_id ?? null,
     requirement_id: card.parent?.id ?? null,
     requirement_title: card.parent?.title ?? null,
     requirement_progress: card.parent ? { done: card.parent.done, total: card.parent.total } : null,

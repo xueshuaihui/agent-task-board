@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
 import type { TaskCreateInput, TaskStatus, TemplatePreset } from '@/api/types';
 import { errorMessage, fieldErrorsOf, isApiError, useFieldDefs, useSettings } from '@/api';
-import { useActiveProjects } from '@/features/projects';
+import { useActiveGroups } from '@/features/groups';
 import { useGroupingStore } from './grouping/useGroupingState';
 import { priorityText, STATUS_LABEL } from '@/lib/labels';
 import { clearFieldError } from '@/lib/forms';
@@ -75,12 +75,12 @@ function QuickCreateForm({ state, mutations, onClose }: QuickCreateFormProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [createdId, setCreatedId] = useState<string | null>(null);
 
-  // 0919 五章：创建时选归属项目。默认值取切换器「恰好只选了一个项目」的场景，
-  // 其他情况留空（未分配）——项目是弱约束，不该在快速新建里替用户做主。
-  const projects = useActiveProjects();
-  const switcherProjectIds = useGroupingStore((state) => state.projectIds);
-  const [projectId, setProjectId] = useState(
-    switcherProjectIds.length === 1 ? switcherProjectIds[0] : '',
+  // 0919 五章：创建时选归属分组。默认值取切换器「恰好只选了一个分组」的场景，
+  // 其他情况留空（未分配）——分组是弱约束，不该在快速新建里替用户做主。
+  const groups = useActiveGroups();
+  const switcherGroupIds = useGroupingStore((state) => state.groupIds);
+  const [groupId, setGroupId] = useState(
+    switcherGroupIds.length === 1 ? switcherGroupIds[0] : '',
   );
 
   const defs = useMemo(() => defaults.filter((def) => def.enabled), [defaults]);
@@ -104,7 +104,7 @@ function QuickCreateForm({ state, mutations, onClose }: QuickCreateFormProps) {
           tags: parseTags(tagText),
         };
         if (description.trim()) body.description = description.trim();
-        if (projectId) body.project_id = projectId;
+        if (groupId) body.group_id = groupId;
         if (preset?.required_capabilities?.length) body.required_capabilities = preset.required_capabilities;
         if (typeof preset?.due_offset_days === 'number' && preset.due_offset_days > 0) {
           body.due_at = new Date(Date.now() + preset.due_offset_days * 86_400_000).toISOString();
@@ -202,13 +202,13 @@ function QuickCreateForm({ state, mutations, onClose }: QuickCreateFormProps) {
 
         <Field label="分组" hint="可选；归档分组不出现在候选里（5.1）">
           <Select
-            value={projectId}
+            value={groupId}
             placeholder="未分配分组"
-            options={(projects.data?.items ?? []).map((project) => ({
-              value: project.id,
-              label: `${project.icon ? `${project.icon} ` : ''}${project.name}`,
+            options={(groups.data?.items ?? []).map((group) => ({
+              value: group.id,
+              label: `${group.icon ? `${group.icon} ` : ''}${group.name}`,
             }))}
-            onChange={(event) => setProjectId(event.target.value)}
+            onChange={(event) => setGroupId(event.target.value)}
           />
         </Field>
 

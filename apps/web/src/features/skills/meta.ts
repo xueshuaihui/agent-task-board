@@ -329,14 +329,14 @@ export interface VariableOption {
 /**
  * 变量系统辅助（1.md 8.3）：从技能 input 块与上游块输出推断可插入的变量。
  * 轻量实现：input 块的 name 生成 `input.*`；每个块的标题生成 `<id>.output`；
- * 其余按 PRD 固定给 task/project/review/env/prev。
+ * 其余按 PRD 固定给 task/group/review/env/prev。
  */
 export function inferVariableOptions(content: SkillContent): VariableOption[] {
   const options: VariableOption[] = [
     { path: 'prev.output', label: '上一步输出', group: '上下文' },
     { path: 'task.title', label: '任务标题', group: '任务' },
     { path: 'task.description', label: '任务描述', group: '任务' },
-    { path: 'project.name', label: '分组名称', group: '分组' },
+    { path: 'group.name', label: '分组名称', group: '分组' },
     { path: 'review.suggestion', label: '审核意见', group: '审核' },
     { path: 'env.HOME', label: '环境变量 HOME', group: '环境' },
   ];
@@ -549,7 +549,7 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
         title: '归纳要点',
         patch: (b) => {
           b.steps = [
-            '按项目分组，每组用一句话概括本周主线进展，突出可量化的产出',
+            '按分组归集，每组用一句话概括本周主线进展，突出可量化的产出',
             '提炼风险与依赖：哪些事项需要上级决策或外部支持，写明期望的解决时间',
           ];
         },
@@ -651,18 +651,18 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     ]),
   },
   {
-    id: 'project-knowledge',
-    name: '项目知识库',
+    id: 'repo-knowledge',
+    name: '代码仓库知识',
     type: 'knowledge',
-    description: '沉淀项目架构、约定与常见坑的参考资料',
+    description: '沉淀代码仓库架构、约定与常见坑的参考资料',
     tags: ['knowledge'],
     content: seedBlocks([
       {
         kind: 'knowledge',
-        title: '项目概况',
+        title: '仓库概况',
         patch: (b) => {
           b.prompt = [
-            '本项目是「{{project.name}}」，monorepo 结构：apps/ 下为可部署应用，packages/ 下为共享包。',
+            '本仓库是 monorepo 结构：apps/ 下为可部署应用，packages/ 下为共享包。',
             '技术栈：TypeScript + React（前端）、NestJS（API）、Prisma（ORM）。',
             '提交遵循 Conventional Commits；分支命名 feature/<日期>-<主题>。',
             '回答问题时优先引用本节约定，再给出具体建议。',

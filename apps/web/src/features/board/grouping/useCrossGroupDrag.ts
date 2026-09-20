@@ -12,7 +12,7 @@ import { classifyDrag, patchForLane, type GroupMovePatch } from './grouping';
  * （onChangeGroup 的 patch 字段名等后端归属 API 定了以后在 patchForLane 里对齐）。
  */
 export interface CrossGroupDragCallbacks {
-  /** 4.9「这将同时更改任务的所属项目」：归属补丁 + 可选状态。 */
+  /** 4.9「这将同时更改任务的所属分组」：归属补丁 + 可选状态。 */
   onChangeGroup: (taskId: string, patch: GroupMovePatch, to?: { status?: TaskStatus }) => void;
   /** 同分组内跨列 = 状态流转。 */
   onChangeStatus: (taskId: string, status: TaskStatus) => void;

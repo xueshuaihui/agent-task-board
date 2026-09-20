@@ -13,36 +13,36 @@ import type {
 import { useGroupingStore } from '@/features/board/grouping/useGroupingState';
 
 /**
- * 7.8 / 4.5「多项目切换」的数据层接缝。
+ * 7.8 / 4.5「多分组切换」的数据层接缝。
  *
- * 服务端 `GET /board` 与 `GET /tasks` 的 `project_id` 都是**单值**（契约见
+ * 服务端 `GET /board` 与 `GET /tasks` 的 `group_id` 都是**单值**（契约见
  * `apps/api/src/contract/schemas.ts` 的 boardQuerySchema/listQuerySchema），而切换器是
  * 多选。方案对比：
  * - 拉全量后前端过滤——列表分页会被打穿（页内过滤后条数不齐），看板列上限
  *   `board_column_limit` 也会先截断再过滤，直接错；
- * - **每个选中项目各发一次请求、前端按列合并（本实现）**——服务端过滤与列上限都对
- *   每个项目独立生效，N = 已选项目数（本地单用户、并发请求开销可忽略）。
+ * - **每个选中分组各发一次请求、前端按列合并（本实现）**——服务端过滤与列上限都对
+ *   每个分组独立生效，N = 已选分组数（本地单用户、并发请求开销可忽略）。
  * 单选与全选（未选 = 全部）仍走原来的单请求，不多花一个 RTT。
  */
 
 type Options<TData> = Pick<UseQueryOptions<TData, Error, TData>, 'enabled' | 'placeholderData'>;
 
-/** 分组 store 里的项目多选（7.8：空数组 = 全部项目）。 */
-export function useSelectedProjectIds(): string[] {
-  return useGroupingStore((state) => state.projectIds);
+/** 分组 store 里的分组多选（7.8：空数组 = 全部分组）。 */
+export function useSelectedGroupIds(): string[] {
+  return useGroupingStore((state) => state.groupIds);
 }
 
 /**
- * 看板数据源：0/1 个选中项目时走 `useBoard` 的单请求语义（key 仍是 `qk.board(params)`），
- * 多选时拆成每项目一个 `qk.board({...params, project_id})`，按六列对齐合并。
+ * 看板数据源：0/1 个选中分组时走 `useBoard` 的单请求语义（key 仍是 `qk.board(params)`），
+ * 多选时拆成每分组一个 `qk.board({...params, group_id})`，按六列对齐合并。
  */
-export function useBoardWithProjects(params: BoardQuery, options?: Options<BoardResponse>) {
-  const projectIds = useSelectedProjectIds();
-  const multi = projectIds.length > 1;
+export function useBoardWithGroups(params: BoardQuery, options?: Options<BoardResponse>) {
+  const groupIds = useSelectedGroupIds();
+  const multi = groupIds.length > 1;
 
   const single = useQuery({
-    queryKey: qk.board(multi ? params : withProject(params, projectIds[0])),
-    queryFn: () => api.board.get(multi ? params : withProject(params, projectIds[0])),
+    queryKey: qk.board(multi ? params : withGroup(params, groupIds[0])),
+    queryFn: () => api.board.get(multi ? params : withGroup(params, groupIds[0])),
     // 多选时单请求不发货（结果不进返回值），只保留 hook 的形状给调用方。
     enabled: multi ? false : options?.enabled,
     placeholderData: options?.placeholderData,
@@ -50,9 +50,9 @@ export function useBoardWithProjects(params: BoardQuery, options?: Options<Board
 
   const results = useQueries({
     queries: multi
-      ? projectIds.map((id) => ({
-          queryKey: qk.board(withProject(params, id)),
-          queryFn: () => api.board.get(withProject(params, id)),
+      ? groupIds.map((id) => ({
+          queryKey: qk.board(withGroup(params, id)),
+          queryFn: () => api.board.get(withGroup(params, id)),
         }))
       : [],
   });
@@ -74,23 +74,23 @@ export function useBoardWithProjects(params: BoardQuery, options?: Options<Board
   };
 }
 
-/** 列表页数据源：多选时同样每项目一请求；分页语义见文件头的方案说明。 */
-export function useTaskListWithProjects(params: TaskListQuery, options?: Options<Page<TaskListItem>>) {
-  const projectIds = useSelectedProjectIds();
-  const multi = projectIds.length > 1;
+/** 列表页数据源：多选时同样每分组一请求；分页语义见文件头的方案说明。 */
+export function useTaskListWithGroups(params: TaskListQuery, options?: Options<Page<TaskListItem>>) {
+  const groupIds = useSelectedGroupIds();
+  const multi = groupIds.length > 1;
 
   const single = useQuery({
-    queryKey: qk.tasks(multi ? params : withProject(params, projectIds[0])),
-    queryFn: () => api.tasks.list(multi ? params : withProject(params, projectIds[0])),
+    queryKey: qk.tasks(multi ? params : withGroup(params, groupIds[0])),
+    queryFn: () => api.tasks.list(multi ? params : withGroup(params, groupIds[0])),
     enabled: multi ? false : options?.enabled,
     placeholderData: options?.placeholderData,
   });
 
   const results = useQueries({
     queries: multi
-      ? projectIds.map((id) => ({
-          queryKey: qk.tasks(withProject(params, id)),
-          queryFn: () => api.tasks.list(withProject(params, id)),
+      ? groupIds.map((id) => ({
+          queryKey: qk.tasks(withGroup(params, id)),
+          queryFn: () => api.tasks.list(withGroup(params, id)),
         }))
       : [],
   });
@@ -117,8 +117,8 @@ export function useTaskListWithProjects(params: TaskListQuery, options?: Options
 
 /* ------------------------------------------------------------------ 合并 */
 
-function withProject<T extends { project_id?: string }>(params: T, projectId?: string): T {
-  return projectId ? { ...params, project_id: projectId } : params;
+function withGroup<T extends { group_id?: string }>(params: T, groupId?: string): T {
+  return groupId ? { ...params, group_id: groupId } : params;
 }
 
 function isPage(value: unknown): value is Page<import('@/api/types').TaskListItem> {
@@ -126,8 +126,8 @@ function isPage(value: unknown): value is Page<import('@/api/types').TaskListIte
 }
 
 /**
- * 六列一一对应合并：任务拼一起、计数求和、`has_more` 取或（任一项目还有更多就该显示
- * 「还有 N 条」）。列内顺序沿用各项目请求自己的 pinned/优先级序，项目之间按切换器的选择序。
+ * 六列一一对应合并：任务拼一起、计数求和、`has_more` 取或（任一分组还有更多就该显示
+ * 「还有 N 条」）。列内顺序沿用各分组请求自己的 pinned/优先级序，分组之间按切换器的选择序。
  */
 function mergeBoards(boards: (BoardResponse | undefined)[]): BoardResponse | undefined {
   const valid = boards.filter((board): board is BoardResponse => board !== undefined);
@@ -157,8 +157,8 @@ function mergeBoards(boards: (BoardResponse | undefined)[]): BoardResponse | und
 }
 
 /**
- * 分页合并：每项目各取一页，items 拼接后按当前排序键重排，total 求和。
- * 深翻页时页界不再严格等于全集的第 N 页（每项目先各截一页），这是单值接口下的取舍。
+ * 分页合并：每分组各取一页，items 拼接后按当前排序键重排，total 求和。
+ * 深翻页时页界不再严格等于全集的第 N 页（每分组先各截一页），这是单值接口下的取舍。
  */
 function mergePages(
   pages: Page<import('@/api/types').TaskListItem>[],

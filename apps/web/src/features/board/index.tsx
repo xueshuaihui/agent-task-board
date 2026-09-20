@@ -18,7 +18,7 @@ import { navigate } from '@/app/router';
 import { toBoardQuery, useFilterStore } from '@/app/store/filters';
 import { useShellStore, type ReviewPrefill } from '@/app/store/shell';
 import { Button, EmptyState, useToast, type ToastApi } from '@/components/ui';
-import { useBoardWithProjects, useProjects } from '@/features/projects';
+import { useBoardWithGroups, useGroups } from '@/features/groups';
 import { BoardColumnView } from './board-column';
 import type { CardActions } from './card-actions';
 import { DeleteDialog, StopDialog } from './dialogs';
@@ -50,8 +50,8 @@ export function BoardPage() {
   const params = useMemo(() => toBoardQuery(filters), [filters]);
   const defaultView = useMemo(() => isDefaultBoardView(filters), [filters]);
 
-  // 7.8：项目多选 → 每个选中项目一次 `project_id` 服务端过滤请求、按六列合并（useProjectScoped）。
-  const board = useBoardWithProjects(params);
+  // 7.8：分组多选 → 每个选中分组一次 `group_id` 服务端过滤请求、按六列合并（useGroupScoped）。
+  const board = useBoardWithGroups(params);
   const fieldDefs = useFieldDefs();
   const defs = useMemo(() => fieldDefs.data?.items ?? [], [fieldDefs.data?.items]);
   const mutations = useBoardMutations();
@@ -77,7 +77,7 @@ export function BoardPage() {
       options: state.options,
       laneOrder: state.laneOrder,
       laneFilter: state.laneFilter,
-      projectIds: state.projectIds,
+      groupIds: state.groupIds,
       laneSort: state.laneSort,
     })),
   );
@@ -85,11 +85,11 @@ export function BoardPage() {
   /** 主分组不是「状态」时走泳道视图；「状态」维度即现有单维看板，不重复包一层泳道。 */
   const grouped = grouping.primary !== 'status';
 
-  /** 六列快照拉平 + 接缝字段补齐（project / requirement 摘要）；项目名/色来自项目缓存。 */
-  const projects = useProjects();
-  const projectById = useMemo(
-    () => new Map((projects.data?.items ?? []).map((project) => [project.id, project])),
-    [projects.data?.items],
+  /** 六列快照拉平 + 接缝字段补齐（group / requirement 摘要）；分组名/色来自分组缓存。 */
+  const groups = useGroups();
+  const groupById = useMemo(
+    () => new Map((groups.data?.items ?? []).map((group) => [group.id, group])),
+    [groups.data?.items],
   );
   const groupableTasks = useMemo(
     () =>
@@ -97,12 +97,12 @@ export function BoardPage() {
         .flatMap((column) => column.tasks)
         .map(toGroupable)
         .map((task) => {
-          const project = task.project_id ? projectById.get(task.project_id) : undefined;
-          return project ? { ...task, project_name: project.name, project_color: project.color } : task;
+          const group = task.group_id ? groupById.get(task.group_id) : undefined;
+          return group ? { ...task, group_name: group.name, group_color: group.color } : task;
         }),
-    [columns, projectById],
+    [columns, groupById],
   );
-  // 4.5 多项目过滤已由服务端完成（useBoardWithProjects），这里不再前端截一遍。
+  // 4.5 多分组过滤已由服务端完成（useBoardWithGroups），这里不再前端截一遍。
 
   /** 泳道结构与 GroupedBoard 内部同一套纯函数；这里算一份供工具栏拿 laneKeys。 */
   const groupedLanes = useMemo(() => {

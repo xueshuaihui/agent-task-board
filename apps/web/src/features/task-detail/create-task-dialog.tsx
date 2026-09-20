@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type KeyboardEvent } from 'react';
 import { api, fieldErrorsOf, isApiError, qk, useApiMutation, useSettings, useTaskList } from '@/api';
-import { useActiveProjects } from '@/features/projects';
+import { useActiveGroups } from '@/features/groups';
 import type { TaskCreateInput } from '@/api';
 import { Button, Dialog, Field, Input, Select, Textarea } from '@/components/ui';
 import { errorMessage } from '@/api';
@@ -55,7 +55,7 @@ function TaskCreateForm({
   onClose: () => void;
 }) {
   const settings = useSettings();
-  const projects = useActiveProjects();
+  const groups = useActiveGroups();
   // 「挂到需求」的候选：非归档的需求类型任务（列表页按类型过滤；page_size 拉满一页够用）。
   const requirements = useTaskList({ type: ['需求'], archived: 'false', page: 1, page_size: 200 });
 
@@ -64,7 +64,7 @@ function TaskCreateForm({
   const [type, setType] = useState(asRequirement ? '需求' : (types.find((item) => item !== '需求') ?? types[0] ?? '任务'));
   const [priority, setPriority] = useState('2');
   const [parentId, setParentId] = useState(initialParent);
-  const [projectId, setProjectId] = useState('');
+  const [groupId, setGroupId] = useState('');
   const [tagText, setTagText] = useState('');
   const [description, setDescription] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -100,7 +100,7 @@ function TaskCreateForm({
       tags: parseTags(tagText),
     };
     if (description.trim()) body.description = description.trim();
-    if (projectId) body.project_id = projectId;
+    if (groupId) body.group_id = groupId;
     if (!asRequirement && parentId) body.parent_task_id = parentId;
     create.mutate(body, {
       onError: (error) => {
@@ -205,13 +205,13 @@ function TaskCreateForm({
 
         <Field label="分组" hint="可选；归档分组不出现在候选里">
           <Select
-            value={projectId}
+            value={groupId}
             placeholder="未分配分组"
-            options={(projects.data?.items ?? []).map((project) => ({
-              value: project.id,
-              label: `${project.icon ? `${project.icon} ` : ''}${project.name}`,
+            options={(groups.data?.items ?? []).map((group) => ({
+              value: group.id,
+              label: `${group.icon ? `${group.icon} ` : ''}${group.name}`,
             }))}
-            onChange={(event) => setProjectId(event.target.value)}
+            onChange={(event) => setGroupId(event.target.value)}
           />
         </Field>
 

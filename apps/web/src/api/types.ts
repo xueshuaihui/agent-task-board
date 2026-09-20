@@ -99,7 +99,7 @@ export const AUDIT_ACTIONS = [
   'backup',
   'restore',
   'settings_change',
-  'project_change',
+  'group_change',
   'pref_change',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -167,6 +167,7 @@ export const ERROR_CODES = [
   'IMPORT_ID_CONFLICT',
   'FIELD_IN_USE',
   'INVALID_BACKUP_NAME',
+  'GROUP_LIMIT_REACHED',
   'BACKUP_NOT_FOUND',
   'INTERNAL',
   'NETWORK_ERROR',
@@ -219,8 +220,8 @@ export interface TaskCard {
   artifact_count: number;
   /** 卡片只带 show_on_card 的字段（20.10）。 */
   custom_fields: Record<string, unknown>;
-  /** 0919：项目归属（与后端 TaskCardDto.project_id 对齐）。 */
-  project_id: string | null;
+  /** 0919：分组归属（与后端 TaskCardDto.group_id 对齐）。 */
+  group_id: string | null;
   /** 0919：子任务的父任务摘要（含父任务下子任务完成度）；无父任务为 null。 */
   parent?: { id: string; title: string; done: number; total: number } | null;
 }
@@ -580,8 +581,8 @@ export interface ImportPreview {
 
 export interface BoardQuery {
   view?: BoardView;
-  /** 0919：按项目过滤；`none` = 未分配项目。服务端只收单值，多选由 `useProjectScoped` 拆请求合并。 */
-  project_id?: string;
+  /** 0919：按分组过滤；`none` = 未分配分组。服务端只收单值，多选由 `useGroupScoped` 拆请求合并。 */
+  group_id?: string;
   priority?: number[];
   type?: string[];
   tags?: string[];
@@ -591,8 +592,8 @@ export interface BoardQuery {
 
 export interface TaskListQuery {
   status?: TaskStatus[] | string[];
-  /** 0919：按项目过滤；`none` = 未分配项目。服务端只收单值，多选由 `useProjectScoped` 拆请求合并。 */
-  project_id?: string;
+  /** 0919：按分组过滤；`none` = 未分配分组。服务端只收单值，多选由 `useGroupScoped` 拆请求合并。 */
+  group_id?: string;
   keyword?: string;
   priority?: number[];
   type?: string[];
@@ -620,8 +621,8 @@ export interface AuditQuery {
 export interface TaskCreateInput {
   title: string;
   type: string;
-  /** 0919 五章：创建时归属项目；不传 = 未分配。 */
-  project_id?: string | null;
+  /** 0919 五章：创建时归属分组；不传 = 未分配。 */
+  group_id?: string | null;
   priority?: number;
   description?: string;
   tags?: string[];

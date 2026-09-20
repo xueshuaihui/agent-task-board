@@ -14,7 +14,7 @@ import {
 /**
  * 7.3/7.4 分组引擎（纯函数）：任务集合 + 主分组维度（+ 可选次分组）→ 泳道结构。
  * 泳道 = 主分组值；泳道内列 = 状态六列，开了次分组时先按次分组值再切一层
- * （原型 4.7：项目泳道 × 需求子分组 × 状态列）。
+ * （原型 4.7：分组泳道 × 需求子分组 × 状态列）。
  */
 
 /** 泳道内的一个次分组（无次分组时整条泳道只有一个 label 为 null 的组）。 */
@@ -39,7 +39,7 @@ export interface Swimlane {
   label: string;
   icon: string;
   dimension: GroupDimensionKey;
-  /** 需求泳道头的元信息行（4.2）：项目 / 优先级 / 进度。 */
+  /** 需求泳道头的元信息行（4.2）：分组 / 优先级 / 进度。 */
   meta: GroupLaneMeta | null;
   count: number;
   reviewCount: number;
@@ -202,8 +202,8 @@ export function patchForLane(input: {
   if (input.dimension === 'requirement') {
     return { requirement_id: input.laneKey === '__unassigned__' ? null : input.laneKey };
   }
-  if (input.dimension === 'project') {
-    return { project_id: input.laneKey === '__unassigned__' ? null : input.laneKey };
+  if (input.dimension === 'group') {
+    return { group_id: input.laneKey === '__unassigned__' ? null : input.laneKey };
   }
   if (input.dimension === 'tag') {
     return { tag: input.laneKey.startsWith('tag:') ? input.laneKey.slice(4) : input.laneKey };
