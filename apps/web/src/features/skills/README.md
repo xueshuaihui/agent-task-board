@@ -15,9 +15,9 @@
 | `hooks.ts` | TanStack Query 封装（`skillKeys` + use* 查询与变更） |
 | `meta.ts` | 类型/状态/块类型（PRD 15 类，1.md 8.3）的展示元数据与图标、模板起步 `templateContent`、semver 预览、连线校验、循环检测（`cyclicBlockIds`）、变量系统辅助（`inferVariableOptions`/`variableWarnings`） |
 | `skill-library-page.tsx` | 技能库页（搜索/类型/状态筛选、卡片网格、新建/导入对话框挂载、编辑器路由） |
-| `skill-card.tsx` | 技能卡片（类型徽标、版本、状态、绑定任务数、操作菜单） |
+| `skill-card.tsx` | 技能卡片（类型徽标、三来源徽标 §9.10、版本、状态、绑定任务数、操作菜单；默认技能只读置灰、同名追加 id 短后缀消歧） |
 | `create-skill-dialog.tsx` | 新建技能两步向导：①名称/类型/起步方式（8 个内置模板摘要）②可选描述/标签，Enter 推进/提交 |
-| `import-center-dialog.tsx` | 统一导入中心：拖拽/选择 .atskill、SKILL.md、Cursor Rules .mdc，前端解析预览（来源标记/重名提示/行级错误）后批量创建 |
+| `import-center-dialog.tsx` | 统一导入中心（W2 口径）：拖拽/选择 .atskill、SKILL.md、Cursor Rules .mdc，前端解析预览后走后端导入端点落库为「三方技能」；同名不算冲突直接共存，同 ID 冲突行内选「覆盖更新为新版本/跳过」（§9.8.4 r2） |
 | `copy-skill-picker.tsx` | 复制技能选择器：GET /skills/:id 拿内容后 POST /skills 创建「副本」 |
 | `skill-editor-page.tsx` | 编辑器整页：模式 Tab（可视化/结构化/源码/流程图；三种编辑模式共享同一份本地草稿 blocks，切换即同步）+ 保存草稿 + 发布入口 |
 | `block-editor.tsx` | 可视化模式：块增删/上下移/设入口，字段表单共用 block-fields，next 分支用目标块下拉 |
