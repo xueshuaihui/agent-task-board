@@ -3,7 +3,7 @@ import { Card, CardBody, CardHeader } from '@/components/ui';
 import { cn } from '@/lib/cn';
 
 /**
- * 设置页八个 Tab 共用的版式件（DESIGN.md §4 设置行）。
+ * 设置页各 Tab（v0.0.4 W5 起 9 个）共用的版式件（DESIGN.md §4 设置行）。
  *
  * 视觉层（2026-09 改版）：分区卡片直接复用基座 `Card`/`CardHeader`
  * （标题行走 `text-section-title`）；Token/字段/模板/备份这类列表行的操作按钮

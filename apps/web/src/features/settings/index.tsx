@@ -5,6 +5,7 @@ import { springs, transitions } from '@/lib/motion';
 import { SETTINGS_TABS, useSettingsTab } from './tabs';
 import type { SettingsTabId } from './tabs';
 import { GeneralTab } from './tabs/general';
+import { ViewTab } from './tabs/view';
 import { TokensTab } from './tabs/tokens';
 import { FieldsTab } from './tabs/fields';
 import { TemplatesTab } from './tabs/templates';
@@ -27,6 +28,7 @@ import { AboutTab } from './tabs/about';
  */
 const PANELS: Record<SettingsTabId, ComponentType> = {
   general: GeneralTab,
+  view: ViewTab,
   tokens: TokensTab,
   fields: FieldsTab,
   templates: TemplatesTab,
