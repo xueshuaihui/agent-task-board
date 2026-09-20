@@ -1,6 +1,9 @@
-import { Field, Input, Select, Textarea } from '@/components/ui';
-import { ON_ERROR_META, PARALLEL_MERGE_META, VALUE_TYPE_OPTIONS } from './meta';
-import type { OnError, ParallelMerge, SkillBlock } from './types';
+import { ChevronDown } from 'lucide-react';
+import { cn } from '@/lib/cn';
+import { Field, Input, Menu, Select, Textarea, type MenuGroup } from '@/components/ui';
+import { ON_ERROR_META, PARALLEL_MERGE_META, SKILL_ORIGIN_META, VALUE_TYPE_OPTIONS } from './meta';
+import { useSkills } from './hooks';
+import type { OnError, ParallelMerge, Skill, SkillBlock, SkillOrigin } from './types';
 import { VariableTextarea, type VariableMenuProps } from './variable-picker';
 
 /**
@@ -186,11 +189,7 @@ export function BlockFields({ block, variableOptions, targetOptions, readOnly = 
       );
 
     case 'subskill':
-      return (
-        <Field label="引用技能" hint="子技能的 id（如 skl_xxx），发布前请确认目标技能可用">
-          <Input value={block.skillRef ?? ''} placeholder="skl_xxx" onChange={(event) => onPatch({ skillRef: event.target.value })} />
-        </Field>
-      );
+      return <SubskillField block={block} onPatch={onPatch} />;
 
     case 'human':
       return (
@@ -280,4 +279,103 @@ export function BlockFields({ block, variableOptions, targetOptions, readOnly = 
       );
     }
   }
+}
+
+/**
+ * 子技能块字段（W3 §9.4/§7 智能辅助「技能插入」）：从技能库（GET /skills 存量）
+ * 下拉选择，按唯一 id 写入块载荷 `skillRef`（§9.2 r2：绑定/下发一律按 id，
+ * content 是 passthrough JSON，版本快照/导出 .atskill/SKILL.md 天然兼容）。
+ * 三来源分组 + 来源徽标（§9.10 既有口径）；重名技能追加 id 后 6 位消歧后缀
+ * （§9.2 r2 允许重名，与技能卡片同口径）。技能库空/加载中退回手填 id 输入框。
+ */
+function SubskillField({
+  block,
+  onPatch,
+}: {
+  block: SkillBlock;
+  onPatch: (patch: Partial<SkillBlock>) => void;
+}) {
+  const skills = useSkills();
+  const items = skills.data?.items ?? [];
+  if (items.length === 0) {
+    return (
+      <Field label="引用技能" hint="子技能的 id（如 skl_xxx），发布前请确认目标技能可用">
+        <Input value={block.skillRef ?? ''} placeholder="skl_xxx" onChange={(event) => onPatch({ skillRef: event.target.value })} />
+      </Field>
+    );
+  }
+  // r2 允许重名：同名集合驱动 id 短后缀消歧（与 skill-library-page 同口径）。
+  const nameCount = new Map<string, number>();
+  for (const skill of items) nameCount.set(skill.name, (nameCount.get(skill.name) ?? 0) + 1);
+  const selected = items.find((skill) => skill.id === block.skillRef);
+  const groups: { label: string; skills: Skill[] }[] = (
+    ['custom', 'imported', 'default'] as SkillOrigin[]
+  )
+    .map((origin) => ({ label: SKILL_ORIGIN_META[origin].label, skills: items.filter((skill) => skill.source === origin) }))
+    .filter((group) => group.skills.length > 0);
+  const menuGroups: MenuGroup[] = groups.map((group) => ({
+    label: group.label,
+    items: group.skills.map((skill) => ({
+      id: skill.id,
+      label: <SkillRefOption skill={skill} duplicateName={(nameCount.get(skill.name) ?? 0) > 1} />,
+      onSelect: () => onPatch({ skillRef: skill.id }),
+    })),
+  }));
+  if (block.skillRef && !selected) {
+    menuGroups.unshift({
+      label: '技能库外引用',
+      items: [{ id: block.skillRef, disabled: true, label: <span className="truncate text-text-secondary">{block.skillRef}（不在技能库）</span> }],
+    });
+  }
+  menuGroups.push({
+    label: ' ',
+    items: [{ id: '__clear', label: '（清除引用）', onSelect: () => onPatch({ skillRef: '' }) }],
+  });
+  return (
+    <Field label="引用技能" hint="从技能库选择子技能，按唯一 id 绑定；徽标为来源">
+      <Menu
+        width={300}
+        selectedId={selected ? selected.id : block.skillRef}
+        groups={menuGroups}
+        trigger={() => (
+          <button
+            type="button"
+            className={cn(
+              'flex h-8 w-full items-center justify-between gap-2 rounded-control border border-border bg-bg-raised px-3 text-left text-body text-text-primary',
+              'transition-colors duration-120 ease-out hover:border-border-strong',
+              'focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary-ring',
+              'disabled:cursor-not-allowed disabled:opacity-60',
+            )}
+          >
+            {selected ? (
+              <SkillRefOption skill={selected} duplicateName={(nameCount.get(selected.name) ?? 0) > 1} />
+            ) : (
+              <span className="min-w-0 flex-1 truncate text-text-tertiary">
+                {block.skillRef ? `${block.skillRef}（不在技能库）` : '（选择子技能）'}
+              </span>
+            )}
+            <ChevronDown className="pointer-events-none size-4 shrink-0 text-text-tertiary" />
+          </button>
+        )}
+      />
+    </Field>
+  );
+}
+
+/** 技能选项行：名称（重名带 ·id 后 6 位消歧）+ 版本 + 三来源徽标（§9.10 口径）。 */
+function SkillRefOption({ skill, duplicateName }: { skill: Skill; duplicateName: boolean }) {
+  const origin = SKILL_ORIGIN_META[skill.source];
+  const OriginIcon = origin.icon;
+  return (
+    <span className="flex min-w-0 flex-1 items-center gap-1.5">
+      <span className="truncate" title={skill.name}>
+        {duplicateName ? `${skill.name} ·${skill.id.slice(-6)}` : skill.name}
+      </span>
+      <span className={cn('inline-flex shrink-0 items-center gap-1 rounded-badge px-1.5 py-px text-badge', origin.className)} title={`来源：${origin.label}`}>
+        <OriginIcon className="size-3" />
+        {origin.label}
+      </span>
+      <span className="ml-auto shrink-0 tabular-nums text-aux text-text-tertiary">{skill.current_version}</span>
+    </span>
+  );
 }

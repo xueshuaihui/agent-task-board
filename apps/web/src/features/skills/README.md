@@ -25,7 +25,7 @@
 | `block-editor.tsx` | 可视化模式：块增删/上下移/设入口 + dnd-kit 拖拽排序，字段表单共用 block-fields，next 分支用目标块下拉；readOnly 时隐藏全部操作、字段禁用 |
 | `structured-editor.tsx` | 结构化模式（1.md 8.3）：表格式块列表（类型/标题/摘要 + 操作列），点行展开行内编辑完整字段，上移/下移/删除/在下方插入；readOnly 时撤操作列、展开行只读 |
 | `source-editor.tsx` | 源码模式（1.md 8.3）：左侧 SKILL.md 源码编辑 + 右侧实时预览（无依赖轻量渲染），双向导入/导出，损失性转换 Toast 提示；readOnly 时源码只读、禁导入（导出/下载仍可用） |
-| `block-fields.tsx` | 单块字段表单（可视化/结构化/流程图抽屉共用），按 15 类 kind 渲染对应字段；readOnly 用 fieldset disabled 统一禁用 |
+| `block-fields.tsx` | 单块字段表单（可视化/结构化/流程图抽屉共用），按 15 类 kind 渲染对应字段；子技能块「技能插入」选择器（§9.4）：技能库按三来源分组+徽标、重名按 id 后 6 位消歧、选中写 `skillRef`（id，快照/导出兼容），库空退回手填；readOnly 用 fieldset disabled 统一禁用 |
 | `variable-picker.tsx` | 变量插入下拉 + `{{变量}}` 光标处插入文本框（1.md 8.3 变量系统） |
 | `markdown.ts` | SKILL.md <-> blocks 纯函数双向转换（约定见文件末尾注释块），frontmatter 为 YAML 子集 |
 | `skill-flow-view.tsx` | 流程图视图：只读 SVG 分层拓扑（滚轮缩放、拖拽平移、适应画布） |
