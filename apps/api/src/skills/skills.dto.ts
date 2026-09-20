@@ -153,11 +153,15 @@ export const skillTestSchema = z.object({
 
 // ---------------------------------------------------------------- 8.8 技能源
 
+/** 8.8 技能源类型。 */
 export const SKILL_SOURCE_TYPES = ['builtin', 'directory', 'git', 'http'] as const;
 export type SkillSourceType = (typeof SKILL_SOURCE_TYPES)[number];
 
-/** git/http 是服务端类型：可存配置，但本期扫描只回 501。 */
-export const CLOUD_SOURCE_TYPES: readonly SkillSourceType[] = ['git', 'http'];
+/**
+ * 历史遗留的远程源类型（原 CLOUD_SOURCE_TYPES，QA D3 改名，语义不变）：服务端市场下线
+ * （v0.0.4 W1）后不再可扫描，配置仍可存取，但列表标 unavailable、扫描回 501。
+ */
+export const LEGACY_SOURCE_TYPES: readonly SkillSourceType[] = ['git', 'http'];
 
 export const skillSourceSchema = z.object({
   id: z.string().trim().min(1).max(64),

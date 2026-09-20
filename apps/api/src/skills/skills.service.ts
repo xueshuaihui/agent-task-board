@@ -6,7 +6,7 @@ import { nowSql, toIso } from '../contract/time';
 import type { Skill, SkillVersion } from '@prisma/client';
 import { PrismaService } from '../infra/prisma.service';
 import {
-  CLOUD_SOURCE_TYPES,
+  LEGACY_SOURCE_TYPES,
   nextPatchVersion,
   parseJson,
   type SkillContent,
@@ -456,7 +456,7 @@ export class SkillsService {
       ? stored
       : [BUILTIN_SOURCE, ...stored];
     return sources.map((source) =>
-      CLOUD_SOURCE_TYPES.includes(source.type) ? { ...source, unavailable: true } : source,
+      LEGACY_SOURCE_TYPES.includes(source.type) ? { ...source, unavailable: true } : source,
     );
   }
 
@@ -475,7 +475,7 @@ export class SkillsService {
     const sources = await this.listSources();
     const source = sources.find((row) => row.id === sourceId);
     if (!source) throw new ApiException('NOT_FOUND', '技能源不存在', undefined, { source_id: sourceId });
-    if (CLOUD_SOURCE_TYPES.includes(source.type)) {
+    if (LEGACY_SOURCE_TYPES.includes(source.type)) {
       throw new ApiException('NOT_IMPLEMENTED', '第三方远程源暂未开放');
     }
     if (source.type === 'builtin') {

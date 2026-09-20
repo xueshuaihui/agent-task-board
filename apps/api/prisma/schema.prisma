@@ -279,13 +279,16 @@ model Skill {
   content         String         @default("{\"blocks\":[],\"entryBlockId\":null}")
   testCases       String         @default("[]") @map("test_cases")
   mcpDependencies String         @default("[]") @map("mcp_dependencies")
-  // 8.8 技能源标记（来源枚举收敛见 v0.0.4 W2，本任务不动）。
-  source          String         @default("local") @map("source")
+  // v0.0.4 W2（§9.1/§21.1）：三来源枚举 default（内置默认，只读）/ custom（用户创建）/
+  // imported（三方导入）。旧 source 值（local/market/builtin/git/http/directory）已在
+  // 0010 迁移收敛改写，r2：三方技能不保留「导入来源」记录。
+  sourceType      String         @default("custom") @map("source_type")
   createdAt       String         @default(dbgenerated("(datetime('now'))")) @map("created_at")
   updatedAt       String         @default(dbgenerated("(datetime('now'))")) @map("updated_at")
   versions        SkillVersion[]
 
-  @@unique([name], map: "uniq_skills_name")
+  // r2（§9.2/§21.1）：name 允许重名，唯一性只由 id（主键，终身不变）保证；
+  // uniq_skills_name 已随 0010 迁移解除。
   @@index([status], map: "idx_skills_status")
   @@map("skills")
 }
