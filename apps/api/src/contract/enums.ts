@@ -22,7 +22,7 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
   FAILED: '异常/失败',
 };
 
-/** 4.1：看板固定六列、固定顺序。 */
+/** 4.1：看板列 = 状态全集、固定顺序（§6.1 加 BLOCKED 后为 7 列）。 */
 export const BOARD_COLUMNS: TaskStatus[] = [...TASK_STATUS];
 
 export const PRIORITY_LABEL = ['紧急', '高', '中', '低'] as const;

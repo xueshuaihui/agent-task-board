@@ -428,9 +428,9 @@ npx tauri build --target aarch64-apple-darwin
 - `docs/Jarvis Workbench 产品与设计文档 v1.5.md` — 产品与技术方案
 - `docs/Jarvis Workbench 高保真原型 v1.1.md` — 高保真交互原型
 - `docs/系统操作使用手册.md` — 安装、配置与运维
-- `docs/发布手册.md` — Release SOP：构建 → 冒烟 → tag → GitHub Release 全流程
+- `docs/发布手册.md` — Release SOP：推 tag → CI 双架构出包并发布 Release（本地打包为附录）
 - `docs/任务创建模版（Agent 协助）.md` — 发给 AI 助手即可按约束代建任务
-- `docs/发版记录 v0.1.0.md` — 产物清单、SHA-256、已知限制
+- `docs/发版记录 v0.0.1.md` / `docs/发版记录 v0.0.3.md` — 各发布批次的产物清单、SHA-256、已知限制（尚未发布过正式版）
 - `docs/开发计划-阶段一收尾与阶段二.md` — 当前状态快照与任务规划
 
 ---

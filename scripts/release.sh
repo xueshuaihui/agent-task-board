@@ -181,7 +181,7 @@ EOF
     --jq '.name + " | " + .tagName + " | prerelease=" + (.isPrerelease|tostring) + " | assets: " + ([.assets[].name]|join(", "))'
   echo ""
   echo "⚠️  GH_TOKEN 已出现在本会话环境——发布完成请立即 revoke/regenerate（SOP §5.1）"
-  echo "📝 别忘了回填 docs/发版记录 v0.1.0.md（最终 sha + 修订记录）"
+  echo "📝 别忘了回填当期发版记录 docs/发版记录 <tag>.md（最终 sha + 修订记录）"
 fi
 
 echo ""

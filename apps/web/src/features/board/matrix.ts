@@ -211,7 +211,7 @@ export function dropVerdict(from: string, to: TaskStatus): Verdict {
   return cell;
 }
 
-/** 拖拽开始时一次性算出六列的可放置态（PRD 7.2 首条）。 */
+/** 拖拽开始时一次性算出全部状态列的可放置态（PRD 7.2 首条）。 */
 export function dropStates(from: string): Record<TaskStatus, Verdict> {
   return Object.fromEntries(TASK_STATUSES.map((status) => [status, dropVerdict(from, status)])) as Record<
     TaskStatus,
