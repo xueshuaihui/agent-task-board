@@ -26,14 +26,17 @@ model UserPreference {
 
 // v0.0.4 W1b：术语迁移 Project→Group（需求.md §21.1）——表 `projects`→`groups`、
 // `tasks.project_id`→`group_id`，索引随之改名；列语义未变。
+// v0.0.4 W1-D1（§5.2/§19）：`is_default` 标记预置「默认」分组（0009 迁移植入固定行
+// `grp_default`），不可删、不可归档；「至多一行 is_default=1」由服务层保证。
 model Group {
-  id          String  @id
-  name        String
-  color       String?
-  icon        String?
+  id        String  @id
+  name      String
+  color     String?
+  icon      String?
   description String?
-  status      String  @default("ACTIVE")
-  sort        Int     @default(0)
+  status    String  @default("ACTIVE")
+  sort      Int     @default(0)
+  isDefault Int     @default(0) @map("is_default")
   createdAt   String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
   updatedAt   String  @default(dbgenerated("(datetime('now'))")) @map("updated_at")
   tasks       Task[]

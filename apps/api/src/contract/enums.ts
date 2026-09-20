@@ -28,6 +28,14 @@ export const BOARD_COLUMNS: TaskStatus[] = [...TASK_STATUS];
 export const PRIORITY_LABEL = ['紧急', '高', '中', '低'] as const;
 export const PRIORITIES = [0, 1, 2, 3] as const;
 
+/**
+ * v0.0.4 W1-D1（需求.md §5.2 / §21.1 / §19）：预置「默认」分组的固定主键与名称。
+ * 0009 迁移以同值植入行（撞名存量则就地转正既有「默认」行、保留其 id）；
+ * 新建任务未指定分组、存量无归属任务都归到这里；不可删除、不可归档（§5.5/§5.6）。
+ */
+export const DEFAULT_GROUP_ID = 'grp_default';
+export const DEFAULT_GROUP_NAME = '默认';
+
 export const STOP_REASONS = ['user_stop', 'lease_expired', 'agent_reported'] as const;
 export type StopReason = (typeof STOP_REASONS)[number];
 

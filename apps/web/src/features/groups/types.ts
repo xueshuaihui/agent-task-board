@@ -20,6 +20,8 @@ export interface Group {
   description: string | null;
   status: string;
   sort: number;
+  /** v0.0.4 W1-D1 §5.2：1=预置「默认」分组（不可删/不可归档，与服务层 GroupDto 同口径的 0/1）。 */
+  is_default: number;
   created_at: string | null;
   updated_at: string | null;
 }

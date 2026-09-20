@@ -18,6 +18,8 @@ export const ERROR_STATUS = {
   SKILL_NAME_TAKEN: 409,
   // v0.0.4 W1b §5.5：活跃分组达到上限 50 后拒绝新建。
   GROUP_LIMIT_REACHED: 409,
+  // v0.0.4 W1-D1 §5.2/§5.5：预置「默认」分组不可删除；§5.6 口径下同样不可归档。
+  GROUP_DEFAULT_PROTECTED: 409,
   ARTIFACT_TOO_LARGE: 413,
   LEASE_EXPIRED: 410,
   LEASE_REVOKED: 410,

@@ -4,6 +4,7 @@ import { ApiException, USER_COPY } from '../contract/errors';
 import {
   ARTIFACT_TYPES,
   BOARD_COLUMNS,
+  DEFAULT_GROUP_ID,
   REVIEW_CONCLUSIONS,
   RUN_STATUS,
   STATUS_LABEL,
@@ -123,7 +124,9 @@ export class TasksService {
       await tx.task.create({
         data: {
           id: taskId,
-          groupId: input.group_id ?? null,
+          // §5.2（W1-D1）：未指定分组的新任务归入默认分组——唯一建任务入口
+          // （REST/agent/MCP 都汇到这一个 create），兜底只写一次。
+          groupId: input.group_id ?? DEFAULT_GROUP_ID,
           parentTaskId: parentId,
           sortOrder: input.sort_order ?? 0,
           type: input.type,

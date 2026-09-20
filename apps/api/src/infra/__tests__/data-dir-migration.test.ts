@@ -60,6 +60,13 @@ describe('migrateLegacyDataDir 首启一次性搬迁', () => {
     db.exec('PRAGMA user_version = 6');
     // 塞一条自定义存量数据，验证搬迁把用户数据原样带走（0001 自带 settings 默认行）。
     db.prepare("INSERT INTO settings (key, value) VALUES ('drill_marker', '\"kept\"')").run();
+    // W1-D1 演练素材：一个存量分组 + 两条任务（一条有归属、一条 project_id 为 NULL），
+    // 0008 改名后 0009 要把 NULL 归属的任务归进预置「默认」分组。
+    // 0006 时 projects.account_id 仍是 NOT NULL FK（0007 才删列），先补一个账号挂载。
+    db.prepare("INSERT INTO accounts (id, username) VALUES ('acc_legacy', 'legacy')").run();
+    db.prepare("INSERT INTO projects (id, account_id, name) VALUES ('prj_legacy', 'acc_legacy', '遗留项目')").run();
+    db.prepare("INSERT INTO tasks (id, title, project_id) VALUES ('tsk_bound', '有归属任务', 'prj_legacy')").run();
+    db.prepare("INSERT INTO tasks (id, title) VALUES ('tsk_orphan', '无归属任务')").run();
     db.close();
     return file;
   }
@@ -82,7 +89,7 @@ describe('migrateLegacyDataDir 首启一次性搬迁', () => {
     return db;
   }
 
-  it('Happy path：备份→复制→补 0007/0008→审计→指引文件→旧库封存', () => {
+  it('Happy path：备份→复制→补 0007/0008/0009→审计→指引文件→旧库封存', () => {
     const { legacy, target } = makeFakeHome();
     const legacyDb = writeLegacyDbAt0006(legacy);
     writeFileSync(path.join(legacy, 'config.json'), '{"port":7790}\n');
@@ -94,11 +101,12 @@ describe('migrateLegacyDataDir 首启一次性搬迁', () => {
     expect(result.migrated).toBe(true);
     expect(result.backupFile).toBeDefined();
 
-    // 新库存在且 schema 到 0008：groups 已改名（0008）、accounts 已删（0007）。
+    // 新库存在且 schema 补到当前水位：groups 已改名（0008）、accounts 已删（0007）、
+    // 预置「默认」分组就位（0009，W1-D1）。
     const newDb = openReadOnly(path.join(target, 'jarvis.db'));
     expect(
       (newDb.prepare('PRAGMA user_version').get() as { user_version: number }).user_version,
-    ).toBe(8);
+    ).toBe(latestMigrationOrder());
     const tables = new Set(
       (newDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{
         name: string;
@@ -106,6 +114,23 @@ describe('migrateLegacyDataDir 首启一次性搬迁', () => {
     );
     expect(tables.has('groups')).toBe(true);
     expect(tables.has('accounts')).toBe(false);
+    // W1-D1（需求.md §5.2 / §19）：0009 随水位续跑——预置行存在、存量无归属任务归位、有归属的不受影响。
+    expect(
+      newDb
+        .prepare("SELECT id, name, is_default FROM groups WHERE is_default = 1")
+        .get(),
+    ).toEqual({ id: 'grp_default', name: '默认', is_default: 1 });
+    expect(
+      (newDb.prepare("SELECT group_id FROM tasks WHERE id = 'tsk_orphan'").get() as {
+        group_id: string;
+      }).group_id,
+    ).toBe('grp_default');
+    expect(
+      (newDb.prepare("SELECT group_id FROM tasks WHERE id = 'tsk_bound'").get() as {
+        group_id: string;
+      }).group_id,
+    ).toBe('prj_legacy');
+    expect((newDb.prepare('SELECT COUNT(*) AS n FROM tasks WHERE group_id IS NULL').get() as { n: number }).n).toBe(0);
     // §21.2-3：settings.migrated_from + migration.completed 审计。
     expect(
       (newDb.prepare('SELECT value FROM settings WHERE key = ?').get(MIGRATED_FROM_KEY) as {
@@ -234,9 +259,14 @@ describe('migrateLegacyDataDir 首启一次性搬迁', () => {
     // 修复脚本目录后可重跑成功（同一首启进程退出、下次启动再来，语义不变）。
     delete process.env.ATB_MIGRATIONS_DIR;
     expect(migrateLegacyDataDir().migrated).toBe(true);
-    expect(readUserVersion(path.join(target, 'jarvis.db'))).toBe(8);
+    expect(readUserVersion(path.join(target, 'jarvis.db'))).toBe(latestMigrationOrder());
   });
 });
+
+/** 当前迁移集的最高序号（水位断言随新迁移免改口径）。 */
+function latestMigrationOrder(): number {
+  return Math.max(...collectMigrations(migrationsDir()).map((migration) => migration.order));
+}
 
 function readUserVersion(file: string): number {
   const db = new DatabaseSync(file, { readOnly: true });

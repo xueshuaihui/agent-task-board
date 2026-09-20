@@ -23,12 +23,15 @@ export function GroupDeleteDialog({ group, onClose }: GroupDeleteDialogProps) {
   const active = useActiveGroups();
 
   const [strategy, setStrategy] = useState<'migrate' | 'cascade'>('migrate');
-  const targets = useMemo(
-    () => (active.data?.items ?? []).filter((item) => item.id !== group?.id),
-    [active.data?.items, group?.id],
-  );
+  const targets = useMemo(() => {
+    const list = (active.data?.items ?? []).filter((item) => item.id !== group?.id);
+    // §5.4/§5.5：「迁移到默认分组」是默认项——默认分组排在候选首位，未手选时即预选它。
+    return list.sort((a, b) => b.is_default - a.is_default);
+  }, [active.data?.items, group?.id]);
   const [targetId, setTargetId] = useState('');
   const target = targets.find((item) => item.id === targetId) ?? targets[0];
+  /** 迁移目标是否就是预置默认分组（决定单选项文案，对齐 §5.4 对话框样式）。 */
+  const targetIsDefault = target?.is_default === 1;
 
   if (!group) return null;
 
@@ -87,7 +90,7 @@ export function GroupDeleteDialog({ group, onClose }: GroupDeleteDialogProps) {
           options={[
             {
               value: 'migrate',
-              label: '迁移任务到其他分组',
+              label: targetIsDefault ? '迁移到默认分组' : '迁移任务到其他分组',
               description: '分组删除，任务与其执行记录完整保留',
             },
             {

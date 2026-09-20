@@ -18,6 +18,8 @@ export interface GroupDto {
   description: string | null;
   status: string;
   sort: number;
+  /** v0.0.4 W1-D1 §5.2/§19：1=预置「默认」分组（不可删/不可归档）。SQLite 无布尔，透传 0/1。 */
+  is_default: number;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -39,6 +41,7 @@ function toDto(row: Group): GroupDto {
     description: row.description,
     status: row.status,
     sort: row.sort,
+    is_default: row.isDefault,
     created_at: toIso(row.createdAt),
     updated_at: toIso(row.updatedAt),
   };
@@ -86,8 +89,14 @@ export class GroupsService {
   }
 
   async patch(id: string, input: GroupPatchInput): Promise<GroupDto> {
-    await this.get(id);
+    const row = await this.get(id);
     if (input.name !== undefined) await this.assertNameFree(input.name, id);
+    // §5.6（W4 才做完整归档闭环）：先落防御性校验——默认分组不可归档。
+    if (input.status === 'ARCHIVED' && row.isDefault === 1) {
+      throw new ApiException('GROUP_DEFAULT_PROTECTED', '默认分组不可归档');
+    }
+    // is_default 不在 groupPatchSchema 里：PATCH 改不到它本就是契约的一部分
+    // （预置标记只认迁移植入，不认任何写入口），这里多余的数据面兜底都不需要。
     await this.prisma.group.update({
       where: { id },
       data: {
@@ -111,12 +120,18 @@ export class GroupsService {
   }
 
   /**
-   * 删除分组：`?strategy=migrate&targetGroupId=xxx` 把任务迁去目标分组（含已归档的也一并迁），
+   * 删除分组：`?strategy=migrate&targetGroupId=xxx` 把任务迁去目标分组（含已归档的也一并迁；
+   * §5.5 对话框默认迁去「默认」分组，目标由前端显式给出），
    * 默认 `?strategy=cascade` 连任务一起删（任务删除会级联 runs/artifacts）。
    * 有子任务挂在待删任务下时由任务删除侧的「父任务不可删」规则拦下。
+   * 默认分组在任何策略下都不可删（§5.2 / 验收 7）。
    */
   async remove(id: string, query: GroupDeleteQuery): Promise<GroupDeleteResult> {
     const row = await this.get(id);
+    // §5.2 / 验收 7：默认分组是任务的兜底归属（新建未指定分组即落它），任何策略下都不可删。
+    if (row.isDefault === 1) {
+      throw new ApiException('GROUP_DEFAULT_PROTECTED', '默认分组不可删除');
+    }
     let affected = 0;
     if (query.strategy === 'migrate') {
       if (!query.targetGroupId) {
@@ -127,6 +142,8 @@ export class GroupsService {
       if (query.targetGroupId === id) {
         throw new ApiException('VALIDATION_FAILED', '迁移目标不能是本分组');
       }
+      // §5.5「迁移到默认分组」是删除对话框的默认项：目标分组（含默认分组）由前端显式传入，
+      // 服务端契约不变——缺目标仍 422，绝不悄悄挪数据。
       const target = await this.get(query.targetGroupId);
       const moved = await this.prisma.task.updateMany({
         where: { groupId: id },

@@ -129,6 +129,8 @@ function GroupCard({
   onDelete: () => void;
 }) {
   const archived = group.status !== 'ACTIVE';
+  /** v0.0.4 W1-D1 §5.2/§5.4：预置「默认」分组带标识、无删除（与归档）入口。 */
+  const isDefault = group.is_default === 1;
   const update = useGroupingStore((state) => state.update);
 
   // 5.1「打开」：把看板切成只看这个分组并按分组泳道，落到看板就是它自己的泳道视图。
@@ -150,9 +152,16 @@ function GroupCard({
             {group.icon ? `${group.icon} ` : ''}
             {group.name}
           </span>
+          {isDefault ? <Badge tone="soft">默认</Badge> : null}
           {archived ? <Badge tone="neutral">已归档</Badge> : null}
         </div>
-        <GroupMenu group={group} archived={archived} onEdit={onEdit} onDelete={onDelete} />
+        <GroupMenu
+          group={group}
+          archived={archived}
+          protectedDefault={isDefault}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
       </div>
 
       <p className={'min-h-[20px] truncate text-aux ' + (group.description ? 'text-text-secondary' : 'text-text-tertiary')}>
@@ -174,11 +183,14 @@ function GroupCard({
 function GroupMenu({
   group,
   archived,
+  protectedDefault,
   onEdit,
   onDelete,
 }: {
   group: Group;
   archived: boolean;
+  /** §5.2/§5.6：默认分组不渲染删除与归档入口（服务端另有 409 兜底）。 */
+  protectedDefault: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -200,28 +212,32 @@ function GroupMenu({
               icon: <Pencil className="size-3.5" aria-hidden />,
               onSelect: onEdit,
             },
-            archived
-              ? {
-                  id: 'restore',
-                  label: '恢复',
-                  icon: <ArchiveRestore className="size-3.5" aria-hidden />,
-                  onSelect: () => mutations.restore.mutate(group.id),
-                }
-              : {
-                  id: 'archive',
-                  label: '归档',
-                  icon: <Archive className="size-3.5" aria-hidden />,
-                  hint: '移出默认视图',
-                  onSelect: () => mutations.archive.mutate(group.id),
-                },
-            {
-              id: 'delete',
-              label: '删除',
-              danger: true,
-              icon: <Trash2 className="size-3.5" aria-hidden />,
-              hint: '迁移或删除任务',
-              onSelect: onDelete,
-            },
+            ...(protectedDefault
+              ? []
+              : [
+                  archived
+                    ? {
+                        id: 'restore',
+                        label: '恢复',
+                        icon: <ArchiveRestore className="size-3.5" aria-hidden />,
+                        onSelect: () => mutations.restore.mutate(group.id),
+                      }
+                    : {
+                        id: 'archive',
+                        label: '归档',
+                        icon: <Archive className="size-3.5" aria-hidden />,
+                        hint: '移出默认视图',
+                        onSelect: () => mutations.archive.mutate(group.id),
+                      },
+                  {
+                    id: 'delete',
+                    label: '删除',
+                    danger: true,
+                    icon: <Trash2 className="size-3.5" aria-hidden />,
+                    hint: '迁移或删除任务',
+                    onSelect: onDelete,
+                  },
+                ]),
           ],
         },
       ]}

@@ -146,3 +146,83 @@ describe('§5.5 分组数量上限 50', () => {
     expect(created.status).toBe(201);
   });
 });
+
+/**
+ * v0.0.4 W1-D1（QA 回归）：预置「默认」分组——需求.md §5.2 / §5.5 删除保护 /
+ * 验收条款 7（默认分组不可删除）。存量无归属任务的归位发生在 0009 迁移 SQL 里，
+ * 由 /tmp 真库副本演练断言覆盖；这里覆盖运行期行为。
+ */
+describe('预置「默认」分组（§5.2 / 验收 7）', () => {
+  async function defaultRow() {
+    const row = await t.prisma.group.findFirst({ where: { isDefault: 1 } });
+    expect(row).not.toBeNull();
+    return row!;
+  }
+
+  it('0009 迁移在库落地固定预置行：is_default=1、名「默认」，且 GET 列表透出 is_default', async () => {
+    const row = await defaultRow();
+    expect(row.name).toBe('默认');
+    const list = await ui.get<{
+      items: { id: string; name: string; is_default: number }[];
+    }>(`${API}/groups`);
+    expect(list.status).toBe(200);
+    const dto = list.body.items.find((item) => item.id === row.id);
+    expect(dto?.name).toBe('默认');
+    expect(dto?.is_default).toBe(1);
+    expect(list.body.items.filter((item) => item.is_default === 1)).toHaveLength(1);
+  });
+
+  it('默认分组不可删：migrate 与 cascade 两种策略都 409 GROUP_DEFAULT_PROTECTED（§5.5）', async () => {
+    const row = await defaultRow();
+    // 前面的上限用例已把活跃名额占满，迁移目标复用既有分组而不是再建。
+    const other = await t.prisma.group.findFirst({
+      where: { id: { not: row.id }, isDefault: 0 },
+    });
+    expect(other).not.toBeNull();
+    for (const query of [
+      'strategy=cascade',
+      `strategy=migrate&targetGroupId=${other!.id}`,
+    ]) {
+      const res = await ui.del(`${API}/groups/${row.id}?${query}`);
+      expect(res.status).toBe(409);
+      expect(errorCode(res)).toBe('GROUP_DEFAULT_PROTECTED');
+    }
+    expect(await t.prisma.group.count({ where: { id: row.id } })).toBe(1);
+  });
+
+  it('默认分组不可归档（§5.6 口径的防御性校验）、is_default 改不动（PATCH 词表里没有它）', async () => {
+    const row = await defaultRow();
+    const archived = await ui.patch(`${API}/groups/${row.id}`, { status: 'ARCHIVED' });
+    expect(archived.status).toBe(409);
+    expect(errorCode(archived)).toBe('GROUP_DEFAULT_PROTECTED');
+
+    const flipped = await ui.patch(`${API}/groups/${row.id}`, { is_default: 0 } as never);
+    expect(flipped.status).toBe(422);
+    expect(errorCode(flipped)).toBe('VALIDATION_FAILED');
+    expect((await defaultRow()).isDefault).toBe(1);
+
+    // 普通字段的编辑仍然放行（§5.4 默认分组保留「编辑」入口）。
+    const renamed = await ui.patch<{ name: string }>(`${API}/groups/${row.id}`, {
+      name: '默认 v2',
+    });
+    expect(renamed.status).toBe(200);
+    await ui.patch(`${API}/groups/${row.id}`, { name: '默认' });
+  });
+
+  it('新建任务未指定分组 → 归入默认分组（§5.2）；显式指定仍是显式值', async () => {
+    const row = await defaultRow();
+    const implicitId = await newTask(t, { title: '没带分组的任务' });
+    const implicit = await ui.get<{ group_id: string }>(`${API}/tasks/${implicitId}`);
+    expect(implicit.status).toBe(200);
+    expect(implicit.body.group_id).toBe(row.id);
+
+    // 前面的上限用例已把活跃名额占满，这里复用既有活跃分组而不是再建。
+    const other = await t.prisma.group.findFirst({
+      where: { id: { not: row.id }, isDefault: 0, status: 'ACTIVE' },
+    });
+    expect(other).not.toBeNull();
+    const explicitId = await newTask(t, { title: '带分组的任务', group_id: other!.id });
+    const detail = await ui.get<{ group_id: string }>(`${API}/tasks/${explicitId}`);
+    expect(detail.body.group_id).toBe(other!.id);
+  });
+});
