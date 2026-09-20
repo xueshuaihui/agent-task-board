@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
-import { Auth, AuthScope, type RequestAuth } from '../auth/auth.scope';
+import { AuthScope } from '../auth/auth.scope';
 import { zod } from '../infra/zod.pipe';
 import {
   templateCreateBodySchema,
@@ -19,22 +19,22 @@ export class TemplatesController {
   constructor(private readonly templates: TemplatesService) {}
 
   @Get()
-  list(@Auth() auth: RequestAuth) {
-    return this.templates.list(auth.accountId);
+  list() {
+    return this.templates.list();
   }
 
   @Post()
-  create(@Body(zod(templateCreateBodySchema)) body: TemplateCreateBody, @Auth() auth: RequestAuth) {
-    return this.templates.create(auth.accountId, body);
+  create(@Body(zod(templateCreateBodySchema)) body: TemplateCreateBody) {
+    return this.templates.create(body);
   }
 
   @Patch(':id')
-  patch(@Param('id') id: string, @Body(zod(templatePatchBodySchema)) body: TemplatePatchBody, @Auth() auth: RequestAuth) {
-    return this.templates.patch(auth.accountId, id, body);
+  patch(@Param('id') id: string, @Body(zod(templatePatchBodySchema)) body: TemplatePatchBody) {
+    return this.templates.patch(id, body);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string, @Auth() auth: RequestAuth) {
-    return this.templates.remove(auth.accountId, id);
+  remove(@Param('id') id: string) {
+    return this.templates.remove(id);
   }
 }

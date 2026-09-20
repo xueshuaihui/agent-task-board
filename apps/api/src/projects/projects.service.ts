@@ -48,21 +48,20 @@ export class ProjectsService {
     private readonly audit: AuditService,
   ) {}
 
-  async list(accountId: string, includeArchived = true): Promise<{ items: ProjectDto[] }> {
+  async list(includeArchived = true): Promise<{ items: ProjectDto[] }> {
     const rows = await this.prisma.project.findMany({
-      where: accountId ? { accountId, ...(includeArchived ? {} : { status: 'ACTIVE' }) } : {},
+      where: includeArchived ? {} : { status: 'ACTIVE' },
       orderBy: [{ sort: 'asc' }, { createdAt: 'asc' }],
     });
     return { items: rows.map(toDto) };
   }
 
-  async create(accountId: string, input: ProjectCreateInput): Promise<ProjectDto> {
-    await this.assertNameFree(accountId, input.name);
+  async create(input: ProjectCreateInput): Promise<ProjectDto> {
+    await this.assertNameFree(input.name);
     const id = newId();
     await this.prisma.project.create({
       data: {
         id,
-        accountId,
         name: input.name,
         color: input.color ?? null,
         icon: input.icon ?? null,
@@ -79,12 +78,12 @@ export class ProjectsService {
       targetId: id,
       after: { name: input.name },
     });
-    return toDto(await this.get(accountId, id));
+    return toDto(await this.get(id));
   }
 
-  async patch(accountId: string, id: string, input: ProjectPatchInput): Promise<ProjectDto> {
-    await this.get(accountId, id);
-    if (input.name !== undefined) await this.assertNameFree(accountId, input.name, id);
+  async patch(id: string, input: ProjectPatchInput): Promise<ProjectDto> {
+    await this.get(id);
+    if (input.name !== undefined) await this.assertNameFree(input.name, id);
     await this.prisma.project.update({
       where: { id },
       data: {
@@ -104,7 +103,7 @@ export class ProjectsService {
       targetId: id,
       after: { ...input },
     });
-    return toDto(await this.get(accountId, id));
+    return toDto(await this.get(id));
   }
 
   /**
@@ -112,8 +111,8 @@ export class ProjectsService {
    * 默认 `?strategy=delete` 连任务一起删（任务删除会级联 runs/artifacts）。
    * 有子任务挂在待删任务下时由任务删除侧的「父任务不可删」规则拦下。
    */
-  async remove(accountId: string, id: string, query: ProjectDeleteQuery): Promise<ProjectDeleteResult> {
-    const row = await this.get(accountId, id);
+  async remove(id: string, query: ProjectDeleteQuery): Promise<ProjectDeleteResult> {
+    const row = await this.get(id);
     let affected = 0;
     if (query.strategy === 'migrate') {
       if (!query.targetProjectId) {
@@ -124,23 +123,23 @@ export class ProjectsService {
       if (query.targetProjectId === id) {
         throw new ApiException('VALIDATION_FAILED', '迁移目标不能是本项目');
       }
-      const target = await this.get(accountId, query.targetProjectId);
+      const target = await this.get(query.targetProjectId);
       const moved = await this.prisma.task.updateMany({
-        where: { projectId: id, accountId },
+        where: { projectId: id },
         data: { projectId: target.id, updatedAt: nowSql() },
       });
       affected = moved.count;
     } else {
-      const childCount = await this.prisma.task.count({ where: { projectId: id, accountId } });
+      const childCount = await this.prisma.task.count({ where: { projectId: id } });
       if (childCount > 0) {
         const parents = await this.prisma.task.count({
-          where: { projectId: id, accountId, children: { some: {} } },
+          where: { projectId: id, children: { some: {} } },
         });
         if (parents > 0) {
           throw new ApiException('ILLEGAL_TRANSITION', '项目下存在带子任务的任务，请先处理或改用迁移');
         }
       }
-      const deleted = await this.prisma.task.deleteMany({ where: { projectId: id, accountId } });
+      const deleted = await this.prisma.task.deleteMany({ where: { projectId: id } });
       affected = deleted.count;
     }
     await this.prisma.project.delete({ where: { id } });
@@ -155,17 +154,17 @@ export class ProjectsService {
     return { id, deleted: true, strategy: query.strategy, affected_tasks: affected };
   }
 
-  private async get(accountId: string, id: string): Promise<Project> {
-    const row = await this.prisma.project.findFirst({ where: { id, accountId } });
+  private async get(id: string): Promise<Project> {
+    const row = await this.prisma.project.findUnique({ where: { id } });
     if (!row) throw new ApiException('NOT_FOUND', `项目 ${id} 不存在`);
     return row;
   }
 
-  private async assertNameFree(accountId: string, name: string, excludeId?: string): Promise<void> {
-    const rows = await this.prisma.project.findMany({ where: { accountId, name } });
+  private async assertNameFree(name: string, excludeId?: string): Promise<void> {
+    const rows = await this.prisma.project.findMany({ where: { name } });
     if (rows.some((row) => row.id !== excludeId)) {
       throw new ApiException('VALIDATION_FAILED', `项目名「${name}」已存在`, [
-        { path: 'name', code: 'duplicate_name', message: '同一账号下项目名不能重复' },
+        { path: 'name', code: 'duplicate_name', message: '项目名不能重复' },
       ]);
     }
   }

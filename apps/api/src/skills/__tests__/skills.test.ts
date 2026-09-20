@@ -1,11 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestApp, request, type Sender, type TestApp } from '../../__tests__/helpers/http-app';
-import { API, anonSender, uiSender } from '../../__tests__/helpers/seed';
-import { loginAs } from '../../__tests__/accounts.test';
+import { API, uiSender } from '../../__tests__/helpers/seed';
 
 /**
  * 0919 技能管理（1.md 第八章 + 10.3 随任务下发）：CRUD / 版本 / 回滚 / 测试运行 /
- * 导入导出 / 任务绑定校验 / Agent 下发 / 账号隔离。
+ * 导入导出 / 任务绑定校验 / Agent 下发。
  */
 
 const CONTENT = {
@@ -48,23 +47,12 @@ describe('技能管理', () => {
   let t: TestApp;
   let ui: Sender;
   let admin: Sender;
-  let member: Sender;
 
   beforeAll(async () => {
     t = await createTestApp();
     ui = uiSender(t);
-    // 另一个账号：隔离用例
-    const anon = anonSender(t);
-    await anon.post(`${API}/auth/init`, { username: 'boss', password: 'secret66' });
-    const a = await anon.post(`${API}/auth/login`, { username: 'boss', password: 'secret66' });
-    admin = request(t, a.body.token);
-    await admin.post(`${API}/auth/users`, { username: 'mate', password: 'mate666' });
-    const m = await anon.post(`${API}/auth/login`, { username: 'mate', password: 'mate666' });
-    const changed = await request(t, m.body.token).post(`${API}/auth/change-password`, {
-      current_password: 'mate666',
-      new_password: 'mate777',
-    });
-    member = request(t, changed.body.token);
+    // W1a：账号体系移除后本地只有一份 UI 会话凭证，admin 就是 ui。
+    admin = ui;
   });
 
   afterAll(async () => {
@@ -273,7 +261,7 @@ describe('技能管理', () => {
     expect(stats.body.stats.bound_task_count).toBe(1);
   });
 
-  it('绑定校验：未知技能 / 未知版本 / 他号技能一律 422', async () => {
+  it('绑定校验：未知技能 / 未知版本 422', async () => {
     const taskRes = await admin.post(`${API}/tasks`, {
       title: '校验用任务',
       type: '需求',
@@ -289,11 +277,6 @@ describe('技能管理', () => {
       skills: [{ skill_id: 'skl_not_exist' }],
     });
     expect(unknown.status).toBe(422);
-    const foreign = await createSkill(member);
-    const foreignRes = await admin.patch(`${API}/tasks/${taskId}`, {
-      skills: [{ skill_id: foreign.id }],
-    });
-    expect(foreignRes.status).toBe(422);
     const skill = await createSkill(admin);
     const badVersion = await admin.patch(`${API}/tasks/${taskId}`, {
       skills: [{ skill_id: skill.id, version: 'v7.7.7' }],
@@ -369,27 +352,7 @@ describe('技能管理', () => {
     expect(claim.body.task.skills[0].content.blocks).toHaveLength(3);
   });
 
-  it('账号隔离：member 看不见 admin 的技能，改不动也删不掉', async () => {
-    const skill = await createSkill(admin);
-    const list = await member.get(`${API}/skills`);
-    expect(list.body.items.some((row: any) => row.id === skill.id)).toBe(false);
-    expect((await member.get(`${API}/skills/${skill.id}`)).status).toBe(404);
-    expect(
-      (await member.patch(`${API}/skills/${skill.id}`, { description: 'x' })).status,
-    ).toBe(404);
-    expect((await member.del(`${API}/skills/${skill.id}`)).status).toBe(404);
-    expect((await member.get(`${API}/skills/${skill.id}/tasks`)).status).toBe(404);
-    // member 建同名技能不冲突（跨账号）
-    const same = await member.post(`${API}/skills`, {
-      name: skill.name,
-      type: 'prompt',
-      description: '',
-      tags: [],
-    });
-    expect(same.status).toBe(201);
-  });
-
-  it('同账号重名：创建返回 409', async () => {
+  it('重名：创建返回 409（uniq_skills_name 单列唯一保留，去唯一是 W2）', async () => {
     const skill = await createSkill(admin);
     const dup = await admin.post(`${API}/skills`, {
       name: skill.name,

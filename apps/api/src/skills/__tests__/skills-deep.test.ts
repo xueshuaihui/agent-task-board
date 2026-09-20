@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestApp, errorCode, errorMessage, request, type Sender, type TestApp } from '../../__tests__/helpers/http-app';
-import { API, anonSender, claimOk, clearReadyQueue, issueAgent, toReady, triple, uiSender } from '../../__tests__/helpers/seed';
+import { createTestApp, errorCode, errorMessage, type Sender, type TestApp } from '../../__tests__/helpers/http-app';
+import { API, claimOk, clearReadyQueue, issueAgent, toReady, triple, uiSender } from '../../__tests__/helpers/seed';
 
 /**
  * 0919 技能后端深化：8.6 测试用例版本化与两形态测试运行、8.4 人工块 BLOCKED 流转、
@@ -57,16 +57,11 @@ async function createSkill(ui: Sender, overrides: Record<string, unknown> = {}) 
 describe('技能深化（8.4/8.6/8.7/8.8）', () => {
   let t: TestApp;
   let ui: Sender;
-  let admin: Sender;
   let scanDir: string;
 
   beforeAll(async () => {
     t = await createTestApp();
     ui = uiSender(t);
-    const anon = anonSender(t);
-    await anon.post(`${API}/auth/init`, { username: 'boss2', password: 'secret66' });
-    const a = await anon.post(`${API}/auth/login`, { username: 'boss2', password: 'secret66' });
-    admin = request(t, a.body.token);
     scanDir = mkdtempSync(path.join(tmpdir(), 'atb-sources-'));
   });
 
@@ -589,17 +584,5 @@ describe('技能深化（8.4/8.6/8.7/8.8）', () => {
     expect(git.status).toBe(501);
     expect(errorCode(git)).toBe('NOT_IMPLEMENTED');
     expect(errorMessage(git)).toBe('第三方远程源暂未开放');
-  });
-
-  it('账号隔离：sources 与导入按请求账号隔离（member 建的不串号）', async () => {
-    // sources kv 是全局键（本地单租户桌面场景），此处验证技能导入归属正确账号
-    const res = await ui.post(`${API}/skills/import-markdown`, {
-      filename: 'owner.md',
-      content: '### 块\n\n<!-- atb:prompt -->\n\n归属校验',
-    });
-    expect(res.status).toBe(201);
-    // admin（另一个账号）看不到
-    const list = await admin.get(`${API}/skills`);
-    expect(list.body.items.some((row: any) => row.id === res.body.id)).toBe(false);
   });
 });

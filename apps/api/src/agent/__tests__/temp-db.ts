@@ -2,7 +2,6 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Prisma } from '@prisma/client';
-import { BUILTIN_ACCOUNT_ID } from '../../auth/accounts.service';
 import { newId } from '../../contract/ids';
 import type { RequestAuth } from '../../auth/auth.scope';
 import { applyMigrations } from '../../infra/bootstrap';
@@ -72,7 +71,7 @@ export function createAgentHarness(): AgentHarness {
       await prisma.apiToken.create({
         data: { id, name, tokenHash: `hash-${id}`, capabilities: JSON.stringify(capabilities) },
       });
-      return { kind: 'agent', accountId: BUILTIN_ACCOUNT_ID, tokenId: id, tokenName: name, capabilities };
+      return { kind: 'agent', tokenId: id, tokenName: name, capabilities };
     },
     dispose: async () => {
       leases.stopSweeper();

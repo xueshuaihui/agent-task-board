@@ -27,9 +27,8 @@ export interface TaskRawRow {
   run_count: number;
   created_at: string | null;
   updated_at: string | null;
-  // 0919 账号/项目/父子扩展列（t.* 原样带回；测试造行可缺省）。
+  // 0919 项目/父子扩展列（t.* 原样带回；测试造行可缺省）。
   skills?: string;
-  account_id?: string;
   project_id?: string | null;
   parent_task_id?: string | null;
   sort_order?: number;

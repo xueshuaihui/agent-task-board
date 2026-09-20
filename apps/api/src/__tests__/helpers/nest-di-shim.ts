@@ -12,8 +12,6 @@ import { ArtifactsController } from '../../artifacts/artifacts.controller';
 import { SignedResourceMiddleware } from '../../artifacts/signed-resource.middleware';
 import { AuditQueryService } from '../../audit-api/audit-query.service';
 import { AuditApiController } from '../../audit-api/audit-api.controller';
-import { AccountsController } from '../../auth/accounts.controller';
-import { AccountsService } from '../../auth/accounts.service';
 import { AuthGuard } from '../../auth/auth.guard';
 import { BackupService } from '../../backup/backup.service';
 import { BackupController } from '../../backup/backup.controller';
@@ -47,11 +45,6 @@ import { TokensController } from '../../tokens/tokens.controller';
 import { WsGateway } from '../../ws/ws-gateway';
 import { SkillsService } from '../../skills/skills.service';
 import { SkillsController } from '../../skills/skills.controller';
-import { MarketController } from '../../market/market.controller';
-import { MarketService } from '../../market/market.service';
-import { CloudMarketClient } from '../../market/cloud/cloud.client';
-import { CloudMarketService } from '../../market/cloud/cloud-market.service';
-import { CloudMarketController } from '../../market/cloud/cloud.controller';
 
 /**
  * 为什么需要这张表
@@ -84,8 +77,6 @@ export function applyDiShim(): void {
   declare(NotificationsService, [PrismaService, EventsService]);
 
   // ── auth / 0919 项目与偏好
-  declare(AccountsService, [PrismaService, SettingsService, AuditService]);
-  declare(AccountsController, [AccountsService]);
   declare(AuthGuard, [Reflector, PrismaService]);
   declare(ProjectsService, [PrismaService, AuditService]);
   declare(ProjectsController, [ProjectsService]);
@@ -96,12 +87,6 @@ export function applyDiShim(): void {
   declare(SkillsService, [PrismaService]);
   declare(SkillsController, [SkillsService]);
 
-  // ── market（0919 九章 + 服务端市场对接层）
-  declare(CloudMarketClient, [SettingsService]);
-  declare(CloudMarketService, [SettingsService, CloudMarketClient, PrismaService]);
-  declare(MarketService, [PrismaService, CloudMarketService]);
-  declare(MarketController, [MarketService]);
-  declare(CloudMarketController, [CloudMarketService, MarketService]);
   // index 5 由 @Inject(LEASE_SWEEP_OPTIONS) 自行声明，Object 只用来把数组撑到构造参数个数。
   declare(LeaseService, [PrismaService, SettingsService, AuditService, EventsService, NotificationsService, Object]);
   declare(ClaimService, [PrismaService, SettingsService, LeaseService, AuditService, EventsService, AgentQueryService]);
@@ -155,9 +140,9 @@ export function applyDiShim(): void {
   declare(NotificationTriggers, [PrismaService, NotificationsService]);
   declare(DependencyUnlockService, [PrismaService, EventsService, NotificationTriggers]);
 
-  // ── ws：index 1/2/4 标了 @Optional()，index 3 由 @Inject(WS_GATEWAY_OPTIONS) 自行声明，
+  // ── ws：index 1/2 标了 @Optional()，index 3 由 @Inject(WS_GATEWAY_OPTIONS) 自行声明，
   //    这里的 Object 只用来把数组撑到构造参数的个数（Nest 按 index 覆盖）。
-  declare(WsGateway, [EventsService, HttpAdapterHost, AppLogger, Object, PrismaService]);
+  declare(WsGateway, [EventsService, HttpAdapterHost, AppLogger, Object]);
 }
 
 function declare(cls: InjectableClass, tokens: unknown[]): void {

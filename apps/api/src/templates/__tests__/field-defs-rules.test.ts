@@ -10,7 +10,6 @@ import { AuditService } from '../../infra/audit.service';
 import { PrismaService } from '../../infra/prisma.service';
 import { SettingsService } from '../../infra/settings.service';
 import { ZodPipe } from '../../infra/zod.pipe';
-import { BUILTIN_ACCOUNT_ID as BUILTIN } from '../../auth/accounts.service';
 import { FieldDefsService } from '../../field-defs/field-defs.service';
 
 /**
@@ -41,7 +40,7 @@ afterAll(async () => {
 });
 
 async function createDef(key = 'impact_scope'): Promise<string> {
-  return (await defs.create(BUILTIN,{
+  return (await defs.create({
     key,
     label: '影响范围',
     type: 'select',
@@ -112,7 +111,7 @@ describe('规则 1：PATCH 改 key / type 一律 422', () => {
 
   it('服务端二次兜底：绕过入参层直接调 service 也不会改库行的 key/type', async () => {
     const id = await createDef();
-    await defs.patch(BUILTIN,id, { label: '影响范围 v2' });
+    await defs.patch(id, { label: '影响范围 v2' });
     const row = await prisma.customFieldDef.findUnique({ where: { id } });
     expect(row!.key).toBe('impact_scope');
     expect(row!.type).toBe('select');
@@ -123,7 +122,7 @@ describe('规则 1：PATCH 改 key / type 一律 422', () => {
 describe('规则 2：DELETE 被引用 → 409 FIELD_IN_USE + details.task_count', () => {
   it('无引用的字段可直接删', async () => {
     const id = await createDef('unused_scope');
-    expect(await defs.remove(BUILTIN,id)).toMatchObject({ id, deleted: true });
+    expect(await defs.remove(id)).toMatchObject({ id, deleted: true });
     expect(await prisma.customFieldDef.findUnique({ where: { id } })).toBeNull();
   });
 
@@ -132,7 +131,7 @@ describe('规则 2：DELETE 被引用 → 409 FIELD_IN_USE + details.task_count'
     await taskUsing('used_scope', '订单模块');
     await taskUsing('used_scope', '支付');
 
-    const error = await defs.remove(BUILTIN,id).catch((thrown: unknown) => thrown);
+    const error = await defs.remove(id).catch((thrown: unknown) => thrown);
     expect(error).toMatchObject({ code: 'FIELD_IN_USE', status: 409 });
     expect((error as { details?: unknown }).details).toMatchObject({ task_count: 2 });
     expect(await prisma.customFieldDef.findUnique({ where: { id } })).not.toBeNull();
@@ -141,15 +140,15 @@ describe('规则 2：DELETE 被引用 → 409 FIELD_IN_USE + details.task_count'
   it('值为 null 的引用也算引用（键在，定义就不能删）', async () => {
     const id = await createDef('null_scope');
     await taskUsing('null_scope', null);
-    await expect(defs.remove(BUILTIN,id)).rejects.toMatchObject({ code: 'FIELD_IN_USE' });
+    await expect(defs.remove(id)).rejects.toMatchObject({ code: 'FIELD_IN_USE' });
   });
 
   it('任务删除后引用消失，字段可删（号位不复用，用新 T- 号）', async () => {
     const id = await createDef('later_free');
     await taskUsing('later_free', '订单模块');
-    await expect(defs.remove(BUILTIN,id)).rejects.toMatchObject({ code: 'FIELD_IN_USE' });
+    await expect(defs.remove(id)).rejects.toMatchObject({ code: 'FIELD_IN_USE' });
     await prisma.task.deleteMany({ where: { customFields: { contains: 'later_free' } } });
-    expect(await defs.remove(BUILTIN,id)).toMatchObject({ deleted: true });
+    expect(await defs.remove(id)).toMatchObject({ deleted: true });
   });
 });
 
@@ -157,7 +156,7 @@ describe('两条规则之外的既有约束（顺带钉住，防止漂移）', (
   it('同一 key 不能建两份定义', async () => {
     await createDef('dup_key');
     await expect(
-      defs.create(BUILTIN,{
+      defs.create({
         key: 'dup_key',
         label: '重复',
         type: 'text',
@@ -172,7 +171,7 @@ describe('两条规则之外的既有约束（顺带钉住，防止漂移）', (
 
   it('卡片字段全表最多 2 个、且仅限 text/number/select/bool（6.9.1）', async () => {
     const card = (key: string, type: 'text' | 'textarea') =>
-      defs.create(BUILTIN,{
+      defs.create({
         key,
         label: key,
         type,

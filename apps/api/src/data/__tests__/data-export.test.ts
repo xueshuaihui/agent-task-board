@@ -1,4 +1,3 @@
-import { BUILTIN_ACCOUNT_ID } from '../../auth/accounts.service';
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -349,7 +348,7 @@ describe('导出内容（6.12.1 的「含」与「不含」）', () => {
     await seedBasic();
     const { filename, document } = await h.data.export(
       exportRequest({ scope: 'filtered', filter: { status: ['DONE'] } }),
-      { kind: 'ui', accountId: BUILTIN_ACCOUNT_ID, username: 'test', role: 'ADMIN', mustChangePassword: false },
+      { kind: 'ui' },
     );
 
     expect(filename).toMatch(/^atb-export-\d{8}-\d{6}\.json$/);

@@ -30,22 +30,20 @@ export class TemplatesService {
     private readonly settings: SettingsService,
   ) {}
 
-  async list(accountId: string): Promise<{ items: TemplateDto[] }> {
+  async list(): Promise<{ items: TemplateDto[] }> {
     const rows = await this.prisma.taskTemplate.findMany({
-      where: { accountId },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     });
     return { items: rows.map(toTemplateDto) };
   }
 
-  async create(accountId: string, input: TemplateCreateBody): Promise<TemplateDto> {
+  async create(input: TemplateCreateBody): Promise<TemplateDto> {
     await this.assertPreset(input.preset);
     const id = newId();
     const now = nowSql();
     await this.prisma.taskTemplate.create({
       data: {
         id,
-        accountId,
         name: input.name,
         description: input.description ?? null,
         preset: encodePreset(input.preset),
@@ -60,15 +58,15 @@ export class TemplatesService {
       targetId: id,
       after: { name: input.name, preset: input.preset },
     });
-    return toTemplateDto(await this.getRow(accountId, id));
+    return toTemplateDto(await this.getRow(id));
   }
 
   /**
    * `preset` 传了就是整份替换（7.5 的编辑弹窗本来就提交全量表单），
    * 其余顶层键按提供的改；没带的键保持原值，避免「改个名字顺手清了标签」。
    */
-  async patch(accountId: string, id: string, input: TemplatePatchBody): Promise<TemplateDto> {
-    const before = await this.getRow(accountId, id);
+  async patch(id: string, input: TemplatePatchBody): Promise<TemplateDto> {
+    const before = await this.getRow(id);
     if (input.preset) await this.assertPreset(input.preset);
     await this.prisma.taskTemplate.update({
       where: { id },
@@ -87,11 +85,11 @@ export class TemplatesService {
       before: { name: before.name, sort_order: before.sortOrder },
       after: { ...input },
     });
-    return toTemplateDto(await this.getRow(accountId, id));
+    return toTemplateDto(await this.getRow(id));
   }
 
-  async remove(accountId: string, id: string): Promise<{ id: string; deleted: boolean }> {
-    const row = await this.getRow(accountId, id);
+  async remove(id: string): Promise<{ id: string; deleted: boolean }> {
+    const row = await this.getRow(id);
     await this.prisma.taskTemplate.delete({ where: { id } });
     await this.audit.record({
       actorType: 'user',
@@ -104,8 +102,8 @@ export class TemplatesService {
     return { id, deleted: true };
   }
 
-  private async getRow(accountId: string, id: string) {
-    const row = await this.prisma.taskTemplate.findFirst({ where: { id, accountId } });
+  private async getRow(id: string) {
+    const row = await this.prisma.taskTemplate.findUnique({ where: { id } });
     if (!row) throw new ApiException('NOT_FOUND', `模板 ${id} 不存在`);
     return row;
   }

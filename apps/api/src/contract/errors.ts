@@ -2,8 +2,6 @@ export const ERROR_STATUS = {
   UNAUTHORIZED: 401,
   INVALID_BACKUP_NAME: 400,
   FORBIDDEN: 403,
-  // 0919：mustChangePassword=true 时除改密/me/logout 外的 UI 接口一律拒绝
-  MUST_CHANGE_PASSWORD: 403,
   NOT_FOUND: 404,
   ARTIFACT_LOST: 404,
   BACKUP_NOT_FOUND: 404,
@@ -25,8 +23,6 @@ export const ERROR_STATUS = {
   INVALID_PARAM: 422,
   // 8.8 技能源：git/http 远程源本期不实现
   NOT_IMPLEMENTED: 501,
-  // 0919 服务端市场：服务端不可达 / 服务端返回错误（透传原文），网关语义
-  CLOUD_ERROR: 502,
   INTERNAL: 500,
 } as const satisfies Record<string, number>;
 

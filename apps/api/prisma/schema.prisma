@@ -12,40 +12,20 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Account {
-  id                 String  @id
-  username           String  @unique
-  passwordHash       String  @default("") @map("password_hash")
-  salt               String  @default("")
-  algo               String  @default("scrypt")
-  role               String  @default("MEMBER")
-  status             String  @default("ACTIVE")
-  mustChangePassword Int     @default(0) @map("must_change_password")
-  displayName        String? @map("display_name")
-  createdAt          String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
-  updatedAt          String  @default(dbgenerated("(datetime('now'))")) @map("updated_at")
-
-  preferences UserPreference[]
-  projects    Project[]
-
-  @@map("accounts")
-}
+// v0.0.4 W1a：账号体系与服务端市场已移除（见 docs/v0.0.4/需求.md §21.1）——
+// 全表去 account_id、删 accounts 与 market_* 表；本地单用户，鉴权只认 token。
 
 // value 是 JSON 文本，客户端自行 parse/stringify（SQLite 无 JSON 列型）。
 model UserPreference {
-  accountId String  @map("account_id")
-  key       String
-  value     String  @default("{}")
-  updatedAt String  @default(dbgenerated("(datetime('now'))")) @map("updated_at")
-  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  key       String @id
+  value     String @default("{}")
+  updatedAt String @default(dbgenerated("(datetime('now'))")) @map("updated_at")
 
-  @@id([accountId, key])
   @@map("user_preferences")
 }
 
 model Project {
   id          String  @id
-  accountId   String  @map("account_id")
   name        String
   color       String?
   icon        String?
@@ -54,16 +34,15 @@ model Project {
   sort        Int     @default(0)
   createdAt   String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
   updatedAt   String  @default(dbgenerated("(datetime('now'))")) @map("updated_at")
-  account     Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
   tasks       Task[]
 
-  @@index([accountId, status, sort], map: "idx_projects_account")
+  @@unique([name], map: "uniq_projects_name")
+  @@index([status, sort], map: "idx_projects_status")
   @@map("projects")
 }
 
 model Task {
   id                   String    @id
-  accountId            String    @default("acct_local") @map("account_id")
   project              Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
   projectId            String?   @map("project_id")
   parent               Task?     @relation("ParentChild", fields: [parentTaskId], references: [id])
@@ -100,7 +79,6 @@ model Task {
   dependenciesFrom TaskDependency[]     @relation("Dependents")
   dependenciesTo   TaskDependency[]     @relation("Dependencies")
 
-  @@index([accountId, archivedAt], map: "idx_tasks_account")
   @@index([projectId], map: "idx_tasks_project")
   @@index([parentTaskId], map: "idx_tasks_parent")
   @@index([status], map: "idx_tasks_status")
@@ -126,20 +104,17 @@ model TaskDependency {
 
 model TaskTemplate {
   id          String   @id
-  accountId   String   @default("acct_local") @map("account_id")
   name        String
   description String?
   preset      String
   sortOrder   Int?     @map("sort_order")
   createdAt   String   @default(dbgenerated("(datetime('now'))")) @map("created_at")
 
-  @@index([accountId], map: "idx_templates_account")
   @@map("task_templates")
 }
 
 model CustomFieldDef {
   id           String   @id
-  accountId    String   @default("acct_local") @map("account_id")
   key          String   @unique
   label        String
   type         String
@@ -234,7 +209,6 @@ model Comment {
 
 model ApiToken {
   id           String    @id
-  accountId    String    @default("acct_local") @map("account_id")
   name         String
   tokenHash    String    @unique @map("token_hash")
   capabilities String?   @default("[]")
@@ -243,7 +217,6 @@ model ApiToken {
   createdAt    String    @default(dbgenerated("(datetime('now'))")) @map("created_at")
   runs         TaskRun[]
 
-  @@index([accountId], map: "idx_tokens_account")
   @@map("api_tokens")
 }
 
@@ -278,7 +251,6 @@ model IdSequence {
 
 model Notification {
   id        String   @id
-  accountId String   @default("acct_local") @map("account_id")
   kind      String
   taskId    String?  @map("task_id")
   message   String
@@ -286,14 +258,13 @@ model Notification {
   createdAt String   @default(dbgenerated("(datetime('now'))")) @map("created_at")
   task      Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
-  @@index([accountId, readAt], map: "idx_notif_account")
+  @@index([readAt], map: "idx_notif_read")
   @@map("notifications")
 }
 
 // 0919：技能管理（迁移 0003_skills）。JSON 列是文本，客户端 parse/stringify。
 model Skill {
   id              String  @id
-  accountId       String  @map("account_id")
   name            String
   type            String
   status          String  @default("DRAFT")
@@ -303,14 +274,14 @@ model Skill {
   content         String  @default("{\"blocks\":[],\"entryBlockId\":null}")
   testCases       String  @default("[]") @map("test_cases")
   mcpDependencies String  @default("[]") @map("mcp_dependencies")
-  // 8.8 技能源：local（本地创作）/ market（市场订阅落地）/ builtin / git / http / directory
+  // 8.8 技能源标记（来源枚举收敛见 v0.0.4 W2，本任务不动）。
   source          String  @default("local") @map("source")
   createdAt       String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
   updatedAt       String  @default(dbgenerated("(datetime('now'))")) @map("updated_at")
   versions        SkillVersion[]
 
-  @@index([accountId, status], map: "idx_skills_account")
-  @@unique([accountId, name], map: "uniq_skills_account_name")
+  @@index([status], map: "idx_skills_status")
+  @@unique([name], map: "uniq_skills_name")
   @@map("skills")
 }
 
@@ -328,112 +299,4 @@ model SkillVersion {
   @@unique([skillId, version])
   @@index([skillId], map: "idx_skill_versions_skill")
   @@map("skill_versions")
-}
-
-// ---------------------------------------------------------------- 市场（0919 九章）
-
-// 注意：市场各表的 account_id / listing_id / skill_id 只声明为标量列（FK 约束在迁移 SQL 里），
-// 不建 Prisma relation，避免反向污染 Account/Skill 模型；关联查询由服务层手写。
-model MarketListing {
-  id                 String  @id
-  slug               String  @unique(map: "uniq_market_listings_slug")
-  name               String
-  description        String  @default("")
-  category           String  @default("")
-  tags               String  @default("[]")
-  type               String
-  source             String  @default("published")
-  // 0919 云端市场：云端来源影子 listing / 本地发布上云后记云端 listing id
-  cloudListingId     String? @map("cloud_listing_id")
-  license            String  @default("")
-  compatibleClients  String  @default("[]") @map("compatible_clients")
-  content            String  @default("{\"blocks\":[],\"entryBlockId\":null}")
-  mcpDependencies    String  @default("[]") @map("mcp_dependencies")
-  currentVersion     String  @default("v0.1.0") @map("current_version")
-  publisherAccountId String? @map("publisher_account_id")
-  status             String  @default("PENDING_REVIEW")
-  reviewNote         String  @default("") @map("review_note")
-  ratingAvg          Float   @default(0) @map("rating_avg")
-  ratingCount        Int     @default(0) @map("rating_count")
-  subscriberCount    Int     @default(0) @map("subscriber_count")
-  viewCount          Int     @default(0) @map("view_count")
-  publishedAt        String? @map("published_at")
-  createdAt          String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
-  updatedAt          String  @default(dbgenerated("(datetime('now'))")) @map("updated_at")
-
-  @@index([status, category], map: "idx_market_listings_status")
-  @@index([publisherAccountId], map: "idx_market_listings_publisher")
-  @@map("market_listings")
-}
-
-model MarketSubscription {
-  accountId       String @map("account_id")
-  listingId       String @map("listing_id")
-  snapshotContent String @default("{\"blocks\":[],\"entryBlockId\":null}") @map("snapshot_content")
-  snapshotVersion String @default("") @map("snapshot_version")
-  status          String @default("SYNCED")
-  skillId         String? @map("skill_id")
-  createdAt       String @default(dbgenerated("(datetime('now'))")) @map("created_at")
-
-  @@unique([accountId, listingId], map: "market_subscriptions_account_id_listing_id_key")
-  @@index([accountId, status], map: "idx_market_subscriptions_account")
-  @@map("market_subscriptions")
-}
-
-model MarketRating {
-  accountId String @map("account_id")
-  listingId String @map("listing_id")
-  score     Int
-  createdAt String @default(dbgenerated("(datetime('now'))")) @map("created_at")
-  updatedAt String @default(dbgenerated("(datetime('now'))")) @map("updated_at")
-
-  @@unique([accountId, listingId], map: "market_ratings_account_id_listing_id_key")
-  @@map("market_ratings")
-}
-
-model MarketComment {
-  id        String @id
-  accountId String @map("account_id")
-  listingId String @map("listing_id")
-  content   String
-  createdAt String @default(dbgenerated("(datetime('now'))")) @map("created_at")
-
-  @@index([listingId], map: "idx_market_comments_listing")
-  @@map("market_comments")
-}
-
-model MarketFavorite {
-  accountId String @map("account_id")
-  listingId String @map("listing_id")
-  createdAt String @default(dbgenerated("(datetime('now'))")) @map("created_at")
-
-  @@unique([accountId, listingId], map: "market_favorites_account_id_listing_id_key")
-  @@map("market_favorites")
-}
-
-model MarketReport {
-  id        String @id
-  accountId String @map("account_id")
-  listingId String @map("listing_id")
-  reason    String
-  status    String @default("OPEN")
-  createdAt String @default(dbgenerated("(datetime('now'))")) @map("created_at")
-
-  @@map("market_reports")
-}
-
-model MarketFeedback {
-  id             String  @id
-  accountId      String  @map("account_id")
-  listingId      String  @map("listing_id")
-  title          String
-  content        String  @default("")
-  status         String  @default("PENDING")
-  authorResponse String  @default("") @map("author_response")
-  createdAt      String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
-  respondedAt    String? @map("responded_at")
-
-  @@index([accountId], map: "idx_market_feedbacks_account")
-  @@index([listingId], map: "idx_market_feedbacks_listing")
-  @@map("market_feedbacks")
 }

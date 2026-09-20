@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
 import { tokenCreateSchema, type TokenCreateInput } from '../contract/schemas';
-import { Auth, AuthScope, type RequestAuth } from '../auth/auth.scope';
+import { AuthScope } from '../auth/auth.scope';
 import { zod } from '../infra/zod.pipe';
 import { TokensService } from './tokens.service';
 
@@ -15,17 +15,17 @@ export class TokensController {
   constructor(private readonly tokens: TokensService) {}
 
   @Get()
-  list(@Auth() auth: RequestAuth) {
-    return this.tokens.list(auth.accountId);
+  list() {
+    return this.tokens.list();
   }
 
   @Post()
-  issue(@Body(zod(tokenCreateSchema)) body: TokenCreateInput, @Auth() auth: RequestAuth) {
-    return this.tokens.issue(auth.accountId, body);
+  issue(@Body(zod(tokenCreateSchema)) body: TokenCreateInput) {
+    return this.tokens.issue(body);
   }
 
   @Delete(':id')
-  revoke(@Param('id') id: string, @Auth() auth: RequestAuth) {
-    return this.tokens.revoke(auth.accountId, id);
+  revoke(@Param('id') id: string) {
+    return this.tokens.revoke(id);
   }
 }

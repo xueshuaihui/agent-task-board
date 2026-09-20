@@ -87,8 +87,8 @@ export class SkillsService {
 
   // ---------------------------------------------------------------- 查询
 
-  async list(query: SkillListQuery, accountId: string): Promise<{ items: SkillDto[]; total: number }> {
-    const where = { accountId };
+  async list(query: SkillListQuery): Promise<{ items: SkillDto[]; total: number }> {
+    const where = {};
     const rows = await this.prisma.skill.findMany({ where, orderBy: { updatedAt: 'desc' } });
     const keyword = query.keyword?.toLowerCase();
     const items = rows
@@ -108,8 +108,8 @@ export class SkillsService {
   }
 
   /** 详情：Skill + 版本摘要 + 绑定任务数（8.2）。 */
-  async detail(id: string, accountId: string): Promise<SkillDto> {
-    const row = await this.require(id, accountId);
+  async detail(id: string): Promise<SkillDto> {
+    const row = await this.require(id);
     const versions = await this.prisma.skillVersion.findMany({
       where: { skillId: id },
       orderBy: [{ createdAt: 'desc' }, { version: 'desc' }],
@@ -123,20 +123,18 @@ export class SkillsService {
     return {
       ...toDto(row),
       versions: summaries,
-      stats: { bound_task_count: await this.boundTaskCount(id, accountId) },
+      stats: { bound_task_count: await this.boundTaskCount(id) },
     };
   }
 
   /** 契约补充：详情抽屉「绑定任务」Tab（skills JSON LIKE 粗筛 + Node 侧精确过滤）。 */
   async boundTasks(
     id: string,
-    accountId: string,
   ): Promise<{ items: { id: string; title: string; status: string }[]; total: number }> {
-    await this.require(id, accountId);
+    await this.require(id);
     const rows = await this.prisma.$queryRawUnsafe<{ id: string; title: string; status: string; skills: string }[]>(
       `SELECT id, title, status, skills FROM tasks
-       WHERE account_id = ? AND skills LIKE ? ORDER BY created_at DESC`,
-      accountId,
+       WHERE skills LIKE ? ORDER BY created_at DESC`,
       `%"${id}"%`,
     );
     const items = rows
@@ -147,14 +145,13 @@ export class SkillsService {
 
   // ---------------------------------------------------------------- 写入
 
-  async create(input: SkillCreateInput, accountId: string): Promise<SkillDto> {
-    // 名称唯一约束在库上（同账号内）；这里先给出人话错误而不是 P2002。
-    const dup = await this.prisma.skill.findFirst({ where: { accountId, name: input.name } });
+  async create(input: SkillCreateInput): Promise<SkillDto> {
+    // 名称唯一约束在库上（uniq_skills_name，W1a 去账号维度后的单列唯一）；这里先给出人话错误而不是 P2002。
+    const dup = await this.prisma.skill.findFirst({ where: { name: input.name } });
     if (dup) throw new ApiException('SKILL_NAME_TAKEN', `技能名「${input.name}」已存在`);
     const skill = await this.prisma.skill.create({
       data: {
         id: `skl_${uuidv7()}`,
-        accountId,
         name: input.name,
         type: input.type,
         status: 'DRAFT',
@@ -182,12 +179,12 @@ export class SkillsService {
   }
 
   /** PATCH：基础字段 + status；content 只写 skills 当前草稿，不动 versions（8.2 口径）。 */
-  async patch(id: string, accountId: string, input: SkillPatchInput): Promise<SkillDto> {
-    const row = await this.require(id, accountId);
+  async patch(id: string, input: SkillPatchInput): Promise<SkillDto> {
+    const row = await this.require(id);
     const data: Record<string, string> = { updatedAt: nowSql() };
     if (input.name !== undefined) {
       if (input.name !== row.name) {
-        const dup = await this.prisma.skill.findFirst({ where: { accountId, name: input.name } });
+        const dup = await this.prisma.skill.findFirst({ where: { name: input.name } });
         if (dup) throw new ApiException('SKILL_NAME_TAKEN', `技能名「${input.name}」已存在`);
       }
       data.name = input.name;
@@ -199,13 +196,13 @@ export class SkillsService {
     // 8.6：测试用例只写当前草稿，与 content 同口径；发布时随版本快照。
     if (input.test_cases !== undefined) data.testCases = JSON.stringify(input.test_cases);
     await this.prisma.skill.update({ where: { id }, data });
-    return this.detail(id, accountId);
+    return this.detail(id);
   }
 
   /** DELETE：有绑定任务时 409，提示先解绑。 */
-  async remove(id: string, accountId: string): Promise<void> {
-    await this.require(id, accountId);
-    const bound = await this.boundTaskCount(id, accountId);
+  async remove(id: string): Promise<void> {
+    await this.require(id);
+    const bound = await this.boundTaskCount(id);
     if (bound > 0) {
       throw new ApiException('SKILL_BOUND', `该技能仍被 ${bound} 个任务绑定，请先解绑`, undefined, {
         bound_task_count: bound,
@@ -217,10 +214,9 @@ export class SkillsService {
   /** 发布（8.4）：semver patch 自增，写 version 记录并更新 current/content/mcp_dependencies。 */
   async createVersion(
     id: string,
-    accountId: string,
     input: SkillVersionCreateInput,
   ): Promise<SkillDto> {
-    const row = await this.require(id, accountId);
+    const row = await this.require(id);
     const version = nextPatchVersion(row.currentVersion);
     const parsed = parseSkill(row);
     const deps = input.mcp_dependencies ?? parsed.mcpDependencies;
@@ -249,12 +245,12 @@ export class SkillsService {
         },
       }),
     ]);
-    return this.detail(id, accountId);
+    return this.detail(id);
   }
 
   /** 8.4 回滚：复制该版本内容/依赖/测试用例为 current，不新增 version 记录。 */
-  async rollback(id: string, accountId: string, version: string): Promise<SkillDto> {
-    await this.require(id, accountId);
+  async rollback(id: string, version: string): Promise<SkillDto> {
+    await this.require(id);
     const target = await this.prisma.skillVersion.findUnique({
       where: { skillId_version: { skillId: id, version } },
     });
@@ -271,12 +267,12 @@ export class SkillsService {
         updatedAt: nowSql(),
       },
     });
-    return this.detail(id, accountId);
+    return this.detail(id);
   }
 
   /** 8.5 测试运行（旧形态）：从 entryBlockId 沿 next 走，human 视为 blocked；script 等不执行。 */
-  async test(id: string, accountId: string, input: string): Promise<SkillTestResult> {
-    const row = await this.require(id, accountId);
+  async test(id: string, input: string): Promise<SkillTestResult> {
+    const row = await this.require(id);
     const parsed = parseSkill(row);
     // 8.6：有测试用例时逐个运行，human 块按 blocked 计（该用例不通过）。
     if (parsed.testCases.length > 0) {
@@ -305,8 +301,8 @@ export class SkillsService {
 
   // ---------------------------------------------------------------- 导出/导入
 
-  async export(id: string, accountId: string, res: Response): Promise<void> {
-    const row = await this.require(id, accountId);
+  async export(id: string, res: Response): Promise<void> {
+    const row = await this.require(id);
     const parsed = parseSkill(row);
     // 文件名只用 ASCII 安全字符，非 ASCII（中文技能名）回退到 skill id。
     const safeName = /^[\w.-]+$/.test(row.name) ? row.name : row.id;
@@ -329,7 +325,6 @@ export class SkillsService {
   /** 导入 .atskill（multipart，字段 file）：解析后建新技能 v0.1.0 DRAFT，重名加后缀。 */
   async import(
     file: { buffer?: Buffer; originalname?: string } | undefined,
-    accountId: string,
   ): Promise<SkillDto> {
     if (!file?.buffer?.length) {
       throw new ApiException('VALIDATION_FAILED', '缺少 file 字段（multipart 单文件）', [
@@ -360,7 +355,7 @@ export class SkillsService {
     if (typeof payload.type !== 'string') {
       throw new ApiException('VALIDATION_FAILED', '技能文件缺少 type 字段');
     }
-    const name = await this.availableName(payload.name.trim(), accountId);
+    const name = await this.availableName(payload.name.trim());
     const deps = (payload.mcp_dependencies ?? payload.mcpDependencies ?? []) as SkillMcpDependency[];
     return this.create(
       {
@@ -373,7 +368,6 @@ export class SkillsService {
         test_cases: Array.isArray(payload.test_cases) ? (payload.test_cases as SkillTestCase[]) : [],
         mcp_dependencies: deps,
       },
-      accountId,
     );
   }
 
@@ -386,7 +380,7 @@ export class SkillsService {
    * markdown.ts 的 markdownToBlocks 完全一致（api 侧镜像见 skill-markdown.ts）。
    * 无 ### 小节时整体作一个提示词块。结果：新技能 v0.1.0 DRAFT，重名加后缀。
    */
-  async importMarkdown(input: SkillImportMarkdownInput, accountId: string): Promise<SkillDto> {
+  async importMarkdown(input: SkillImportMarkdownInput): Promise<SkillDto> {
     const parsed = markdownToBlocks(input.content);
     const fm = parsed.frontmatter;
     const baseName =
@@ -409,7 +403,7 @@ export class SkillsService {
       };
       parsed.content = { blocks: [block as SkillContent['blocks'][number]], entryBlockId: 'block-import-0' };
     }
-    const name = await this.availableName(baseName, accountId);
+    const name = await this.availableName(baseName);
     const tags = [
       ...(fm?.tags ?? []),
       // category 没有对应列，折进标签；.mdc 的 Cursor 元数据其余键随 frontmatter 剥离不导入。
@@ -428,13 +422,12 @@ export class SkillsService {
         test_cases: [],
         mcp_dependencies: (fm?.mcpDependencies ?? []) as SkillMcpDependency[],
       },
-      accountId,
     );
   }
 
   /** SKILL.md 导出：text/markdown 附件（name.md），约定同前端 blocksToMarkdown。 */
-  async exportMarkdown(id: string, accountId: string, res: Response): Promise<void> {
-    const row = await this.require(id, accountId);
+  async exportMarkdown(id: string, res: Response): Promise<void> {
+    const row = await this.require(id);
     const parsed = parseSkill(row);
     const markdown = blocksToMarkdown(parsed.content, {
       name: row.name,
@@ -495,18 +488,18 @@ export class SkillsService {
   // ---------------------------------------------------------------- 任务绑定（10.3）
 
   /**
-   * PATCH /tasks/:id 的 skills 校验：归属当前账号、skill 存在、version 存在（缺省用 current）。
+   * PATCH /tasks/:id 的 skills 校验：skill 存在、version 存在（缺省用 current）。
    * 返回补全 version 后的 JSON 串（存库口径：引用始终带显式版本，下发时不用再猜）。
    */
-  async normalizeTaskBindings(accountId: string, refs: TaskSkillRef[]): Promise<string> {
+  async normalizeTaskBindings(refs: TaskSkillRef[]): Promise<string> {
     const resolved: TaskSkillRef[] = [];
     for (const ref of refs) {
-      const skill = await this.prisma.skill.findFirst({
-        where: { id: ref.skill_id, accountId },
+      const skill = await this.prisma.skill.findUnique({
+        where: { id: ref.skill_id },
         select: { id: true, currentVersion: true, versions: { select: { version: true } } },
       });
       if (!skill) {
-        throw new ApiException('VALIDATION_FAILED', `技能 ${ref.skill_id} 不存在或不属于当前账号`, [
+        throw new ApiException('VALIDATION_FAILED', `技能 ${ref.skill_id} 不存在`, [
           { path: 'skills', code: 'unknown_skill', message: ref.skill_id },
         ]);
       }
@@ -524,13 +517,13 @@ export class SkillsService {
   }
 
   /** Agent 下发（10.3）：把绑定 JSON 解析成带内容/依赖/版本的载荷；失效引用跳过不炸整个任务。 */
-  async resolveForTask(accountId: string, skillsJson: string | null): Promise<TaskSkillPayload[]> {
+  async resolveForTask(skillsJson: string | null): Promise<TaskSkillPayload[]> {
     const refs = parseJson<TaskSkillRef[]>(skillsJson, []);
     if (refs.length === 0) return [];
     const payloads = await Promise.all(
       refs.map(async (ref): Promise<TaskSkillPayload | null> => {
-        const skill = await this.prisma.skill.findFirst({
-          where: { id: ref.skill_id, accountId },
+        const skill = await this.prisma.skill.findUnique({
+          where: { id: ref.skill_id },
           include: { versions: true },
         });
         if (!skill) return null;
@@ -556,24 +549,23 @@ export class SkillsService {
 
   // ---------------------------------------------------------------- 内部
 
-  private async require(id: string, accountId: string): Promise<Skill> {
-    const row = await this.prisma.skill.findFirst({ where: { id, accountId } });
+  private async require(id: string): Promise<Skill> {
+    const row = await this.prisma.skill.findUnique({ where: { id } });
     if (!row) throw new ApiException('NOT_FOUND', '技能不存在');
     return row;
   }
 
-  private async boundTaskCount(id: string, accountId: string): Promise<number> {
+  private async boundTaskCount(id: string): Promise<number> {
     const rows = await this.prisma.$queryRawUnsafe<{ count: number | bigint }[]>(
-      `SELECT COUNT(*) AS count FROM tasks WHERE account_id = ? AND skills LIKE ?`,
-      accountId,
+      `SELECT COUNT(*) AS count FROM tasks WHERE skills LIKE ?`,
       `%"${id}"%`,
     );
     return Number(rows[0]?.count ?? 0);
   }
 
-  private async availableName(name: string, accountId: string): Promise<string> {
+  private async availableName(name: string): Promise<string> {
     const existing = await this.prisma.skill.findMany({
-      where: { accountId, name: { startsWith: name } },
+      where: { name: { startsWith: name } },
       select: { name: true },
     });
     const taken = new Set(existing.map((row) => row.name));

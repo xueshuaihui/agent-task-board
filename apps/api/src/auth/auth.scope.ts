@@ -2,18 +2,17 @@ import { createParamDecorator, type ExecutionContext, SetMetadata } from '@nestj
 
 export type AuthGroup = 'ui' | 'agent' | 'any' | 'public';
 
-/** UI 会话：JWT 解出；ATB_UI_TOKEN 兼容路径映射到内置账号（见 accounts.service）。 */
+/**
+ * v0.0.4 W1a：账号体系移除后鉴权只回答「是不是合法 token」，不再有 accountId/角色语义。
+ * UI 凭证 = 本地会话 Token（`ATB_UI_TOKEN`，Tauri 注入，本地 CSRF 防护）；
+ * Agent 凭证 = `api_tokens` 表签发的 Bearer Token。本地单用户，无数据作用域。
+ */
 export interface UiAuth {
   kind: 'ui';
-  accountId: string;
-  username: string;
-  role: 'ADMIN' | 'MEMBER';
-  mustChangePassword: boolean;
 }
 
 export interface AgentAuth {
   kind: 'agent';
-  accountId: string;
   tokenId: string;
   tokenName: string;
   capabilities: string[];
@@ -25,7 +24,6 @@ export const AUTH_SCOPE_KEY = 'atb:auth-scope';
 
 /**
  * 未标注的接口一律按 `ui` 处理（13 章「跨组拒绝」的默认方向：Agent Token 什么用户接口都调不到）。
- * `public`：登录/初始化这类无凭证可达的端点，全局守卫直接放行。
  */
 export const AuthScope = (scope: AuthGroup) => SetMetadata(AUTH_SCOPE_KEY, scope);
 

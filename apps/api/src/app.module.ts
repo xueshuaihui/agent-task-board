@@ -10,7 +10,6 @@ import { DataModule } from './data/data.module';
 import { FieldDefsModule } from './field-defs/field-defs.module';
 import { InfraModule } from './infra/infra.module';
 import { JobsModule } from './jobs/jobs.module';
-import { MarketModule } from './market/market.module';
 import { McpModule } from './mcp/mcp.module';
 import { NotificationsApiModule } from './notifications-api/notifications-api.module';
 import { ProjectsModule } from './projects/projects.module';
@@ -27,8 +26,6 @@ import { WsModule } from './ws/ws.module';
     AuthModule,
     FieldDefsModule,
     // SkillsModule 先于 AgentModule：AgentQueryService 注入 SkillsService 解析任务绑定（10.3）。
-    // MarketModule：0919 九章服务端市场（内置技能在 onModuleInit 幂等种子）。
-    MarketModule,
     SkillsModule,
     // 字面量子路由（tasks/ready、tasks/claim）必须早于 TasksController 的 tasks/:id 注册，
     // 否则 `GET /tasks/ready` 会被当成 `:id = 'ready'` 抢走并落到 UI 凭证组。

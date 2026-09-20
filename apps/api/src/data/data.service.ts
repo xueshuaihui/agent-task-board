@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { RequestAuth } from '../auth/auth.scope';
-import { BUILTIN_ACCOUNT_ID } from '../auth/accounts.service';
 import { ApiException } from '../contract/errors';
 import type { CustomFieldFilter } from '../contract/schemas';
 import { toIso } from '../contract/time';
@@ -42,18 +41,16 @@ export class DataService {
   ) {}
 
   async export(req: ExportRequest, auth?: RequestAuth): Promise<ExportResult> {
-    // 0919：导出按账号隔离；无凭证调用（仅测试/内部）回落内置账号。
-    const accountId = auth?.accountId ?? BUILTIN_ACCOUNT_ID;
-    const ids = await this.selectTaskIds(req, accountId);
-    const tasks = ids.length ? await this.loadTasks(ids, accountId) : [];
+    const ids = await this.selectTaskIds(req);
+    const tasks = ids.length ? await this.loadTasks(ids) : [];
     const kept = tasks.map((task) => task.id);
 
     const dependencies = await this.loadDependencies(kept);
     const runs = await this.loadRuns(kept);
     const reviews = await this.loadReviews(kept);
     const withArtifacts = await this.loadArtifactFlags(kept);
-    const fieldDefs = await this.loadFieldDefs(accountId);
-    const templates = await this.loadTemplates(accountId);
+    const fieldDefs = await this.loadFieldDefs();
+    const templates = await this.loadTemplates();
 
     const document: ExportDocument = {
       version: EXPORT_FORMAT_VERSION,
@@ -97,8 +94,8 @@ export class DataService {
    * 三种 scope 共用一份筛选实现（20.7）：`filtered` 直接复用列表页的谓词构造，
    * `selected` 也过一遍归档规则，否则「勾选 3 个 + 不含归档」会悄悄导出已归档的那几个。
    */
-  private async selectTaskIds(req: ExportRequest, accountId: string): Promise<string[]> {
-    const where: Prisma.TaskWhereInput = { accountId, ...(req.include_archived ? {} : { archivedAt: null }) };
+  private async selectTaskIds(req: ExportRequest): Promise<string[]> {
+    const where: Prisma.TaskWhereInput = { ...(req.include_archived ? {} : { archivedAt: null }) };
 
     if (req.scope === 'selected') {
       if (!req.ids?.length) {
@@ -123,7 +120,7 @@ export class DataService {
           { id: { contains: filter.keyword } },
         ];
       }
-      const candidates = await this.idsByJsonFilters(filter.tags, filter.custom_fields, accountId);
+      const candidates = await this.idsByJsonFilters(filter.tags, filter.custom_fields);
       if (candidates) {
         where.id = candidates.length ? { in: candidates } : { in: ['__none__'] };
       }
@@ -141,22 +138,21 @@ export class DataService {
   private async idsByJsonFilters(
     tags: string[] | undefined,
     customFields: CustomFieldFilter | undefined,
-    accountId: string,
   ): Promise<string[] | null> {
     const parts = jsonFilterParts(tags, customFields);
     if (parts.length === 0) return null;
     const rows = await this.prisma.$queryRaw<{ id: string }[]>`
       SELECT t.id FROM tasks t
-      WHERE t.account_id = ${accountId} AND ${Prisma.join(parts, ' AND ')}`;
+      WHERE ${Prisma.join(parts, ' AND ')}`;
     return rows.map((row) => row.id);
   }
 
   // ---------------------------------------------------------------- 分块读取
 
-  private async loadTasks(ids: string[], accountId: string): Promise<Omit<ExportedTask, 'dependencies' | 'runs' | 'reviews'>[]> {
+  private async loadTasks(ids: string[]): Promise<Omit<ExportedTask, 'dependencies' | 'runs' | 'reviews'>[]> {
     const rows = await gather(ids, async (part) =>
       this.prisma.task.findMany({
-        where: { id: { in: part }, accountId },
+        where: { id: { in: part } },
         orderBy: { createdAt: 'asc' },
       }),
     );
@@ -264,8 +260,8 @@ export class DataService {
     return new Set(rows.map((row) => row.taskId));
   }
 
-  private async loadFieldDefs(accountId: string): Promise<ExportedFieldDef[]> {
-    const rows = await this.prisma.customFieldDef.findMany({ where: { accountId }, orderBy: { sortOrder: 'asc' } });
+  private async loadFieldDefs(): Promise<ExportedFieldDef[]> {
+    const rows = await this.prisma.customFieldDef.findMany({ orderBy: { sortOrder: 'asc' } });
     return rows.map((row) => ({
       key: row.key,
       label: row.label,
@@ -282,8 +278,8 @@ export class DataService {
     }));
   }
 
-  private async loadTemplates(accountId: string): Promise<ExportedTemplate[]> {
-    const rows = await this.prisma.taskTemplate.findMany({ where: { accountId }, orderBy: { createdAt: 'asc' } });
+  private async loadTemplates(): Promise<ExportedTemplate[]> {
+    const rows = await this.prisma.taskTemplate.findMany({ orderBy: { createdAt: 'asc' } });
     return rows.map((row) => ({
       name: row.name,
       description: row.description,

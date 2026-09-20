@@ -107,7 +107,6 @@ export class TasksService {
   // ---------------------------------------------------------------- 写入
 
   async create(input: TaskCreateInput, auth: RequestAuth): Promise<TaskDetailDto> {
-    const accountId = auth.accountId;
     const types = await this.settings.get('task_types');
     if (!types.includes(input.type)) {
       throw new ApiException('VALIDATION_FAILED', `任务类型「${input.type}」不在词表内`, [
@@ -115,16 +114,15 @@ export class TasksService {
       ]);
     }
     // 6.9.2：必填的拦截点是「拖到待执行」，创建时只校验已提交值的类型与登记情况。
-    const customFields = await this.normalizeCustomFields(input.type, input.custom_fields, false, accountId);
-    const parentId = input.parent_task_id ? await this.assertParent(accountId, input.parent_task_id) : null;
-    if (input.project_id) await this.assertProject(accountId, input.project_id);
+    const customFields = await this.normalizeCustomFields(input.type, input.custom_fields, false);
+    const parentId = input.parent_task_id ? await this.assertParent(input.parent_task_id) : null;
+    if (input.project_id) await this.assertProject(input.project_id);
 
     const id = await this.prisma.$transaction(async (tx) => {
       const taskId = await nextTaskId(tx);
       await tx.task.create({
         data: {
           id: taskId,
-          accountId,
           projectId: input.project_id ?? null,
           parentTaskId: parentId,
           sortOrder: input.sort_order ?? 0,
@@ -157,11 +155,11 @@ export class TasksService {
     });
 
     this.events.emit('task.created', { id });
-    return this.getDetail(id, accountId);
+    return this.getDetail(id);
   }
 
-  async patch(id: string, accountId: string, input: TaskPatchInput): Promise<TaskDetailDto> {
-    const before = await this.requireTask(id, accountId);
+  async patch(id: string, input: TaskPatchInput): Promise<TaskDetailDto> {
+    const before = await this.requireTask(id);
     if (before.status === 'RUNNING') {
       throw new ApiException('TASK_RUNNING', '执行中的任务不可编辑，请先强制停止');
     }
@@ -174,7 +172,7 @@ export class TasksService {
     if (input.due_at !== undefined) data.dueAt = input.due_at ? toDateOnly(input.due_at) : null;
     if (input.project_id !== undefined) {
       if (input.project_id) {
-        await this.assertProject(accountId, input.project_id);
+        await this.assertProject(input.project_id);
         data.project = { connect: { id: input.project_id } };
       } else {
         data.project = { disconnect: true };
@@ -192,7 +190,7 @@ export class TasksService {
             { path: 'parent_task_id', code: 'too_deep', message: '该任务自身是父任务' },
           ]);
         }
-        await this.assertParent(accountId, input.parent_task_id);
+        await this.assertParent(input.parent_task_id);
         data.parent = { connect: { id: input.parent_task_id } };
       }
     }
@@ -203,7 +201,7 @@ export class TasksService {
     }
     if (input.skills !== undefined) {
       // 10.3：逐个校验归属/存在/版本（缺省补 current），存 JSON 引用。
-      data.skills = await this.skillsService.normalizeTaskBindings(accountId, input.skills);
+      data.skills = await this.skillsService.normalizeTaskBindings(input.skills);
     }
 
     const nextType = input.type ?? before.type;
@@ -222,7 +220,7 @@ export class TasksService {
         ...input.custom_fields,
       };
       data.customFields = JSON.stringify(
-        await this.normalizeCustomFields(nextType, merged, false, accountId),
+        await this.normalizeCustomFields(nextType, merged, false),
       );
     }
 
@@ -236,16 +234,15 @@ export class TasksService {
       after: { ...input },
     });
     this.events.emit('task.updated', { id });
-    return this.getDetail(id, accountId);
+    return this.getDetail(id);
   }
 
   async transition(
     id: string,
-    accountId: string,
     to: TaskStatus,
     comment?: string,
   ): Promise<TaskCardDto> {
-    const task = await this.requireTask(id, accountId);
+    const task = await this.requireTask(id);
     const from = task.status as TaskStatus;
     const verdict = classifyTransition(from, to);
 
@@ -262,18 +259,18 @@ export class TasksService {
       );
     }
 
-    if (to === 'READY') await this.assertRequiredFields(task, accountId);
+    if (to === 'READY') await this.assertRequiredFields(task);
 
     await this.setStatus(id, from, to, comment ?? defaultStatusCopy(from, to));
-    const dto = await this.getCard(id, accountId);
+    const dto = await this.getCard(id);
     this.events.emit('task.moved', { id, from, to });
     this.events.emit('task.updated', { id });
     return dto;
   }
 
   /** 4.3.1 规则 2：强制停止 = 置 FAILED + 吊销租约，Agent 后续回写一律 410。 */
-  async stop(id: string, accountId: string, reason: string | undefined): Promise<TaskCardDto> {
-    const task = await this.requireTask(id, accountId);
+  async stop(id: string, reason: string | undefined): Promise<TaskCardDto> {
+    const task = await this.requireTask(id);
     if (task.status !== 'RUNNING') {
       throw new ApiException('TASK_NOT_RUNNING', '任务不在执行中，无需停止');
     }
@@ -324,11 +321,11 @@ export class TasksService {
     });
     this.events.emit('task.moved', { id, from: 'RUNNING', to: 'FAILED' });
     this.events.emit('task.updated', { id });
-    return this.getCard(id, accountId);
+    return this.getCard(id);
   }
 
-  async submitReview(id: string, accountId: string, input: ReviewInput): Promise<TaskDetailDto> {
-    const task = await this.requireTask(id, accountId);
+  async submitReview(id: string, input: ReviewInput): Promise<TaskDetailDto> {
+    const task = await this.requireTask(id);
     if (task.status !== 'REVIEW') {
       throw new ApiException('ILLEGAL_TRANSITION', '只有待审核的任务可以提交审核结论');
     }
@@ -411,7 +408,7 @@ export class TasksService {
     }
     this.events.emit('task.moved', { id, from: 'REVIEW', to });
     this.events.emit('task.updated', { id });
-    return this.getDetail(id, accountId);
+    return this.getDetail(id);
   }
 
   async addComment(
@@ -420,7 +417,7 @@ export class TasksService {
     runId: string | undefined,
     auth: RequestAuth,
   ): Promise<{ id: string }> {
-    await this.requireTask(id, auth.accountId);
+    await this.requireTask(id);
     const commentId = newId();
     await this.prisma.comment.create({
       data: {
@@ -438,8 +435,8 @@ export class TasksService {
     return { id: commentId };
   }
 
-  async setPinned(id: string, accountId: string, pinned: boolean): Promise<TaskCardDto> {
-    const before = await this.requireTask(id, accountId);
+  async setPinned(id: string, pinned: boolean): Promise<TaskCardDto> {
+    const before = await this.requireTask(id);
     await this.prisma.task.update({
       where: { id },
       data: { pinned: pinned ? 1 : 0, updatedAt: nowSql() },
@@ -453,12 +450,12 @@ export class TasksService {
       after: { pinned },
     });
     this.events.emit('task.updated', { id });
-    return this.getCard(id, accountId);
+    return this.getCard(id);
   }
 
   /** 4.3.1 规则 3 + 6.13：归档只允许 DONE，且不能仍是未完成任务的 blocks 前置。 */
-  async archive(id: string, accountId: string): Promise<{ id: string; archived: boolean }> {
-    const task = await this.requireTask(id, accountId);
+  async archive(id: string): Promise<{ id: string; archived: boolean }> {
+    const task = await this.requireTask(id);
     if (task.status !== 'DONE') {
       throw new ApiException('ILLEGAL_TRANSITION', '只有已完成的任务可以归档');
     }
@@ -486,8 +483,8 @@ export class TasksService {
     return { id, archived: true };
   }
 
-  async restore(id: string, accountId: string): Promise<TaskCardDto> {
-    await this.requireTask(id, accountId);
+  async restore(id: string): Promise<TaskCardDto> {
+    await this.requireTask(id);
     await this.prisma.task.update({
       where: { id },
       data: { archivedAt: null, updatedAt: nowSql() },
@@ -500,16 +497,16 @@ export class TasksService {
       after: { archived_at: null },
     });
     this.events.emit('task.updated', { id });
-    return this.getCard(id, accountId);
+    return this.getCard(id);
   }
 
   /** 4.3.1 规则 4：物理删除 + 级联产物目录；RUNNING 必须先强制停止。 */
-  async remove(id: string, accountId: string): Promise<{
+  async remove(id: string): Promise<{
     id: string;
     deleted_runs: number;
     unblocked_ids: string[];
   }> {
-    const task = await this.requireTask(id, accountId);
+    const task = await this.requireTask(id);
     if (task.status === 'RUNNING') {
       throw new ApiException('TASK_RUNNING', '执行中的任务不可删除，请先强制停止');
     }
@@ -558,11 +555,10 @@ export class TasksService {
 
   async addDependency(
     id: string,
-    accountId: string,
     dependsOn: string,
     type: 'blocks' | 'relates',
   ): Promise<TaskDetailDto> {
-    await this.requireTask(id, accountId);
+    await this.requireTask(id);
     if (id === dependsOn) {
       throw new ApiException('DEPENDENCY_CYCLE', '任务不能依赖自身');
     }
@@ -580,11 +576,11 @@ export class TasksService {
       );
     });
     this.events.emit('task.updated', { id });
-    return this.getDetail(id, accountId);
+    return this.getDetail(id);
   }
 
-  async removeDependency(id: string, accountId: string, depId: string): Promise<TaskDetailDto> {
-    await this.requireTask(id, accountId);
+  async removeDependency(id: string, depId: string): Promise<TaskDetailDto> {
+    await this.requireTask(id);
     const dep = await this.prisma.taskDependency.findFirst({ where: { id: depId, taskId: id } });
     if (!dep) throw new ApiException('NOT_FOUND', '依赖关系不存在');
     await this.prisma.$transaction(async (tx) => {
@@ -601,7 +597,7 @@ export class TasksService {
       );
     });
     this.events.emit('task.updated', { id });
-    return this.getDetail(id, accountId);
+    return this.getDetail(id);
   }
 
   /**
@@ -673,17 +669,17 @@ export class TasksService {
 
   // ---------------------------------------------------------------- 批量
 
-  async batchTransition(ids: string[], accountId: string, to: TaskStatus) {
-    return this.batch(ids, (id) => this.transition(id, accountId, to).then(() => undefined));
+  async batchTransition(ids: string[], to: TaskStatus) {
+    return this.batch(ids, (id) => this.transition(id, to).then(() => undefined));
   }
 
-  async batchArchive(ids: string[], accountId: string) {
-    return this.batch(ids, (id) => this.archive(id, accountId).then(() => undefined));
+  async batchArchive(ids: string[]) {
+    return this.batch(ids, (id) => this.archive(id).then(() => undefined));
   }
 
-  async batchTags(ids: string[], accountId: string, add: string[], remove: string[]) {
+  async batchTags(ids: string[], add: string[], remove: string[]) {
     return this.batch(ids, async (id) => {
-      const task = await this.requireTask(id, accountId);
+      const task = await this.requireTask(id);
       const current = new Set(parseJsonArray(task.tags));
       add.forEach((tag) => current.add(tag));
       remove.forEach((tag) => current.delete(tag));
@@ -720,13 +716,13 @@ export class TasksService {
 
   // ---------------------------------------------------------------- 读取
 
-  async getDetail(id: string, accountId: string): Promise<TaskDetailDto> {
+  async getDetail(id: string): Promise<TaskDetailDto> {
     const row = await this.prisma.$queryRaw<TaskRow[]>`
       SELECT ${Prisma.raw(TASK_ROW_COLUMNS)}
       FROM tasks t LEFT JOIN task_runs r ON r.id = t.current_run_id
-      WHERE t.id = ${id} AND t.account_id = ${accountId}`;
+      WHERE t.id = ${id}`;
     if (row.length === 0) throw new ApiException('NOT_FOUND', '任务不存在');
-    const card = await this.decorate([row[0]!], accountId);
+    const card = await this.decorate([row[0]!]);
     const deps = await this.prisma.$queryRaw<
       { dir: string; dep_id: string; id: string; title: string; status: string; type: string }[]
     >`
@@ -739,7 +735,7 @@ export class TasksService {
     const source = row[0]!;
     return {
       ...card[0],
-      ...(await this.familyFields(source, accountId)),
+      ...(await this.familyFields(source)),
       description: source.description,
       required_capabilities: parseJsonArray(source.required_capabilities),
       current_run_id: source.current_run_id,
@@ -772,7 +768,7 @@ export class TasksService {
     };
   }
 
-  async board(query: BoardQuery, accountId: string): Promise<{
+  async board(query: BoardQuery): Promise<{
     generated_at: string;
     columns: { status: TaskStatus; label: string; count: number; has_more: boolean; tasks: TaskCardDto[] }[];
     unread_notifications: number;
@@ -781,11 +777,9 @@ export class TasksService {
     const scope = viewScope(query.view);
     const filters = await this.buildFilters(query);
 
-    const accountScope = Prisma.sql`t.account_id = ${accountId}`;
     const counts = await this.prisma.$queryRaw<{ status: string; count: number }[]>`
       SELECT t.status, COUNT(*) AS count FROM tasks t
       WHERE t.archived_at IS NULL
-        AND ${accountScope}
         AND ${scope.statusIn}
         ${scope.blockedPredicate}
         ${filters.predicate}
@@ -802,7 +796,6 @@ export class TasksService {
         SELECT ${Prisma.raw(TASK_ROW_COLUMNS)}
         FROM tasks t LEFT JOIN task_runs r ON r.id = t.current_run_id
         WHERE t.archived_at IS NULL AND t.status = ${status}
-          AND ${accountScope}
           ${scope.blockedPredicate}
           ${filters.predicate}
         ORDER BY t.pinned DESC, t.priority ASC, t.created_at ASC
@@ -813,21 +806,19 @@ export class TasksService {
         label: STATUS_LABEL[status],
         count,
         has_more: count > limit,
-        tasks: await this.decorate(rows, accountId),
+        tasks: await this.decorate(rows),
       });
     }
 
     return {
       generated_at: new Date().toISOString(),
       columns,
-      unread_notifications: await this.prisma.notification.count({
-        where: { readAt: null, accountId },
-      }),
+      unread_notifications: await this.prisma.notification.count({ where: { readAt: null } }),
     };
   }
 
-  async list(query: ListQuery, accountId: string): Promise<ListResult> {
-    const where: Prisma.TaskWhereInput = { accountId };
+  async list(query: ListQuery): Promise<ListResult> {
+    const where: Prisma.TaskWhereInput = {};
     if (query.archived === 'false') where.archivedAt = null;
     if (query.archived === 'true') where.archivedAt = { not: null };
     if (query.project_id !== undefined) {
@@ -845,7 +836,7 @@ export class TasksService {
         { id: { contains: query.keyword } },
       ];
     }
-    const ids = await this.idsByJsonFilters(query.tags, query.custom_fields, accountId);
+    const ids = await this.idsByJsonFilters(query.tags, query.custom_fields);
     if (ids) {
       where.id = ids.length ? { in: ids } : { in: ['__none__'] };
     }
@@ -864,10 +855,10 @@ export class TasksService {
     const withExtras = await this.prisma.$queryRaw<TaskRow[]>`
       SELECT ${Prisma.raw(TASK_ROW_COLUMNS)}
       FROM tasks t LEFT JOIN task_runs r ON r.id = t.current_run_id
-      WHERE t.account_id = ${accountId} AND t.id IN (${Prisma.join(rows.map((row) => row.id))})`;
+      WHERE t.id IN (${Prisma.join(rows.map((row) => row.id))})`;
     const order = new Map(rows.map((row, index) => [row.id, index]));
     withExtras.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
-    const cards = await this.decorate(withExtras, accountId);
+    const cards = await this.decorate(withExtras);
     return {
       items: cards.map((card, index) => ({
         ...card,
@@ -885,28 +876,27 @@ export class TasksService {
   private async idsByJsonFilters(
     tags: string[] | undefined,
     customFields: CustomFieldFilter | undefined,
-    accountId: string,
   ): Promise<string[] | null> {
     const parts = jsonFilterParts(tags, customFields);
     if (parts.length === 0) return null;
     const rows = await this.prisma.$queryRaw<{ id: string }[]>`
       SELECT t.id FROM tasks t
-      WHERE t.account_id = ${accountId} AND ${Prisma.join(parts, ' AND ')}`;
+      WHERE ${Prisma.join(parts, ' AND ')}`;
     return rows.map((row) => row.id);
   }
 
-  async tags(accountId: string): Promise<string[]> {
+  async tags(): Promise<string[]> {
     const rows = await this.prisma.$queryRaw<{ tags: string | null }[]>`
       SELECT tags FROM tasks
-      WHERE account_id = ${accountId} AND tags IS NOT NULL AND tags != '[]'`;
+      WHERE tags IS NOT NULL AND tags != '[]'`;
     const set = new Set<string>();
     for (const row of rows) parseJsonArray(row.tags).forEach((tag) => set.add(tag));
     return [...set].sort((a, b) => a.localeCompare(b, 'zh-CN'));
   }
 
   /** 详情抽屉各 Tab 的读取端点（13 章「读取模型」）。 */
-  async runs(id: string, accountId: string) {
-    await this.requireTask(id, accountId);
+  async runs(id: string) {
+    await this.requireTask(id);
     const runs = await this.prisma.taskRun.findMany({
       where: { taskId: id },
       orderBy: { startedAt: 'desc' },
@@ -979,8 +969,8 @@ export class TasksService {
     };
   }
 
-  async runLogs(runId: string, accountId: string, page: number, pageSize: number) {
-    await this.requireRunTask(runId, accountId);
+  async runLogs(runId: string, page: number, pageSize: number) {
+    await this.requireRunTask(runId);
     const where = { runId, type: 'log' as const };
     const total = await this.prisma.comment.count({ where });
     const rows = await this.prisma.comment.findMany({
@@ -1002,8 +992,8 @@ export class TasksService {
     };
   }
 
-  async taskComments(id: string, accountId: string, types: string[], page: number, pageSize: number) {
-    await this.requireTask(id, accountId);
+  async taskComments(id: string, types: string[], page: number, pageSize: number) {
+    await this.requireTask(id);
     const total = await this.prisma.comment.count({
       where: { taskId: id, type: { in: types } },
     });
@@ -1029,8 +1019,8 @@ export class TasksService {
     };
   }
 
-  async taskReviews(id: string, accountId: string) {
-    await this.requireTask(id, accountId);
+  async taskReviews(id: string) {
+    await this.requireTask(id);
     const rows = await this.prisma.review.findMany({
       where: { taskId: id },
       orderBy: { createdAt: 'desc' },
@@ -1050,8 +1040,8 @@ export class TasksService {
     };
   }
 
-  async dependencies(id: string, accountId: string) {
-    const detail = await this.getDetail(id, accountId);
+  async dependencies(id: string) {
+    const detail = await this.getDetail(id);
     return { depends_on: detail.depends_on, blocks: detail.blocks };
   }
 
@@ -1063,8 +1053,8 @@ export class TasksService {
    * 字段一旦停用，旧值就变成「字段定义不存在」，任务将永久卡在流转不出去的状态。
    * 这里只看存在性——`false` 是布尔字段的有效值，空串与 null/undefined 才算未填。
    */
-  private async assertRequiredFields(task: Task, accountId: string): Promise<void> {
-    const defs = await this.loadFieldDefs(accountId);
+  private async assertRequiredFields(task: Task): Promise<void> {
+    const defs = await this.loadFieldDefs();
     const stored = parseJsonObject(task.customFields);
     const missing = [...defs.values()]
       .filter((def) => def.required && appliesToType(def, task.type))
@@ -1086,22 +1076,22 @@ export class TasksService {
     }
   }
 
-  private async requireTask(id: string, accountId: string): Promise<Task> {
-    const task = await this.prisma.task.findFirst({ where: { id, accountId } });
+  private async requireTask(id: string): Promise<Task> {
+    const task = await this.prisma.task.findUnique({ where: { id } });
     if (!task) throw new ApiException('NOT_FOUND', '任务不存在');
     return task;
   }
 
-  /** run → task → account 的归属链校验（日志读取端点用，run 本身不带账号列）。 */
-  private async requireRunTask(runId: string, accountId: string): Promise<void> {
+  /** run → task 归属链校验（日志读取端点用，run 本身不带任务列）。 */
+  private async requireRunTask(runId: string): Promise<void> {
     const run = await this.prisma.taskRun.findUnique({ where: { id: runId } });
     if (!run) throw new ApiException('NOT_FOUND', '执行记录不存在');
-    await this.requireTask(run.taskId, accountId);
+    await this.requireTask(run.taskId);
   }
 
   /** 0919：父必须是「需求」且自身不是子任务（嵌套最多 2 层）。 */
-  private async assertParent(accountId: string, parentId: string): Promise<string> {
-    const parent = await this.prisma.task.findFirst({ where: { id: parentId, accountId } });
+  private async assertParent(parentId: string): Promise<string> {
+    const parent = await this.prisma.task.findUnique({ where: { id: parentId } });
     if (!parent) throw new ApiException('NOT_FOUND', `父任务 ${parentId} 不存在`);
     if (parent.parentTaskId) {
       throw new ApiException('VALIDATION_FAILED', '任务层级最多两层：子任务下不能再挂子任务', [
@@ -1116,8 +1106,8 @@ export class TasksService {
     return parent.id;
   }
 
-  private async assertProject(accountId: string, projectId: string): Promise<void> {
-    const project = await this.prisma.project.findFirst({ where: { id: projectId, accountId } });
+  private async assertProject(projectId: string): Promise<void> {
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
     if (!project) throw new ApiException('NOT_FOUND', `项目 ${projectId} 不存在`);
   }
 
@@ -1127,10 +1117,9 @@ export class TasksService {
    */
   private async familyFields(
     source: { id: string; parent_task_id?: string | null },
-    accountId: string,
   ): Promise<Partial<TaskDetailDto>> {
     const children = await this.prisma.task.findMany({
-      where: { parentTaskId: source.id, accountId },
+      where: { parentTaskId: source.id },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
       select: { id: true, title: true, type: true, status: true, priority: true, sortOrder: true },
     });
@@ -1140,7 +1129,7 @@ export class TasksService {
         SELECT p.id, p.title,
           (SELECT COUNT(*) FROM tasks c WHERE c.parent_task_id = p.id) AS total,
           (SELECT COUNT(*) FROM tasks c WHERE c.parent_task_id = p.id AND c.status = 'DONE') AS done
-        FROM tasks p WHERE p.id = ${source.parent_task_id} AND p.account_id = ${accountId}`;
+        FROM tasks p WHERE p.id = ${source.parent_task_id}`;
       const row = rows[0];
       if (row) parent = { id: row.id, title: row.title, done: Number(row.done), total: Number(row.total) };
     }
@@ -1268,9 +1257,8 @@ export class TasksService {
     reportUnknownEnumValue(table, field, value, this.logger);
   }
 
-  private async loadFieldDefs(accountId: string): Promise<Map<string, FieldDefLike & { showOnCard: number }>> {
-    // 字段定义按账号隔离，校验只用本账号的定义。
-    const defs = await this.prisma.customFieldDef.findMany({ where: { enabled: 1, accountId } });
+  private async loadFieldDefs(): Promise<Map<string, FieldDefLike & { showOnCard: number }>> {
+    const defs = await this.prisma.customFieldDef.findMany({ where: { enabled: 1 } });
     return new Map(
       defs.map((def) => [
         def.key,
@@ -1295,9 +1283,8 @@ export class TasksService {
     taskType: string,
     values: Record<string, unknown>,
     full: boolean,
-    accountId: string,
   ): Promise<Record<string, unknown>> {
-    const defs = await this.loadFieldDefs(accountId);
+    const defs = await this.loadFieldDefs();
     const issues: { key: string; message: string }[] = [];
     const result: Record<string, unknown> = {};
 
@@ -1339,16 +1326,16 @@ export class TasksService {
     return result;
   }
 
-  private async getCard(id: string, accountId: string): Promise<TaskCardDto> {
+  private async getCard(id: string): Promise<TaskCardDto> {
     const rows = await this.prisma.$queryRaw<TaskRow[]>`
       SELECT ${Prisma.raw(TASK_ROW_COLUMNS)}
       FROM tasks t LEFT JOIN task_runs r ON r.id = t.current_run_id
-      WHERE t.id = ${id} AND t.account_id = ${accountId}`;
-    return (await this.decorate(rows, accountId))[0];
+      WHERE t.id = ${id}`;
+    return (await this.decorate(rows))[0];
   }
 
   /** 给一批任务行补上阻塞明细、产物图标、卡片可见的自定义字段与父任务摘要（20.7：卡片不为图标另发请求）。 */
-  private async decorate(rows: TaskRow[], accountId: string): Promise<TaskCardDto[]> {
+  private async decorate(rows: TaskRow[]): Promise<TaskCardDto[]> {
     if (rows.length === 0) return [];
     const ids = rows.map((row) => row.id);
     const parents = await this.parentSummaries(rows);
@@ -1363,7 +1350,7 @@ export class TasksService {
                ROW_NUMBER() OVER (PARTITION BY task_id ORDER BY created_at DESC, id) AS rn
         FROM artifacts WHERE task_id IN (${Prisma.join(ids)})
       ) WHERE rn <= 5`;
-    const defs = await this.loadFieldDefs(accountId);
+    const defs = await this.loadFieldDefs();
     const cardDefs = [...defs.values()].filter((def) => def.showOnCard === 1);
 
     return rows.map((row) => {

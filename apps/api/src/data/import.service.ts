@@ -10,7 +10,6 @@ import {
 import { toDateOnly, nowSql, toSqlTime } from '../contract/time';
 import { newId } from '../contract/ids';
 import type { RequestAuth } from '../auth/auth.scope';
-import { BUILTIN_ACCOUNT_ID } from '../auth/accounts.service';
 import type { FieldType } from '../contract/enums';
 import { parseJsonArray } from '../tasks/task.dto';
 import { AppLogger } from '../infra/logger';
@@ -166,9 +165,7 @@ export class ImportService {
         { path: 'file', code: 'too_large', message: '请缩小导出范围后重试' },
       ]);
     }
-    // 0919：导入按账号隔离——冲突判定只看本账号的既有数据，新建行落到导入者账号下。
-    const accountId = auth?.accountId ?? BUILTIN_ACCOUNT_ID;
-    const plan = await this.plan(decode(file.buffer), req, accountId);
+    const plan = await this.plan(decode(file.buffer), req);
     if (req.dry_run) return summarize(plan, req, null);
 
     if (plan.conflicts.length && !req.strategy) {
@@ -186,7 +183,7 @@ export class ImportService {
     const backup = hasWork ? await this.backups.create('导入前自动备份') : null;
 
     await this.bumpSequences(plan);
-    const written = await this.apply(plan, accountId);
+    const written = await this.apply(plan);
 
     const result = summarize(plan, req, backup ? { name: backup.name, path: backup.path } : null);
     result.runs.new = written.runs;
@@ -236,7 +233,7 @@ export class ImportService {
 
   // ---------------------------------------------------------------- 规划（只读）
 
-  private async plan(payload: Payload, req: ImportRequest, accountId: string): Promise<Plan> {
+  private async plan(payload: Payload, req: ImportRequest): Promise<Plan> {
     const plan: Plan = {
       tasks: [],
       fieldDefs: [],
@@ -271,14 +268,14 @@ export class ImportService {
     plan.runCursor = sequences.run;
 
     const types = await this.settings.get('task_types');
-    const defsByKey = await this.planFieldDefs(defs, req.strategy, plan, accountId);
-    await this.planTemplates(templates, req.strategy, plan, accountId);
+    const defsByKey = await this.planFieldDefs(defs, req.strategy, plan);
+    await this.planTemplates(templates, req.strategy, plan);
 
     // 依赖边的目标也要查：指向「包里没声明、本地已存在」的前置才是 6.12.2 说的真实存在号位，
     // 只按包内声明的 id 查会让这条边在规划期就被当成缺失目标丢掉。
     const lookups = new Set<string>(tasks.map((task) => task.id).filter((id): id is string => !!id));
     for (const task of tasks) for (const edge of task.dependencies) lookups.add(edge.depends_on);
-    const existingTasks = await this.existingTasks([...lookups], accountId);
+    const existingTasks = await this.existingTasks([...lookups]);
     const existingRuns = await this.existingRuns(
       tasks.flatMap((task) => task.runs.map((run) => run.id).filter((id): id is string => !!id)),
     );
@@ -380,9 +377,8 @@ export class ImportService {
     defs: ImportedFieldDef[],
     strategy: ImportStrategy | undefined,
     plan: Plan,
-    accountId: string,
   ): Promise<Map<string, FieldDefLike & { enabled: boolean }>> {
-    const rows = await this.prisma.customFieldDef.findMany({ where: { accountId } });
+    const rows = await this.prisma.customFieldDef.findMany();
     const known = new Map(rows.map((row) => [row.key, defFromRow(row)]));
     for (const def of defs) {
       const exists = known.has(def.key);
@@ -411,10 +407,9 @@ export class ImportService {
     templates: ImportedTemplate[],
     strategy: ImportStrategy | undefined,
     plan: Plan,
-    accountId: string,
   ): Promise<void> {
     const names = new Set(
-      (await this.prisma.taskTemplate.findMany({ where: { accountId }, select: { name: true } })).map((row) => row.name),
+      (await this.prisma.taskTemplate.findMany({ select: { name: true } })).map((row) => row.name),
     );
     for (const tpl of templates) {
       const exists = names.has(tpl.name);
@@ -514,16 +509,13 @@ export class ImportService {
     return { task: map.get('task') ?? 1000, run: map.get('run') ?? 2000 };
   }
 
-  private async existingTasks(
-    ids: string[],
-    accountId: string,
-  ): Promise<Map<string, { id: string; status: string }>> {
+  private async existingTasks(ids: string[]): Promise<Map<string, { id: string; status: string }>> {
     const rows: { id: string; status: string }[] = [];
     // 一次 `IN` 展开成同样多的绑定参数，包大了会撞 SQLite 的变量上限，所以分块取
     for (let index = 0; index < ids.length; index += TASK_IN_CHUNK) {
       rows.push(
         ...(await this.prisma.task.findMany({
-          where: { id: { in: ids.slice(index, index + TASK_IN_CHUNK) }, accountId },
+          where: { id: { in: ids.slice(index, index + TASK_IN_CHUNK) } },
           select: { id: true, status: true },
         })),
       );
@@ -561,10 +553,7 @@ export class ImportService {
     }
   }
 
-  private async apply(
-    plan: Plan,
-    accountId: string,
-  ): Promise<{ runs: number; reviews: number; edges: number; failed: ImportFailure[] }> {
+  private async apply(plan: Plan): Promise<{ runs: number; reviews: number; edges: number; failed: ImportFailure[] }> {
     const failed: ImportFailure[] = [];
     let runs = 0;
     let reviews = 0;
@@ -573,7 +562,7 @@ export class ImportService {
     for (const item of plan.fieldDefs) {
       if (item.action === 'skip') continue;
       try {
-        await writeFieldDef(this.prisma, item, accountId);
+        await writeFieldDef(this.prisma, item);
       } catch (error) {
         failed.push({ kind: 'field_def', id: item.def.key, code: 'INTERNAL', detail: message(error) });
       }
@@ -581,7 +570,7 @@ export class ImportService {
     for (const item of plan.templates) {
       if (item.action === 'skip') continue;
       try {
-        await writeTemplate(this.prisma, item, accountId);
+        await writeTemplate(this.prisma, item);
       } catch (error) {
         failed.push({ kind: 'template', id: item.tpl.name, code: 'INTERNAL', detail: message(error) });
       }
@@ -592,7 +581,7 @@ export class ImportService {
     for (const item of plan.tasks) {
       if (item.action === 'skip') continue;
       try {
-        const counts = await this.writeTask(item, accountId);
+        const counts = await this.writeTask(item);
         written.add(item.finalId);
         runs += counts.runs;
         reviews += counts.reviews;
@@ -623,7 +612,7 @@ export class ImportService {
   }
 
   /** 任务 + 它的 Run + 它的审核记录是一个整体；一条失败不牵连同包其他任务。 */
-  private async writeTask(item: TaskPlan, accountId: string): Promise<{ runs: number; reviews: number }> {
+  private async writeTask(item: TaskPlan): Promise<{ runs: number; reviews: number }> {
     return this.prisma.$transaction(async (tx) => {
       const task = item.task;
       const shared = {
@@ -661,7 +650,6 @@ export class ImportService {
           data: {
             ...shared,
             id,
-            accountId,
             createdAt: task.created_at ? toSqlTime(task.created_at) : nowSql(),
             runCount: 0,
           },
@@ -922,7 +910,6 @@ function parseOptions(raw: string | null): FieldOptions {
 async function writeFieldDef(
   prisma: PrismaService,
   item: { action: Action; def: ImportedFieldDef },
-  accountId: string,
 ): Promise<void> {
   const def = item.def;
   const data = {
@@ -943,13 +930,12 @@ async function writeFieldDef(
     return;
   }
   // 包里的定义 id 是另一台机器的 UUID，沿用会撞本地主键；键名才是跨机身份。
-  await prisma.customFieldDef.create({ data: { ...data, id: newId(), accountId, createdAt: nowSql() } });
+  await prisma.customFieldDef.create({ data: { ...data, id: newId(), createdAt: nowSql() } });
 }
 
 async function writeTemplate(
   prisma: PrismaService,
   item: { action: Action; tpl: ImportedTemplate },
-  accountId: string,
 ): Promise<void> {
   const data = {
     name: item.tpl.name,
@@ -959,7 +945,7 @@ async function writeTemplate(
   };
   if (item.action === 'update') {
     const existing = await prisma.taskTemplate.findFirst({
-      where: { name: item.tpl.name, accountId },
+      where: { name: item.tpl.name },
       select: { id: true },
     });
     if (existing) {
@@ -967,7 +953,7 @@ async function writeTemplate(
       return;
     }
   }
-  await prisma.taskTemplate.create({ data: { ...data, id: newId(), accountId, createdAt: nowSql() } });
+  await prisma.taskTemplate.create({ data: { ...data, id: newId(), createdAt: nowSql() } });
 }
 
 function numericSuffix(id: string, prefix: 'T-' | 'R-'): number | null {

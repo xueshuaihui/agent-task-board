@@ -49,14 +49,14 @@ export class AgentQueryService {
       task,
       await this.deps(taskId),
       toReviewFeedback(await this.reviews(taskId, 5)),
-      // 10.3：技能随任务下发（按任务归属账号解析，绑定引用补全为带内容的载荷）。
-      await this.skillsService.resolveForTask(task.accountId, task.skills),
+      // 10.3：技能随任务下发（绑定引用补全为带内容的载荷）。
+      await this.skillsService.resolveForTask(task.skills),
     );
   }
 
   /** `list_ready_tasks` 的精简卡片：够 Agent 决定领哪个，不带描述与产物。 */
-  async summary(taskId: string, accountId: string) {
-    const task = await this.prisma.task.findFirst({ where: { id: taskId, accountId } });
+  async summary(taskId: string) {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
     if (!task) throw new ApiException('TASK_GONE', '任务已删除');
     return {
       id: task.id,
@@ -70,7 +70,7 @@ export class AgentQueryService {
       due_at: task.dueAt,
       required_capabilities: parseJsonArray(task.requiredCapabilities),
       // 10.3：ready 列表同样带技能载荷（Agent 决定领不领时就要看能力/依赖声明）。
-      skills: await this.skillsService.resolveForTask(accountId, task.skills),
+      skills: await this.skillsService.resolveForTask(task.skills),
       created_at: toIso(task.createdAt),
     };
   }
