@@ -62,12 +62,93 @@ export const DEFAULT_GROUPING_PREFS: GroupingPrefs = {
 export const GROUPING_PREFS_KEY = 'atb.board.grouping';
 export const GROUPING_PREFS_SERVER_KEY = 'board.grouping';
 
+/** v0.0.4 W1 前（Project→Group 改名前）的本地旧形状：只列需要改写的键。 */
+interface LegacyGroupingPrefs {
+  projectIds?: unknown;
+  primary?: unknown;
+  secondary?: unknown;
+}
+
+/**
+ * W1-D2：localStorage 旧分组键的一次性改写。
+ * 服务端 `board.grouping` 的值已由 0008 迁移就地改名，但浏览器本地这份没人管——
+ * 水合失败（离线/未登录/404）时它会成为 store 初值，`primary:"project"` 不在
+ * GROUP_DIMENSIONS 词表内、`projectIds` 又喂不进 groupIds，泳道会静默错乱。
+ * 改写成新口径是安全的：0008 整表重建时原样搬迁了 id（`SELECT id ... FROM projects`），
+ * 旧 `projectIds` 里的值就是今天合法的分组 id，逐键换名即可，无需作废丢弃。
+ * 认不出的形状（连旧键也没有的半成品 JSON）返回 null，由调用方回默认值。
+ */
+function rewriteLegacyGroupingPrefs(parsed: Record<string, unknown>): GroupingPrefs | null {
+  const legacy = parsed as LegacyGroupingPrefs;
+  const hasLegacyShape =
+    Array.isArray(legacy.projectIds) || legacy.primary === 'project' || legacy.secondary === 'project';
+  if (!hasLegacyShape) return null;
+
+  const next: Record<string, unknown> = { ...parsed };
+  if (next.projectIds === undefined && Array.isArray(legacy.projectIds)) {
+    // 新键已存在（部分水合过）就不覆盖；否则旧 id 列表原样转正。
+    next.groupIds = legacy.projectIds;
+  }
+  delete next.projectIds;
+  if (next.primary === 'project') next.primary = 'group';
+  if (next.secondary === 'project') next.secondary = 'group';
+
+  // 折叠键/筛选泳道键是 `${dimension}:${laneKey}` 前缀式；laneOrder 的对象键则是裸维度名。
+  if (isRecord(next.collapsed)) {
+    next.collapsed = renameKeyPrefix(next.collapsed, 'project:', 'group:');
+  }
+  if (isRecord(next.laneOrder)) {
+    next.laneOrder = renameExactKey(next.laneOrder as Record<string, string[]>, 'project', 'group');
+  }
+  if (Array.isArray(next.laneFilter)) {
+    next.laneFilter = (next.laneFilter as string[]).map((key) =>
+      key.startsWith('project:') ? `group:${key.slice('project:'.length)}` : key,
+    );
+  }
+  return next as unknown as GroupingPrefs;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function renameKeyPrefix<T>(record: Record<string, T>, from: string, to: string): Record<string, T> {
+  const result: Record<string, T> = {};
+  for (const [key, value] of Object.entries(record)) {
+    result[key.startsWith(from) ? to + key.slice(from.length) : key] = value;
+  }
+  return result;
+}
+
+function renameExactKey<T>(record: Record<string, T>, from: string, to: string): Record<string, T> {
+  if (!(from in record)) return record;
+  const { [from]: moved, ...rest } = record;
+  return { ...rest, [to]: moved };
+}
+
 export function readGroupingPrefs(): GroupingPrefs {
   try {
     const raw = window.localStorage.getItem(GROUPING_PREFS_KEY);
     if (!raw) return DEFAULT_GROUPING_PREFS;
     const parsed = JSON.parse(raw) as Partial<GroupingPrefs>;
-    return { ...DEFAULT_GROUPING_PREFS, ...parsed, options: { ...DEFAULT_GROUPING_PREFS.options, ...parsed.options } };
+    let current: Partial<GroupingPrefs> = parsed;
+    // 一次性改写旧键后立刻回写：下次读取已是新口径，rewrite 自然跳过。
+    if (isRecord(parsed)) {
+      const rewritten = rewriteLegacyGroupingPrefs(parsed);
+      if (rewritten) {
+        current = rewritten;
+        try {
+          window.localStorage.setItem(GROUPING_PREFS_KEY, JSON.stringify(rewritten));
+        } catch {
+          // 回写失败（隐私模式）不致命：本次会话内已按新口径运行。
+        }
+      }
+    }
+    return {
+      ...DEFAULT_GROUPING_PREFS,
+      ...current,
+      options: { ...DEFAULT_GROUPING_PREFS.options, ...current.options },
+    };
   } catch {
     // 隐私模式 / 损坏的 JSON：按默认值走，偏好丢失不影响正确性。
     return DEFAULT_GROUPING_PREFS;
