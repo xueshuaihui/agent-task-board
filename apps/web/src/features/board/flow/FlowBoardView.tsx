@@ -214,6 +214,19 @@ function FlowCanvas({ tasks, edges, edgesLoading, mutations, onRequestDelete }: 
     setRfEdges(baseEdges);
   }, [baseNodes, baseEdges, setNodes, setRfEdges, layoutReady]);
 
+  /* fitView 时机：`fitView` prop 在节点尺寸测量前触发会算错视口（真实浏览器 960×720 实测），
+   * 首帧节点到位后主动补一次；换方向/重排布局后同样复位。 */
+  const fittedRef = useRef(false);
+  useEffect(() => {
+    if (!layoutReady || baseNodes.length === 0 || fittedRef.current) return;
+    fittedRef.current = true;
+    const timer = setTimeout(() => void fitView({ padding: 0.15, duration: 250 }), 120);
+    return () => clearTimeout(timer);
+  }, [layoutReady, baseNodes.length, fitView]);
+  useEffect(() => {
+    fittedRef.current = false;
+  }, [prefs.flowDirection]);
+
   /* 交互模式（§6.4.10）：拖画布=平移（默认，§6.4.8 拖拽空白平移）/ 拖画布=框选。 */
   const [interactMode, setInteractMode] = useState<'pan' | 'select'>('pan');
 
@@ -447,9 +460,10 @@ function FlowCanvas({ tasks, edges, edgesLoading, mutations, onRequestDelete }: 
           />
           {/* Controls：缩放 / 适应 / 锁定交互，替代旧依赖图的自绘按钮（§6.4.10）。 */}
           <Controls showInteractive />
-          {/* §6.4.2 底栏图例（Panel 承载）。 */}
-          <Panel position="bottom-left">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-card border border-border bg-bg-surface/90 px-3 py-1.5 text-aux text-text-secondary">
+          {/* §6.4.2 底栏图例（Panel 承载）。bottom-center + pointer-events-none：
+              bottom-left 会被 Controls 按钮组压住（960px 实测挡住 fitView/zoom 点击）。 */}
+          <Panel position="bottom-center">
+            <div className="pointer-events-none flex max-w-[70vw] flex-wrap items-center justify-center gap-x-4 gap-y-1 rounded-card border border-border bg-bg-surface/90 px-3 py-1.5 text-aux text-text-secondary">
               {Object.entries(STATUS_LABEL).map(([status, label]) => (
                 <span key={status} className="inline-flex items-center gap-1.5">
                   <span aria-hidden className="size-2 rounded-full" style={{ background: statusColor(status) }} />
