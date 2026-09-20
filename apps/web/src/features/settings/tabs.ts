@@ -2,14 +2,14 @@ import { useCallback, useMemo } from 'react';
 import { navigate, useRouteSearchParams } from '@/app/router';
 
 /**
- * 8.5 的八个 Tab（顺序即 PRD 表格顺序，也是原型 7.1 侧边栏自上而下的顺序）。
+ * 设置页 Tab 集合（8.5，顺序即 PRD 表格顺序，也是原型 7.1 侧边栏自上而下的顺序）。
+ * v0.0.4 W1a：服务端市场 Tab 随市场模块移除。
  *
  * Tab 值写进 hash（`#/settings?tab=tokens`）而不是只放组件 state：
  * 2.3 托盘菜单与 2.2 的深链都要能直接落到某个 Tab，刷新也不该退回「通用」。
  */
 export const SETTINGS_TAB_IDS = [
   'general',
-  'cloud',
   'tokens',
   'fields',
   'templates',
@@ -28,7 +28,6 @@ export interface SettingsTabMeta {
 
 export const SETTINGS_TABS: readonly SettingsTabMeta[] = [
   { id: 'general', label: '通用' },
-  { id: 'cloud', label: '服务端市场' },
   { id: 'tokens', label: 'Token' },
   { id: 'fields', label: '字段定义' },
   { id: 'templates', label: '模板' },

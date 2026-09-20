@@ -148,10 +148,6 @@ export const AUDIT_ACTION_LABEL: Record<AuditAction, string> = {
   backup: '备份',
   restore: '恢复',
   settings_change: '设置变更',
-  account_init: '初始化账号',
-  account_create: '创建账号',
-  account_update: '编辑账号',
-  account_change_password: '修改密码',
   project_change: '分组变更',
   pref_change: '偏好变更',
 };

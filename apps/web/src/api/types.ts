@@ -73,6 +73,8 @@ export const NOTIFICATION_KINDS = [
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
+// 与 apps/api/src/contract/enums.ts 的 AUDIT_ACTIONS 一一对应（v0.0.4 W1a 移除 account_*）。
+// 少一项就在审计列表里渲染成「未知（xxx）」——审计页是这张表的唯一读者。
 export const AUDIT_ACTIONS = [
   'task_create',
   'task_update',
@@ -97,12 +99,6 @@ export const AUDIT_ACTIONS = [
   'backup',
   'restore',
   'settings_change',
-  // 0919 账号体系：与 apps/api/src/contract/enums.ts 的 AUDIT_ACTIONS 一一对应。
-  // 少一项就在审计列表里渲染成「未知（xxx）」——审计页是这张表的唯一读者。
-  'account_init',
-  'account_create',
-  'account_update',
-  'account_change_password',
   'project_change',
   'pref_change',
 ] as const;
@@ -548,11 +544,6 @@ export interface Settings {
   task_types: string[];
   ui_theme: 'system' | 'light' | 'dark';
   review_reuse_last_opinion: boolean;
-  /** 0919 服务端市场：token 由 connect 的 login 换取，仅存本地单机库。 */
-  cloud_enabled: boolean;
-  cloud_url: string;
-  cloud_username: string;
-  cloud_token: string;
 }
 export type SettingsKey = keyof Settings;
 

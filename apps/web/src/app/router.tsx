@@ -20,15 +20,7 @@ export const ROUTES = {
   tasks: { path: '/tasks', label: '任务' },
   // 0919 第十章：技能库。路由对象来自 features/skills 的候选（path/label 同形）。
   skills: skillsRouteCandidate,
-  // 0919 十四章 IA 的「市场（服务端）」：市场首页 + 个人中心二级视图（?tab=personal）。
-  market: { path: '/market', label: '市场' },
-  // 市场技能详情（13 章）：?id=<listingId>，不进主导航（NAV_ORDER 不含）。
-  marketDetail: { path: '/market/detail', label: '市场详情' },
   settings: { path: '/settings', label: '设置' },
-  // 0919 三章：公开路由（登录 / 首登强制改密），不在主导航出现（NAV_ORDER 不含），
-  // app.tsx 的 AppShell 按名字分流到认证页而非工作区壳。
-  login: { path: '/login', label: '登录' },
-  changePassword: { path: '/change-password', label: '修改密码' },
 } as const satisfies Record<string, { path: string; label: string }>;
 
 export type RouteName = keyof typeof ROUTES;
@@ -39,7 +31,7 @@ const PATH_TO_NAME = new Map<string, RouteName>(
 );
 
 /** 17.2：「依赖图」是阶段二入口，阶段一不渲染该项（见 lib/phase.ts）。 */
-export const NAV_ORDER: readonly RouteName[] = ['board', 'projects', 'skills', 'market', 'review', 'settings'];
+export const NAV_ORDER: readonly RouteName[] = ['board', 'projects', 'skills', 'review', 'settings'];
 
 interface RouterState {
   /** 形如 `/tasks?status=REVIEW`。 */

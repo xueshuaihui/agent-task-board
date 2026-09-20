@@ -35,28 +35,8 @@ export function wsUrl(): string {
   return `${apiBase().replace(/^http/, 'ws')}/ws`;
 }
 
-/** 账号体系（0919 三章）登录态：JWT 存 localStorage；`hasLocalAuthToken` 表示「用户真的登录过」。
- *  旧桌面壳 / CI 只注入 `ATB_UI_TOKEN`（映射内置 `__local__` 账号），没有这个 key——
- *  取值顺序：登录态 → 内存缓存 → 注入值 → 构建期常量，保证旧 e2e 不破。 */
-const LOCAL_AUTH_TOKEN_KEY = 'atb.auth.token';
-
-export function readLocalAuthToken(): string {
-  try {
-    return window.localStorage.getItem(LOCAL_AUTH_TOKEN_KEY) ?? '';
-  } catch {
-    return '';
-  }
-}
-
-export function writeLocalAuthToken(token: string): void {
-  try {
-    if (token) window.localStorage.setItem(LOCAL_AUTH_TOKEN_KEY, token);
-    else window.localStorage.removeItem(LOCAL_AUTH_TOKEN_KEY);
-  } catch {
-    // 隐私模式等 localStorage 不可用时静默：会话退化为仅内存态。
-  }
-}
-
+/** 本地单用户（v0.0.4 W1a）：不再有账号登录态与 JWT localStorage。UI 会话 Token 是唯一的
+ *  前端凭证——旧桌面壳 / CI 注入 `ATB_UI_TOKEN`，取值顺序：内存缓存 → 注入值 → 构建期常量。 */
 let cachedToken: string | null = null;
 
 /** 允许 ATB-10 在窗口热重载 / Token 轮换后重新注入，而不必刷新页面。 */
@@ -65,8 +45,6 @@ export function setUiToken(token: string): void {
 }
 
 export function uiToken(): string {
-  const local = readLocalAuthToken();
-  if (local) return local;
   if (cachedToken) return cachedToken;
   const injected = typeof window.__ATB_UI_TOKEN__ === 'string' ? window.__ATB_UI_TOKEN__ : '';
   const fromEnv = typeof import.meta.env?.VITE_ATB_UI_TOKEN === 'string'

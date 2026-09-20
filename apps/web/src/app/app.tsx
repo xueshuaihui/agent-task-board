@@ -6,9 +6,7 @@ import { ProjectsPage } from '@/features/projects';
 import { ReviewPage } from '@/features/review';
 import { SettingsPage } from '@/features/settings';
 import { SkillLibraryPage } from '@/features/skills';
-import { MarketDetailPage, MarketPage } from '@/features/market';
 import { TaskListPage } from '@/features/task-list';
-import { ChangePasswordPage, LoginPage, RequireAuth } from '@/features/auth';
 import { applyUiTheme } from '@/lib/theme';
 import { useWSWarning } from '@/ws';
 import type { RouteName } from './router';
@@ -28,26 +26,14 @@ import { TopBar } from './top-bar';
  * 壳层自己只读一个设置键：`ui_theme`（20.9，见 `useUiThemeSync`）。存值可能来自任何一条路径
  * （导入 JSON、另一个窗口、直接 `PATCH /settings`），只挂在设置页上就等于「存了不生效」。
  */
-const PAGES: Record<Exclude<RouteName, 'login' | 'changePassword'>, ComponentType> = {
+const PAGES: Record<RouteName, ComponentType> = {
   board: BoardPage,
   projects: ProjectsPage,
   review: ReviewPage,
   tasks: TaskListPage,
   skills: SkillLibraryPage,
-  // 0919 十二/十四章：市场首页（含 ?tab=personal 的个人中心二级视图）。
-  market: MarketPage,
-  // 0919 十三章：市场技能详情，listingId 从 ?id= 取。
-  marketDetail: MarketDetailWrapper,
   settings: SettingsPage,
 };
-
-/** 详情页从路由 search 取 listingId（?id=…）。 */
-function MarketDetailWrapper() {
-  const route = useRoute();
-  const id = route.search.get('id') ?? '';
-  if (!id) return null;
-  return <MarketDetailPage listingId={id} />;
-}
 
 /**
  * 20.9 `ui_theme` → `<html data-ui-theme>`（`lib/theme.applyUiTheme`）。
@@ -67,19 +53,12 @@ function useUiThemeSync(): void {
 }
 
 /**
- * 根组件：认证页（0919 三章公开路由）不套工作区壳、不进认证守卫；
- * 其余路由包 `RequireAuth`——未登录跳 /login、首登强制改密跳 /change-password。
+ * 根组件：纯本地单用户，无登录门禁——应用直接进入主工作区。
  */
 export function AppShell() {
   const route = useRoute();
-  if (route.name === 'login') return <LoginPage />;
-  if (route.name === 'changePassword') return <ChangePasswordPage />;
   const Page = PAGES[route.name];
-  return (
-    <RequireAuth>
-      <WorkspaceShell page={Page} routeKey={route.key} />
-    </RequireAuth>
-  );
+  return <WorkspaceShell page={Page} routeKey={route.key} />;
 }
 
 function WorkspaceShell({

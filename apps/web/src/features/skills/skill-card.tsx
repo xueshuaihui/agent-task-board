@@ -1,4 +1,4 @@
-import { Copy, Download, FileText, MoreHorizontal, Pencil, Send, Store, Trash2 } from 'lucide-react';
+import { Copy, Download, FileText, MoreHorizontal, Pencil, Send, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui';
 import { Card } from '@/components/ui';
 import { Menu } from '@/components/ui';
@@ -10,7 +10,7 @@ import { SKILL_STATUS_META, SKILL_TYPE_META } from './meta';
 
 /**
  * 技能卡片（2.md 10.2）：类型徽标 + 名称 + 描述 + 标签 + 分隔线下的
- * 状态/版本/绑定任务数，右上角操作菜单。来源只有「本地」一种（服务端市场不在本次范围）。
+ * 状态/版本/绑定任务数，右上角操作菜单。v0.0.4 W1a 起服务端市场下线，来源只有「本地」一种。
  */
 
 export interface SkillCardProps {
@@ -18,8 +18,6 @@ export interface SkillCardProps {
   onOpen: (skill: Skill) => void;
   onEdit: (skill: Skill) => void;
   onPublish: (skill: Skill) => void;
-  /** 发布到市场（1.md 九章）：缺省时不显示该菜单项（调用方未接线）。 */
-  onPublishToMarket?: (skill: Skill) => void;
   onExport: (skill: Skill) => void;
   onExportMarkdown: (skill: Skill) => void;
   onCopy: (skill: Skill) => void;
@@ -32,7 +30,6 @@ export function SkillCard({
   onOpen,
   onEdit,
   onPublish,
-  onPublishToMarket,
   onExport,
   onExportMarkdown,
   onCopy,
@@ -87,13 +84,6 @@ export function SkillCard({
                     icon: <Send className="size-4" />,
                     disabled: skill.status === 'ARCHIVED',
                     onSelect: () => onPublish(skill),
-                  },
-                  {
-                    id: 'publish-market',
-                    label: '发布到市场',
-                    icon: <Store className="size-4" />,
-                    disabled: skill.status === 'ARCHIVED',
-                    onSelect: () => onPublishToMarket?.(skill),
                   },
                   {
                     id: 'copy',

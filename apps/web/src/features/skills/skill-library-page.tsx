@@ -15,7 +15,6 @@ import { skillsApi } from './api';
 import { CreateSkillDialog } from './create-skill-dialog';
 import { CopySkillPicker } from './copy-skill-picker';
 import { ImportCenterDialog } from './import-center-dialog';
-import { MarketPublishDialog } from '@/features/market';
 import { useCreateSkill, useDeleteSkill, useSkills } from './hooks';
 import { SKILL_STARTER_TEMPLATES, SKILL_STATUS_META, SKILL_TYPE_OPTIONS } from './meta';
 import { SkillCard } from './skill-card';
@@ -55,7 +54,6 @@ export function SkillLibraryPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createTemplateId, setCreateTemplateId] = useState<string | null | undefined>(undefined);
-  const [marketPublishSkill, setMarketPublishSkill] = useState<Skill | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importSource, setImportSource] = useState<'atskill' | 'markdown' | 'cursor-rules' | undefined>(undefined);
   const [copyPickerOpen, setCopyPickerOpen] = useState(false);
@@ -331,7 +329,6 @@ export function SkillLibraryPage() {
               onOpen={(target) => setDetailId(target.id)}
               onEdit={openEditor}
               onPublish={openEditor}
-              onPublishToMarket={(target) => setMarketPublishSkill(target)}
               onExport={(target) => {
                 skillsApi
                   .export(target.id, target.name)
@@ -345,11 +342,6 @@ export function SkillLibraryPage() {
         </div>
       )}
 
-      <MarketPublishDialog
-        open={marketPublishSkill !== null}
-        skillId={marketPublishSkill?.id ?? ''}
-        onClose={() => setMarketPublishSkill(null)}
-      />
       <CreateSkillDialog
         open={createOpen}        onClose={() => setCreateOpen(false)}
         onCreated={(skill) => {

@@ -5,7 +5,6 @@ import { springs, transitions } from '@/lib/motion';
 import { SETTINGS_TABS, useSettingsTab } from './tabs';
 import type { SettingsTabId } from './tabs';
 import { GeneralTab } from './tabs/general';
-import { CloudMarketTab } from './tabs/cloud';
 import { TokensTab } from './tabs/tokens';
 import { FieldsTab } from './tabs/fields';
 import { TemplatesTab } from './tabs/templates';
@@ -15,7 +14,7 @@ import { BackupsTab } from './tabs/backups';
 import { AboutTab } from './tabs/about';
 
 /**
- * 设置页 `#/settings`（PRD 8.5 八个 Tab，控件规格原型 7 章）。
+ * 设置页 `#/settings`（PRD 8.5 的 Tab 集合，控件规格原型 7 章；v0.0.4 W1a 移除「服务端市场」Tab）。
  *
  * 视觉层（DESIGN.md §4 设置行）：左侧分区导航 sticky 跟随视口，token 卡片容器
  * （surface 底 + border + shadow-card），激活项由 motion `layoutId` 滑动胶囊指示
@@ -24,11 +23,10 @@ import { AboutTab } from './tabs/about';
  *
  * Tab 值同步进 hash（`#/settings?tab=tokens`），所以托盘「设置」与深链都能落到指定 Tab，
  * 刷新也不回退。侧栏 `sticky`：内容区由 `app.tsx` 的 `main` 负责滚动（2.1），
- * 八项跟着视口走才不用滚回顶部换 Tab。
+ * 各项跟着视口走才不用滚回顶部换 Tab。
  */
 const PANELS: Record<SettingsTabId, ComponentType> = {
   general: GeneralTab,
-  cloud: CloudMarketTab,
   tokens: TokensTab,
   fields: FieldsTab,
   templates: TemplatesTab,

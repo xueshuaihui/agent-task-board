@@ -20,8 +20,6 @@ export interface RequestOptions {
   body?: unknown;
   signal?: AbortSignal;
   headers?: Record<string, string>;
-  /** 账号体系公开端点（login/init，0919 三章）：不带凭证、不做 hasUiToken 前置检查。 */
-  public?: boolean;
 }
 
 /**
@@ -79,21 +77,8 @@ function notifyUnauthorized(error: ApiError): void {
   for (const listener of unauthorizedListeners) listener(error);
 }
 
-const mustChangePasswordListeners = new Set<() => void>();
-
-/** 首登强制改密（0919 3.2）：除 me/change-password/logout 外一律 403 MUST_CHANGE_PASSWORD，
- *  在请求层集中捕获，账号 store 据此把 UI 拉到改密页，业务代码不必逐个分支。 */
-export function onMustChangePassword(listener: () => void): () => void {
-  mustChangePasswordListeners.add(listener);
-  return () => mustChangePasswordListeners.delete(listener);
-}
-
-function notifyMustChangePassword(): void {
-  for (const listener of mustChangePasswordListeners) listener();
-}
-
 /** 13 章「认证」：UI 会话 Token 只走 `Authorization: Bearer`，不进查询参数。
- *  调用方显式给了 Authorization（如账号体系公开端点）时不再覆盖。 */
+ *  调用方显式给了 Authorization 时不再覆盖。 */
 function authHeaders(extra?: Record<string, string>): Record<string, string> {
   const base: Record<string, string> = { Accept: 'application/json', ...extra };
   if (base['Authorization']) return base;
@@ -105,7 +90,7 @@ async function send(
   path: string,
   options: RequestOptions = {},
 ): Promise<Response> {
-  if (!options.public && !hasUiToken()) {
+  if (!hasUiToken()) {
     throw new ApiError({
       code: 'UNAUTHORIZED',
       message:
@@ -150,9 +135,6 @@ async function toApiError(response: Response, method: HttpMethod, path: string):
     body = null;
   }
   const error = body?.error;
-  // 403 MUST_CHANGE_PASSWORD 不在既有错误码表里：先在请求层通知（store 跳改密页），
-  // 再按 403 兜底为 FORBIDDEN，避免把未知码漏进 ErrorCode 消费方。
-  if (error?.code === 'MUST_CHANGE_PASSWORD') notifyMustChangePassword();
   const known = (error?.code ?? '') as ErrorCode;
   const context: Record<string, unknown> = {};
   if (error) {

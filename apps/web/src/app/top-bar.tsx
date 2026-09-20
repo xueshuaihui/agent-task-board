@@ -6,7 +6,6 @@ import { useUnreadStore, badgeText } from '@/app/store/unread';
 import { taskListSearch } from '@/app/store/filters';
 import { navigate, NAV_ORDER, ROUTES, useRoute } from '@/app/router';
 import { IconButton } from '@/components/ui';
-import { AccountMenu } from '@/features/auth';
 import { GlobalSearch } from '@/app/global-search';
 import { useUnreadCount } from '@/ws';
 import { springs } from '@/lib/motion';
@@ -31,14 +30,14 @@ function nextTheme(current: UiTheme): UiTheme {
 }
 
 /**
- * 2.md 2.2 顶栏：Logo + 应用名 / 六个导航项（0919 十四章 IA：看板/项目/技能/市场/审核/设置）/
+ * 2.md 2.2 顶栏：Logo + 应用名 / 五个导航项（v0.0.4 W1a：看板/分组/技能/审核/设置）/
  * 全局搜索框 / 主题三态切换 / 一个通知铃铛。
  *
  * 视觉按 DESIGN.md §3：毛玻璃顶栏（.glass-bar）；导航激活项由 motion
  * `layoutId="nav-pill"` 的胶囊指示器滑动（springs.gentle）；铃铛角标数字
  * 变化带 springs.pop 弹跳。
  *
- * 「市场」是 1.md 十四章的服务端入口，已落地（features/market：首页 + 详情 + 个人中心）。顶层不再有「任务」入口：任务列表
+ * 纯本地单用户：账号下拉与「服务端市场」入口已随 W1a 移除。顶层不再有「任务」入口：任务列表
  * 保留路由 `#/tasks`，从看板工具栏「列表视图」进入（0919 4.11）。
  *
  * 全局搜索按 0919 2.4 加在顶栏中部（Cmd/Ctrl+K），实现见 app/global-search.tsx。
@@ -162,9 +161,6 @@ export function TopBar() {
             </motion.span>
           ) : null}
         </div>
-
-        {/* 2.3 账号下拉：显示名 / 切换账号 / 修改密码 / ADMIN 的用户管理 / 退出登录。 */}
-        <AccountMenu />
       </div>
     </header>
   );
