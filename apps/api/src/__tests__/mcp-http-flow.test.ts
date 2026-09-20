@@ -54,9 +54,12 @@ const CHAPTER_12_TOOLS = [
   'complete_task',
   'fail_task',
   'get_review_feedback',
+  'get_skill',
   'get_task',
   'heartbeat',
   'list_ready_tasks',
+  'list_skills',
+  'search_skills',
   'update_progress',
   'wait_for_resume',
 ];
@@ -204,7 +207,7 @@ describe('MCP HTTP 主链路', () => {
     }
   });
 
-  it('tools/list 列出 12 章九个工具，每个都带 description 与 inputSchema', async () => {
+  it('tools/list 列出 12 章基础工具与 W6 技能三工具，每个都带 description 与 inputSchema', async () => {
     const res = await rpc(agent.token, 'tools/list', {});
     expect(res.status).toBe(200);
     const tools = res.body.result.tools as { name: string; description?: string; inputSchema?: any }[];

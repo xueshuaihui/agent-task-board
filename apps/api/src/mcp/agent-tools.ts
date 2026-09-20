@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ApiException } from '../contract/errors';
+import { agentOf } from '../agent/agent-auth';
 import type { RequestAuth } from '../auth/auth.scope';
 import {
   appendLogSchema,
@@ -29,12 +30,25 @@ import type { AgentQueryService } from '../agent/agent-query.service';
 import type { ClaimService } from '../agent/claim.service';
 import type { LeaseService } from '../agent/lease.service';
 import type { WritebackService } from '../agent/writeback.service';
+import {
+  skillListQuerySchema,
+  type SkillListQuery,
+} from '../skills/skills.dto';
+import type { SkillsService } from '../skills/skills.service';
+
+/** v0.0.4 W6 §16.1 的技能工具入参：list 沿用 UI 侧的过滤形状；search 关键字必填；get 只要 id。 */
+const getSkillSchema = z.object({ skill_id: z.string().trim().min(1).max(64) });
+const searchSkillsSchema = skillListQuerySchema.extend({
+  keyword: z.string().trim().min(1).max(100),
+});
 
 export interface AgentToolContext {
   claims: ClaimService;
   leases: LeaseService;
   writeback: WritebackService;
   query: AgentQueryService;
+  /** v0.0.4 W6 §16.1：list_skills / get_skill / search_skills 直接复用 SkillsService 的读侧方法。 */
+  skills: SkillsService;
 }
 
 export interface AgentTool {
@@ -45,7 +59,8 @@ export interface AgentTool {
 }
 
 /**
- * 12 章的九个基础工具 + v0.0.4 W6 §16.1 的人工块/恢复工具（block_task、wait_for_resume）。
+ * 12 章的九个基础工具 + v0.0.4 W6 §16.1 的人工块/恢复工具（block_task、wait_for_resume）
+ * 与技能三工具（list_skills、get_skill、search_skills，只读，W2 语义由 SkillsService 保证）。
  * 业务逻辑全在 Agent 服务层，这里只做「工具名 → 服务方法」的映射，
  * 因此 REST 与 MCP 共用同一套校验与错误语义（13 章错误码只有一份实现）。
  */
@@ -116,6 +131,34 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
       description: '等待人工处理完成：长轮询直到 BLOCKED 转回其它状态或超时（§16.1）',
       input: waitForResumeSchema,
       run: (args, auth) => ctx.writeback.waitResume(args as WaitResumeInput, auth),
+    },
+    {
+      name: 'list_skills',
+      description: '列出技能（§16.1；可按 type/status/tag/source/keyword 过滤，只读，Agent 凭证专属）',
+      input: skillListQuerySchema,
+      run: async (args, auth) => {
+        agentOf(auth);
+        return ctx.skills.list(args as SkillListQuery);
+      },
+    },
+    {
+      name: 'get_skill',
+      description: '获取技能详情（含版本历史与 MCP 依赖，§16.1）',
+      input: getSkillSchema,
+      run: async (args, auth) => {
+        agentOf(auth);
+        const { skill_id: skillId } = args as { skill_id: string };
+        return ctx.skills.detail(skillId);
+      },
+    },
+    {
+      name: 'search_skills',
+      description: '按关键字搜索技能（keyword 必填；命中 name/description，§16.1）',
+      input: searchSkillsSchema,
+      run: async (args, auth) => {
+        agentOf(auth);
+        return ctx.skills.list(args as SkillListQuery);
+      },
     },
   ];
 }

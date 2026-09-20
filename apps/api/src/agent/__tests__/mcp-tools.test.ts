@@ -3,7 +3,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { RequestAuth } from '../../auth/auth.scope';
 import { buildAgentTools } from '../../mcp/agent-tools';
-import { createAgentMcpServer, MCP_SERVER_NAME } from '../../mcp/mcp.server';
+import { callAgentTool, createAgentMcpServer, MCP_SERVER_NAME } from '../../mcp/mcp.server';
+import { skillCreateSchema, type SkillCreateInput, type SkillOrigin } from '../../skills/skills.dto';
 import { createAgentHarness, seedTask, type AgentHarness } from './temp-db';
 
 /**
@@ -16,20 +17,23 @@ let agent: RequestAuth;
 let client: Client;
 
 /**
- * §12 + §16.1 W6 已落地子集（9 基础 + block_task + wait_for_resume）；
- * 技能三工具与策略二工具、`board.*` 全套分别在同文件与后续切片补齐。
+ * §12 + §16.1 W6 已落地子集（9 基础 + block_task + wait_for_resume + 技能三工具）；
+ * 策略二工具、`board.*` 全套分别在后续切片补齐（拆解/创建归 W7/W8）。
  * 顺序不敏感但一条都不能多、不能少。
  */
-const CHAPTER_12_TOOLS = [
+const W6_TOOL_NAMES = [
   'append_log',
   'block_task',
   'claim_next_task',
   'complete_task',
   'fail_task',
   'get_review_feedback',
+  'get_skill',
   'get_task',
   'heartbeat',
   'list_ready_tasks',
+  'list_skills',
+  'search_skills',
   'update_progress',
   'wait_for_resume',
 ];
@@ -43,6 +47,7 @@ beforeAll(async () => {
     leases: h.leases,
     writeback: h.writeback,
     query: h.query,
+    skills: h.skills,
   });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
@@ -62,6 +67,8 @@ beforeEach(async () => {
   await h.prisma.comment.deleteMany();
   await h.prisma.taskRun.deleteMany();
   await h.prisma.task.deleteMany();
+  await h.prisma.skillVersion.deleteMany();
+  await h.prisma.skill.deleteMany();
 });
 
 /** SDK 的返回类型是 CallToolResult 与兼容体的联合，这里按 12 章真正用到的三个字段收窄。 */
@@ -80,9 +87,9 @@ function structured(result: ToolResult) {
 }
 
 describe('MCP 工具面', () => {
-  it('tools/list 暴露 12 章的九个工具且都带 JSON Schema', async () => {
+  it('tools/list 暴露 12 章基础工具与 W6 技能三工具且都带 JSON Schema', async () => {
     const { tools } = await client.listTools();
-    expect(tools.map((tool) => tool.name).sort()).toEqual(CHAPTER_12_TOOLS);
+    expect(tools.map((tool) => tool.name).sort()).toEqual(W6_TOOL_NAMES);
     expect(MCP_SERVER_NAME).toBe('agent-task-board');
     for (const tool of tools) {
       expect(tool.description).toBeTruthy();
@@ -167,8 +174,8 @@ describe('MCP 工具面', () => {
   });
 
   it('工具表与服务层一一对应：MCP 不复制业务逻辑', () => {
-    expect(buildAgentTools({ claims: h.claims, leases: h.leases, writeback: h.writeback, query: h.query }).map((tool) => tool.name).sort()).toEqual(
-      CHAPTER_12_TOOLS,
+    expect(buildAgentTools({ claims: h.claims, leases: h.leases, writeback: h.writeback, query: h.query, skills: h.skills }).map((tool) => tool.name).sort()).toEqual(
+      W6_TOOL_NAMES,
     );
   });
 
@@ -288,5 +295,84 @@ describe('MCP 工具面', () => {
     const err = await call('wait_for_resume', { task_id: 'T-404', timeout_seconds: 2 });
     expect(err.isError).toBe(true);
     expect(structured(err)).toMatchObject({ code: 'TASK_GONE', task_id: 'T-404' });
+  });
+
+  // -------------------------------------------------- v0.0.4 W6 §16.1：技能三工具（list/get/search_skills）
+
+  const skillCtx = () => ({
+    claims: h.claims,
+    leases: h.leases,
+    writeback: h.writeback,
+    query: h.query,
+    skills: h.skills,
+  });
+  const ui: RequestAuth = { kind: 'ui' };
+
+  /** 造技能：走 skillCreateSchema.parse 补全默认字段，origin 透传给服务层（W2 三来源）。 */
+  async function seedSkill(
+    input: Partial<SkillCreateInput> & Pick<SkillCreateInput, 'name'>,
+    origin?: SkillOrigin,
+  ) {
+    return h.skills.create(
+      skillCreateSchema.parse({ type: 'prompt', description: '', tags: [], mcp_dependencies: [], ...input }),
+      origin,
+    );
+  }
+
+  it('list_skills 返回 items/total，只读不写库、不建租约', async () => {
+    await seedSkill({
+      name: '代码审查',
+      description: '四步审查',
+      tags: ['质量'],
+      mcp_dependencies: [{ server: 'github', tools: ['get_pull_request'], required: true }],
+    });
+    const result = await call('list_skills', {});
+    const payload = structured(result)!;
+    expect(result.isError).toBeUndefined();
+    expect(payload.total).toBe(1);
+    const [item] = payload.items as { name: string; readonly: boolean; mcp_dependencies: unknown[] }[];
+    expect(item.name).toBe('代码审查');
+    expect(item.readonly).toBe(false);
+    expect(item.mcp_dependencies).toHaveLength(1);
+    expect(await h.prisma.taskRun.count()).toBe(0);
+  });
+
+  it('list_skills 按 source 过滤命中三来源（W2 语义）', async () => {
+    await seedSkill({ name: '默认巡检' }, 'default');
+    await seedSkill({ name: '三方导入' }, 'imported');
+    const filtered = structured(await call('list_skills', { source: 'imported' }))!;
+    expect(filtered.total).toBe(1);
+    expect((filtered.items as { name: string }[])[0]!.name).toBe('三方导入');
+  });
+
+  it('get_skill 命中返回详情（含版本历史与依赖），未知 id 回 NOT_FOUND', async () => {
+    const created = await seedSkill({ name: '编排技能', type: 'workflow' });
+    const ok = structured(await call('get_skill', { skill_id: created.id }))!;
+    expect(ok).toMatchObject({ id: created.id, name: '编排技能' });
+    expect(Array.isArray((ok as { versions: unknown[] }).versions)).toBe(true);
+
+    const err = await call('get_skill', { skill_id: 'skl_missing' });
+    expect(err.isError).toBe(true);
+    expect(structured(err)!.code).toBe('NOT_FOUND');
+  });
+
+  it('search_skills keyword 必填：空/缺失被 VALIDATION_FAILED 挡下，命中 name/description', async () => {
+    await seedSkill({ name: '数据库迁移', description: '执行 schema 变更' });
+    const hit = structured(await call('search_skills', { keyword: '迁移' }))!;
+    expect((hit as { total: number }).total).toBe(1);
+
+    await expect(callAgentTool(skillCtx(), agent, 'search_skills', { keyword: '' })).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+    });
+  });
+
+  it('技能三工具拒绝 UI 会话 Token（agent 组专属，SKILL 读侧也守作用域）', async () => {
+    for (const [name, args] of [
+      ['list_skills', {}],
+      ['get_skill', { skill_id: 'skl_x' }],
+      ['search_skills', { keyword: 'q' }],
+    ] as const) {
+      await expect(callAgentTool(skillCtx(), ui, name, args)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    }
   });
 });

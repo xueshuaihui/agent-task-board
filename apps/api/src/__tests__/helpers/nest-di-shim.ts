@@ -92,7 +92,7 @@ export function applyDiShim(): void {
   declare(ClaimService, [PrismaService, SettingsService, LeaseService, AuditService, EventsService, AgentQueryService]);
   declare(WritebackService, [PrismaService, LeaseService, AuditService, EventsService, NotificationsService, AgentQueryService]);
   declare(AgentController, [ClaimService, LeaseService, WritebackService, AgentQueryService]);
-  declare(McpController, [ClaimService, LeaseService, WritebackService, AgentQueryService]);
+  declare(McpController, [ClaimService, LeaseService, WritebackService, AgentQueryService, SkillsService]);
 
   // ── tasks
   declare(TasksService, [
