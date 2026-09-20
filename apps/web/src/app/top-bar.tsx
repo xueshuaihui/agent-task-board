@@ -1,16 +1,14 @@
-import { Bell, Diamond, Monitor, Moon, Sun } from 'lucide-react';
+import { Bell, Monitor, Moon, Sun } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { api, qk, useApiMutation, useNotifications, useSettings } from '@/api';
 import type { Settings } from '@/api/types';
-import { useUnreadStore, badgeText } from '@/app/store/unread';
-import { taskListSearch } from '@/app/store/filters';
-import { navigate, NAV_ORDER, ROUTES, useRoute } from '@/app/router';
+import { badgeText } from '@/app/store/unread';
+import { useShellStore } from '@/app/store/shell';
 import { IconButton } from '@/components/ui';
 import { GlobalSearch } from '@/app/global-search';
 import { useUnreadCount } from '@/ws';
 import { springs } from '@/lib/motion';
 import { applyUiTheme } from '@/lib/theme';
-import { cn } from '@/lib/cn';
 
 type UiTheme = Settings['ui_theme'];
 
@@ -30,31 +28,16 @@ function nextTheme(current: UiTheme): UiTheme {
 }
 
 /**
- * 2.md 2.2 顶栏：Logo + 应用名 / 五个导航项（v0.0.4 W1a：看板/分组/技能/审核/设置）/
- * 全局搜索框 / 主题三态切换 / 一个通知铃铛。
+ * v0.0.4 W9 13.1：顶部工具栏（不是导航——导航已移入左侧 Sidebar）。
+ * 承载全局搜索（2.4，⌘K）+ 主题三态切换 + 通知铃铛（角标 + 打开通知中心）。
  *
- * 视觉按 DESIGN.md §3：毛玻璃顶栏（.glass-bar）；导航激活项由 motion
- * `layoutId="nav-pill"` 的胶囊指示器滑动（springs.gentle）；铃铛角标数字
- * 变化带 springs.pop 弹跳。
+ * 页面级工具栏（看板/技能/设置各自的视图切换、筛选、操作）由各页面自己渲染
+ * （`features/board/toolbar.tsx` 等），这条全局栏只放跨页复用件。
  *
- * 纯本地单用户：账号下拉与「服务端市场」入口已随 W1a 移除。顶层不再有「任务」入口：任务列表
- * 保留路由 `#/tasks`，从看板工具栏「列表视图」进入（0919 4.11）。
- *
- * 全局搜索按 0919 2.4 加在顶栏中部（Cmd/Ctrl+K），实现见 app/global-search.tsx。
- *
- * 主题切换即 `PATCH /settings { ui_theme }`（失效 qk.settings()，设置页与
- * useUiThemeSync 共用同一份缓存），同时乐观调用 applyUiTheme 立即生效，
- * 不等往返。深色色板在 globals.css 的 `[data-ui-theme="dark"]` 块。
- *
- * 全栏只有铃铛这一个角标：「审核」导航项再挂待审核数就会出现
- * 两个清零条件不同的数字。
- *
- * 铃铛只随 `notification.created` 变化：计数由服务端在事件载荷里算好，
- * 在 `src/ws/invalidate.ts` 一处写进 unread store（看板/列表响应也带同一个数），
- * 所以这里不再订阅第二次、也不轮询。
+ * 铃铛不再直接跳「待审核」列表（v0.0.3 行为），改为开合通知中心面板（13.9）；
+ * 计数仍只随 `notification.created` 变化（`ws/invalidate.ts` 一处写 unread store）。
  */
 export function TopBar() {
-  const route = useRoute();
   const count = useUnreadCount();
   const badge = badgeText(count);
   const reducedMotion = useReducedMotion();
@@ -62,19 +45,11 @@ export function TopBar() {
   const settings = useSettings();
   const uiTheme = settings.data?.ui_theme ?? 'system';
 
-  // 未读数的首值来源（2.2 角标 = GET /notifications 的 unread_count）；面板列表属阶段二。
-  useNotifications({ unread: true }, { staleTime: 60_000 });
+  const notificationOpen = useShellStore((state) => state.notificationOpen);
+  const toggleNotification = useShellStore((state) => state.toggleNotification);
 
-  const clearReviewPending = useApiMutation<undefined, number>(
-    () => api.notifications.markReviewPendingRead(),
-    {
-      invalidate: [qk.notificationsRoot, qk.boardRoot],
-      onSuccess: (updated) => {
-        // 先把角标按已清理的条数回落（等 /board 回来要一个往返），真值随后由失效查询校准。
-        if (updated > 0) useUnreadStore.getState().bump(-updated);
-      },
-    },
-  );
+  // 未读数首值来源（2.2 角标 = GET /notifications 的 unread_count）；后续增量只随 WS 走。
+  useNotifications({ unread: true }, { staleTime: 60_000 });
 
   const setTheme = useApiMutation<UiTheme, Settings>(
     (theme) => api.settings.patch({ ui_theme: theme }),
@@ -91,44 +66,9 @@ export function TopBar() {
   const ThemeIcon = THEME_ICON[uiTheme];
 
   return (
-    <header className="glass-bar flex h-14 shrink-0 items-center gap-6 border-b border-border pl-6 pr-4">
-      <div className="flex shrink-0 items-center gap-2">
-        <Diamond className="size-6 shrink-0 text-primary" aria-hidden />
-        <span className="text-logo text-text-primary">Jarvis Workbench</span>
-      </div>
-
-      <nav aria-label="主导航" className="flex shrink-0 items-center gap-1">
-        {NAV_ORDER.map((name) => {
-          const active = route.name === name;
-          return (
-            <button
-              key={name}
-              type="button"
-              aria-current={active ? 'page' : undefined}
-              onClick={() => navigate(name)}
-              className={cn(
-                'relative inline-flex items-center rounded-full px-3 py-1.5 text-nav transition-colors duration-120 ease-out',
-                active ? 'text-primary' : 'text-text-secondary hover:text-primary',
-              )}
-            >
-              {active ? (
-                <motion.span
-                  layoutId="nav-pill"
-                  aria-hidden
-                  className="absolute inset-0 rounded-full bg-primary-light"
-                  transition={reducedMotion ? { duration: 0 } : springs.gentle}
-                />
-              ) : null}
-              <span className="relative inline-flex items-center gap-1">
-                {ROUTES[name].label}
-              </span>
-            </button>
-          );
-        })}
-      </nav>
-
-      {/* 2.4：全局搜索占顶栏中部，剩余空间全给它并限最大宽。 */}
-      <div className="flex min-w-0 flex-1 justify-center px-2">
+    <header className="glass-bar flex h-14 shrink-0 items-center gap-4 border-b border-border pl-4 pr-3">
+      {/* 2.4：全局搜索占工具栏左部，剩余空间给它并限最大宽。 */}
+      <div className="flex min-w-0 flex-1 items-center">
         <GlobalSearch />
       </div>
 
@@ -141,13 +81,11 @@ export function TopBar() {
 
         <div className="relative">
           <IconButton
-            label="未读通知"
+            label={notificationOpen ? '关闭通知中心' : '打开通知中心'}
+            aria-expanded={notificationOpen}
+            aria-haspopup="dialog"
             icon={<Bell className="size-6" aria-hidden />}
-            onClick={() => {
-              // 2.2：不展开面板，直接跳「待审核」筛选视图，并把对应通知标已读。
-              navigate('tasks', taskListSearch({ status: 'REVIEW' }));
-              if (count > 0) clearReviewPending.mutate();
-            }}
+            onClick={toggleNotification}
           />
           {badge ? (
             <motion.span

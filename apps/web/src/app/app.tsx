@@ -8,16 +8,20 @@ import { SettingsPage } from '@/features/settings';
 import { SkillLibraryPage } from '@/features/skills';
 import { TaskListPage } from '@/features/task-list';
 import { applyUiTheme } from '@/lib/theme';
+import { useShellStore } from '@/app/store/shell';
 import { useWSWarning } from '@/ws';
 import type { RouteName } from './router';
 import { useRoute } from './router';
 import { OverlaySlot } from './overlay-slot';
 import { PageTransition } from './page-transition';
+import { Sidebar } from './sidebar';
 import { TopBar } from './top-bar';
 
 /**
- * 2.1 应用外框：顶栏固定，主内容区吃掉剩余高度、自带 24px padding 与纵向滚动，
- * 抽屉/弹窗由 `OverlaySlot` 挂在外框之上（portal 到 body，不受这里的 overflow 裁剪）。
+ * 2.1 应用外框：v0.0.4 W9 起为「左侧导航 + 顶部工具栏 + 内容区」（13.1）。
+ * 左栏 `Sidebar`（看板/分组/技能/审核/设置，可折叠到 64px）常驻，右侧上下分「顶部工具栏 + 主内容区」。
+ * 主内容区吃掉剩余高度、自带 padding 与纵向滚动，抽屉/弹窗/通知中心由 `OverlaySlot`/`NotificationCenter`
+ * 挂在外框之上（portal 到 body，不受这里的 overflow 裁剪）。
  *
  * 只渲染当前页：2.1 的「滚动位置保留」针对的是关窗到托盘（整棵树本来就不销毁），
  * 页面之间切换保留滚动不在需求内，而四页同挂会让设置页的查询在首屏就发出去。
@@ -70,25 +74,35 @@ function WorkspaceShell({
 }) {
   const ws = useWSWarning();
   useUiThemeSync();
+  const navCollapsed = useShellStore((state) => state.navCollapsed);
+
+  // 13.8：左弹出的浮层（通知中心）覆盖内容区、不覆盖左侧导航。抽屉/通知面板都 portal 到
+  // `document.body`，变量必须挂在 `<html>` 上，挂在壳层 div 上 portal 出去的元素读不到。
+  useEffect(() => {
+    document.documentElement.style.setProperty('--atb-nav-w', navCollapsed ? '64px' : '200px');
+  }, [navCollapsed]);
 
   return (
-    <div className="flex h-screen min-h-0 flex-col bg-bg-app text-text-primary">
-      <TopBar />
-      {ws.visible ? (
-        <div
-          role="status"
-          className="shrink-0 border-b border-border bg-status-running-soft px-6 py-1.5 text-aux text-text-primary"
-        >
-          {ws.text}
-        </div>
-      ) : null}
-      <main className="atb-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6">
-        <AnimatePresence mode="wait">
-          <PageTransition key={routeKey}>
-            <Page />
-          </PageTransition>
-        </AnimatePresence>
-      </main>
+    <div className="flex h-screen min-h-0 bg-bg-app text-text-primary">
+      <Sidebar />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar />
+        {ws.visible ? (
+          <div
+            role="status"
+            className="shrink-0 border-b border-border bg-status-running-soft px-6 py-1.5 text-aux text-text-primary"
+          >
+            {ws.text}
+          </div>
+        ) : null}
+        <main className="atb-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6">
+          <AnimatePresence mode="wait">
+            <PageTransition key={routeKey}>
+              <Page />
+            </PageTransition>
+          </AnimatePresence>
+        </main>
+      </div>
       <OverlaySlot />
     </div>
   );

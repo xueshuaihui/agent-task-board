@@ -1,6 +1,25 @@
 import { create } from 'zustand';
 import type { ReviewConclusion, ReturnTarget } from '@/api/types';
 
+/** v0.0.4 W9 13.2：左侧导航展开 200px / 折叠 64px，折叠态持久化到本地。 */
+const NAV_COLLAPSED_KEY = 'atb.nav.collapsed';
+
+function readNavCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(NAV_COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeNavCollapsed(collapsed: boolean): void {
+  try {
+    window.localStorage.setItem(NAV_COLLAPSED_KEY, collapsed ? '1' : '0');
+  } catch {
+    /* 隐私模式 / 存储不可用：折叠态只影响本次会话，不影响正确性。 */
+  }
+}
+
 /**
  * 全局 UI 状态里只放「跨页面」的两件事：详情抽屉开在哪个任务、WS 连接态提示是否已展示。
  * 页面级状态（筛选、分页、选择集）留在各自 feature 里——顶栏不放筛选器的理由见原型 2.2。
@@ -32,6 +51,13 @@ interface ShellState {
   reviewPrefill: ReviewPrefill | null;
   openReview: (id: string, prefill?: ReviewPrefill | null) => void;
   closeReview: () => void;
+  /** v0.0.4 W9 13.2：左导航折叠态（200px ↔ 64px），本地持久化。 */
+  navCollapsed: boolean;
+  toggleNav: () => void;
+  /** v0.0.4 W9 13.9：通知中心弹层开合（顶栏铃铛与面板共用一份状态）。 */
+  notificationOpen: boolean;
+  setNotificationOpen: (open: boolean) => void;
+  toggleNotification: () => void;
 }
 
 export const useShellStore = create<ShellState>((set) => ({
@@ -42,4 +68,14 @@ export const useShellStore = create<ShellState>((set) => ({
   reviewPrefill: null,
   openReview: (id, prefill) => set({ reviewTaskId: id, reviewPrefill: prefill ?? null }),
   closeReview: () => set({ reviewTaskId: null, reviewPrefill: null }),
+  navCollapsed: readNavCollapsed(),
+  toggleNav: () =>
+    set((state) => {
+      const next = !state.navCollapsed;
+      writeNavCollapsed(next);
+      return { navCollapsed: next };
+    }),
+  notificationOpen: false,
+  setNotificationOpen: (open) => set({ notificationOpen: open }),
+  toggleNotification: () => set((state) => ({ notificationOpen: !state.notificationOpen })),
 }));
