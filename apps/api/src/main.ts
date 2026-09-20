@@ -7,6 +7,7 @@ import { resolveUiToken } from './common/ui-token';
 import { appVersion } from './common/version';
 import { ApiExceptionFilter } from './infra/api-exception.filter';
 import { applyMigrations } from './infra/bootstrap';
+import { migrateLegacyDataDir } from './infra/data-dir-migration';
 import { sharedAppLogger } from './infra/logger';
 import { SettingsService } from './infra/settings.service';
 
@@ -26,6 +27,10 @@ const ready = (listenPort: number): void => {
 
 async function bootstrap(): Promise<void> {
   const logger = sharedAppLogger();
+  // §21.1/§21.2：v0.0.3 旧数据目录（~/.agent-board）的一次性搬迁，先于建库跑；
+  // 失败即回滚（旧目录原样可启动旧版）并抛出——不带病建空库。
+  const dirMove = migrateLegacyDataDir(logger);
+  if (!dirMove.migrated && dirMove.reason) logger.log(`数据目录搬迁检查：${dirMove.reason}`, 'boot');
   const applied = applyMigrations(logger);
   logger.log(`数据目录 ${dataDir()}，迁移水位 ${applied.length > 0 ? applied.join(',') : '无变化'}`, 'boot');
 

@@ -97,6 +97,8 @@ export const AUDIT_ACTIONS = [
   'export',
   'backup',
   'restore',
+  // §21.2-3 的 `migration.completed`（数据目录一次性搬迁；本表动作名统一 snake_case）。
+  'migration_completed',
   'settings_change',
   'group_change',
   'pref_change',

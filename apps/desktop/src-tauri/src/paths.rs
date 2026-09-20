@@ -47,15 +47,18 @@ fn roaming_root() -> PathBuf {
   }
 }
 
-/// 数据目录：默认 `~/.agent-board`，`ATB_DATA_DIR` 覆盖（20.6）。
+/// 数据目录：默认 `~/.jarvis-workbench`（v0.0.4 W1b，需求.md §21.1；旧名 `~/.agent-board`），
+/// `ATB_DATA_DIR` 覆盖（20.6）。
+/// 旧目录 → 新目录的一次性搬迁在 sidecar 首启时执行（`apps/api/src/infra/data-dir-migration.ts`）：
+/// 这里注入的 `ATB_DATA_DIR` 与本默认值同源，搬迁侧据此识别「默认目录安装」。
 pub fn data_dir() -> PathBuf {
   if let Some(from_env) = env_path("ATB_DATA_DIR") {
     return absolutize(from_env);
   }
   if cfg!(target_os = "windows") {
-    roaming_root().join("agent-board")
+    roaming_root().join("jarvis-workbench")
   } else {
-    home_dir().join(".agent-board")
+    home_dir().join(".jarvis-workbench")
   }
 }
 
@@ -85,7 +88,7 @@ pub fn backups_dir(data_dir: &Path) -> PathBuf {
   data_dir.join("backups")
 }
 
-/// 端口与运行期配置（10.3：「端口写入 `~/.agent-board/config.json`」）。
+/// 端口与运行期配置（10.3：「端口写入 `~/.jarvis-workbench/config.json`」，v0.0.4 起的新目录名）。
 pub fn config_file() -> PathBuf {
   data_dir().join("config.json")
 }
@@ -180,5 +183,38 @@ pub fn restrict_to_owner(path: &Path) {
   #[cfg(not(unix))]
   {
     let _ = path;
+  }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+  use super::*;
+  use std::env;
+
+  /// v0.0.4 W1b（需求.md §21.1）：默认数据目录改名 `~/.agent-board` → `~/.jarvis-workbench`，
+  /// 与 `apps/api/src/common/paths.ts` 的 `defaultDataDir()` 保持同源（那边有对应用例）。
+  ///
+  /// `set_var` 是全进程生效，而本 crate 只有这一条用例碰 HOME/ATB_DATA_DIR，
+  /// 所以收在单个用例内先改后复原；不要把它拆成并行跑的多条用例。
+  #[test]
+  fn data_dir_defaults_to_jarvis_workbench_and_honors_env_override() {
+    let saved_home = env::var_os("HOME");
+    let saved_dir = env::var_os("ATB_DATA_DIR");
+    env::remove_var("ATB_DATA_DIR");
+    env::set_var("HOME", "/tmp/atb-fake-home");
+    assert_eq!(data_dir(), PathBuf::from("/tmp/atb-fake-home/.jarvis-workbench"));
+    // 旧名只允许出现在 api 侧 data-dir-migration 的「旧位置」口径里。
+    assert!(!data_dir().ends_with(".agent-board"));
+    // 主进程注入的覆盖值优先（sidecar 与主进程共用同一目录的前提）。
+    env::set_var("ATB_DATA_DIR", "/tmp/atb-override");
+    assert_eq!(data_dir(), PathBuf::from("/tmp/atb-override"));
+    match saved_home {
+      Some(value) => env::set_var("HOME", value),
+      None => env::remove_var("HOME"),
+    }
+    match saved_dir {
+      Some(value) => env::set_var("ATB_DATA_DIR", value),
+      None => env::remove_var("ATB_DATA_DIR"),
+    }
   }
 }

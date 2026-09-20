@@ -9,17 +9,35 @@ export const DEFAULT_PORT = 7788;
  * 数据目录：ATB_DATA_DIR 优先（Tauri 主进程注入），否则按平台取默认值（PRD 20.6）。
  * v0.0.4 W1b（需求.md §21.1）：默认目录由 `~/.agent-board/atb.db` 迁移至
  * `~/.jarvis-workbench/jarvis.db`；旧位置的一次性自动搬迁与只读指引文件在升级首启
- * bootstrap 中执行（依赖桌面端 paths.rs 同步改名，本侧常量先改齐）。
+ * bootstrap 中执行（`infra/data-dir-migration.ts`，桌面端 paths.rs 已同步改名）。
  * 迁移脚本 scripts/db.mjs 有同一份逻辑，改这里要一起改。
  */
 export function dataDir(): string {
   const fromEnv = process.env.ATB_DATA_DIR;
   if (fromEnv) return path.resolve(fromEnv);
+  return defaultDataDir();
+}
+
+/** 平台默认数据目录（不含 `ATB_DATA_DIR` 覆盖）：v0.0.4 起为 `~/.jarvis-workbench`。 */
+export function defaultDataDir(): string {
   if (process.platform === 'win32') {
     const appData = process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming');
     return path.join(appData, 'jarvis-workbench');
   }
   return path.join(os.homedir(), '.jarvis-workbench');
+}
+
+/**
+ * v0.0.3 及更早的默认数据目录——需求.md §21.1 「数据目录迁移」的旧位置。
+ * 一次性自动搬迁（infra/data-dir-migration.ts）以它为源；与主进程
+ * `apps/desktop/src-tauri/src/paths.rs` 改名前的 `data_dir()` 同值。
+ */
+export function legacyDataDir(): string {
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming');
+    return path.join(appData, 'agent-board');
+  }
+  return path.join(os.homedir(), '.agent-board');
 }
 
 export const paths = {
