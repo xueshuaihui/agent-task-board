@@ -16,6 +16,7 @@ import { OverlaySlot } from './overlay-slot';
 import { PageTransition } from './page-transition';
 import { Sidebar } from './sidebar';
 import { TopBar } from './top-bar';
+import { NotificationCenter } from './notification-center';
 
 /**
  * 2.1 应用外框：v0.0.4 W9 起为「左侧导航 + 顶部工具栏 + 内容区」（13.1）。
@@ -103,6 +104,7 @@ function WorkspaceShell({
           </AnimatePresence>
         </main>
       </div>
+      <NotificationCenter />
       <OverlaySlot />
     </div>
   );
