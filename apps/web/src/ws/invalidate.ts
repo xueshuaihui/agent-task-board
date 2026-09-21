@@ -29,6 +29,14 @@ export function keysForEvent(frame: WsFrame): readonly (readonly unknown[])[] {
       // v0.0.4 W4 §5.6 r3：归档/恢复改变分组集合与看板泳道（归档组默认隐藏、
       // claim 排除不改变任务行本身），分组列表与两棵任务树一起失效。
       return [qk.groupsRoot, qk.boardRoot, qk.tasksRoot];
+    case 'breakdown.started':
+    case 'breakdown.progress':
+    case 'breakdown.task_draft':
+    case 'breakdown.finished':
+    case 'breakdown.cancelled':
+      // v0.0.4 W7 §16.3 拆解五条：载荷带 session_id/ref 也只当失效信号，
+      // 会话列表与打开着的详情回 GET 拿真相（confirm 建的 task.created 走 default 分支刷看板）。
+      return [qk.breakdownRoot];
     default:
       return taskIds.length
         ? [qk.boardRoot, qk.tasksRoot, ...taskIds.map((id) => qk.taskRoot(id))]
@@ -72,6 +80,8 @@ export function refreshAfterReconnect(queryClient: QueryClient): void {
   void queryClient.invalidateQueries({ queryKey: qk.notificationsRoot, refetchType: 'active' });
   // W4：断线期间错过 group.archived/unarchived 时，分组集合（含归档折叠区）也要回服务端真相。
   void queryClient.invalidateQueries({ queryKey: qk.groupsRoot, refetchType: 'active' });
+  // W7：同理，断线期间错过的 breakdown.* 五条不补发——拆解会话列表与打开着的确认页一起重取。
+  void queryClient.invalidateQueries({ queryKey: qk.breakdownRoot, refetchType: 'active' });
   // 打开着的抽屉也要回到服务端真相。
   for (const query of queryClient.getQueryCache().getAll()) {
     const key = query.queryKey;

@@ -72,4 +72,9 @@ export const qk = {
   /** 0919 五章：分组 CRUD（features/groups）。 */
   groups: () => ['groups'] as const,
   groupsRoot: ['groups'] as const,
+
+  /** v0.0.4 W7 §7（features/breakdown）：详情是列表行的超集，前缀 `['breakdown']` 一并失效。 */
+  breakdownSessions: () => ['breakdown', 'sessions'] as const,
+  breakdownSession: (id: string) => ['breakdown', 'sessions', id] as const,
+  breakdownRoot: ['breakdown'] as const,
 } as const;

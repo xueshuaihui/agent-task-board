@@ -2,6 +2,7 @@ import { useShellStore } from './store/shell';
 import { TaskDetailDrawer } from '@/features/task-detail';
 import { ReviewFormDialog } from '@/features/review';
 import { DependencyGraphGlobalHost, RequirementDrawerHost } from '@/features/requirements';
+import { BreakdownOverlayHost } from '@/features/breakdown';
 import { useWSEvent } from '@/ws';
 
 /**
@@ -33,6 +34,8 @@ export function OverlaySlot() {
       {/* 0919：需求抽屉（2.md 6.1）与全局依赖图（2.md 8.1）与任务抽屉同层，壳层各挂一份。 */}
       <RequirementDrawerHost />
       <DependencyGraphGlobalHost />
+      {/* v0.0.4 W7 §7.3：拆解创建页是覆盖层不是路由，宿主在此挂一份（含右下角待处理浮标）。 */}
+      <BreakdownOverlayHost />
     </>
   );
 }

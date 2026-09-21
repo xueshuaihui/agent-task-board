@@ -4,6 +4,7 @@
  */
 import { artifactsApi } from './resources/artifacts';
 import { auditApi } from './resources/audit';
+import { breakdownApi } from './resources/breakdown';
 import { dataApi } from './resources/data';
 import { fieldDefsApi } from './resources/field-defs';
 import { notificationsApi } from './resources/notifications';
@@ -27,6 +28,7 @@ export const api = {
   artifacts: artifactsApi,
   data: dataApi,
   prefs: prefsApi,
+  breakdown: breakdownApi,
 } as const;
 
 export { http, buildQuery, requestUrl } from './client';

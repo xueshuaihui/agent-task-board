@@ -176,6 +176,8 @@ export const ERROR_CODES = [
   'GROUP_NOT_ALL_DONE',
   'GROUP_ARCHIVED',
   'BACKUP_NOT_FOUND',
+  // v0.0.4 W7 §7.7：拆解动作从表外状态发起（confirm 只允许 reviewing、cancel 只允许 receiving/reviewing）。
+  'BREAKDOWN_BAD_STATE',
   'INTERNAL',
   'NETWORK_ERROR',
   'UNKNOWN',
@@ -734,6 +736,86 @@ export type ExportInput =
 
 export type ImportStrategy = 'skip' | 'overwrite' | 'reassign';
 
+/* ------------------------------------------------------- 需求拆解（v0.0.4 W7 §7） */
+
+/** §7.7 状态机六态；与 apps/api contract/enums.ts 的 BREAKDOWN_SESSION_STATUSES 同值。 */
+export const BREAKDOWN_SESSION_STATUSES = [
+  'receiving',
+  'reviewing',
+  'creating',
+  'completed',
+  'cancelled',
+  'interrupted',
+] as const;
+export type BreakdownSessionStatus = (typeof BREAKDOWN_SESSION_STATUSES)[number];
+
+/** §7.7 状态说明列的中文名（确认页徽标与切换器红点都取这一张表）。 */
+export const BREAKDOWN_STATUS_LABEL: Record<BreakdownSessionStatus, string> = {
+  receiving: '接收中',
+  reviewing: '待确认',
+  creating: '创建中',
+  completed: '已完成',
+  cancelled: '已取消',
+  interrupted: '已中断',
+};
+
+/** GET /breakdown/sessions 行（服务端 SessionDtoShape 的前端镜像）。 */
+export interface BreakdownSession {
+  id: string;
+  requirement_text: string;
+  group_id: string | null;
+  parent_title: string;
+  parent_description: string | null;
+  /** confirm 成功后回填的父任务（需求）id；表外为 null。 */
+  parent_task_id: string | null;
+  status: BreakdownSessionStatus;
+  agent_name: string | null;
+  skill_used: string | null;
+  estimated_tasks: number | null;
+  actual_tasks: number | null;
+  created_at: string;
+  finished_at: string | null;
+  confirmed_at: string | null;
+  cancelled_at: string | null;
+}
+
+/** 草案任务卡。`skill_ids` 可能残留未解析的技能名（§7.5：不阻断、确认页告警）。 */
+export interface BreakdownDraft {
+  id: string;
+  ref: string;
+  title: string;
+  description: string | null;
+  priority: number;
+  skill_ids: string[];
+  acceptance: string[];
+  /** 会话内稳定引用号（不是任务 id），依赖边以它为坐标。 */
+  depends_on: string[];
+  sort_order: number;
+}
+
+/** report_progress 的逐条上报（§7.2 阶段 3 的清单数据源）。 */
+export interface BreakdownProgress {
+  id: number;
+  step: number;
+  total: number;
+  message: string | null;
+  created_at: string;
+}
+
+/** GET /breakdown/sessions/{id}：确认页数据源 = 会话 + 草案 + 进度。 */
+export interface BreakdownSessionDetail {
+  session: BreakdownSession;
+  drafts: BreakdownDraft[];
+  progress: BreakdownProgress[];
+}
+
+/** POST confirm 的返回：父任务 + 子任务 id（阶段 8 的跳转依据）。 */
+export interface BreakdownConfirmResult {
+  session: BreakdownSession;
+  parent_task_id: string;
+  task_ids: string[];
+}
+
 /* ------------------------------------------------------------- WS 事件载荷 */
 
 export const WS_EVENT_NAMES = [
@@ -750,6 +832,12 @@ export const WS_EVENT_NAMES = [
   // v0.0.4 W4 §5.6 r3：分组归档/反归档，载荷只带分组 id（事件当失效信号的同一口径）。
   'group.archived',
   'group.unarchived',
+  // v0.0.4 W7 §16.3 拆解五条：服务端只带定位字段（session_id/ref/step…），读侧回 GET 拿真相。
+  'breakdown.started',
+  'breakdown.progress',
+  'breakdown.task_draft',
+  'breakdown.finished',
+  'breakdown.cancelled',
 ] as const;
 export type WsEventName = (typeof WS_EVENT_NAMES)[number];
 
@@ -776,6 +864,12 @@ export interface WsEventPayloads {
   };
   'group.archived': { id: string };
   'group.unarchived': { id: string };
+  // v0.0.4 W7 §16.3：与 apps/api breakdown.service.ts 的 emit 调用逐一对应。
+  'breakdown.started': { session_id: string };
+  'breakdown.progress': { session_id: string; step: number; total: number };
+  'breakdown.task_draft': { session_id: string; ref: string };
+  'breakdown.finished': { session_id: string; actual_tasks: number };
+  'breakdown.cancelled': { session_id: string };
 }
 
 /**
