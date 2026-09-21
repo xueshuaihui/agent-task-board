@@ -19,8 +19,8 @@
 #   - 仓库已 npm install（脚本缺 node_modules 时会自动补装）
 #
 # 已知坑（脚本已内置处理，见发布手册 §5.2）：
-#   - 无头会话下 `tauri build` 的 DMG 步骤必失败（osascript），属预期；
-#     只要 .app 产出即视为成功，.dmg 由本脚本用 hdiutil 兜底生成。
+#   - 无头会话下 `tauri build` 的 DMG 步骤可能失败（osascript），属预期；
+#     只要 .app 产出即视为成功，.dmg tauri 已出则复用，未出才由本脚本用 hdiutil 兜底生成。
 
 set -euo pipefail
 
@@ -128,17 +128,26 @@ else
   fail "tauri build 后未找到 ${APP_PATH}（退出码 ${TAURI_EXIT}）"
 fi
 
-# ---------------------------------------------------------------- 第 5 步：hdiutil 生成 .dmg
+# ---------------------------------------------------------------- 第 5 步：生成 .dmg（tauri 已出则复用，未出才 hdiutil 兜底）
 if [ "$SKIP_DMG" -eq 1 ]; then
   step "第 5 步 · 生成 .dmg（--skip-dmg 已跳过）"
 else
-  step "第 5 步 · hdiutil 生成 .dmg"
-  mkdir -p "$BUNDLE_DIR/dmg"
-  rm -f "$DMG_PATH"
-  hdiutil create -volname "Jarvis Workbench" \
-    -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH" > /dev/null \
-    || fail "hdiutil 生成 .dmg 失败"
-  ok ".dmg 产出：$DMG_PATH"
+  step "第 5 步 · 生成 .dmg"
+  TAURI_DMG=""
+  if [ -d "$BUNDLE_DIR/dmg" ]; then
+    TAURI_DMG="$(find "$BUNDLE_DIR/dmg" -maxdepth 1 -name '*.dmg' -print -quit 2>/dev/null || true)"
+  fi
+  if [ -n "$TAURI_DMG" ]; then
+    DMG_PATH="$TAURI_DMG"
+    ok ".dmg 产出：${DMG_PATH}（复用 tauri 产物，跳过兜底 hdiutil）"
+  else
+    mkdir -p "$BUNDLE_DIR/dmg"
+    rm -f "$DMG_PATH"
+    hdiutil create -volname "Jarvis Workbench" \
+      -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH" > /dev/null \
+      || fail "hdiutil 生成 .dmg 失败"
+    ok ".dmg 产出：${DMG_PATH}（hdiutil 兜底生成）"
+  fi
 fi
 
 # ---------------------------------------------------------------- 第 6 步：产物冒烟
