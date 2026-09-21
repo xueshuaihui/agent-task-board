@@ -69,6 +69,8 @@ model Task {
   pinned               Int     @default(0)
   dueAt                String? @map("due_at")
   archivedAt           String? @map("archived_at")
+  // v0.0.4 W7 §15.1/0012：拆解会话来源标记，确认创建时写入；不建外键关系字段（同 parent_task_id 语义松散）。
+  breakdownSessionId   String? @map("breakdown_session_id")
   leaseId              String? @map("lease_id")
   leaseExpiresAt       String? @map("lease_expires_at")
   leaseRevokedAt       String? @map("lease_revoked_at")
@@ -310,4 +312,58 @@ model SkillVersion {
   @@unique([skillId, version])
   @@index([skillId], map: "idx_skill_versions_skill")
   @@map("skill_versions")
+}
+
+// v0.0.4 W7 需求拆解（§7.6/§7.7，迁移 0012）。三表逐条照搬 §7.6 DDL；
+// status 取值全集见 §7.7（CHECK 只在迁移 SQL 里，本文件照旧只做客户端映射）。
+// group_id / parent_task_id 是弱引用（§7.6 无级联语义），不建 Prisma 关系字段。
+model BreakdownSession {
+  id                String  @id
+  requirementText   String  @map("requirement_text")
+  groupId           String? @map("group_id")
+  parentTitle       String  @map("parent_title")
+  parentDescription String? @map("parent_description")
+  parentTaskId      String? @map("parent_task_id")
+  status            String  @default("receiving")
+  agentName         String? @map("agent_name")
+  skillUsed         String? @map("skill_used")
+  estimatedTasks    Int?    @map("estimated_tasks")
+  actualTasks       Int?    @map("actual_tasks")
+  createdAt         String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
+  finishedAt        String? @map("finished_at")
+  confirmedAt       String? @map("confirmed_at")
+  cancelledAt       String? @map("cancelled_at")
+  drafts            BreakdownDraft[]
+  progress          BreakdownProgress[]
+
+  @@map("breakdown_sessions")
+}
+
+model BreakdownDraft {
+  id          String           @id
+  session     BreakdownSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId   String           @map("session_id")
+  ref         String
+  title       String
+  description String?
+  priority    Int              @default(3)
+  skillIds    String           @default("[]") @map("skill_ids")
+  acceptance  String           @default("[]")
+  dependsOn   String           @default("[]") @map("depends_on")
+  sortOrder   Int              @default(0) @map("sort_order")
+
+  @@unique([sessionId, ref])
+  @@map("breakdown_drafts")
+}
+
+model BreakdownProgress {
+  id        Int              @id @default(autoincrement())
+  session   BreakdownSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId String           @map("session_id")
+  step      Int
+  total     Int
+  message   String?
+  createdAt String           @default(dbgenerated("(datetime('now'))")) @map("created_at")
+
+  @@map("breakdown_progress")
 }

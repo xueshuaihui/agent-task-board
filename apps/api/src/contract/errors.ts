@@ -28,6 +28,9 @@ export const ERROR_STATUS = {
   GROUP_NOT_ALL_DONE: 409,
   // v0.0.4 W4 §5.6：归档分组转为只读——不能再向该组建任务/移动任务进来。
   GROUP_ARCHIVED: 409,
+  // v0.0.4 W7 §7.7：拆解会话状态机守卫——动作要求的当前状态不满足
+  // （如非 receiving 时上报草案、非 reviewing 时确认创建）。上下文带 session_id/status/allowed。
+  BREAKDOWN_BAD_STATE: 409,
   ARTIFACT_TOO_LARGE: 413,
   LEASE_EXPIRED: 410,
   LEASE_REVOKED: 410,

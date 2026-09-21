@@ -15,6 +15,12 @@ export const WS_EVENTS = [
   // v0.0.4 W4 §5.6（r3 闭环）：分组归档/反归档，载荷带分组 id（事件只当失效信号）。
   'group.archived',
   'group.unarchived',
+  // v0.0.4 W7 §16.3 拆解五条（复用同一 sink，不建第二条通道）。
+  'breakdown.started',
+  'breakdown.progress',
+  'breakdown.task_draft',
+  'breakdown.finished',
+  'breakdown.cancelled',
 ] as const;
 
 export type WsEventName = (typeof WS_EVENTS)[number];

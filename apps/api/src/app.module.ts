@@ -6,6 +6,8 @@ import { AuditApiModule } from './audit-api/audit-api.module';
 import { AuthGuard } from './auth/auth.guard';
 import { AuthModule } from './auth/auth.module';
 import { BackupModule } from './backup/backup.module';
+// v0.0.4 W7：需求拆解服务层（controller 端点在下一切片接入）。
+import { BreakdownModule } from './breakdown/breakdown.module';
 import { DataModule } from './data/data.module';
 import { FieldDefsModule } from './field-defs/field-defs.module';
 import { InfraModule } from './infra/infra.module';
@@ -32,6 +34,7 @@ import { WsModule } from './ws/ws.module';
     AgentModule,
     McpModule,
     TasksModule,
+    BreakdownModule,
     TokensModule,
     SettingsApiModule,
     TemplatesModule,

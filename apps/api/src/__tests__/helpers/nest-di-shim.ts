@@ -16,6 +16,7 @@ import { AuditApiController } from '../../audit-api/audit-api.controller';
 import { AuthGuard } from '../../auth/auth.guard';
 import { BackupService } from '../../backup/backup.service';
 import { BackupController } from '../../backup/backup.controller';
+import { BreakdownService } from '../../breakdown/breakdown.service';
 import { DataService } from '../../data/data.service';
 import { ImportService } from '../../data/import.service';
 import { DataController } from '../../data/data.controller';
@@ -109,6 +110,9 @@ export function applyDiShim(): void {
   ]);
   declare(TasksController, [TasksService]);
   declare(RunsController, [TasksService]);
+
+  // ── v0.0.4 W7 需求拆解
+  declare(BreakdownService, [PrismaService, AuditService, EventsService]);
 
   // ── field-defs / templates / tokens
   declare(FieldDefsService, [PrismaService, AuditService, SettingsService]);

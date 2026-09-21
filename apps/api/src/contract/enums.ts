@@ -118,6 +118,9 @@ export const AUDIT_ACTIONS = [
   // 与调用后的结果上报（report_mcp_call），本地信任模型下的尽力记录。
   'mcp_policy_check',
   'mcp_call',
+  // v0.0.4 W7 §7.2 阶段 7：拆解会话的两个用户动作（确认创建 / 取消）。
+  'breakdown_confirm',
+  'breakdown_cancel',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -135,6 +138,8 @@ export const AUDIT_TARGET_TYPES = [
   'preference',
   // v0.0.4 W6 §12.6：MCP 策略决策与调用结果的审计对象类型。
   'mcp',
+  // v0.0.4 W7 §7.6：拆解会话（confirm/cancel 的审计目标）。
+  'breakdown_session',
 ] as const;
 export type AuditTargetType = (typeof AUDIT_TARGET_TYPES)[number];
 
@@ -163,6 +168,28 @@ export const FIELD_TYPE_LABEL: Record<FieldType, string> = {
 
 /** 20.5：本期约定的能力命名空间，未约定的按字符串全等匹配、不校验取值。 */
 export const CAPABILITY_NAMESPACES = ['language', 'framework', 'repo', 'tool'] as const;
+
+// ---------------------------------------------------------------- v0.0.4 W7 需求拆解（§7.6/§7.7）
+
+/** §7.7 拆解会话状态机全集；与迁移 0012 的 breakdown_sessions.status CHECK 同值。 */
+export const BREAKDOWN_SESSION_STATUSES = [
+  'receiving',
+  'reviewing',
+  'creating',
+  'completed',
+  'cancelled',
+  'interrupted',
+] as const;
+export type BreakdownSessionStatus = (typeof BREAKDOWN_SESSION_STATUSES)[number];
+
+export const BREAKDOWN_STATUS_LABEL: Record<BreakdownSessionStatus, string> = {
+  receiving: '接收中',
+  reviewing: '待确认',
+  creating: '创建中',
+  completed: '已完成',
+  cancelled: '已取消',
+  interrupted: '已中断',
+};
 
 export const DEFAULT_TASK_TYPES = ['需求', '缺陷', '子任务', '巡检', '重构'] as const;
 
