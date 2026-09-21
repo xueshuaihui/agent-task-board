@@ -4,6 +4,7 @@ import { AnimatePresence } from 'motion/react';
 import { useCreationRequests } from './queries';
 import { useCreationStore } from './store';
 import { CreationCard } from './creation-card';
+import { AgentUndoStack, useAgentUndoStore } from './agent-undo-stack';
 import { useWSEvent } from '@/ws';
 
 /**
@@ -19,6 +20,7 @@ import { useWSEvent } from '@/ws';
  */
 export function CreationRequestHost() {
   const cards = useCreationStore((state) => state.cards);
+  const undoEntries = useAgentUndoStore((state) => state.entries);
   const upsert = useCreationStore((state) => state.upsert);
   const upsertMany = useCreationStore((state) => state.upsertMany);
   const list = useCreationRequests();
@@ -34,7 +36,7 @@ export function CreationRequestHost() {
     upsertMany(items.filter((item) => item.status === 'pending'));
   }, [list.data, upsertMany]);
 
-  if (cards.length === 0) return null;
+  if (cards.length === 0 && undoEntries.length === 0) return null;
 
   return createPortal(
     <div
@@ -47,6 +49,8 @@ export function CreationRequestHost() {
           <CreationCard key={card.request_id} card={card} />
         ))}
       </AnimatePresence>
+      {/* §8.6（W8-a4）：agent direct/silent 直建的 5 秒撤销浮层，与决策卡片同栈同语汇。 */}
+      <AgentUndoStack />
     </div>,
     document.body,
   );

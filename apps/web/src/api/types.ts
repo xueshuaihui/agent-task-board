@@ -235,6 +235,8 @@ export interface TaskCard {
   group_id: string | null;
   /** 0919：子任务的父任务摘要（含父任务下子任务完成度）；无父任务为 null。 */
   parent?: { id: string; title: string; done: number; total: number } | null;
+  /** v0.0.4 §8.6（W8-a4）：任务来源（'user' | 'agent'），与 api TaskCardDto 对齐；agent 直建任务挂 5 秒撤销入口。 */
+  origin_type: string;
 }
 
 export interface CardArtifact {
@@ -906,8 +908,10 @@ export interface WsEventPayloads {
   /**
    * `task.created` / `task.updated` 在 13 章写的是「任务对象」，服务端实际只发 `{ id }`：
    * 同一章的读取模型规定事件只当失效信号、不做本地增量，带对象反而诱导这里写增量合并。
+   * 例外（W8-a4 §8.6）：`task.created` 额外带 `origin_type`——direct/silent 直建任务前端
+   * 只有这一条观察通道，撤销入口按它挂载；仍是定位/归类字段，不是可合并的任务对象。
    */
-  'task.created': { id: string };
+  'task.created': { id: string; origin_type?: 'user' | 'agent' };
   'task.updated': { id: string };
   'task.moved': { id: string; from: TaskStatus; to: TaskStatus };
   'task.unblocked': { task_id: string };
