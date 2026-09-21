@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { ApiException } from '../contract/errors';
 import {
   DEFAULT_GROUP_ID,
@@ -351,6 +352,154 @@ export class BreakdownService {
     };
   }
 
+  // ------------------------------------------- W7 遗留 b3：确认页草案编辑（§7.4，UI 面）
+
+  /**
+   * §7.4「添加任务」用户侧写入口：与 Agent 面 reportDraft 同表同约束
+   * （UNIQUE(session_id, ref)、priority 0~3、ref 自环/未知前置/成环一律拒），
+   * 差别只在守卫状态——reportDraft 要 receiving，这里要 reviewing（§7.7 待确认期编辑）。
+   * ref 可省略：服务端按会话内数字后缀取号 t{max+1}；显式传的 ref 已被占用 →
+   * 409 BREAKDOWN_DRAFT_REF_TAKEN。
+   */
+  async userAddDraft(sessionId: string, input: Partial<BreakdownDraftInput>): Promise<DraftDtoShape[]> {
+    const session = await this.requireSession(sessionId);
+    this.assertStatus(session, 'reviewing', ['reviewing']);
+    const existing = await this.drafts(sessionId);
+    const ref = input.ref?.trim() ? text(input.ref, 'ref') : nextUserRef(existing);
+    if (existing.some((draft) => draft.ref === ref)) {
+      throw new ApiException('BREAKDOWN_DRAFT_REF_TAKEN', `草案引用 ${ref} 在会话内已存在`, undefined, {
+        session_id: sessionId,
+        ref,
+      });
+    }
+    const title = text(input.title ?? '新任务', 'title');
+    const priority = input.priority ?? 3;
+    assertPriority(priority, sessionId);
+    const dependsOn = normalizeRefs(input.depends_on, 'depends_on');
+    if (dependsOn.includes(ref)) {
+      throw new ApiException('DEPENDENCY_CYCLE', '草案不能依赖自身');
+    }
+    this.assertProspectiveGraph(existing, ref, dependsOn, sessionId);
+    const skillIds = normalizeRefs(input.skill_ids, 'skill_ids');
+    const acceptance = toStringArray(input.acceptance ?? [], 'acceptance').map((v) => v.trim()).filter(Boolean);
+    const sortOrder = input.sort_order ?? existing.reduce((max, d) => Math.max(max, d.sort_order ?? 0), -1) + 1;
+
+    await this.prisma.$transaction(async (tx) => {
+      this.assertReviewingGuard(await guardReviewingUpdate(tx, sessionId));
+      await tx.$executeRawUnsafe(
+        `INSERT INTO breakdown_drafts (id, session_id, ref, title, description, priority, skill_ids, acceptance, depends_on, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        newId(),
+        sessionId,
+        ref,
+        title,
+        input.description ?? null,
+        priority,
+        JSON.stringify(skillIds),
+        JSON.stringify(acceptance),
+        JSON.stringify(dependsOn),
+        sortOrder,
+      );
+      await recountActualTasks(tx, sessionId);
+    });
+    this.events.emit('breakdown.task_draft', { session_id: sessionId, ref });
+    return (await this.drafts(sessionId)).map(toDraftDto);
+  }
+
+  /**
+   * §7.4 局部更新（标题/描述/优先级/技能/验收/依赖）+ 条款 81「歧义候选重选=可改」：
+   * skill_ids/depends_on 传了即整体替换。仅 reviewing 可写；depends_on 变化后按
+   *  prospective 图查自环/未知 ref/成环（服务端兜底 §7.8，前端拦截只是体验层）。
+   */
+  async userUpdateDraft(
+    sessionId: string,
+    ref: string,
+    patch: Partial<BreakdownDraftInput>,
+  ): Promise<DraftDtoShape[]> {
+    const session = await this.requireSession(sessionId);
+    this.assertStatus(session, 'reviewing', ['reviewing']);
+    const existing = await this.drafts(sessionId);
+    const row = existing.find((draft) => draft.ref === ref);
+    if (!row) throw draftNotFound(sessionId, ref);
+    if (patch.priority !== undefined) assertPriority(patch.priority, sessionId);
+    if (patch.depends_on !== undefined) {
+      const nextDeps = normalizeRefs(patch.depends_on, 'depends_on');
+      if (nextDeps.includes(ref)) {
+        throw new ApiException('DEPENDENCY_CYCLE', '草案不能依赖自身');
+      }
+      this.assertProspectiveGraph(existing, ref, nextDeps, sessionId);
+    }
+
+    const next = {
+      title: patch.title === undefined ? row.title : text(patch.title, 'title'),
+      description: patch.description === undefined ? row.description : patch.description,
+      priority: patch.priority ?? row.priority ?? 3,
+      skill_ids: JSON.stringify(
+        patch.skill_ids === undefined
+          ? parseArray<string>(row.skill_ids)
+          : normalizeRefs(patch.skill_ids, 'skill_ids'),
+      ),
+      acceptance: JSON.stringify(
+        patch.acceptance === undefined
+          ? parseArray<string>(row.acceptance)
+          : toStringArray(patch.acceptance, 'acceptance').map((v) => v.trim()).filter(Boolean),
+      ),
+      depends_on: JSON.stringify(
+        patch.depends_on === undefined
+          ? parseArray<string>(row.depends_on)
+          : normalizeRefs(patch.depends_on, 'depends_on'),
+      ),
+      sort_order: patch.sort_order ?? row.sort_order ?? 0,
+    };
+    await this.prisma.$transaction(async (tx) => {
+      this.assertReviewingGuard(await guardReviewingUpdate(tx, sessionId));
+      await tx.$executeRawUnsafe(
+        `UPDATE breakdown_drafts
+            SET title = ?, description = ?, priority = ?, skill_ids = ?, acceptance = ?, depends_on = ?, sort_order = ?
+          WHERE id = ?`,
+        next.title,
+        next.description,
+        next.priority,
+        next.skill_ids,
+        next.acceptance,
+        next.depends_on,
+        next.sort_order,
+        row.id,
+      );
+    });
+    this.events.emit('breakdown.task_draft', { session_id: sessionId, ref });
+    return (await this.drafts(sessionId)).map(toDraftDto);
+  }
+
+  /**
+   * §7.4「删除任务」：删行 + 级联清其它草案 depends_on 里的悬空引用（同事务），
+   * 与 confirm 侧 assertDraftGraph 的「前置不存在即拒」口径对齐，不留幽灵边。
+   */
+  async userDeleteDraft(sessionId: string, ref: string): Promise<DraftDtoShape[]> {
+    const session = await this.requireSession(sessionId);
+    this.assertStatus(session, 'reviewing', ['reviewing']);
+    const existing = await this.drafts(sessionId);
+    const row = existing.find((draft) => draft.ref === ref);
+    if (!row) throw draftNotFound(sessionId, ref);
+    const dependents = existing.filter((draft) => draft.ref !== ref && parseArray<string>(draft.depends_on).includes(ref));
+
+    await this.prisma.$transaction(async (tx) => {
+      this.assertReviewingGuard(await guardReviewingUpdate(tx, sessionId));
+      await tx.$executeRawUnsafe(`DELETE FROM breakdown_drafts WHERE id = ?`, row.id);
+      for (const draft of dependents) {
+        const cleaned = parseArray<string>(draft.depends_on).filter((dep) => dep !== ref);
+        await tx.$executeRawUnsafe(
+          `UPDATE breakdown_drafts SET depends_on = ? WHERE id = ?`,
+          JSON.stringify(cleaned),
+          draft.id,
+        );
+      }
+      await recountActualTasks(tx, sessionId);
+    });
+    this.events.emit('breakdown.task_draft', { session_id: sessionId, ref });
+    return (await this.drafts(sessionId)).map(toDraftDto);
+  }
+
   // ---------------------------------------------------------------- 取消与读侧
 
   async cancel(sessionId: string): Promise<SessionDtoShape> {
@@ -596,6 +745,40 @@ export class BreakdownService {
     return { perDraft, report };
   }
 
+  /** §7.7：status 条件 UPDATE 命中 0 行＝写事务开始时会话已不在 reviewing（confirm/超时收敛抢先），统一 409。 */
+  private assertReviewingGuard(affected: number): void {
+    if (affected === 0) {
+      throw new ApiException(
+        'BREAKDOWN_BAD_STATE',
+        '拆解会话已离开待确认状态，草案写入被拒绝（§7.7 仅 reviewing 可编辑）',
+        undefined,
+        { allowed: ['reviewing'] },
+      );
+    }
+  }
+
+  /** §7.8 成环/自引用兜底：把 ref 的依赖边集合替换成候选值后跑同一张图检查（含未知前置）。 */
+  private assertProspectiveGraph(existing: DraftRow[], ref: string, nextDeps: string[], sessionId: string): void {
+    const prospective = existing.map((draft) =>
+      draft.ref === ref ? { ...draft, depends_on: JSON.stringify(nextDeps) } : draft,
+    );
+    if (!prospective.some((draft) => draft.ref === ref)) {
+      prospective.push({
+        id: `pending-${ref}`,
+        session_id: sessionId,
+        ref,
+        title: '',
+        description: null,
+        priority: null,
+        skill_ids: '[]',
+        acceptance: '[]',
+        depends_on: JSON.stringify(nextDeps),
+        sort_order: null,
+      });
+    }
+    this.assertDraftGraph(prospective, sessionId);
+  }
+
   private async drafts(sessionId: string): Promise<DraftRow[]> {
     return this.prisma.$queryRawUnsafe<DraftRow[]>(
       `SELECT id, session_id, ref, title, description, priority, skill_ids, acceptance, depends_on, sort_order
@@ -709,6 +892,60 @@ function text(value: string, field: string): string {
     throw new ApiException('VALIDATION_FAILED', `${field} 不能为空`, [{ path: field, code: 'too_small', message: '必填' }]);
   }
   return trimmed;
+}
+
+// ------------------------------------------- W7 遗留 b3：用户侧草案写端点的内部件
+
+/**
+ * 并发守卫（b2e97c2 confirm 的状态条件 UPDATE 同款）：'reviewing' 判定与后续写在
+ * 同一事务里原子命中；返回 0 行即别的动作（confirm / 超时收敛）已抢先流转。
+ */
+async function guardReviewingUpdate(tx: Prisma.TransactionClient, sessionId: string): Promise<number> {
+  return tx.$executeRawUnsafe(
+    `UPDATE breakdown_sessions SET status = 'reviewing' WHERE id = ? AND status = 'reviewing'`,
+    sessionId,
+  );
+}
+
+/** 草案增删后同步 actual_tasks（与 finish 口径一致，确认页计数不漂移）。 */
+async function recountActualTasks(tx: Prisma.TransactionClient, sessionId: string): Promise<void> {
+  await tx.$executeRawUnsafe(
+    `UPDATE breakdown_sessions SET actual_tasks = (SELECT COUNT(*) FROM breakdown_drafts WHERE session_id = ?) WHERE id = ?`,
+    sessionId,
+    sessionId,
+  );
+}
+
+/** 与 web draft-edit.ts 的 nextDraftRef 同口径：数字后缀最大值 +1，无草案回 t1。 */
+function nextUserRef(drafts: DraftRow[]): string {
+  let max = 0;
+  for (const draft of drafts) {
+    const n = Number.parseInt(draft.ref.replace(/^\D+/, ''), 10);
+    if (Number.isFinite(n)) max = Math.max(max, n);
+  }
+  return `t${max + 1}`;
+}
+
+function assertPriority(priority: number, sessionId: string): void {
+  if (!Number.isInteger(priority) || priority < 0 || priority > 3) {
+    throw new ApiException('VALIDATION_FAILED', 'priority 取值 0~3（20 章）', undefined, { session_id: sessionId });
+  }
+}
+
+function toStringArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+    throw new ApiException('VALIDATION_FAILED', `${field} 必须是字符串数组`, [{ path: field, code: 'invalid_type', message: 'string[]' }]);
+  }
+  return value as string[];
+}
+
+/** ref / skill_ids 一类字符串数组入参：逐项 trim + 会话内去重，空值即 422。 */
+function normalizeRefs(values: string[] | undefined, field: string): string[] {
+  return dedupe(toStringArray(values ?? [], field).map((value) => text(value, field)));
+}
+
+function draftNotFound(sessionId: string, ref: string): ApiException {
+  return new ApiException('NOT_FOUND', `会话内不存在草案 ${ref}`, undefined, { session_id: sessionId, ref });
 }
 
 function assertEstimated(value: number): void {
