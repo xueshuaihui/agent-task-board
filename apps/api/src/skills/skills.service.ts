@@ -30,6 +30,7 @@ import {
 } from './skills.dto';
 import { blocksToMarkdown, markdownToBlocks, parseFrontmatter } from './skill-markdown';
 import { scanDirectory } from './skill-sources';
+import { findSkillRefCycle, SkillRefException, subskillRefs, subskillRefsOfJson } from './skill-reference';
 
 const INITIAL_VERSION = 'v0.1.0';
 const EMPTY_CONTENT: SkillContent = { blocks: [], entryBlockId: null };
@@ -198,6 +199,8 @@ export class SkillsService {
   async patch(id: string, input: SkillPatchInput): Promise<SkillDto> {
     const row = await this.require(id);
     this.assertWritable(row, '默认技能不可编辑');
+    // ③ 子技能引用环拦截：改到 content 时先做图检测，再落库。
+    if (input.content !== undefined) await this.assertSkillRefsAcyclic(id, input.content);
     const data: Record<string, string> = { updatedAt: nowSql() };
     // r2（§16.2）：重名不再受限，改名不查重。
     if (input.name !== undefined) data.name = input.name;
@@ -232,6 +235,8 @@ export class SkillsService {
     const row = await this.require(id);
     // §9.6：仅自定义/三方技能有版本；默认技能无版本历史。
     this.assertWritable(row, '默认技能无版本管理');
+    // ③ 子技能引用环拦截：发布携带的内容同样先验图。
+    await this.assertSkillRefsAcyclic(id, input.content);
     const version = nextPatchVersion(row.currentVersion);
     const parsed = parseSkill(row);
     const deps = input.mcp_dependencies ?? parsed.mcpDependencies;
@@ -614,6 +619,35 @@ export class SkillsService {
       throw new ApiException('SKILL_READONLY', `${what}（内置默认技能，随应用包更新）`, undefined, {
         skill_id: row.id,
       });
+    }
+  }
+
+  /**
+   * ③ 技能引用环守卫：把「待写入的这份内容」当作 id 节点的最新出边，叠加库内其余技能的
+   * 子技能出边构成引用图，检出（a）直接自引用 id→id，（b）经其它技能回到 id 的环。
+   * 命中即抛就近定义的 SKILL_REF_SELF(400) / SKILL_REF_CYCLE(409)（见 skill-reference.ts）。
+   */
+  private async assertSkillRefsAcyclic(id: string, content: SkillContent): Promise<void> {
+    const outRefs = subskillRefs(content);
+    if (outRefs.includes(id)) {
+      throw new SkillRefException('SKILL_REF_SELF', '技能不能被子技能块引用自身（skillRef 指向自己）', {
+        skill_id: id,
+      });
+    }
+    if (outRefs.length === 0) return; // 无子技能出边 → 不可能经本节点成环，省一次全表读。
+    // 其余节点用库内当前 content 的出边；本节点覆盖为待写入出边（草稿尚未落库）。
+    const rows = await this.prisma.skill.findMany({ select: { id: true, content: true } });
+    const edges = new Map<string, string[]>(
+      rows.map((row) => [row.id, subskillRefsOfJson(row.content)]),
+    );
+    edges.set(id, outRefs);
+    const chain = findSkillRefCycle(edges, id);
+    if (chain) {
+      throw new SkillRefException(
+        'SKILL_REF_CYCLE',
+        `技能子技能引用形成环：${chain.join(' → ')}，已拒绝`,
+        { skill_id: id, chain },
+      );
     }
   }
 
