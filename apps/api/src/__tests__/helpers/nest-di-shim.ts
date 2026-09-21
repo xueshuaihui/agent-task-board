@@ -19,6 +19,7 @@ import { BackupController } from '../../backup/backup.controller';
 import { BreakdownController } from '../../breakdown/breakdown.controller';
 import { BreakdownService } from '../../breakdown/breakdown.service';
 import { CreationService } from '../../creation/creation.service';
+import { CreationController } from '../../creation/creation.controller';
 import { DataService } from '../../data/data.service';
 import { ImportService } from '../../data/import.service';
 import { DataController } from '../../data/data.controller';
@@ -117,8 +118,9 @@ export function applyDiShim(): void {
   declare(BreakdownService, [PrismaService, AuditService, EventsService]);
   declare(BreakdownController, [BreakdownService]);
 
-  // ── v0.0.4 W8 会话创建闭环（board.create_task 服务层；REST 决策端点切片时补 declare）
+  // ── v0.0.4 W8 会话创建闭环（board.create_task 服务层 + W8-a2 REST 决策端点 §16.2）
   declare(CreationService, [PrismaService, SettingsService, AuditService, EventsService, SkillsService]);
+  declare(CreationController, [CreationService]);
 
   // ── field-defs / templates / tokens
   declare(FieldDefsService, [PrismaService, AuditService, SettingsService]);

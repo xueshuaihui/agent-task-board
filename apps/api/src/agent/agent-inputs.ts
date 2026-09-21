@@ -10,6 +10,7 @@ import {
   claimSchema,
   completeSchema,
   createTaskSchema,
+  creationRequestRefSchema,
   failSchema,
   heartbeatSchema,
   listReadyQuerySchema,
@@ -38,6 +39,7 @@ export type {
   BreakdownProgressReportInput,
   BreakdownSessionActionInput,
   CreateTaskToolInput,
+  CreationRequestRefInput,
 } from '../contract/agent-schemas';
 
 /** 12 章：`get_task` 是只读工具，不需要三元组（三元组只在写回侧强制）。 */
@@ -58,6 +60,7 @@ export {
   claimSchema,
   completeSchema,
   createTaskSchema,
+  creationRequestRefSchema,
   failSchema,
   heartbeatSchema,
   listReadyQuerySchema,

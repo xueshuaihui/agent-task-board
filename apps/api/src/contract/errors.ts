@@ -35,6 +35,8 @@ export const ERROR_STATUS = {
   // v0.0.4 W7 §7.7：拆解会话状态机守卫——动作要求的当前状态不满足
   // （如非 receiving 时上报草案、非 reviewing 时确认创建）。上下文带 session_id/status/allowed。
   BREAKDOWN_BAD_STATE: 409,
+  // v0.0.4 W8-a2 §8.7：轻确认决策回传时请求已终结（已建/已取消/已超时/宽限期外）。
+  CREATION_REQUEST_RESOLVED: 409,
   ARTIFACT_TOO_LARGE: 413,
   LEASE_EXPIRED: 410,
   LEASE_REVOKED: 410,

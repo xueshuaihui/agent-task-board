@@ -13,6 +13,7 @@ import {
   claimSchema,
   completeSchema,
   createTaskSchema,
+  creationRequestRefSchema,
   failSchema,
   getTaskSchema,
   heartbeatSchema,
@@ -31,6 +32,7 @@ import {
   type ClaimInput,
   type CompleteInput,
   type CreateTaskToolInput,
+  type CreationRequestRefInput,
   type FailInput,
   type GetTaskInput,
   type LeaseTriple,
@@ -70,7 +72,7 @@ export interface AgentToolContext {
   policy: McpPolicyService;
   /** v0.0.4 W7 §16.1：board.* 拆解五工具的生命周期落点（begin/progress/draft/finish/cancel）。 */
   breakdown: BreakdownService;
-  /** v0.0.4 W8 §8.7：board.create_task 的会话创建闭环落点（直建/静默；light 占位）。 */
+  /** v0.0.4 W8 §8.7：board.create_task 的会话创建闭环落点（三模式 + 轻确认决策闭环/状态轮询）。 */
   creation: CreationService;
 }
 
@@ -260,13 +262,34 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
     {
       name: 'board.create_task',
       description:
-        '会话创建单个任务（§8.7；confirmation_mode=direct/silent 即时落库并记账 agent_sessions/task_creation_logs，light 轻确认待决策闭环切片）',
+        '会话创建单个任务（§8.7；direct/silent 即时落库并记账 agent_sessions/task_creation_logs；' +
+        'light 缺省服务端阻塞等待轻确认决策（超时 30s + 5s 宽限，超时不创建），wait:false 走异步立即返回 request_id）',
       input: createTaskSchema,
       run: async (args, auth) => {
         const agent = agentOf(auth);
         const input = args as CreateTaskToolInput;
         // agent_name 缺省取凭证名：来源列与流水都据此记账（同 begin_breakdown 口径）。
         return ctx.creation.createFromAgent(input, agent.tokenName);
+      },
+    },
+    {
+      name: 'board.get_creation_status',
+      description: '轮询创建请求结果（§8.7 r3，light + wait:false 异步模式的超时降级收口路径）',
+      input: creationRequestRefSchema,
+      run: async (args, auth) => {
+        agentOf(auth);
+        const { request_id: requestId } = args as CreationRequestRefInput;
+        return ctx.creation.status(requestId);
+      },
+    },
+    {
+      name: 'board.wait_for_confirmation',
+      description: '阻塞等待创建请求的轻确认决策收口（§8.7；create/edit/cancel/超时，已终结立即返回）',
+      input: creationRequestRefSchema,
+      run: async (args, auth) => {
+        agentOf(auth);
+        const { request_id: requestId } = args as CreationRequestRefInput;
+        return ctx.creation.waitFor(requestId);
       },
     },
   ];

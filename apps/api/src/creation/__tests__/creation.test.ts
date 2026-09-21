@@ -10,12 +10,13 @@ import { createAgentHarness, type AgentHarness } from '../../agent/__tests__/tem
 import { skillCreateSchema } from '../../skills/skills.dto';
 
 /**
- * v0.0.4 W8 第一片（§8.7）：board.create_task 直建/静默两模式 + 会话/流水落库。
+ * v0.0.4 W8 第一片 + W8-a2 第二片（§8.7）：board.create_task 三模式全闭环。
  * 覆盖三层：
  *  1. 迁移 0013 演练——在 /tmp 里从 0012 水位增量升级到 0013（真库禁写，一律临时目录）；
- *  2. 服务/MCP 面：两模式成功路径的任务 origin 列、agent_sessions upsert、
+ *  2. 服务/MCP 面：直建/静默成功路径的任务 origin 列、agent_sessions upsert、
  *     task_creation_logs/audit_logs 行数断言；
- *  3. light 占位：NOT_IMPLEMENTED(501)，且不产生任何落库副作用。
+ *  3. light 决策闭环（W8-a2）：确认/编辑/取消/超时+5s 宽限四路归宿、WS agent.task_requested
+ *     卡片下发、board.get_creation_status / wait_for_confirmation、§8.2 模式优先级与重复升级。
  */
 let h: AgentHarness;
 let agent: RequestAuth;
@@ -265,26 +266,235 @@ describe('board.create_task 静默创建（silent）+ 会话刷新', () => {
   });
 });
 
-// ---------------------------------------------------------------- 3. light 占位与校验
+// ---------------------------------------------------------------- 3. light 轻确认决策闭环（§8.7 r3）
 
-describe('board.create_task light 占位（决策闭环归下一切片）', () => {
-  it('confirmation_mode=light → NOT_IMPLEMENTED(501)，零落库副作用', async () => {
-    const logsBefore = await countOf('task_creation_logs');
-    const sessionsBefore = await countOf('agent_sessions');
-    await expect(
-      call('board.create_task', { ...baseInput, session_id: 'conv-light', confirmation_mode: 'light' }),
-    ).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED', status: 501 });
-    expect(await countOf('task_creation_logs')).toBe(logsBefore);
-    expect(await countOf('agent_sessions')).toBe(sessionsBefore);
-    expect(await countOf('agent_sessions', 'WHERE session_id = ?', ['conv-light'])).toBe(0);
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const unique = (label: string) => `${label} ${Math.random().toString(36).slice(2, 8)}`;
+
+/** 抓取本轮新发的 WS 事件（轻确认卡片下发的实证）。 */
+async function nextWsEvent(name: string, since: number) {
+  for (let i = 0; i < 200; i++) {
+    const hit = h.emitted.slice(since).find((e) => e.event === name);
+    if (hit) return hit;
+    await sleep(25);
+  }
+  throw new Error(`未观察到 WS 事件 ${name}`);
+}
+
+function requestedCount(): number {
+  return h.emitted.filter((e) => e.event === 'agent.task_requested').length;
+}
+
+async function settle(id: string, action: 'create' | 'edit' | 'cancel', payload?: Record<string, unknown>) {
+  return h.creation.decide(id, { action, payload } as never);
+}
+
+describe('board.create_task light 轻确认决策闭环', () => {
+  it('确认：wait:false 即时返回 request_id 并下发 WS 卡片；decision=create 落库，轮询/等待工具收口', async () => {
+    const before = requestedCount();
+    const pending = (await call('board.create_task', {
+      ...baseInput,
+      title: unique('轻确认-确认'),
+      session_id: 'conv-light-ok',
+      confirmation_mode: 'light',
+      wait: false,
+    })) as { created: boolean; pending?: boolean; request_id: string; expires_at: string };
+    expect(pending).toMatchObject({ created: false, pending: true, confirmation_mode: 'light' });
+    expect(pending.expires_at).toBeTruthy();
+    expect(requestedCount()).toBe(before + 1);
+    const card = h.emitted.slice(-1).find((e) => e.event === 'agent.task_requested')!;
+    expect(card.data).toMatchObject({
+      request_id: pending.request_id,
+      status: 'pending',
+      session_id: 'conv-light-ok',
+      agent_name: 'qoder-1',
+    });
+
+    const view = h.creation.status(pending.request_id);
+    expect(view.status).toBe('pending');
+    expect(view.decision_deadline_at).toBeTruthy();
+
+    const decided = await settle(pending.request_id, 'create');
+    expect(decided.status).toBe('created');
+    expect(decided.task_id).toBeTruthy();
+
+    const task = await h.prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+      `SELECT confirmation_mode, origin_type FROM tasks WHERE id = ?`,
+      decided.task_id,
+    );
+    expect(task[0]).toMatchObject({ confirmation_mode: 'light', origin_type: 'agent' });
+    const log = await h.prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+      `SELECT confirmation, user_action, source FROM task_creation_logs WHERE task_id = ?`,
+      decided.task_id,
+    );
+    expect(log[0]).toMatchObject({ confirmation: 'light', user_action: 'created', source: 'mcp' });
+    const sessions = await h.prisma.$queryRawUnsafe<{ task_count: number }[]>(
+      `SELECT task_count FROM agent_sessions WHERE session_id = 'conv-light-ok'`,
+    );
+    expect(sessions[0]!.task_count).toBe(1); // 会话记账只发生在真正建成任务时
+
+    // §8.7 r3：board.get_creation_status 轮询与 board.wait_for_confirmation 都回同一终结态。
+    const status = (await call('board.get_creation_status', { request_id: pending.request_id })) as {
+      status: string;
+      task_id: string;
+    };
+    expect(status).toMatchObject({ status: 'created', task_id: decided.task_id });
+    const waited = (await call('board.wait_for_confirmation', { request_id: pending.request_id })) as {
+      status: string;
+    };
+    expect(waited.status).toBe('created');
+    await expect(call('board.get_creation_status', { request_id: 'req_missing' })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
   });
 
-  it('缺省 confirmation_mode 按默认轻确认解析（§8.2）→ 同样 NOT_IMPLEMENTED', async () => {
-    const input = { ...baseInput, session_id: 'conv-default' };
-    delete (input as { confirmation_mode?: string }).confirmation_mode;
-    await expect(call('board.create_task', input)).rejects.toMatchObject({
-      code: 'NOT_IMPLEMENTED',
+  it('同步等待：create_task 阻塞到决策；decision=cancel → 不创建、流水记 cancelled（task_id 挂请求 id）', async () => {
+    const callPromise = call('board.create_task', {
+      ...baseInput,
+      title: unique('轻确认-取消'),
+      session_id: 'conv-light-cancel',
+      confirmation_mode: 'light',
     });
+    const since = h.emitted.length;
+    const card = await nextWsEvent('agent.task_requested', since);
+    const requestId = card.data.request_id as string;
+    const decided = await settle(requestId, 'cancel');
+    expect(decided.status).toBe('cancelled');
+
+    await expect(callPromise).resolves.toMatchObject({
+      created: false,
+      status: 'cancelled',
+      request_id: requestId,
+      confirmation_mode: 'light',
+      session_id: 'conv-light-cancel',
+    });
+    expect(await countOf('tasks', 'WHERE origin_session_id = ?', ['conv-light-cancel'])).toBe(0);
+    expect(await countOf('agent_sessions', 'WHERE session_id = ?', ['conv-light-cancel'])).toBe(0);
+    const log = await h.prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+      `SELECT confirmation, user_action, session_id FROM task_creation_logs WHERE task_id = ?`,
+      requestId,
+    );
+    expect(log[0]).toMatchObject({ confirmation: 'light', user_action: 'cancelled', session_id: 'conv-light-cancel' });
+    // 终结后再决策 → 409 CREATION_REQUEST_RESOLVED（§8.7 一请求一归宿）。
+    await expect(settle(requestId, 'create')).rejects.toMatchObject({
+      code: 'CREATION_REQUEST_RESOLVED',
+      status: 409,
+    });
+  });
+
+  it('编辑确认：edit 带修改后载荷落库（user_action=edited），空载荷 422、未知请求 404', async () => {
+    const callPromise = call('board.create_task', {
+      ...baseInput,
+      title: unique('轻确认-编辑前'),
+      session_id: 'conv-light-edit',
+      confirmation_mode: 'light',
+    });
+    const since = h.emitted.length;
+    const card = await nextWsEvent('agent.task_requested', since);
+    const requestId = card.data.request_id as string;
+    await expect(settle(requestId, 'edit')).rejects.toMatchObject({ code: 'VALIDATION_FAILED' }); // edit 缺载荷
+    await expect(h.creation.decide('req_missing', { action: 'cancel' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await settle(requestId, 'edit', { title: '轻确认-编辑后已改名', priority: 2 });
+    const result = (await callPromise) as { created: boolean; task_id: string };
+    expect(result).toMatchObject({ created: true, request_id: requestId });
+    const task = await h.prisma.$queryRawUnsafe<{ title: string; priority: number }[]>(
+      `SELECT title, priority FROM tasks WHERE id = ?`,
+      result.task_id,
+    );
+    expect(task[0]).toMatchObject({ title: '轻确认-编辑后已改名', priority: 2 });
+    const log = await h.prisma.$queryRawUnsafe<{ user_action: string }[]>(
+      `SELECT user_action FROM task_creation_logs WHERE task_id = ?`,
+      result.task_id,
+    );
+    expect(log[0]!.user_action).toBe('edited');
+  });
+
+  it('超时与宽限（§8.7 r3：30s+5s，超时→不创建）：宽限内决策仍有效；到期记 timeout', async () => {
+    await h.settings.patch({ light_confirm_timeout_seconds: 1 });
+    try {
+      // 宽限：expiresAt 之后、deadlineAt 之前决策 → 按创建收口。
+      const gracePromise = call('board.create_task', {
+        ...baseInput,
+        title: unique('轻确认-宽限'),
+        session_id: 'conv-light-grace',
+        confirmation_mode: 'light',
+      });
+      const since = h.emitted.length;
+      const card = await nextWsEvent('agent.task_requested', since);
+      await sleep(1_200); // 已过 1s 超时点、未过 +5s 宽限终点
+      await settle(card.data.request_id as string, 'create');
+      const graceResult = (await gracePromise) as { created: boolean; status?: string };
+      expect(graceResult).toMatchObject({ created: true });
+
+      // 超时：无人决策 → 阻塞方最长等 1s+5s 后拿到「超时→不创建」。
+      const timedOut = (await call('board.create_task', {
+        ...baseInput,
+        title: unique('轻确认-超时'),
+        session_id: 'conv-light-timeout',
+        confirmation_mode: 'light',
+      })) as { created: boolean; status: string; request_id: string };
+      expect(timedOut).toMatchObject({ created: false, status: 'timeout', confirmation_mode: 'light' });
+      expect(await countOf('tasks', 'WHERE origin_session_id = ?', ['conv-light-timeout'])).toBe(0);
+      const log = await h.prisma.$queryRawUnsafe<{ user_action: string }[]>(
+        `SELECT user_action FROM task_creation_logs WHERE task_id = ?`,
+        timedOut.request_id,
+      );
+      expect(log[0]!.user_action).toBe('timeout');
+      await expect(call('board.wait_for_confirmation', { request_id: timedOut.request_id })).resolves.toMatchObject({
+        status: 'timeout',
+      });
+    } finally {
+      await h.settings.patch({ light_confirm_timeout_seconds: 30 });
+    }
+  }, 20_000);
+
+  it('模式优先级（§8.2）：参数 > 设置 agent_creation_mode > 默认轻确认；direct 重复命中升级轻确认卡片', async () => {
+    // 设置成 silent：不传参数的调用即时创建（参数缺省时设置生效）。
+    await h.settings.patch({ agent_creation_mode: 'silent' });
+    const silent = (await call('board.create_task', {
+      title: unique('轻确认-设置silent'),
+      type: '缺陷',
+      session_id: 'conv-mode-silent',
+      agent_name: 'qoder-1',
+    })) as { created: boolean; confirmation_mode: string };
+    expect(silent).toMatchObject({ created: true, confirmation_mode: 'silent' });
+    await h.settings.patch({ agent_creation_mode: 'light' });
+
+    // 缺省 → 轻确认（异步形态即时返回 request_id）。
+    const light = (await call('board.create_task', {
+      title: unique('轻确认-默认light'),
+      type: '缺陷',
+      session_id: 'conv-mode-light',
+      agent_name: 'qoder-1',
+      wait: false,
+    })) as { pending?: boolean; confirmation_mode: string; request_id: string };
+    expect(light).toMatchObject({ pending: true, confirmation_mode: 'light' });
+    await settle(light.request_id, 'cancel'); // 清理待决，避免超时尾巴
+
+    // §8.2：direct 重复检测命中（同组 5 分钟内同标题 Jaccard>0.8）→ 升级为轻确认卡片。
+    const dupTitle = unique('轻确认-重复升级');
+    const first = (await call('board.create_task', {
+      title: dupTitle,
+      type: '缺陷',
+      session_id: 'conv-dup-a',
+      agent_name: 'qoder-1',
+      confirmation_mode: 'direct',
+    })) as { created: boolean };
+    expect(first.created).toBe(true);
+    const escalated = (await call('board.create_task', {
+      title: dupTitle, // 一字不改再来一次
+      type: '缺陷',
+      session_id: 'conv-dup-b',
+      agent_name: 'qoder-1',
+      confirmation_mode: 'direct',
+      wait: false,
+    })) as { pending?: boolean; confirmation_mode: string; request_id: string };
+    expect(escalated).toMatchObject({ pending: true, confirmation_mode: 'light' });
+    expect(escalated.request_id).toBeTruthy();
+    const dupView = h.creation.status(escalated.request_id);
+    expect(dupView.duplicates.length).toBeGreaterThan(0); // §8.5 卡片顶部疑似重复链接
+    await expect(countOf('tasks', 'WHERE origin_session_id = ?', ['conv-dup-b'])).resolves.toBe(0);
+    await settle(escalated.request_id, 'cancel');
   });
 });
 

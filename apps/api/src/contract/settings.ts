@@ -34,6 +34,14 @@ export const SETTINGS_SPECS = {
   },
   ui_theme: { schema: z.enum(['system', 'light', 'dark']), default: 'system', hot: true },
   review_reuse_last_opinion: { schema: z.boolean(), default: true, hot: true },
+  // v0.0.4 W8 §8.2/§8.8「设置 / Agent 创建任务」：创建模式（参数 > 此设置 > 默认轻确认）
+  // 与轻确认卡片超时秒数（30s 是 PRD 口径；下限放宽只为测试演练超时路径）。
+  agent_creation_mode: {
+    schema: z.enum(['direct', 'light', 'silent']),
+    default: 'light',
+    hot: true,
+  },
+  light_confirm_timeout_seconds: { schema: z.number().int().min(1).max(300), default: 30, hot: true },
 } as const satisfies Record<string, { schema: z.ZodTypeAny; default: unknown; hot: boolean }>;
 
 export type SettingsKey = keyof typeof SETTINGS_SPECS;

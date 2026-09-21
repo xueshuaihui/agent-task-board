@@ -192,8 +192,17 @@ export const createTaskSchema = z.object({
   session_id: z.string().trim().min(1).max(100),
   agent_name: z.string().trim().max(100).optional().nullable(),
   confirmation_mode: z.enum(['direct', 'light', 'silent']).optional(),
+  // §8.7 闭环语义（r3）：light 缺省服务端阻塞等决策（30s + 5s 宽限）；
+  // `wait: false` 走异步模式——调用立即返回 request_id，用 board.get_creation_status 轮询。
+  wait: z.boolean().optional(),
 });
 export type CreateTaskToolInput = z.infer<typeof createTaskSchema>;
+
+/** v0.0.4 W8-a2 §8.7：board.get_creation_status / board.wait_for_confirmation 共用入参（按请求 id 查/等）。 */
+export const creationRequestRefSchema = z.object({
+  request_id: z.string().trim().min(1).max(64),
+});
+export type CreationRequestRefInput = z.infer<typeof creationRequestRefSchema>;
 
 export const listReadyQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),

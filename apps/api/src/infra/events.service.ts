@@ -21,6 +21,9 @@ export const WS_EVENTS = [
   'breakdown.task_draft',
   'breakdown.finished',
   'breakdown.cancelled',
+  // v0.0.4 W8-a2 §8.7/§16.3 轻确认卡片下发（决策经 REST 回传，终结态卡片靠本地倒计时收敛，
+  // 与 PRD 事件表逐行对齐——不私加 resolved 事件）。
+  'agent.task_requested',
 ] as const;
 
 export type WsEventName = (typeof WS_EVENTS)[number];
