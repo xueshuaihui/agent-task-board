@@ -148,10 +148,20 @@ export class BreakdownService {
     this.events.emit('breakdown.progress', { session_id: sessionId, step: input.step, total: input.total });
   }
 
-  /** 同 (session_id, ref) 再上报即整体覆盖（§7.6 UNIQUE；阶段 4 允许 Agent 修订草案）。 */
+  /**
+   * 同 (session_id, ref) 再上报即整体覆盖（§7.6 UNIQUE；阶段 4 允许 Agent 修订草案）。
+   *
+   * 守卫（工单 #34 B 口径）：会话 receiving 照旧；reviewing 只放行「被重新生成」的那条
+   * 草案——即 §7.4 用户点了「重新生成」、行上挂着 regeneration_pending 哨兵、正等 Agent
+   * 重报的 ref。哨兵草案本就是空壳（title 占位、描述/技能/验收全清），覆盖它不碰人工
+   * 编辑成果；其余 reviewing 期重报（无哨兵的新旧 ref）仍 409，终态一律不变。
+   */
   async reportDraft(sessionId: string, input: BreakdownDraftInput): Promise<DraftDtoShape> {
     const session = await this.requireSession(sessionId);
-    this.assertStatus(session, 'receiving', ['receiving']);
+    const regenerationReplay = await this.isRegenerationReplay(session, input.ref);
+    if (!regenerationReplay) {
+      this.assertStatus(session, 'receiving', ['receiving']);
+    }
     const ref = text(input.ref, 'ref');
     const title = text(input.title, 'title');
     const priority = input.priority ?? 3;
@@ -162,30 +172,82 @@ export class BreakdownService {
     if (dependsOn.includes(ref)) {
       throw new ApiException('DEPENDENCY_CYCLE', '草案不能依赖自身');
     }
+    // finish 只在 receiving 跑，reviewing 期重报没有下一班解析车——技能名就地按 §7.5
+    // 同一判解析（resolveSkills 原样复用），否则未解析的名字会在 confirm 侧被丢弃。
+    const skillIds = regenerationReplay
+      ? await this.resolveSkillIds(sessionId, ref, input.skill_ids ?? [])
+      : input.skill_ids ?? [];
 
     const id = newId();
-    await this.prisma.$executeRawUnsafe(
-      `INSERT INTO breakdown_drafts (id, session_id, ref, title, description, priority, skill_ids, acceptance, depends_on, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(session_id, ref) DO UPDATE SET
-         title = excluded.title, description = excluded.description, priority = excluded.priority,
-         skill_ids = excluded.skill_ids, acceptance = excluded.acceptance,
-         depends_on = excluded.depends_on, sort_order = excluded.sort_order`,
+    const values = [
       id,
       sessionId,
       ref,
       title,
       input.description ?? null,
       priority,
-      JSON.stringify(input.skill_ids ?? []),
+      JSON.stringify(skillIds),
       JSON.stringify(input.acceptance ?? []),
       JSON.stringify(dependsOn),
       input.sort_order ?? 0,
-    );
+    ];
+    const sql = `INSERT INTO breakdown_drafts (id, session_id, ref, title, description, priority, skill_ids, acceptance, depends_on, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(session_id, ref) DO UPDATE SET
+         title = excluded.title, description = excluded.description, priority = excluded.priority,
+         skill_ids = excluded.skill_ids, acceptance = excluded.acceptance,
+         depends_on = excluded.depends_on, sort_order = excluded.sort_order`;
+    if (regenerationReplay) {
+      // 哨兵覆盖与用户侧写端点同款并发守卫：'reviewing' 判定与写在同一事务原子命中，
+      // 抢先流转（confirm / 超时收敛）即 409，不给「已确认的会话」补草案。
+      await this.prisma.$transaction(async (tx) => {
+        this.assertReviewingGuard(await guardReviewingUpdate(tx, sessionId));
+        await tx.$executeRawUnsafe(sql, ...values);
+      });
+    } else {
+      await this.prisma.$executeRawUnsafe(sql, ...values);
+    }
     const row = await this.drafts(sessionId);
     const dto = toDraftDto(row.find((d) => d.ref === ref)!);
     this.events.emit('breakdown.task_draft', { session_id: sessionId, ref });
     return dto;
+  }
+
+  /**
+   * #34：本条上报是否属于「重报被重新生成的草案」。仅 reviewing + 该 ref 已存在且
+   * depends_on 列仍是 regeneration_pending 哨兵时为真；ref 空白/未知/无哨兵一律假
+   * （调用方据此回落到原 409 守卫，reviewing 期新增 ref 依旧被拒）。
+   */
+  private async isRegenerationReplay(session: SessionDtoShape, rawRef: string): Promise<boolean> {
+    if (session.status !== 'reviewing') return false;
+    const ref = typeof rawRef === 'string' ? rawRef.trim() : '';
+    if (!ref) return false;
+    const row = (await this.drafts(session.id)).find((draft) => draft.ref === ref);
+    return row !== undefined && hasRegenerationFlag(row.depends_on);
+  }
+
+  /**
+   * #34：重报哨兵草案时就地跑 §7.5 解析——复用 resolveSkills 的同一判据（id 直通、
+   * 名字精确匹配、同名取最近更新者），传回已解析值；报告不外抛（会话已过 finish，
+   * 确认页的告警由 GET 侧 annotateSkills 逐条复原，条款 81 既有口径）。
+   */
+  private async resolveSkillIds(sessionId: string, ref: string, skillIds: string[]): Promise<string[]> {
+    if (skillIds.length === 0) return [];
+    const { updated } = await this.resolveSkills([
+      {
+        id: `replay-${ref}`,
+        session_id: sessionId,
+        ref,
+        title: '',
+        description: null,
+        priority: null,
+        skill_ids: JSON.stringify(skillIds),
+        acceptance: '[]',
+        depends_on: '[]',
+        sort_order: null,
+      },
+    ]);
+    return updated[0]?.skillIds ?? skillIds;
   }
 
   // ---------------------------------------------------------------- 阶段 5：完成（技能解析闭环 §7.5）
@@ -357,7 +419,8 @@ export class BreakdownService {
   /**
    * §7.4「添加任务」用户侧写入口：与 Agent 面 reportDraft 同表同约束
    * （UNIQUE(session_id, ref)、priority 0~3、ref 自环/未知前置/成环一律拒），
-   * 差别只在守卫状态——reportDraft 要 receiving，这里要 reviewing（§7.7 待确认期编辑）。
+   * 差别只在守卫状态——reportDraft 要 receiving（#34 后仅再放行「重新生成」哨兵草案的
+   * 重报），这里要 reviewing（§7.7 待确认期编辑）。
    * ref 可省略：服务端按会话内数字后缀取号 t{max+1}；显式传的 ref 已被占用 →
    * 409 BREAKDOWN_DRAFT_REF_TAKEN。
    */
@@ -510,6 +573,8 @@ export class BreakdownService {
    * REGENERATION_PLACEHOLDER_TITLE 注释）。priority/sort_order 属用户在确认页
    * 可调的排布字段，原样保留。仅 reviewing 可写，并发守卫与其余写端点同款；
    * 广播既有 `breakdown.task_draft` 事件，读侧回 GET 拿真相。
+   * #34 配对：哨兵在位时 Agent 可用 `board.report_task_draft` 重报该 ref，整行覆盖后
+   * 哨兵消失；用户在确认页上的其余编辑不受影响。
    */
   async userRegenerateDraft(sessionId: string, ref: string): Promise<DraftDtoShape[]> {
     const session = await this.requireSession(sessionId);
