@@ -147,11 +147,17 @@ export const AUDIT_ACTION_LABEL: Record<AuditAction, string> = {
   export: '导出',
   backup: '备份',
   restore: '恢复',
+  migration_completed: '数据迁移完成',
   settings_change: '设置变更',
   group_change: '分组变更',
   group_archive: '分组归档',
   group_unarchive: '分组取消归档',
   pref_change: '偏好变更',
+  mcp_policy_check: 'MCP 策略裁决',
+  mcp_call: 'MCP 调用上报',
+  breakdown_confirm: '确认拆解',
+  breakdown_cancel: '取消拆解',
+  breakdown_timeout: '拆解超期中断',
 };
 
 /**

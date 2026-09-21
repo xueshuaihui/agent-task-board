@@ -98,12 +98,21 @@ export const AUDIT_ACTIONS = [
   'export',
   'backup',
   'restore',
+  // §21.2-3：数据目录一次性搬迁（服务端 action 名见 infra/data-dir-migration.ts）。
+  'migration_completed',
   'settings_change',
   'group_change',
   // v0.0.4 W4 §5.6 r3：分组归档/反归档（服务端动作名统一 snake_case）。
   'group_archive',
   'group_unarchive',
   'pref_change',
+  // v0.0.4 W6 §12.6：MCP 治理两条（agent/mcp-policy.service.ts 落库处）。
+  'mcp_policy_check',
+  'mcp_call',
+  // v0.0.4 W7 §7.2 阶段 7：拆解会话的用户动作与超期系统动作（breakdown.service.ts）。
+  'breakdown_confirm',
+  'breakdown_cancel',
+  'breakdown_timeout',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
