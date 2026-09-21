@@ -118,3 +118,83 @@ function capPending(cards: CreationCard[]): CreationCard[] {
   const drop = pending.slice(0, pending.length - MAX_PENDING_CARDS).map((card) => card.request_id);
   return cards.filter((card) => !drop.includes(card.request_id));
 }
+
+/* ------------------------------------------------------------------ */
+/* §8.6 direct/silent 直建 5 秒撤销浮层的栈（原住在 agent-undo-stack.tsx， */
+/* 迁到这里与渲染分离，纯函数可单测）。                                   */
+/* ------------------------------------------------------------------ */
+
+/** §8.6「创建后 5 秒内可撤销」的窗口长度，与 creation-card.tsx 同一常量口径。 */
+export const UNDO_WINDOW_MS = 5_000;
+/** 撤销成功后「已撤销」回显的停留时长，让用户确认结果。 */
+export const DONE_LINGER_MS = 3_000;
+
+export interface AgentCreatedEntry {
+  taskId: string;
+  /** 事件到达时刻：撤销窗起点（本地时钟，与创建卡片 createdAtRef 同一做法）。 */
+  createdAtMs: number;
+  undone: boolean;
+  undoneAtMs: number | null;
+}
+
+/**
+ * 单条撤销入口的剩余窗口（ms）。
+ *
+ * v0.0.4 补验缺陷：倒计时**必须以渲染时刻 `now` 直接相减**，不得用组件里
+ * 挂载时初始化的旧 tick——entries 从 0→1 时新条目刚 push，旧 tick 远早于
+ * createdAtMs，msLeft 会虚高到 60s+（实测抓到「撤销 63s」）。
+ * tick/interval 只作重渲染驱动，数值一律出自这份纯函数。
+ */
+export function agentUndoMsLeft(
+  entry: Pick<AgentCreatedEntry, 'createdAtMs' | 'undone'>,
+  now: number,
+): number {
+  if (entry.undone) return 0;
+  return Math.max(0, UNDO_WINDOW_MS - Math.max(0, now - entry.createdAtMs));
+}
+
+/** 「撤销 Ns」按钮文案：msLeft ≤ 5000 恒成立，首帧至多「撤销 5s」。 */
+export function agentUndoLabel(entry: Pick<AgentCreatedEntry, 'createdAtMs' | 'undone'>, now: number): string {
+  return `撤销 ${Math.ceil(agentUndoMsLeft(entry, now) / 1000)}s`;
+}
+
+interface AgentUndoState {
+  entries: AgentCreatedEntry[];
+  push: (taskId: string) => void;
+  markUndone: (taskId: string) => void;
+  remove: (taskId: string) => void;
+  /** 定时器每跳调用：超窗未撤销的消失、已撤销过留痕期的消失。 */
+  prune: (now: number) => void;
+}
+
+export const useAgentUndoStore = create<AgentUndoState>((set) => ({
+  entries: [],
+  push: (taskId) =>
+    set((state) =>
+      state.entries.some((entry) => entry.taskId === taskId)
+        ? state
+        : {
+            entries: [
+              ...state.entries,
+              { taskId, createdAtMs: Date.now(), undone: false, undoneAtMs: null },
+            ],
+          },
+    ),
+  markUndone: (taskId) =>
+    set((state) => ({
+      entries: state.entries.map((entry) =>
+        entry.taskId === taskId ? { ...entry, undone: true, undoneAtMs: Date.now() } : entry,
+      ),
+    })),
+  remove: (taskId) =>
+    set((state) => ({ entries: state.entries.filter((entry) => entry.taskId !== taskId) })),
+  prune: (now) =>
+    set((state) => {
+      const entries = state.entries.filter((entry) =>
+        entry.undone
+          ? (entry.undoneAtMs ?? now) + DONE_LINGER_MS > now
+          : now - entry.createdAtMs < UNDO_WINDOW_MS,
+      );
+      return entries.length === state.entries.length ? state : { entries };
+    }),
+}));

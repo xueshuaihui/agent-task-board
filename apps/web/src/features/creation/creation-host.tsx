@@ -2,9 +2,9 @@ import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence } from 'motion/react';
 import { useCreationRequests } from './queries';
-import { useCreationStore } from './store';
+import { useCreationStore, useAgentUndoStore } from './store';
 import { CreationCard } from './creation-card';
-import { AgentUndoStack, useAgentUndoStore } from './agent-undo-stack';
+import { AgentUndoStack } from './agent-undo-stack';
 import { useWSEvent } from '@/ws';
 
 /**

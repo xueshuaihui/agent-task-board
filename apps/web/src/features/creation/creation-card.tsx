@@ -12,7 +12,11 @@ import { transitions } from '@/lib/motion';
 import { priorityLabel } from '@/lib/labels';
 import { CreationEditDialog } from './creation-edit-dialog';
 import { decideCreationRequest } from './queries';
-import { useCreationStore, type CreationCard as CardState } from './store';
+import {
+  agentUndoMsLeft,
+  useCreationStore,
+  type CreationCard as CardState,
+} from './store';
 
 /**
  * §8.4 轻确认卡片（右下角浮层里的单张）：
@@ -24,9 +28,6 @@ import { useCreationStore, type CreationCard as CardState } from './store';
  * 2. 本地倒计时过 `decision_deadline_at`（expires_at + 5s 宽限）→ 判 timeout；
  * 3. 点得比服务端慢，decision 回 409 `CREATION_REQUEST_RESOLVED` → 就地转终态并说明原因。
  */
-
-/** §8.6「创建后 5 秒内可撤销」的窗口长度。 */
-const UNDO_WINDOW_MS = 5_000;
 
 export interface CreationCardProps {
   card: CardState;
@@ -69,6 +70,9 @@ export function CreationCard({ card }: CreationCardProps) {
         upsert(view);
         if (view.status === 'created' || view.status === 'edited') createdAtRef.current = Date.now();
       } catch (error) {
+        // v0.0.4 真机补验修复：decision 失败必须 toast——编辑弹窗关闭后卡片终态区
+        // 不在第一视线内，静默收口让用户误以为创建成功。弹窗语义统一为「失败也关闭、
+        // 结果一律由 toast + 卡片说明承载」；pending 卡仍在，可重新点「编辑」。
         if (isApiError(error) && error.code === 'CREATION_REQUEST_RESOLVED') {
           // 409 的 context.status 是服务端给的归宿（created/cancelled/timeout 都可能）。
           const status = (error.context.status as CardState['status']) ?? 'timeout';
@@ -77,6 +81,7 @@ export function CreationCard({ card }: CreationCardProps) {
             status,
             status === 'timeout' ? '已超时（30s + 5s 宽限），未创建' : '已被处理，卡片动作已失效',
           );
+          toast.error('请求已超时或已被处理，未创建任务');
         } else {
           toast.error(errorMessage(error));
         }
@@ -288,12 +293,16 @@ function CreationCardResult({
   const toast = useToast();
   const markUndone = useCreationStore((state) => state.markUndone);
   const [busy, setBusy] = useState(false);
-  const undoLeft = useTicker(card.status === 'created' && createdAtMs !== null && !card.undone);
+  // 只作 5 秒窗的重渲染驱动，数值走 agentUndoMsLeft(Date.now())。
+  useTicker(card.status === 'created' && createdAtMs !== null && !card.undone);
 
   const created = (card.status === 'created' || card.status === 'edited') && card.task_id !== null;
-  const msLeft = created && createdAtMs !== null && !card.undone
-    ? Math.max(0, UNDO_WINDOW_MS - (undoLeft - createdAtMs))
-    : 0;
+  // 与 agent-undo-stack 同一口径：数值渲染时现算（agentUndoMsLeft + Date.now()），
+  // undoLeft 只作重渲染驱动，杜绝旧 tick 造成的首帧倒计时虚高。
+  const msLeft =
+    created && createdAtMs !== null
+      ? agentUndoMsLeft({ createdAtMs, undone: card.undone === true }, Date.now())
+      : 0;
   const canUndo = created && msLeft > 0 && !card.undone;
 
   const undo = async () => {

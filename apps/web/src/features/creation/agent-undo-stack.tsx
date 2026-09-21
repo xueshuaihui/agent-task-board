@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { create } from 'zustand';
 import { motion, useReducedMotion } from 'motion/react';
 import { Undo2 } from 'lucide-react';
 import { api, errorMessage } from '@/api';
@@ -8,6 +7,7 @@ import { Button, useToast } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { transitions } from '@/lib/motion';
 import { useWSEvent } from '@/ws';
+import { agentUndoLabel, agentUndoMsLeft, useAgentUndoStore, type AgentCreatedEntry } from './store';
 
 /**
  * §8.6 直建 5 秒撤销（W8-a4，direct/silent 两模式）：
@@ -26,61 +26,13 @@ import { useWSEvent } from '@/ws';
  *   `task.deleted` 走 ws/invalidate 统一失效，这里不重复写失效逻辑。
  * - 窗口内点击但任务已被领取（DELETE 回 4xx）→ 失败 toast + 入口消失。
  * - 超 5 秒未点 → 入口消失。
+ *
+ * 倒计时口径（v0.0.4 真机补验修复）：栈与纯函数收进 store.ts；`tick` 不再参与
+ * 数值计算，只作重渲染驱动，msLeft 每帧由 `agentUndoMsLeft(entry, Date.now())`
+ * 现算——entries 从 0→1 的首帧不再出现旧 tick 撑出来的「撤销 63s」虚高倒计时。
  */
-
-/** §8.6「创建后 5 秒内可撤销」的窗口长度，与 creation-card.tsx 同一常量口径。 */
-const UNDO_WINDOW_MS = 5_000;
-/** 撤销成功后「已撤销」回显的停留时长，让用户确认结果。 */
-const DONE_LINGER_MS = 3_000;
-
-interface AgentCreatedEntry {
-  taskId: string;
-  /** 事件到达时刻：撤销窗起点（本地时钟，与创建卡片 createdAtRef 同一做法）。 */
-  createdAtMs: number;
-  undone: boolean;
-  undoneAtMs: number | null;
-}
-
-interface AgentUndoState {
-  entries: AgentCreatedEntry[];
-  push: (taskId: string) => void;
-  markUndone: (taskId: string) => void;
-  remove: (taskId: string) => void;
-  /** 定时器每跳调用：超窗未撤销的消失、已撤销过留痕期的消失。 */
-  prune: (now: number) => void;
-}
-
-export const useAgentUndoStore = create<AgentUndoState>((set) => ({
-  entries: [],
-  push: (taskId) =>
-    set((state) =>
-      state.entries.some((entry) => entry.taskId === taskId)
-        ? state
-        : {
-            entries: [
-              ...state.entries,
-              { taskId, createdAtMs: Date.now(), undone: false, undoneAtMs: null },
-            ],
-          },
-    ),
-  markUndone: (taskId) =>
-    set((state) => ({
-      entries: state.entries.map((entry) =>
-        entry.taskId === taskId ? { ...entry, undone: true, undoneAtMs: Date.now() } : entry,
-      ),
-    })),
-  remove: (taskId) =>
-    set((state) => ({ entries: state.entries.filter((entry) => entry.taskId !== taskId) })),
-  prune: (now) =>
-    set((state) => {
-      const entries = state.entries.filter((entry) =>
-        entry.undone
-          ? (entry.undoneAtMs ?? now) + DONE_LINGER_MS > now
-          : now - entry.createdAtMs < UNDO_WINDOW_MS,
-      );
-      return entries.length === state.entries.length ? state : { entries };
-    }),
-}));
+export { agentUndoMsLeft, agentUndoLabel, useAgentUndoStore } from './store';
+export type { AgentCreatedEntry } from './store';
 
 export function AgentUndoStack() {
   const reduced = useReducedMotion();
@@ -90,7 +42,7 @@ export function AgentUndoStack() {
   const markUndone = useAgentUndoStore((state) => state.markUndone);
   const remove = useAgentUndoStore((state) => state.remove);
   const prune = useAgentUndoStore((state) => state.prune);
-  const [tick, setTick] = useState(() => Date.now());
+  const [, setRerender] = useState(0);
   const busyRef = useRef<ReadonlySet<string>>(new Set());
 
   useWSEvent(['task.created'], ({ data }) => {
@@ -98,13 +50,12 @@ export function AgentUndoStack() {
     if (data.origin_type === 'agent') push(data.id);
   });
 
-  // 秒级倒计时 + 到期回收：无入口时不挂定时器。
+  // 秒级倒计时 + 到期回收：无入口时不挂定时器。数值渲染时现算，这里只负责跳帧。
   useEffect(() => {
     if (entries.length === 0) return;
     const timer = setInterval(() => {
-      const now = Date.now();
-      setTick(now);
-      prune(now);
+      setRerender((n) => n + 1);
+      prune(Date.now());
     }, 250);
     return () => clearInterval(timer);
   }, [entries.length, prune]);
@@ -115,7 +66,7 @@ export function AgentUndoStack() {
     try {
       await api.tasks.remove(entry.taskId);
       markUndone(entry.taskId);
-      setTick(Date.now());
+      setRerender((n) => n + 1);
       toast.success('已撤销，任务已删除');
     } catch (error) {
       // 多半是「已被领取」被 DELETE 守卫拒绝（4xx）：入口消失，与超窗同一归宿。
@@ -131,7 +82,8 @@ export function AgentUndoStack() {
   return (
     <>
       {entries.map((entry) => {
-        const msLeft = Math.max(0, UNDO_WINDOW_MS - (tick - entry.createdAtMs));
+        const now = Date.now();
+        const msLeft = agentUndoMsLeft(entry, now);
         return (
           <motion.article
             key={entry.taskId}
@@ -169,7 +121,7 @@ export function AgentUndoStack() {
                     icon={<Undo2 className="size-3.5" aria-hidden />}
                     onClick={() => void undo(entry)}
                   >
-                    撤销 {Math.ceil(msLeft / 1000)}s
+                    {agentUndoLabel(entry, now)}
                   </Button>
                 ) : null}
               </div>

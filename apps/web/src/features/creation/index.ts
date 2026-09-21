@@ -16,3 +16,9 @@ export { CreationCard } from './creation-card';
 export { CreationEditDialog } from './creation-edit-dialog';
 export { useCreationRequests } from './queries';
 export { useCreationStore, isTerminalStatus, type CreationCard as CreationCardState } from './store';
+export {
+  useAgentUndoStore,
+  agentUndoMsLeft,
+  agentUndoLabel,
+  type AgentCreatedEntry,
+} from './store';
