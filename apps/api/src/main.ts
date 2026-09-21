@@ -9,7 +9,9 @@ import { ApiExceptionFilter } from './infra/api-exception.filter';
 import { applyMigrations } from './infra/bootstrap';
 import { migrateLegacyDataDir } from './infra/data-dir-migration';
 import { sharedAppLogger } from './infra/logger';
+import { PrismaService } from './infra/prisma.service';
 import { SettingsService } from './infra/settings.service';
+import { ensureDefaultSkills } from './skills/default-skills';
 
 /** 只绑回环，不提供改绑入口（20.13：任何情况下不监听 0.0.0.0）。 */
 const LISTEN_HOST = '127.0.0.1';
@@ -69,6 +71,20 @@ async function bootstrap(): Promise<void> {
   logger.applyRetentionDays(
     await app.get(SettingsService, { strict: false }).get('log_retention_days'),
   );
+
+  // §20.5-15 / 验收 49：默认技能首次启动按 id upsert 预置（只读、随包更新）。
+  // 幂等且非致命——预置失败不应阻断看板启动，记 error 后继续（下次启动会重放）。
+  try {
+    const seeded = await ensureDefaultSkills(app.get(PrismaService));
+    if (seeded.created.length + seeded.updated.length > 0) {
+      logger.log(
+        `默认技能预置：新增 ${seeded.created.length}、更新 ${seeded.updated.length}`,
+        'boot',
+      );
+    }
+  } catch (error) {
+    logger.error(`默认技能预置失败：${(error as Error)?.stack ?? String(error)}`, undefined, 'boot');
+  }
 
   const listenPort = port();
   await app.listen(listenPort, LISTEN_HOST);
