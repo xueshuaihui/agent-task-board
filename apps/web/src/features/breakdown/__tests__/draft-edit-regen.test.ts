@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { BreakdownDraft } from '@/api/types';
-import { REGEN_PLACEHOLDER_TITLE, applyRegeneration, normalizeAcceptance } from '../draft-edit';
+import {
+  REGEN_PLACEHOLDER_TITLE,
+  applyRegeneration,
+  normalizeAcceptance,
+  shouldResyncBuffersOnRegen,
+} from '../draft-edit';
 
 /**
  * v0.0.4 §7.4 补齐（条款 81）：验收标准归一 + 「重新生成」乐观覆盖的纯函数用例。
@@ -69,5 +74,29 @@ describe('applyRegeneration：重新生成的乐观覆盖', () => {
 
   it('未知 ref：全集原样返回（服务端此时已 404，乐观层不虚晃）', () => {
     expect(applyRegeneration(drafts, 'n9')).toEqual(drafts);
+  });
+});
+
+/**
+ * 任务 #33（条款 81 真机复验）：重新生成清空服务端行后，编辑面板的本地缓冲
+ * （title/desc/acc）必须丢回服务端基准，否则后续编辑拿旧数组 PATCH 会复活
+ * 已清空字段。组件侧「翻转即丢缓冲」的动作因无 jsdom 测不了（参照本片既有
+ * 风格只测纯函数），这里锁住驱动它的判据 shouldResyncBuffersOnRegen。
+ */
+describe('shouldResyncBuffersOnRegen：面板缓冲重同步的唯一触发面', () => {
+  it('false→true（乐观覆盖/回执进缓存的翻转）才触发', () => {
+    expect(shouldResyncBuffersOnRegen(false, true)).toBe(true);
+  });
+
+  it('普通 draft_updated（false→false）不触发——不冲掉未提交输入（§7.8 延迟提交）', () => {
+    expect(shouldResyncBuffersOnRegen(false, false)).toBe(false);
+  });
+
+  it('true→true 冗余刷新不触发（双击重新生成的丢缓冲由面板点击处兜底）', () => {
+    expect(shouldResyncBuffersOnRegen(true, true)).toBe(false);
+  });
+
+  it('true→false（Agent 重报落地清哨兵 / 写失败回滚）不触发', () => {
+    expect(shouldResyncBuffersOnRegen(true, false)).toBe(false);
   });
 });

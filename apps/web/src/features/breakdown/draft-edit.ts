@@ -189,3 +189,17 @@ export function applyRegeneration(drafts: readonly BreakdownDraft[], ref: string
       : draft,
   );
 }
+
+/**
+ * 条款 81 真机反馈的修复判据：重新生成生效后，编辑面板必须丢弃标题/描述/验收
+ * 的本地缓冲改以服务端行为基准，否则后续编辑会以旧数组整组「复活」已清空字段。
+ * 只在 regeneration_pending 由 false 翻转为 true（乐观覆盖或回执落进缓存）这一刻
+ * 触发；普通 draft_updated（false→false 编辑回执、true→true 冗余刷新、true→false
+ * Agent 重报/回滚）都不触发，避免冲掉用户正在输入的未提交内容（§7.8 延迟提交）。
+ */
+export function shouldResyncBuffersOnRegen(
+  previousPending: boolean,
+  nextPending: boolean,
+): boolean {
+  return nextPending && !previousPending;
+}

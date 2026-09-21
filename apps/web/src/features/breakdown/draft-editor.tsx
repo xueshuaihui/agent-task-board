@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Link2, Link2Off, Plus, RotateCcw, Trash2, X } from 'lucide-react';
 import type { BreakdownDraftEdit } from '@/api/types';
 import { Button, Card, Field, Input, Select, Textarea, useToast } from '@/components/ui';
 import { PRIORITY_LABEL } from '@/lib/labels';
 import { cn } from '@/lib/cn';
 import { useSkills } from '@/features/skills/hooks';
-import { normalizeAcceptance, toggleDependency } from './draft-edit';
+import { normalizeAcceptance, shouldResyncBuffersOnRegen, toggleDependency } from './draft-edit';
 import { duplicateSkillNames, skillCandidateLabel, skillOptionLabel, skillStatusOf, type AnnotatedDraft } from './skill-status';
 
 /**
@@ -53,6 +53,27 @@ export function DraftEditor({ drafts, draftRef, onSelect, onPatch, onDelete, onA
     setDescBuffer(null);
     setAccBuffer(null);
   }, [draftRef]);
+
+  /* 条款 81 真机反馈：点「重新生成」后服务端行已清空（acceptance: []），但上面
+   * 的本地缓冲只在切草案时重置——缓存更新、行没换 ref，面板继续拿旧数组渲染并
+   * 在其基础上 PATCH，把已清空的验收整组复活。这里在 regeneration_pending
+   * 翻转成真（乐观覆盖/回执进缓存）的一刻同步丢弃缓冲；普通 draft_updated 与
+   * 回滚不触发，正在输入的未提交内容不受影响（draft-edit.ts 纯判据可单测）。 */
+  const regenPending = draft?.regeneration_pending === true;
+  const prevRegenPending = useRef(regenPending);
+  useEffect(() => {
+    if (shouldResyncBuffersOnRegen(prevRegenPending.current, regenPending)) {
+      setTitleBuffer(null);
+      setDescBuffer(null);
+      setAccBuffer(null);
+    }
+    prevRegenPending.current = regenPending;
+  }, [regenPending]);
+  const dropLocalBuffers = () => {
+    setTitleBuffer(null);
+    setDescBuffer(null);
+    setAccBuffer(null);
+  };
 
   /* 条款 81 真机反馈：选择器里 4 个同名「发布检查」无从分辨——全量表中重名的
    * option 一律追加「类型 · …短ID 后 6 位」；判据取全量而非过滤后的列表，
@@ -333,7 +354,12 @@ export function DraftEditor({ drafts, draftRef, onSelect, onPatch, onDelete, onA
             size="sm"
             className="text-status-review hover:text-status-review"
             title="清空本草案的 Agent 生成内容，等待 Agent 重新上报（§7.4）"
-            onClick={() => onRegenerate(draft.ref)}
+            onClick={() => {
+              /* 行已处于 pending 时再点一次不会有翻转，翻转 effect 兜不到——
+               * 点击处直接丢缓冲，面板立刻回到占位态。 */
+              dropLocalBuffers();
+              onRegenerate(draft.ref);
+            }}
             data-testid="breakdown-draft-regenerate"
           >
             <RotateCcw className="size-3.5" aria-hidden />
