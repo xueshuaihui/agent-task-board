@@ -8,7 +8,8 @@
  * §8.6 撤销覆盖度：本片的 5 秒撤销入口覆盖两条直建路径——
  * 1. 轻确认卡片刚创建出的任务（decision 回包带 task_id，前端自己记 5 秒起点）；
  * 2. `direct`/`silent` 直建（W8-a4 接通）：api 读路径与 `task.created` 载荷已带
- *    `origin_type`，`agent-undo-stack.tsx` 观察 WS 事件里 agent 来源的新任务，
+ *    `origin_type`，常挂载的 `CreationRequestHost` 订阅 WS 事件（v0.0.4 修复：订阅
+ *    不住在纯展示的 `agent-undo-stack.tsx` 里，否则无卡片的全新页面永远没订阅），
  *    同一右下角栈挂「撤销 5s」入口，点击走存量 `DELETE /tasks/{id}`。
  */
 export { CreationRequestHost } from './creation-host';

@@ -158,6 +158,25 @@ export function agentUndoLabel(entry: Pick<AgentCreatedEntry, 'createdAtMs' | 'u
   return `撤销 ${Math.ceil(agentUndoMsLeft(entry, now) / 1000)}s`;
 }
 
+/**
+ * §8.6 订阅处理器（纯函数，供宿主 `CreationRequestHost` 的 `useWSEvent('task.created')` 调用）：
+ * 仅 agent 直建（direct/silent，载荷 `origin_type === 'agent'`）入撤销栈；
+ * 用户自建与拆解确认建（`'user'` 或缺省）不挂撤销入口。
+ *
+ * 为什么要抽出来：v0.0.4 真机缺陷——订阅原本住在 `AgentUndoStack` 里，而该组件随宿主
+ * 「无卡片即 return null」一起缺席，全新加载页面（右下角空）根本没人订阅 task.created。
+ * 订阅上提到常挂载的宿主后，这里留一份可单测的判定逻辑（web 侧无 DOM 测试基建，
+ * 组件级挂载测试不可行，按约定测这层纯逻辑）。
+ */
+export function handleAgentTaskCreated(
+  data: { id: string; origin_type?: 'user' | 'agent' },
+  push: (taskId: string) => void,
+): boolean {
+  if (data.origin_type !== 'agent') return false;
+  push(data.id);
+  return true;
+}
+
 interface AgentUndoState {
   entries: AgentCreatedEntry[];
   push: (taskId: string) => void;

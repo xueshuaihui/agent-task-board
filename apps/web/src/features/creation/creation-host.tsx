@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence } from 'motion/react';
 import { useCreationRequests } from './queries';
-import { useCreationStore, useAgentUndoStore } from './store';
+import { useCreationStore, useAgentUndoStore, handleAgentTaskCreated } from './store';
 import { CreationCard } from './creation-card';
 import { AgentUndoStack } from './agent-undo-stack';
 import { useWSEvent } from '@/ws';
@@ -23,10 +23,16 @@ export function CreationRequestHost() {
   const undoEntries = useAgentUndoStore((state) => state.entries);
   const upsert = useCreationStore((state) => state.upsert);
   const upsertMany = useCreationStore((state) => state.upsertMany);
+  const pushUndo = useAgentUndoStore((state) => state.push);
   const list = useCreationRequests();
 
   // 卡片本体：WS `agent.task_requested` 直接带 CreationRequestView（见 ws/invalidate.ts 的例外注释）。
   useWSEvent(['agent.task_requested'], ({ data }) => upsert(data));
+
+  // §8.6（v0.0.4 修复）：agent direct/silent 直建的 task.created → 入撤销栈。
+  // 订阅必须住在这里而不是 AgentUndoStack：宿主挂常绿的 OverlaySlot、hooks 永远执行
+  // （return null 只挡 portal 内容），全新加载页面（右下角无任何卡片）也收得到事件。
+  useWSEvent(['task.created'], ({ data }) => handleAgentTaskCreated(data, pushUndo));
 
   // 断线重连补齐：`refreshAfterReconnect` 失效 `qk.creationRoot` → 这条 GET 重取。
   // 只收未决项——服务端列表混着的近期终结项属于历史，重启后不该在右下角复活。
@@ -36,6 +42,8 @@ export function CreationRequestHost() {
     upsertMany(items.filter((item) => item.status === 'pending'));
   }, [list.data, upsertMany]);
 
+  // 注意：return null 只能省掉 portal 内容，不能挪到 hooks 之前——上面的
+  // task.created 订阅依赖本组件实例常驻，否则直建撤销浮层在空页面下永远不出现。
   if (cards.length === 0 && undoEntries.length === 0) return null;
 
   return createPortal(

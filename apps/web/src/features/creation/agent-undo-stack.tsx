@@ -6,7 +6,6 @@ import { useShellStore } from '@/app/store/shell';
 import { Button, useToast } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { transitions } from '@/lib/motion';
-import { useWSEvent } from '@/ws';
 import { agentUndoLabel, agentUndoMsLeft, useAgentUndoStore, type AgentCreatedEntry } from './store';
 
 /**
@@ -30,6 +29,10 @@ import { agentUndoLabel, agentUndoMsLeft, useAgentUndoStore, type AgentCreatedEn
  * 倒计时口径（v0.0.4 真机补验修复）：栈与纯函数收进 store.ts；`tick` 不再参与
  * 数值计算，只作重渲染驱动，msLeft 每帧由 `agentUndoMsLeft(entry, Date.now())`
  * 现算——entries 从 0→1 的首帧不再出现旧 tick 撑出来的「撤销 63s」虚高倒计时。
+ *
+ * 挂载口径（v0.0.4 §8.6 真机修复）：本组件是**纯展示**——task.created 订阅上提到
+ * 常挂载的 `CreationRequestHost`（此前订阅住在这里，而宿主在无卡片时不渲染子树，
+ * 全新加载页面的右下角栈从未挂载 → 订阅不存在 → 直建撤销浮层永远不出现）。
  */
 export { agentUndoMsLeft, agentUndoLabel, useAgentUndoStore } from './store';
 export type { AgentCreatedEntry } from './store';
@@ -38,17 +41,11 @@ export function AgentUndoStack() {
   const reduced = useReducedMotion();
   const toast = useToast();
   const entries = useAgentUndoStore((state) => state.entries);
-  const push = useAgentUndoStore((state) => state.push);
   const markUndone = useAgentUndoStore((state) => state.markUndone);
   const remove = useAgentUndoStore((state) => state.remove);
   const prune = useAgentUndoStore((state) => state.prune);
   const [, setRerender] = useState(0);
   const busyRef = useRef<ReadonlySet<string>>(new Set());
-
-  useWSEvent(['task.created'], ({ data }) => {
-    // 只观察 agent 直建（direct/silent）：用户自建与拆解确认建的任务不挂撤销入口。
-    if (data.origin_type === 'agent') push(data.id);
-  });
 
   // 秒级倒计时 + 到期回收：无入口时不挂定时器。数值渲染时现算，这里只负责跳帧。
   useEffect(() => {
