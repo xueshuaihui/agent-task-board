@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { ArrowLeft, CheckCircle2, Circle, Loader2, Plus, Undo2 } from 'lucide-react';
-import { BREAKDOWN_STATUS_LABEL, type BreakdownDraft, type BreakdownDraftEdit, type BreakdownSession } from '@/api/types';
+import { BREAKDOWN_STATUS_LABEL, type BreakdownDraftEdit, type BreakdownSession } from '@/api/types';
 import { api } from '@/api';
 import { navigate } from '@/app/router';
 import { useActiveGroups } from '@/features/groups';
@@ -25,6 +25,7 @@ import { SessionActionDialog } from './session-action-dialog';
 import { DraftFlowGraph } from './draft-graph';
 import { DraftEditor } from './draft-editor';
 import { addDraft, hasDependencyCycle, nextDraftRef, patchDraft, removeDraft, toggleDependency } from './draft-edit';
+import type { AnnotatedDraft } from './skill-status';
 
 /** §7.8「撤销：5 秒内可撤销」——确认动作延迟 5 秒提交，期间可撤销（api 无事后撤销端点）。 */
 const CONFIRM_UNDO_SECONDS = 5;
@@ -57,7 +58,8 @@ export function BreakdownOverlay({ onClose }: BreakdownOverlayProps) {
   const session = detail.data?.session ?? list.find((s) => s.id === currentId) ?? null;
 
   /* W7 遗留 b3：草案编辑走服务端写端点（POST|PATCH|DELETE /drafts），
-   * 读视图永远是 GET 详情 + 乐观覆盖，不再有「暂存于本页」的本地数组。 */
+   * 读视图永远是 GET 详情 + 乐观覆盖，不再有「暂存于本页」的本地数组。
+   * 条款 81：GET 详情的草案带 skills_status 逐条解析态（drafts 元素为 AnnotatedDraft）。 */
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
   useEffect(() => {
     setSelectedRef(null);
@@ -264,8 +266,8 @@ function SessionDetail({
 }: {
   session: BreakdownSession;
   detail: ReturnType<typeof useBreakdownSession>['data'];
-  /** 服务端草案 + 乐观覆盖后的视图（§7.4，写端点为唯一落库通道）。 */
-  drafts: BreakdownDraft[];
+  /** 服务端草案（含条款 81 skills_status 标注）+ 乐观覆盖后的视图（§7.4，写端点为唯一落库通道）。 */
+  drafts: AnnotatedDraft[];
   selectedRef: string | null;
   onSelectDraft: (ref: string | null) => void;
 }) {

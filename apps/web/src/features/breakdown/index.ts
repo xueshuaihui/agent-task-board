@@ -24,6 +24,17 @@ export {
 export { DraftFlowGraph } from './draft-graph';
 export { DraftEditor } from './draft-editor';
 export {
+  duplicateSkillNames,
+  skillCandidateLabel,
+  skillOptionLabel,
+  skillStatusOf,
+  type AnnotatedDraft,
+  type BreakdownDetailAnnotated,
+  type DraftSkillState,
+  type DraftSkillStatus,
+  type SkillResolutionReport,
+} from './skill-status';
+export {
   addDraft,
   dependsReachable,
   hasDependencyCycle,

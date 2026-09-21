@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link2, Link2Off, Plus, Trash2, X } from 'lucide-react';
-import type { BreakdownDraft, BreakdownDraftEdit } from '@/api/types';
+import { AlertTriangle, Link2, Link2Off, Plus, Trash2, X } from 'lucide-react';
+import type { BreakdownDraftEdit } from '@/api/types';
 import { Button, Card, Field, Input, Select, Textarea, useToast } from '@/components/ui';
 import { PRIORITY_LABEL } from '@/lib/labels';
 import { cn } from '@/lib/cn';
 import { useSkills } from '@/features/skills/hooks';
 import { toggleDependency } from './draft-edit';
+import { duplicateSkillNames, skillCandidateLabel, skillOptionLabel, skillStatusOf, type AnnotatedDraft } from './skill-status';
 
 /**
  * §7.4 草案编辑面板（W7 遗留 b3 起接服务端写端点，不再是本地暂存）。
@@ -19,8 +20,8 @@ import { toggleDependency } from './draft-edit';
  * 避免逐键打服务端。
  */
 export interface DraftEditorProps {
-  /** 当前会话草案（服务端为准，含乐观覆盖；依赖开关要全量列表）。 */
-  drafts: readonly BreakdownDraft[];
+  /** 当前会话草案（服务端为准，含乐观覆盖；条款 81 读侧 skills_status 标注随行）。 */
+  drafts: readonly AnnotatedDraft[];
   /** 被编辑草案的 ref；null = 不渲染面板。 */
   draftRef: string | null;
   onSelect: (ref: string | null) => void;
@@ -48,12 +49,20 @@ export function DraftEditor({ drafts, draftRef, onSelect, onPatch, onDelete, onA
     setDescBuffer(null);
   }, [draftRef]);
 
-  const skillOptions = useMemo(() => {
-    const items = skills.data?.items ?? [];
-    return items
-      .filter((skill) => !draft?.skill_ids.includes(skill.id))
-      .map((skill) => ({ value: skill.id, label: skill.name }));
-  }, [skills.data, draft]);
+  /* 条款 81 真机反馈：选择器里 4 个同名「发布检查」无从分辨——全量表中重名的
+   * option 一律追加「类型 · …短ID 后 6 位」；判据取全量而非过滤后的列表，
+   * 避免重名兄弟被 filter 掉后剩下的选项反而看不出歧义。 */
+  const skillItems = skills.data?.items ?? [];
+  const duplicateNames = useMemo(() => duplicateSkillNames(skillItems), [skillItems]);
+  const skillById = useMemo(() => new Map(skillItems.map((skill) => [skill.id, skill])), [skillItems]);
+
+  const skillOptions = useMemo(
+    () =>
+      skillItems
+        .filter((skill) => !draft?.skill_ids.includes(skill.id))
+        .map((skill) => ({ value: skill.id, label: skillOptionLabel(skill, duplicateNames) })),
+    [skillItems, draft, duplicateNames],
+  );
 
   if (!draft) return null;
 
@@ -118,19 +127,33 @@ export function DraftEditor({ drafts, draftRef, onSelect, onPatch, onDelete, onA
         <Field label="绑定技能">
           <div className="flex flex-wrap items-center gap-1">
             {draft.skill_ids.map((value) => {
+              const status = skillStatusOf(draft, value);
               const known = skillNames?.get(value);
+              const ambiguous = status?.state === 'ambiguous';
               return (
                 <span
                   key={value}
                   className={cn(
                     'inline-flex max-w-full items-center gap-1 rounded-badge px-1.5 py-px text-badge',
-                    known ? 'bg-primary-light text-primary' : 'bg-status-review-soft text-status-review',
+                    ambiguous
+                      ? 'bg-status-review-soft text-status-review'
+                      : known || status?.state === 'resolved'
+                        ? 'bg-primary-light text-primary'
+                        : 'bg-status-review-soft text-status-review',
                   )}
+                  data-testid={ambiguous ? 'breakdown-draft-skill-ambiguous' : undefined}
                 >
-                  <span className="truncate">{known ?? `未解析 · ${value}`}</span>
+                  <span className="truncate inline-flex items-center gap-1">
+                    {ambiguous ? <AlertTriangle className="size-3 shrink-0" aria-hidden /> : null}
+                    {ambiguous
+                      ? `歧义技能 · ${status.name}`
+                      : known ??
+                        status?.name ??
+                        (status?.state === 'unresolved' ? `未解析 · ${status.name}` : `未解析 · ${value}`)}
+                  </span>
                   <button
                     type="button"
-                    aria-label={`移除技能 ${known ?? value}`}
+                    aria-label={`移除技能 ${known ?? status?.name ?? value}`}
                     className="inline-flex cursor-pointer opacity-70 hover:opacity-100"
                     onClick={() =>
                       onPatch(draft.ref, { skill_ids: draft.skill_ids.filter((item) => item !== value) })
@@ -139,6 +162,27 @@ export function DraftEditor({ drafts, draftRef, onSelect, onPatch, onDelete, onA
                   >
                     <X className="size-3" aria-hidden />
                   </button>
+                  {/* 条款 81：歧义项挂候选下拉，改选即 PATCH skill_ids 原位替换（走 b3 写通道）。 */}
+                  {ambiguous ? (
+                    <Select
+                      aria-label={`为歧义技能 ${status.name} 改选候选`}
+                      value={status.skill_id ?? value}
+                      className="h-5 max-w-44 border-border/60 px-1.5 pr-6 text-badge"
+                      options={status.candidates.map((id) => ({
+                        value: id,
+                        label: skillCandidateLabel(skillById.get(id), status.name, id),
+                      }))}
+                      onChange={(event) => {
+                        const next = event.target.value;
+                        if (next && next !== value) {
+                          onPatch(draft.ref, {
+                            skill_ids: draft.skill_ids.map((item) => (item === value ? next : item)),
+                          });
+                        }
+                      }}
+                      data-testid="breakdown-draft-skill-reselect"
+                    />
+                  ) : null}
                 </span>
               );
             })}

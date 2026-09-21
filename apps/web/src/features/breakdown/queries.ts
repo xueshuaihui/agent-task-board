@@ -5,8 +5,8 @@ import type {
   BreakdownConfirmResult,
   BreakdownDraft,
   BreakdownSession,
-  BreakdownSessionDetail,
 } from '@/api/types';
+import type { AnnotatedDraft, BreakdownDetailAnnotated } from './skill-status';
 
 /**
  * v0.0.4 W7 §7.3 确认页数据源：列表 + 单会话详情的读查询与 confirm/cancel 写操作。
@@ -25,11 +25,17 @@ export function useBreakdownSessions(options?: Options<BreakdownSession[]>) {
   });
 }
 
-/** 会话详情 = `{ session, drafts, progress }`（§7.6 三张表的读侧聚合）。 */
-export function useBreakdownSession(id: string | null, options?: Options<BreakdownSessionDetail>) {
+/**
+ * 会话详情 = `{ session, drafts, progress }`（§7.6 三张表的读侧聚合）。
+ * 返回值按本片局部镜像 `BreakdownDetailAnnotated` 标注：条款 81 起服务端逐条
+ * 草案带 `skills_status`、会话级带 `skill_resolution`（全局 types 未收录，
+ * 形状兼容纯结构扩展，无需改共享 DTO 文件）。
+ */
+export function useBreakdownSession(id: string | null, options?: Options<BreakdownDetailAnnotated>) {
   return useQuery({
     queryKey: qk.breakdownSession(id ?? ''),
-    queryFn: () => api.breakdown.detail(id as string),
+    queryFn: async (): Promise<BreakdownDetailAnnotated> =>
+      api.breakdown.detail(id as string),
     enabled: Boolean(id) && (options?.enabled ?? true),
     ...options,
   });
@@ -61,8 +67,8 @@ export function useBreakdownCancel() {
  */
 export function useBreakdownDraftWrite(sessionId: string) {
   const queryClient = useQueryClient();
-  const snapshot = useRef<BreakdownSessionDetail | null>(null);
-  const write = useApiMutation<{ run: () => Promise<BreakdownDraft[]> }, BreakdownDraft[]>(
+  const snapshot = useRef<BreakdownDetailAnnotated | null>(null);
+  const write = useApiMutation<{ run: () => Promise<BreakdownDraft[]> }, AnnotatedDraft[]>(
     (vars) => vars.run(),
     {
       invalidate: [qk.breakdownRoot],
@@ -76,8 +82,10 @@ export function useBreakdownDraftWrite(sessionId: string) {
   );
   return {
     pending: write.isPending,
-    commit(optimistic: BreakdownDraft[], run: () => Promise<BreakdownDraft[]>) {
-      const previous = queryClient.getQueryData<BreakdownSessionDetail>(qk.breakdownSession(sessionId));
+    commit(optimistic: AnnotatedDraft[], run: () => Promise<BreakdownDraft[]>) {
+      const previous = queryClient.getQueryData<BreakdownDetailAnnotated>(
+        qk.breakdownSession(sessionId),
+      );
       snapshot.current = previous ?? null;
       if (previous) queryClient.setQueryData(qk.breakdownSession(sessionId), { ...previous, drafts: optimistic });
       write.mutate({ run });

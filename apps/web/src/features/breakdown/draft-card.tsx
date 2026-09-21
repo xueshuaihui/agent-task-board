@@ -1,21 +1,23 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { AlertTriangle } from 'lucide-react';
-import type { BreakdownDraft } from '@/api/types';
 import { Badge, Card, TagBadge } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { priorityText } from '@/lib/labels';
 import { priorityStyle } from '@/lib/status-style';
 import { transitions } from '@/lib/motion';
+import { skillStatusOf, type AnnotatedDraft } from './skill-status';
 
 /**
  * §7.3「已识别任务」草案卡 / §7.2 阶段 4：Agent 每上报一条草案，卡片淡入追加。
  *
- * 技能标注口径（§7.5 r3）：服务端 `finish_breakdown` 已把可解析的技能名统一转 id，
- * GET 详情里剩下的**非 id 值**即「无法解析」的原始名——黄色告警、不阻断创建
- * （歧义报告只随 finish 的 MCP 回包给 Agent，REST 载荷没有，故前端只做未解析检测）。
+ * 技能标注口径（§7.5 r3 + 条款 81）：GET 详情的 `skills_status` 给出逐条解析态——
+ * `ambiguous`（同名多技能，服务端默认取了最近更新者）黄色告警 + 候选提示，
+ * `unresolved`（查无此技能）保留 Agent 原值黄色告警；两者都**不阻断创建**，
+ * 改选入口在编辑面板（卡片点击即打开）。无标注（写回执乐观窗口）退回旧口径：
+ * 技能表已加载而 id 查不到 name → 按未解析显。
  */
 export interface DraftCardProps {
-  draft: BreakdownDraft;
+  draft: AnnotatedDraft;
   /** 技能 id → name（全量技能表已加载时给；null = 未加载，技能标签按原值灰显、不判未解析）。 */
   skillNames: Map<string, string> | null;
 }
@@ -54,9 +56,42 @@ export function DraftCard({ draft, skillNames }: DraftCardProps) {
         {draft.skill_ids.length > 0 ? (
           <div className="flex flex-wrap gap-1">
             {draft.skill_ids.map((value) => {
+              const status = skillStatusOf(draft, value);
+              if (status?.state === 'ambiguous') {
+                // 条款 81：同名多技能——警示态 + hover 列候选，点卡片进面板改选。
+                const candidates = status.candidates
+                  .map((id) => skillNames?.get(id) ?? `…${id.slice(-6)}`)
+                  .join('、');
+                return (
+                  <Badge
+                    key={value}
+                    className="bg-status-review-soft text-status-review"
+                    icon={<AlertTriangle className="size-3" aria-hidden />}
+                  >
+                    <span title={`同名技能 ${status.candidates.length} 个（${candidates}），已默认绑定最近更新者；点击卡片可在编辑面板改选`}>
+                      歧义技能 · {status.name}
+                    </span>
+                  </Badge>
+                );
+              }
+              if (status?.state === 'unresolved') {
+                return (
+                  <Badge
+                    key={value}
+                    className="bg-status-review-soft text-status-review"
+                    icon={<AlertTriangle className="size-3" aria-hidden />}
+                  >
+                    未解析技能 · {status.name}
+                  </Badge>
+                );
+              }
+              if (status) {
+                // resolved：服务端已给出 name，不再依赖本地技能表。
+                return <TagBadge key={value}>{status.name}</TagBadge>;
+              }
               const known = skillNames?.get(value);
               if (skillNames && !known) {
-                // 未解析：保留 Agent 原值 + 黄色告警（§7.5「不阻断创建」）。
+                // 未解析（无标注窗口的旧口径）：保留 Agent 原值 + 黄色告警（§7.5「不阻断创建」）。
                 return (
                   <Badge
                     key={value}
