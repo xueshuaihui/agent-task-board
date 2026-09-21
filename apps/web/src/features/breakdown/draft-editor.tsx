@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link2, Link2Off, Plus, Trash2, X } from 'lucide-react';
 import type { BreakdownDraft } from '@/api/types';
-import { Button, Card, Field, Input, Select, Textarea } from '@/components/ui';
+import { Button, Card, Field, Input, Select, Textarea, useToast } from '@/components/ui';
 import { PRIORITY_LABEL } from '@/lib/labels';
 import { cn } from '@/lib/cn';
 import { useSkills } from '@/features/skills/hooks';
@@ -29,6 +29,7 @@ export interface DraftEditorProps {
 }
 
 export function DraftEditor({ drafts, draftRef, onSelect, onChange, skillNames }: DraftEditorProps) {
+  const toast = useToast();
   const skills = useSkills(undefined, { enabled: true });
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const draft = draftRef ? (drafts.find((item) => item.ref === draftRef) ?? null) : null;
@@ -168,6 +169,11 @@ export function DraftEditor({ drafts, draftRef, onSelect, onChange, skillNames }
                   onClick={() => {
                     const result = toggleDependency(drafts, item.ref, draft.ref);
                     if (result.ok) onChange(result.drafts);
+                    else
+                      toast.warning(
+                        result.reason === 'self' ? '不能依赖自己' : '依赖成环',
+                        '该连边会让依赖闭环，确认创建时服务端也会拒绝（§7.8）。',
+                      );
                   }}
                   data-testid="breakdown-draft-dep-toggle"
                   title={linked ? '点击断开依赖' : '点击建立依赖（本草案等待它完成）'}
