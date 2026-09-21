@@ -35,6 +35,7 @@ import { GroupsController } from '../../groups/groups.controller';
 import { GroupsService } from '../../groups/groups.service';
 import { SettingsService } from '../../infra/settings.service';
 import { AutoArchiveJob } from '../../jobs/auto-archive.job';
+import { BreakdownTimeoutJob } from '../../jobs/breakdown-timeout.job';
 import { DependencyUnlockService } from '../../jobs/dependency-unlock.service';
 import { NotificationTriggers } from '../../jobs/notification-triggers.service';
 import { McpController } from '../../mcp/mcp.controller';
@@ -151,6 +152,7 @@ export function applyDiShim(): void {
 
   // ── jobs
   declare(AutoArchiveJob, [PrismaService, SettingsService, AuditService, EventsService, AppLogger]);
+  declare(BreakdownTimeoutJob, [PrismaService, AuditService, AppLogger]);
   declare(NotificationTriggers, [PrismaService, NotificationsService]);
   declare(DependencyUnlockService, [PrismaService, EventsService, NotificationTriggers]);
 

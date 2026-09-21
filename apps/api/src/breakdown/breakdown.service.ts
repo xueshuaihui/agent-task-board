@@ -5,6 +5,8 @@ import {
   type BreakdownSessionStatus,
 } from '../contract/enums';
 import { newId, nextTaskId } from '../contract/ids';
+import { nowSql } from '../contract/time';
+import { BREAKDOWN_REVIEWING_TIMEOUT_MS } from '../jobs/breakdown-timeout.job';
 import { AuditService } from '../infra/audit.service';
 import { EventsService } from '../infra/events.service';
 import { PrismaService } from '../infra/prisma.service';
@@ -217,6 +219,32 @@ export class BreakdownService {
   async confirm(sessionId: string): Promise<{ session: SessionDtoShape; parent_task_id: string; task_ids: string[] }> {
     const session = await this.requireSession(sessionId);
     this.assertStatus(session, 'reviewing', ['reviewing']);
+    // 20.3-10：会话保留 7 天，到期草案可查不可确认。定时收敛（BreakdownTimeoutJob）未及
+    // 跑到的窗口由 confirm 自行拦截：状态守卫 UPDATE 命中即标 interrupted 并拒绝。
+    const retentionCutoff = nowSql(new Date(Date.now() - BREAKDOWN_REVIEWING_TIMEOUT_MS));
+    const expired = await this.prisma.$executeRawUnsafe(
+      `UPDATE breakdown_sessions SET status = 'interrupted'
+       WHERE id = ? AND status = 'reviewing' AND COALESCE(finished_at, created_at) < ?`,
+      sessionId,
+      retentionCutoff,
+    );
+    if (expired > 0) {
+      await this.audit.record({
+        actorType: 'system',
+        actorName: 'breakdown_timeout',
+        action: 'breakdown_timeout',
+        targetType: 'breakdown_session',
+        targetId: sessionId,
+        before: { status: 'reviewing' },
+        after: { status: 'interrupted', reason: '用户超 7 天未确认', trigger: 'confirm_guard' },
+      });
+      throw new ApiException(
+        'BREAKDOWN_BAD_STATE',
+        '拆解会话已超过 7 天保留期，标记为中断（草案可查不可确认）',
+        undefined,
+        { session_id: sessionId, status: 'interrupted' },
+      );
+    }
     const drafts = (await this.drafts(sessionId)).sort(
       (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.ref.localeCompare(b.ref),
     );
@@ -350,9 +378,13 @@ export class BreakdownService {
       `SELECT id, step, total, message, created_at FROM breakdown_progress WHERE session_id = ? ORDER BY id`,
       sessionId,
     );
+    // 条款 81：finish 算出的技能解析报告不再只留在响应里——GET 逐条草案透出解析态，
+    // 确认页（session 详情即数据源）可见可改。finish 后草案存的是解析出的 id，同名歧义
+    // 按「该 id 的技能名是否多技能共用」复原，标注不会因落库转 id 而丢失。
+    const annotated = await this.annotateSkills(drafts);
     return {
       session,
-      drafts: drafts.map(toDraftDto),
+      drafts: drafts.map((draft, index) => ({ ...toDraftDto(draft), skills_status: annotated.perDraft[index] })),
       progress: progress.map((row) => ({
         id: row.id,
         step: row.step,
@@ -360,6 +392,7 @@ export class BreakdownService {
         message: row.message,
         created_at: row.created_at,
       })),
+      skill_resolution: annotated.report,
     };
   }
 
@@ -489,6 +522,80 @@ export class BreakdownService {
     return { report, updated };
   }
 
+  /**
+   * 条款 81：GET 读侧的技能解析标注——与 resolveSkills 同一判据（id 直通、name 精确匹配、
+   * 同名多技能按「最近更新者」序），但纯读零副作用。finish 之后草案里存的是落定 id，
+   * 「同名歧义」经该 id 技能名的共用者复原，保证确认页在 finish 前后都看得到标注。
+   */
+  private async annotateSkills(
+    drafts: DraftRow[],
+  ): Promise<{ perDraft: SkillStatusEntry[][]; report: SkillResolutionReport }> {
+    const values = [...new Set(drafts.flatMap((d) => parseArray<string>(d.skill_ids)))];
+    const info = new Map<string, SkillStatusEntry>();
+    if (values.length > 0) {
+      const idHits = await this.prisma.$queryRawUnsafe<{ id: string; name: string }[]>(
+        `SELECT id, name FROM skills WHERE id IN (${placeholders(values.length)})`,
+        ...values,
+      );
+      const idName = new Map(idHits.map((row) => [row.id, row.name]));
+      // 非 id 的值按候选名查；命中的 id 用其技能名查「同名亲族」——一张查询表覆盖两种歧义。
+      const nameKeys = [...new Set([...idName.values(), ...values.filter((value) => !idName.has(value))])];
+      const byName = new Map<string, string[]>();
+      if (nameKeys.length > 0) {
+        const hits = await this.prisma.$queryRawUnsafe<{ id: string; name: string }[]>(
+          `SELECT id, name FROM skills WHERE name IN (${placeholders(nameKeys.length)}) ORDER BY updated_at DESC, id DESC`,
+          ...nameKeys,
+        );
+        for (const hit of hits) {
+          const list = byName.get(hit.name) ?? [];
+          list.push(hit.id);
+          byName.set(hit.name, list);
+        }
+      }
+      for (const value of values) {
+        const ownName = idName.get(value);
+        if (ownName) {
+          const group = byName.get(ownName) ?? [value];
+          info.set(value, {
+            value,
+            state: group.length > 1 ? 'ambiguous' : 'resolved',
+            skill_id: value,
+            name: ownName,
+            candidates: group,
+          });
+          continue;
+        }
+        const hits = byName.get(value) ?? [];
+        info.set(value,
+          hits.length === 0
+            ? { value, state: 'unresolved', skill_id: null, name: value, candidates: [] }
+            : {
+                value,
+                state: hits.length > 1 ? 'ambiguous' : 'resolved',
+                skill_id: hits[0]!,
+                name: value,
+                candidates: hits,
+              },
+        );
+      }
+    }
+    const report: SkillResolutionReport = { ambiguous: [], unresolved: [] };
+    const perDraft = drafts.map((draft) => {
+      const statuses = parseArray<string>(draft.skill_ids).flatMap((value) => {
+        const entry = info.get(value);
+        if (!entry) return [];
+        if (entry.state === 'ambiguous') {
+          report.ambiguous.push({ ref: draft.ref, name: entry.name, skill_id: entry.skill_id!, candidates: entry.candidates });
+        } else if (entry.state === 'unresolved') {
+          report.unresolved.push({ ref: draft.ref, name: value });
+        }
+        return [entry];
+      });
+      return statuses;
+    });
+    return { perDraft, report };
+  }
+
   private async drafts(sessionId: string): Promise<DraftRow[]> {
     return this.prisma.$queryRawUnsafe<DraftRow[]>(
       `SELECT id, session_id, ref, title, description, priority, skill_ids, acceptance, depends_on, sort_order
@@ -523,12 +630,29 @@ export interface DraftDtoShape {
   acceptance: string[];
   depends_on: string[];
   sort_order: number;
+  /** 条款 81：仅 GET 详情填充（reportDraft 的即时回显不含读侧标注）。 */
+  skills_status?: SkillStatusEntry[];
+}
+
+/** GET 载荷里每条草案技能值的解析态（resolved id / ambiguous 候选列表 / unresolved 原样保留）。 */
+export interface SkillStatusEntry {
+  /** 草案里存的原值（finish 后为落定 id，未解析时仍是 Agent 上报的名字）。 */
+  value: string;
+  state: 'resolved' | 'ambiguous' | 'unresolved';
+  /** 解析落定的技能 id；unresolved 为 null。 */
+  skill_id: string | null;
+  /** 命中的技能名；unresolved 时即原值。 */
+  name: string;
+  /** 同名全部技能 id（含落定者，「最近更新者」在前）；resolved 单命中时即 [skill_id]。 */
+  candidates: string[];
 }
 
 export interface BreakdownSessionDetail {
   session: SessionDtoShape;
   drafts: DraftDtoShape[];
   progress: { id: number; step: number; total: number; message: string | null; created_at: string }[];
+  /** 与 finish 响应同形状的汇总报告（确认页告警条用；逐条状态见 drafts[].skills_status）。 */
+  skill_resolution: SkillResolutionReport;
 }
 
 interface ProgressRow {

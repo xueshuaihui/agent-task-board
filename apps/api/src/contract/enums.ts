@@ -124,6 +124,8 @@ export const AUDIT_ACTIONS = [
   // v0.0.4 W7 §7.2 阶段 7：拆解会话的两个用户动作（确认创建 / 取消）。
   'breakdown_confirm',
   'breakdown_cancel',
+  // W7 遗留 b2 §7.7/20.3-10：定时收敛与 confirm 兜底把超期会话标 interrupted 的系统动作。
+  'breakdown_timeout',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
