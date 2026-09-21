@@ -1,10 +1,17 @@
 import { http } from '../client';
-import type { BreakdownConfirmResult, BreakdownSession, BreakdownSessionDetail } from '../types';
+import type {
+  BreakdownConfirmResult,
+  BreakdownDraft,
+  BreakdownDraftEdit,
+  BreakdownSession,
+  BreakdownSessionDetail,
+} from '../types';
 
 /**
- * v0.0.4 W7 §16.2「拆解」四端点（§7.3 确认页的数据源与两个决策动作）。
- * begin/进度/草案/完成是 Agent 面（MCP `board.*`），REST 只有这四行——
- * 所以这里没有 create/update，写侧只有 confirm/cancel 两个状态迁移。
+ * v0.0.4 W7 §16.2「拆解」端点 + W7 遗留 b3 的用户侧草案写三件套（§7.4）。
+ * begin/进度/完成是 Agent 面（MCP `board.*`）；确认页在 reviewing 期的
+ * 添加/修改/删除草案走 POST|PATCH|DELETE /breakdown/sessions/{id}/drafts[/ref]，
+ * 三条都回服务端最新的草案全集（以服务端为准）。
  */
 function enc(id: string): string {
   return encodeURIComponent(id);
@@ -23,4 +30,16 @@ export const breakdownApi = {
 
   /** receiving/reviewing → cancelled；其余状态同样 409。 */
   cancel: (id: string) => http.post<BreakdownSession>(`/breakdown/sessions/${enc(id)}/cancel`),
+
+  /** §7.4 添加任务：ref 可省略（服务端取号）；仅 reviewing 可写，表外 409。回草案全集。 */
+  createDraft: (id: string, input: BreakdownDraftEdit) =>
+    http.post<BreakdownDraft[]>(`/breakdown/sessions/${enc(id)}/drafts`, input),
+
+  /** §7.4 修改草案（数组字段整体替换）+ 条款 81 技能重选；成环 409、未知前置 422。 */
+  updateDraft: (id: string, ref: string, patch: BreakdownDraftEdit) =>
+    http.patch<BreakdownDraft[]>(`/breakdown/sessions/${enc(id)}/drafts/${encodeURIComponent(ref)}`, patch),
+
+  /** §7.4 删除任务：服务端同事务级联清悬空 depends_on；未知草案 404。 */
+  deleteDraft: (id: string, ref: string) =>
+    http.del<BreakdownDraft[]>(`/breakdown/sessions/${enc(id)}/drafts/${encodeURIComponent(ref)}`),
 };

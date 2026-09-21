@@ -801,6 +801,21 @@ export interface BreakdownDraft {
   sort_order: number;
 }
 
+/**
+ * 用户侧草案写端点入参（§7.4 / W7 遗留 b3）：PATCH 按下发字段局部更新，
+ * skill_ids / depends_on 传了即整体替换；POST 仅 title 有服务端默认。
+ */
+export interface BreakdownDraftEdit {
+  ref?: string;
+  title?: string;
+  description?: string | null;
+  priority?: number;
+  skill_ids?: string[];
+  acceptance?: string[];
+  depends_on?: string[];
+  sort_order?: number;
+}
+
 /** report_progress 的逐条上报（§7.2 阶段 3 的清单数据源）。 */
 export interface BreakdownProgress {
   id: number;

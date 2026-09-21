@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { ArrowLeft, CheckCircle2, Circle, Loader2, Plus, Undo2 } from 'lucide-react';
-import { BREAKDOWN_STATUS_LABEL, type BreakdownDraft, type BreakdownSession } from '@/api/types';
+import { BREAKDOWN_STATUS_LABEL, type BreakdownDraft, type BreakdownDraftEdit, type BreakdownSession } from '@/api/types';
+import { api } from '@/api';
 import { navigate } from '@/app/router';
 import { useActiveGroups } from '@/features/groups';
 import { useSkills } from '@/features/skills/hooks';
@@ -10,14 +11,20 @@ import { Badge, Button, Card, EmptyState, IconButton, Progress, Skeleton, useToa
 import { cn } from '@/lib/cn';
 import { transitions } from '@/lib/motion';
 import { formatDateTime } from '@/lib/time';
-import { useBreakdownCancel, useBreakdownConfirm, useBreakdownSession, useBreakdownSessions } from './queries';
+import {
+  useBreakdownCancel,
+  useBreakdownConfirm,
+  useBreakdownDraftWrite,
+  useBreakdownSession,
+  useBreakdownSessions,
+} from './queries';
 import { DraftCard } from './draft-card';
 import { BreakdownStatusBadge, SessionSwitcher } from './session-switcher';
 import { useBreakdownOverlayStore } from './store';
 import { SessionActionDialog } from './session-action-dialog';
 import { DraftFlowGraph } from './draft-graph';
 import { DraftEditor } from './draft-editor';
-import { addDraft, hasDependencyCycle, nextDraftRef, toggleDependency } from './draft-edit';
+import { addDraft, hasDependencyCycle, nextDraftRef, patchDraft, removeDraft, toggleDependency } from './draft-edit';
 
 /** §7.8「撤销：5 秒内可撤销」——确认动作延迟 5 秒提交，期间可撤销（api 无事后撤销端点）。 */
 const CONFIRM_UNDO_SECONDS = 5;
@@ -30,8 +37,8 @@ const CONFIRM_UNDO_SECONDS = 5;
  * - 头：← 返回 · 「正在接收 Agent 拆解」/「拆解完成：{需求}」 · [取消] [确认创建]；
  * - 顶：会话切换器（§7.3 多会话并发，进行中红点）；
  * - 体：进度清单 + 进度条（阶段 3）、已识别任务卡片流（阶段 4）、状态收尾信息；
- * - v0.0.4 W7 遗留 b1 补齐：待确认页流程图（§7.3）、草案最小编辑（§7.4，
- *   本地暂存层）、确认后 5 秒撤销窗口（§7.8）。
+ * - v0.0.4 W7 遗留 b1 补齐：待确认页流程图（§7.3）、草案最小编辑（§7.4）、
+ *   确认后 5 秒撤销窗口（§7.8）；b3 起草案编辑接服务端写端点（乐观更新 + 失败回滚）。
  */
 export interface BreakdownOverlayProps {
   onClose: () => void;
@@ -49,15 +56,13 @@ export function BreakdownOverlay({ onClose }: BreakdownOverlayProps) {
   const detail = useBreakdownSession(currentId);
   const session = detail.data?.session ?? list.find((s) => s.id === currentId) ?? null;
 
-  /* §7.4 草案本地暂存：api 尚无用户侧草案写端点（reportDraft 是 MCP `board.report_task_draft`），
-   * 编辑只覆盖在 GET 详情之上；切会话即丢弃，避免把 A 会话的改动串到 B。 */
-  const [localDrafts, setLocalDrafts] = useState<BreakdownDraft[] | null>(null);
+  /* W7 遗留 b3：草案编辑走服务端写端点（POST|PATCH|DELETE /drafts），
+   * 读视图永远是 GET 详情 + 乐观覆盖，不再有「暂存于本页」的本地数组。 */
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
   useEffect(() => {
-    setLocalDrafts(null);
     setSelectedRef(null);
   }, [currentId]);
-  const drafts = localDrafts ?? detail.data?.drafts ?? [];
+  const drafts = detail.data?.drafts ?? [];
 
   const body = detail.isPending ? (
     <div className="flex flex-col gap-3 p-4">
@@ -76,10 +81,8 @@ export function BreakdownOverlay({ onClose }: BreakdownOverlayProps) {
       session={session}
       detail={detail.data}
       drafts={drafts}
-      onDraftsChange={setLocalDrafts}
       selectedRef={selectedRef}
       onSelectDraft={setSelectedRef}
-      dirty={localDrafts !== null}
     />
   );
 
@@ -251,27 +254,23 @@ function SessionActions({ session, draftCount }: { session: BreakdownSession; dr
   );
 }
 
-/** 单会话主体：进度清单（阶段 3）+ 草案卡片流（阶段 4）+ 待确认流程图/编辑（§7.3/7.4）+ 状态收尾。 */
+/** 单会话主体：进度清单（阶段 3）+ 草案卡片流（阶段 4）+ 待确认流程图/编辑（§7.3/7.4，写侧接服务端）+ 状态收尾。 */
 function SessionDetail({
   session,
   detail,
   drafts,
-  onDraftsChange,
   selectedRef,
   onSelectDraft,
-  dirty,
 }: {
   session: BreakdownSession;
   detail: ReturnType<typeof useBreakdownSession>['data'];
-  /** 本地暂存覆盖后的草案视图（§7.4）。 */
+  /** 服务端草案 + 乐观覆盖后的视图（§7.4，写端点为唯一落库通道）。 */
   drafts: BreakdownDraft[];
-  onDraftsChange: (next: BreakdownDraft[]) => void;
   selectedRef: string | null;
   onSelectDraft: (ref: string | null) => void;
-  /** 用户是否已产生本地编辑（决定是否展示「暂存于本页」提示）。 */
-  dirty: boolean;
 }) {
   const toast = useToast();
+  const write = useBreakdownDraftWrite(session.id);
   const skills = useSkills(undefined, { enabled: true });
   const skillNames = useMemo(
     () => (skills.data ? new Map(skills.data.items.map((s) => [s.id, s.name])) : null),
@@ -285,15 +284,38 @@ function SessionDetail({
   const reviewing = session.status === 'reviewing';
   const cycleDetected = reviewing && hasDependencyCycle(drafts);
 
-  /** 点边/点开关共用：断边失败（成环/自环）时给文案，成功后不动选中态。 */
+  /** PATCH 提交：乐观覆盖用纯归约，服务端失败由 write 回滚 + Toast。 */
+  const patchOne = (ref: string, patch: BreakdownDraftEdit) =>
+    write.commit(patchDraft(drafts, ref, patch), () => api.breakdown.updateDraft(session.id, ref, patch));
+
+  /** POST 添加：ref 与服务端取号同口径（nextDraftRef ≡ nextUserRef），显式带上避免并发改号撞车。 */
+  const addOne = () => {
+    const ref = nextDraftRef(drafts);
+    const next = addDraft(drafts);
+    const created = next.at(-1);
+    if (!created) return;
+    write.commit(next, () =>
+      api.breakdown.createDraft(session.id, { ref, title: created.title, sort_order: created.sort_order }),
+    );
+    onSelectDraft(ref);
+  };
+
+  /** DELETE：removeDraft 的级联清边只是乐观视图，真正清悬空靠服务端同事务。 */
+  const removeOne = (ref: string) =>
+    write.commit(removeDraft(drafts, ref), () => api.breakdown.deleteDraft(session.id, ref));
+
+  /** 点边/点开关共用：断边失败（成环/自环）时给文案，成功后 PATCH 依赖边集合。 */
   const toggleDep = (from: string, to: string) => {
     const result = toggleDependency(drafts, from, to);
-    if (result.ok) onDraftsChange(result.drafts);
-    else
+    if (!result.ok) {
       toast.warning(
         result.reason === 'self' ? '不能依赖自己' : '依赖成环',
-        '该连线会让依赖闭环，服务端确认时也会拒绝（§7.8）。',
+        '该连线会让依赖闭环，服务端也会拒绝（§7.8）。',
       );
+      return;
+    }
+    const nextDeps = result.drafts.find((draft) => draft.ref === to)?.depends_on;
+    if (nextDeps) patchOne(to, { depends_on: nextDeps });
   };
 
   return (
@@ -359,10 +381,7 @@ function SessionDetail({
             <Button
               variant="default"
               size="sm"
-              onClick={() => {
-                onDraftsChange(addDraft(drafts));
-                onSelectDraft(nextDraftRef(drafts));
-              }}
+              onClick={addOne}
               data-testid="breakdown-add-draft"
             >
               <Plus className="size-3.5" aria-hidden />
@@ -376,21 +395,18 @@ function SessionDetail({
             onEdgeRemove={toggleDep}
           />
           <p className="text-aux text-text-tertiary">
-            点击节点编辑草案，点击连线断开依赖；本地编辑即时反映在图上。
+            点击节点编辑草案，点击连线断开依赖；编辑即时写入服务端，图上先乐观更新。
           </p>
           {selectedRef ? (
             <DraftEditor
               drafts={drafts}
               draftRef={selectedRef}
               onSelect={onSelectDraft}
-              onChange={onDraftsChange}
+              onPatch={patchOne}
+              onDelete={removeOne}
+              onAdd={addOne}
               skillNames={skillNames}
             />
-          ) : null}
-          {dirty ? (
-            <p className="text-aux text-status-review" data-testid="breakdown-local-edit-note">
-              本地编辑暂存于本页：api 尚无用户侧草案写端点，确认创建以服务端草案为准（缺口已列交接）。
-            </p>
           ) : null}
         </section>
       ) : null}

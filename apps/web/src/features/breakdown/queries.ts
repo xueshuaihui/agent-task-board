@@ -1,6 +1,12 @@
-import { useQuery, type UseQueryOptions } from '@tanstack/react-query';
+import { useRef } from 'react';
+import { useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
 import { api, qk, useApiMutation } from '@/api';
-import type { BreakdownConfirmResult, BreakdownSession, BreakdownSessionDetail } from '@/api/types';
+import type {
+  BreakdownConfirmResult,
+  BreakdownDraft,
+  BreakdownSession,
+  BreakdownSessionDetail,
+} from '@/api/types';
 
 /**
  * v0.0.4 W7 §7.3 确认页数据源：列表 + 单会话详情的读查询与 confirm/cancel 写操作。
@@ -43,4 +49,38 @@ export function useBreakdownCancel() {
     (sessionId) => api.breakdown.cancel(sessionId),
     { invalidate: [qk.breakdownRoot] },
   );
+}
+
+/**
+ * W7 遗留 b3（§7.4）：用户侧草案写的乐观更新封装。
+ *
+ * commit 先把调用方（overlay 用 draft-edit.ts 的纯归约）算好的乐观草案集覆盖进
+ * 会话详情缓存，再打服务端写端点；成功走 `qk.breakdownRoot` 失效——**确认页数据
+ * 以服务端为准**；失败回滚进 commit 前的快照，错误 Toast 由 useApiMutation 弹。
+ * 本地暂存层（旧「暂存于本页」黄色提示）随之退役。
+ */
+export function useBreakdownDraftWrite(sessionId: string) {
+  const queryClient = useQueryClient();
+  const snapshot = useRef<BreakdownSessionDetail | null>(null);
+  const write = useApiMutation<{ run: () => Promise<BreakdownDraft[]> }, BreakdownDraft[]>(
+    (vars) => vars.run(),
+    {
+      invalidate: [qk.breakdownRoot],
+      onSettled: (_data, error) => {
+        if (error && snapshot.current) {
+          queryClient.setQueryData(qk.breakdownSession(sessionId), snapshot.current);
+        }
+        snapshot.current = null;
+      },
+    },
+  );
+  return {
+    pending: write.isPending,
+    commit(optimistic: BreakdownDraft[], run: () => Promise<BreakdownDraft[]>) {
+      const previous = queryClient.getQueryData<BreakdownSessionDetail>(qk.breakdownSession(sessionId));
+      snapshot.current = previous ?? null;
+      if (previous) queryClient.setQueryData(qk.breakdownSession(sessionId), { ...previous, drafts: optimistic });
+      write.mutate({ run });
+    },
+  };
 }

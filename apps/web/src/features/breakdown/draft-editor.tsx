@@ -1,38 +1,52 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link2, Link2Off, Plus, Trash2, X } from 'lucide-react';
-import type { BreakdownDraft } from '@/api/types';
+import type { BreakdownDraft, BreakdownDraftEdit } from '@/api/types';
 import { Button, Card, Field, Input, Select, Textarea, useToast } from '@/components/ui';
 import { PRIORITY_LABEL } from '@/lib/labels';
 import { cn } from '@/lib/cn';
 import { useSkills } from '@/features/skills/hooks';
-import { addDraft, patchDraft, removeDraft, toggleDependency } from './draft-edit';
+import { toggleDependency } from './draft-edit';
 
 /**
- * §7.4 草案最小编辑面板（v0.0.4 W7 遗留 b1）：待确认态下点节点/卡片展开。
+ * §7.4 草案编辑面板（W7 遗留 b3 起接服务端写端点，不再是本地暂存）。
  *
- * 覆盖 PRD 表格里的最小集：标题、描述、优先级、技能（标签删 + 选择器加/换）、
- * 依赖连/断、删草案、加草案；验收标准编辑与「重新生成」不在本片。
- * 父需求原文（session.requirement_text）不可编辑——面板根本不渲染其输入框。
+ * 覆盖 PRD 表格里的最小集：标题、描述、优先级、技能（标签删 + 选择器加/换，
+ * 条款 81 的歧义/未解析重选走 onPatch({ skill_ids })）、依赖连/断、删草案、加草案；
+ * 验收标准编辑与「重新生成」不在本片。父需求原文（session.requirement_text）不可编辑。
  *
- * 所有变更经 `onChange` 上抛**本地草案数组**（api 无用户侧草案写端点，
- * 见 draft-edit.ts 头注与交接清单）。
+ * 变更全部经 onPatch/onDelete/onAdd 上抛给 overlay 的真实 mutation（乐观更新 +
+ * 失败回滚）；离散控件即时提交，标题/描述这类连续输入本地缓冲、失焦才落库，
+ * 避免逐键打服务端。
  */
 export interface DraftEditorProps {
-  /** 当前会话的本地草案（含未选中项——依赖开关要全量列表）。 */
+  /** 当前会话草案（服务端为准，含乐观覆盖；依赖开关要全量列表）。 */
   drafts: readonly BreakdownDraft[];
   /** 被编辑草案的 ref；null = 不渲染面板。 */
   draftRef: string | null;
   onSelect: (ref: string | null) => void;
-  onChange: (next: BreakdownDraft[]) => void;
+  /** PATCH 局部更新（数组字段整体替换）。 */
+  onPatch: (ref: string, patch: BreakdownDraftEdit) => void;
+  /** DELETE（服务端级联清悬空依赖）。 */
+  onDelete: (ref: string) => void;
+  /** POST 添加新草案，ref 由 overlay 取号。 */
+  onAdd: () => void;
   /** 技能 id → name（null = 技能表未加载）。 */
   skillNames: Map<string, string> | null;
 }
 
-export function DraftEditor({ drafts, draftRef, onSelect, onChange, skillNames }: DraftEditorProps) {
+export function DraftEditor({ drafts, draftRef, onSelect, onPatch, onDelete, onAdd, skillNames }: DraftEditorProps) {
   const toast = useToast();
   const skills = useSkills(undefined, { enabled: true });
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const draft = draftRef ? (drafts.find((item) => item.ref === draftRef) ?? null) : null;
+
+  /* 标题/描述本地缓冲（null = 无未提交输入）；切草案即丢弃缓冲。 */
+  const [titleBuffer, setTitleBuffer] = useState<string | null>(null);
+  const [descBuffer, setDescBuffer] = useState<string | null>(null);
+  useEffect(() => {
+    setTitleBuffer(null);
+    setDescBuffer(null);
+  }, [draftRef]);
 
   const skillOptions = useMemo(() => {
     const items = skills.data?.items ?? [];
@@ -44,15 +58,30 @@ export function DraftEditor({ drafts, draftRef, onSelect, onChange, skillNames }
   if (!draft) return null;
 
   const others = drafts.filter((item) => item.ref !== draft.ref);
+  const commitTitle = () => {
+    const next = titleBuffer?.trim();
+    setTitleBuffer(null);
+    if (next && next !== draft.title) onPatch(draft.ref, { title: next });
+  };
+  const commitDesc = () => {
+    if (descBuffer === null) return;
+    const next = descBuffer.trim() ? descBuffer : null;
+    setDescBuffer(null);
+    if ((next ?? '') !== (draft.description ?? '')) onPatch(draft.ref, { description: next });
+  };
 
   return (
     <Card className="flex flex-col gap-3 p-3" data-testid="breakdown-draft-editor">
       <div className="flex items-center gap-2">
         <span className="shrink-0 font-mono text-code text-text-tertiary">#{draft.ref}</span>
         <Input
-          value={draft.title}
+          value={titleBuffer ?? draft.title}
           aria-label="草案标题"
-          onChange={(event) => onChange(patchDraft(drafts, draft.ref, { title: event.target.value }))}
+          onChange={(event) => setTitleBuffer(event.target.value)}
+          onBlur={commitTitle}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') commitTitle();
+          }}
           data-testid="breakdown-draft-title"
         />
         <Button
@@ -68,10 +97,11 @@ export function DraftEditor({ drafts, draftRef, onSelect, onChange, skillNames }
 
       <Field label="描述">
         <Textarea
-          value={draft.description ?? ''}
+          value={descBuffer ?? draft.description ?? ''}
           placeholder="补充任务描述…"
           rows={2}
-          onChange={(event) => onChange(patchDraft(drafts, draft.ref, { description: event.target.value || null }))}
+          onChange={(event) => setDescBuffer(event.target.value)}
+          onBlur={commitDesc}
           data-testid="breakdown-draft-desc"
         />
       </Field>
@@ -81,9 +111,7 @@ export function DraftEditor({ drafts, draftRef, onSelect, onChange, skillNames }
           <Select
             value={String(draft.priority)}
             options={[0, 1, 2, 3].map((p) => ({ value: String(p), label: `P${p} ${PRIORITY_LABEL[p as 0 | 1 | 2 | 3]}` }))}
-            onChange={(event) =>
-              onChange(patchDraft(drafts, draft.ref, { priority: Number(event.target.value) }))
-            }
+            onChange={(event) => onPatch(draft.ref, { priority: Number(event.target.value) })}
             data-testid="breakdown-draft-priority"
           />
         </Field>
@@ -105,11 +133,7 @@ export function DraftEditor({ drafts, draftRef, onSelect, onChange, skillNames }
                     aria-label={`移除技能 ${known ?? value}`}
                     className="inline-flex cursor-pointer opacity-70 hover:opacity-100"
                     onClick={() =>
-                      onChange(
-                        patchDraft(drafts, draft.ref, {
-                          skill_ids: draft.skill_ids.filter((item) => item !== value),
-                        }),
-                      )
+                      onPatch(draft.ref, { skill_ids: draft.skill_ids.filter((item) => item !== value) })
                     }
                     data-testid="breakdown-draft-skill-remove"
                   >
@@ -138,7 +162,7 @@ export function DraftEditor({ drafts, draftRef, onSelect, onChange, skillNames }
                 onChange={(event) => {
                   const id = event.target.value;
                   if (id) {
-                    onChange(patchDraft(drafts, draft.ref, { skill_ids: [...draft.skill_ids, id] }));
+                    onPatch(draft.ref, { skill_ids: [...draft.skill_ids, id] });
                   }
                   setSkillPickerOpen(false);
                 }}
@@ -168,12 +192,15 @@ export function DraftEditor({ drafts, draftRef, onSelect, onChange, skillNames }
                   )}
                   onClick={() => {
                     const result = toggleDependency(drafts, item.ref, draft.ref);
-                    if (result.ok) onChange(result.drafts);
-                    else
+                    if (!result.ok) {
                       toast.warning(
                         result.reason === 'self' ? '不能依赖自己' : '依赖成环',
-                        '该连边会让依赖闭环，确认创建时服务端也会拒绝（§7.8）。',
+                        '该连边会让依赖闭环，服务端也会拒绝（§7.8）。',
                       );
+                      return;
+                    }
+                    const nextDeps = result.drafts.find((d) => d.ref === draft.ref)?.depends_on;
+                    if (nextDeps) onPatch(draft.ref, { depends_on: nextDeps });
                   }}
                   data-testid="breakdown-draft-dep-toggle"
                   title={linked ? '点击断开依赖' : '点击建立依赖（本草案等待它完成）'}
@@ -193,7 +220,7 @@ export function DraftEditor({ drafts, draftRef, onSelect, onChange, skillNames }
           size="sm"
           className="text-status-failed hover:text-status-failed"
           onClick={() => {
-            onChange(removeDraft(drafts, draft.ref));
+            onDelete(draft.ref);
             onSelect(null);
           }}
           data-testid="breakdown-draft-delete"
@@ -201,7 +228,7 @@ export function DraftEditor({ drafts, draftRef, onSelect, onChange, skillNames }
           <Trash2 className="size-3.5" aria-hidden />
           删除任务
         </Button>
-        <Button variant="default" size="sm" onClick={() => onSelect(addDraft(drafts).at(-1)?.ref ?? null)} data-testid="breakdown-draft-add">
+        <Button variant="default" size="sm" onClick={onAdd} data-testid="breakdown-draft-add">
           <Plus className="size-3.5" aria-hidden />
           添加任务
         </Button>

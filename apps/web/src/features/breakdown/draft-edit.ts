@@ -1,12 +1,13 @@
 import type { BreakdownDraft } from '@/api/types';
 
 /**
- * §7.4 草案编辑的纯归约层（v0.0.4 W7 遗留 b1）。
+ * §7.4 草案编辑的纯归约层（v0.0.4 W7 遗留 b1 落地）。
  *
- * api 现状：breakdown 的 REST 只有 list/detail/confirm/cancel 四端点
- * （reportDraft 是 Agent 面 MCP `board.report_task_draft`，没有用户侧 REST 写入口），
- * 所以这里的编辑全部作用于**前端本地暂存**的草案数组：确认页的流程图、计数与
- * 5 秒撤销窗口都吃这份本地视图；真正落库要等 api 补出草案写端点（见交接清单）。
+ * b3 起 api 已有用户侧草案写端点（POST|PATCH|DELETE
+ * `/api/v1/breakdown/sessions/{id}/drafts[/{ref}]`），这些归约函数从「本地暂存」
+ * 转型为**乐观更新层**：先在这里算出期望视图覆盖进详情缓存，再打服务端；
+ * 失败回滚快照，成功以服务端回执为准（queries.ts `useBreakdownDraftWrite`）。
+ * makeDraft 的 `local-` id 只活在乐观窗口里——服务端回执带真实 id。
  *
  * 全部导出不依赖 React，便于单测（web 侧测试基建就绪后直接覆盖）。
  */
