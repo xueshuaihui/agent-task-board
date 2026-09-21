@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { ArrowLeft, CheckCircle2, Circle, Loader2 } from 'lucide-react';
-import { BREAKDOWN_STATUS_LABEL, type BreakdownSession } from '@/api/types';
+import { ArrowLeft, CheckCircle2, Circle, Loader2, Plus, Undo2 } from 'lucide-react';
+import { BREAKDOWN_STATUS_LABEL, type BreakdownDraft, type BreakdownSession } from '@/api/types';
 import { navigate } from '@/app/router';
 import { useActiveGroups } from '@/features/groups';
 import { useSkills } from '@/features/skills/hooks';
@@ -15,6 +15,12 @@ import { DraftCard } from './draft-card';
 import { BreakdownStatusBadge, SessionSwitcher } from './session-switcher';
 import { useBreakdownOverlayStore } from './store';
 import { SessionActionDialog } from './session-action-dialog';
+import { DraftFlowGraph } from './draft-graph';
+import { DraftEditor } from './draft-editor';
+import { addDraft, hasDependencyCycle, nextDraftRef, toggleDependency } from './draft-edit';
+
+/** §7.8「撤销：5 秒内可撤销」——确认动作延迟 5 秒提交，期间可撤销（api 无事后撤销端点）。 */
+const CONFIRM_UNDO_SECONDS = 5;
 
 /**
  * 拆解创建页（§7.3，**覆盖层不是独立路由**）：13.8「覆盖内容区 + 工具栏」——
@@ -23,8 +29,9 @@ import { SessionActionDialog } from './session-action-dialog';
  * 布局按 PRD ASCII 稿：
  * - 头：← 返回 · 「正在接收 Agent 拆解」/「拆解完成：{需求}」 · [取消] [确认创建]；
  * - 顶：会话切换器（§7.3 多会话并发，进行中红点）；
- * - 体：进度清单 + 进度条（阶段 3）、已识别任务卡片流（阶段 4）、状态收尾信息。
- * 编辑能力（§7.4）与流程图不在 W7 web 片范围，草案以只读卡呈现。
+ * - 体：进度清单 + 进度条（阶段 3）、已识别任务卡片流（阶段 4）、状态收尾信息；
+ * - v0.0.4 W7 遗留 b1 补齐：待确认页流程图（§7.3）、草案最小编辑（§7.4，
+ *   本地暂存层）、确认后 5 秒撤销窗口（§7.8）。
  */
 export interface BreakdownOverlayProps {
   onClose: () => void;
@@ -42,6 +49,16 @@ export function BreakdownOverlay({ onClose }: BreakdownOverlayProps) {
   const detail = useBreakdownSession(currentId);
   const session = detail.data?.session ?? list.find((s) => s.id === currentId) ?? null;
 
+  /* §7.4 草案本地暂存：api 尚无用户侧草案写端点（reportDraft 是 MCP `board.report_task_draft`），
+   * 编辑只覆盖在 GET 详情之上；切会话即丢弃，避免把 A 会话的改动串到 B。 */
+  const [localDrafts, setLocalDrafts] = useState<BreakdownDraft[] | null>(null);
+  const [selectedRef, setSelectedRef] = useState<string | null>(null);
+  useEffect(() => {
+    setLocalDrafts(null);
+    setSelectedRef(null);
+  }, [currentId]);
+  const drafts = localDrafts ?? detail.data?.drafts ?? [];
+
   const body = detail.isPending ? (
     <div className="flex flex-col gap-3 p-4">
       <Skeleton className="h-6 w-1/2" />
@@ -55,7 +72,15 @@ export function BreakdownOverlay({ onClose }: BreakdownOverlayProps) {
       className="m-4"
     />
   ) : (
-    <SessionDetail session={session} detail={detail.data} />
+    <SessionDetail
+      session={session}
+      detail={detail.data}
+      drafts={drafts}
+      onDraftsChange={setLocalDrafts}
+      selectedRef={selectedRef}
+      onSelectDraft={setSelectedRef}
+      dirty={localDrafts !== null}
+    />
   );
 
   return (
@@ -81,7 +106,7 @@ export function BreakdownOverlay({ onClose }: BreakdownOverlayProps) {
               ? `拆解完成：${session.parent_title}`
               : (session?.parent_title ?? '拆解会话')}
         </h2>
-        {session ? <SessionActions session={session} draftCount={detail.data?.drafts.length ?? session.actual_tasks ?? 0} /> : null}
+        {session ? <SessionActions session={session} draftCount={drafts.length} /> : null}
       </header>
       <SessionSwitcher sessions={list} activeId={currentId} onSelect={setActive} />
       <div className="atb-scroll min-h-0 flex-1 overflow-y-auto">{body}</div>
@@ -97,6 +122,9 @@ function SessionActions({ session, draftCount }: { session: BreakdownSession; dr
   const confirm = useBreakdownConfirm();
   const cancel = useBreakdownCancel();
   const [dialog, setDialog] = useState<'confirm' | 'cancel' | null>(null);
+  /* §7.8 撤销窗口：confirm 落库后没有服务端撤销端点，故实现为「延迟 5 秒提交、
+   * 期间可撤销」——倒计时归零才真正打 POST confirm。 */
+  const [countdown, setCountdown] = useState<number | null>(null);
 
   const runConfirm = async () => {
     try {
@@ -110,9 +138,21 @@ function SessionActions({ session, draftCount }: { session: BreakdownSession; dr
       navigate('board');
       useRequirementDrawerStore.getState().openRequirement(result.parent_task_id);
     } catch {
-      /* useApiMutation 已弹错误 Toast（含 BREAKDOWN_BAD_STATE 文案），对话框留在可重试。 */
+      /* useApiMutation 已弹错误 Toast（含 BREAKDOWN_BAD_STATE 文案），留在页内可重试。 */
     }
   };
+
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown <= 0) {
+      setCountdown(null);
+      void runConfirm();
+      return;
+    }
+    const timer = setTimeout(() => setCountdown((value) => (value === null ? null : value - 1)), 1000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在倒计时推进时重挂表，runConfirm 取最新闭包即可。
+  }, [countdown]);
 
   const runCancel = async () => {
     try {
@@ -131,6 +171,36 @@ function SessionActions({ session, draftCount }: { session: BreakdownSession; dr
   const groupName = session.group_id
     ? (groups.data?.items ?? []).find((g) => g.id === session.group_id)?.name
     : null;
+
+  if (countdown !== null) {
+    return (
+      <div
+        className="flex shrink-0 items-center gap-2 rounded-control border border-border bg-bg-raised px-2 py-1"
+        data-testid="breakdown-undo-bar"
+      >
+        {countdown > 0 ? (
+          <Loader2 className="size-3.5 animate-spin text-status-running" aria-hidden />
+        ) : (
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+        )}
+        <span className="text-aux text-text-primary tabular-nums" data-testid="breakdown-undo-countdown">
+          {countdown > 0
+            ? `${countdown} 秒后创建 ${draftCount + 1} 个任务（1 需求 + ${draftCount} 子任务）`
+            : '正在创建…'}
+        </span>
+        <Button
+          variant="default"
+          size="sm"
+          disabled={countdown <= 0 || confirm.isPending}
+          onClick={() => setCountdown(null)}
+          data-testid="breakdown-undo-btn"
+        >
+          <Undo2 className="size-3.5" aria-hidden />
+          撤销
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex shrink-0 items-center gap-2">
@@ -168,22 +238,40 @@ function SessionActions({ session, draftCount }: { session: BreakdownSession; dr
         busy={dialog === 'confirm' ? confirm.isPending : cancel.isPending}
         onClose={() => setDialog(null)}
         onAction={() => {
-          if (dialog === 'confirm') void runConfirm();
-          else void runCancel();
+          if (dialog === 'confirm') {
+            // §7.8：不立刻提交，进入 5 秒撤销窗口，归零后才真正 confirm（见上方倒计时 effect）。
+            setDialog(null);
+            setCountdown(CONFIRM_UNDO_SECONDS);
+          } else {
+            void runCancel();
+          }
         }}
       />
     </div>
   );
 }
 
-/** 单会话主体：进度清单（阶段 3）+ 草案卡片流（阶段 4）+ 状态收尾。 */
+/** 单会话主体：进度清单（阶段 3）+ 草案卡片流（阶段 4）+ 待确认流程图/编辑（§7.3/7.4）+ 状态收尾。 */
 function SessionDetail({
   session,
   detail,
+  drafts,
+  onDraftsChange,
+  selectedRef,
+  onSelectDraft,
+  dirty,
 }: {
   session: BreakdownSession;
   detail: ReturnType<typeof useBreakdownSession>['data'];
+  /** 本地暂存覆盖后的草案视图（§7.4）。 */
+  drafts: BreakdownDraft[];
+  onDraftsChange: (next: BreakdownDraft[]) => void;
+  selectedRef: string | null;
+  onSelectDraft: (ref: string | null) => void;
+  /** 用户是否已产生本地编辑（决定是否展示「暂存于本页」提示）。 */
+  dirty: boolean;
 }) {
+  const toast = useToast();
   const skills = useSkills(undefined, { enabled: true });
   const skillNames = useMemo(
     () => (skills.data ? new Map(skills.data.items.map((s) => [s.id, s.name])) : null),
@@ -191,10 +279,22 @@ function SessionDetail({
   );
 
   const progress = detail?.progress ?? [];
-  const drafts = detail?.drafts ?? [];
   const latest = progress[progress.length - 1];
   const percent = latest ? Math.round((latest.step / latest.total) * 100) : null;
   const receiving = session.status === 'receiving';
+  const reviewing = session.status === 'reviewing';
+  const cycleDetected = reviewing && hasDependencyCycle(drafts);
+
+  /** 点边/点开关共用：断边失败（成环/自环）时给文案，成功后不动选中态。 */
+  const toggleDep = (from: string, to: string) => {
+    const result = toggleDependency(drafts, from, to);
+    if (result.ok) onDraftsChange(result.drafts);
+    else
+      toast.warning(
+        result.reason === 'self' ? '不能依赖自己' : '依赖成环',
+        '该连线会让依赖闭环，服务端确认时也会拒绝（§7.8）。',
+      );
+  };
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -251,6 +351,50 @@ function SessionDetail({
         </section>
       ) : null}
 
+      {/* §7.3 待确认页流程图：草案节点 + 依赖边（复用 W5 依赖图画布），点节点开编辑、点边断依赖。 */}
+      {reviewing ? (
+        <section className="flex flex-col gap-2" data-testid="breakdown-review-flow">
+          <div className="flex items-center justify-between">
+            <h3 className="text-section-title text-text-primary">拆解流程图</h3>
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => {
+                onDraftsChange(addDraft(drafts));
+                onSelectDraft(nextDraftRef(drafts));
+              }}
+              data-testid="breakdown-add-draft"
+            >
+              <Plus className="size-3.5" aria-hidden />
+              添加任务
+            </Button>
+          </div>
+          <DraftFlowGraph
+            drafts={drafts}
+            className="h-72"
+            onNodeSelect={(ref) => onSelectDraft(ref)}
+            onEdgeRemove={toggleDep}
+          />
+          <p className="text-aux text-text-tertiary">
+            点击节点编辑草案，点击连线断开依赖；本地编辑即时反映在图上。
+          </p>
+          {selectedRef ? (
+            <DraftEditor
+              drafts={drafts}
+              draftRef={selectedRef}
+              onSelect={onSelectDraft}
+              onChange={onDraftsChange}
+              skillNames={skillNames}
+            />
+          ) : null}
+          {dirty ? (
+            <p className="text-aux text-status-review" data-testid="breakdown-local-edit-note">
+              本地编辑暂存于本页：api 尚无用户侧草案写端点，确认创建以服务端草案为准（缺口已列交接）。
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
       {/* 阶段 4/5：草案卡片流。 */}
       <section className="flex flex-col gap-2">
         <h3 className="text-section-title text-text-primary">
@@ -266,17 +410,42 @@ function SessionDetail({
         ) : (
           <div className={cn('grid grid-cols-1 gap-2', 'min-[720px]:grid-cols-2')} data-testid="breakdown-drafts">
             {drafts.map((draft) => (
-              <DraftCard key={draft.id} draft={draft} skillNames={skillNames} />
+              <button
+                key={draft.id}
+                type="button"
+                disabled={!reviewing}
+                onClick={() => onSelectDraft(draft.ref)}
+                className={cn(
+                  'min-w-0 rounded-card text-left',
+                  reviewing && 'cursor-pointer transition-shadow hover:ring-1 hover:ring-primary/40',
+                  selectedRef === draft.ref && 'ring-2 ring-primary',
+                )}
+                data-testid="breakdown-draft-open"
+              >
+                <DraftCard draft={draft} skillNames={skillNames} />
+              </button>
             ))}
           </div>
         )}
       </section>
 
       {/* 待确认页脚（ASCII 稿「● 共 6 个任务 · 依赖检查通过」）与终态说明。 */}
-      {session.status === 'reviewing' ? (
-        <p className="flex items-center gap-2 text-aux text-text-secondary" data-testid="breakdown-footer-line">
-          <span aria-hidden className="size-2 rounded-full bg-status-done" />
-          共 {drafts.length} 个任务 · 确认后创建 1 个需求 + {drafts.length} 个子任务（成环/缺前置由服务端在确认时拒绝，§7.8）
+      {reviewing ? (
+        <p
+          className="flex items-center gap-2 text-aux text-text-secondary"
+          data-testid="breakdown-footer-line"
+        >
+          {cycleDetected ? (
+            <>
+              <span aria-hidden className="size-2 rounded-full bg-status-failed" />
+              共 {drafts.length} 个任务 · 依赖检查未通过（存在环，§7.8 确认时会被拒绝）
+            </>
+          ) : (
+            <>
+              <span aria-hidden className="size-2 rounded-full bg-status-done" />
+              共 {drafts.length} 个任务 · 依赖检查通过 · 确认后进入 5 秒撤销窗口（§7.8）
+            </>
+          )}
         </p>
       ) : null}
       {session.status === 'cancelled' || session.status === 'interrupted' ? (

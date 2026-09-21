@@ -56,7 +56,7 @@ export function SessionActionDialog({
             <>
               将按草案批量创建 <b>1 个需求</b>「{session.parent_title}」与{' '}
               <b>{draftCount} 个子任务</b>，并自动建立依赖、绑定技能（§7.2 阶段 7）。
-              创建后不在本页撤销。
+              点「确认创建」后进入 <b>5 秒撤销窗口</b>（§7.8），倒计时结束前可撤销。
             </>
           ) : (
             <>
