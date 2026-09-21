@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "prisma": "node scripts/db.mjs",
-    "db:deploy": "node scripts/db.mjs migrate deploy"
+    "db:deploy": "node scripts/db.mjs migrate deploy",
+    "boot:smoke": "bash scripts/boot-smoke.sh"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

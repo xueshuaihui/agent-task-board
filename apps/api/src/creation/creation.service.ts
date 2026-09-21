@@ -8,7 +8,7 @@ import { AuditService } from '../infra/audit.service';
 import { EventsService } from '../infra/events.service';
 import { PrismaService } from '../infra/prisma.service';
 import { SettingsService } from '../infra/settings.service';
-import type { SkillsService } from '../skills/skills.service';
+import { SkillsService } from '../skills/skills.service';
 
 /**
  * v0.0.4 W8 §8.7 会话创建闭环的服务层：
