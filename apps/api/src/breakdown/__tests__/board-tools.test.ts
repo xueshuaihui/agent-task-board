@@ -21,6 +21,7 @@ const toolCtx = () => ({
   skills: h.skills,
   policy: h.policy,
   breakdown: h.breakdown,
+  creation: h.creation,
 });
 
 function call(name: string, args: Record<string, unknown>, auth: RequestAuth = agent) {

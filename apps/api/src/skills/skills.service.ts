@@ -30,7 +30,7 @@ import {
 } from './skills.dto';
 import { blocksToMarkdown, markdownToBlocks, parseFrontmatter } from './skill-markdown';
 import { scanDirectory } from './skill-sources';
-import { findSkillRefCycle, SkillRefException, subskillRefs, subskillRefsOfJson } from './skill-reference';
+import { findSkillRefCycle, subskillRefs, subskillRefsOfJson } from './skill-reference';
 
 const INITIAL_VERSION = 'v0.1.0';
 const EMPTY_CONTENT: SkillContent = { blocks: [], entryBlockId: null };
@@ -625,14 +625,17 @@ export class SkillsService {
   /**
    * ③ 技能引用环守卫：把「待写入的这份内容」当作 id 节点的最新出边，叠加库内其余技能的
    * 子技能出边构成引用图，检出（a）直接自引用 id→id，（b）经其它技能回到 id 的环。
-   * 命中即抛就近定义的 SKILL_REF_SELF(400) / SKILL_REF_CYCLE(409)（见 skill-reference.ts）。
+   * 命中即抛 SKILL_REF_SELF(400) / SKILL_REF_CYCLE(409)（码在 contract/errors.ts，检测在 skill-reference.ts）。
    */
   private async assertSkillRefsAcyclic(id: string, content: SkillContent): Promise<void> {
     const outRefs = subskillRefs(content);
     if (outRefs.includes(id)) {
-      throw new SkillRefException('SKILL_REF_SELF', '技能不能被子技能块引用自身（skillRef 指向自己）', {
-        skill_id: id,
-      });
+      throw new ApiException(
+        'SKILL_REF_SELF',
+        '技能不能被子技能块引用自身（skillRef 指向自己）',
+        undefined,
+        { skill_id: id },
+      );
     }
     if (outRefs.length === 0) return; // 无子技能出边 → 不可能经本节点成环，省一次全表读。
     // 其余节点用库内当前 content 的出边；本节点覆盖为待写入出边（草稿尚未落库）。
@@ -643,9 +646,10 @@ export class SkillsService {
     edges.set(id, outRefs);
     const chain = findSkillRefCycle(edges, id);
     if (chain) {
-      throw new SkillRefException(
+      throw new ApiException(
         'SKILL_REF_CYCLE',
         `技能子技能引用形成环：${chain.join(' → ')}，已拒绝`,
+        undefined,
         { skill_id: id, chain },
       );
     }

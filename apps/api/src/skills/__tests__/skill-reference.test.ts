@@ -4,8 +4,8 @@ import { API, uiSender } from '../../__tests__/helpers/seed';
 
 /**
  * v0.0.4 #19 ③ 技能引用循环检测：子技能块 skillRef 成环 / 自引用在写入路径
- * （PATCH content、POST versions）被拦截。就近错误码 SKILL_REF_SELF(400) /
- * SKILL_REF_CYCLE(409)（见 skill-reference.ts，待归位 contract/errors）。
+ * （PATCH content、POST versions）被拦截。错误码 SKILL_REF_SELF(400) /
+ * SKILL_REF_CYCLE(409) 已归位 contract/errors.ts 的 ERROR_STATUS（检测逻辑在 skill-reference.ts）。
  */
 
 function refContent(targetId: string) {

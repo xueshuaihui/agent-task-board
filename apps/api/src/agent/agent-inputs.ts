@@ -9,6 +9,7 @@ import {
   checkMcpPolicySchema,
   claimSchema,
   completeSchema,
+  createTaskSchema,
   failSchema,
   heartbeatSchema,
   listReadyQuerySchema,
@@ -36,6 +37,7 @@ export type {
   BreakdownDraftReportInput,
   BreakdownProgressReportInput,
   BreakdownSessionActionInput,
+  CreateTaskToolInput,
 } from '../contract/agent-schemas';
 
 /** 12 章：`get_task` 是只读工具，不需要三元组（三元组只在写回侧强制）。 */
@@ -55,6 +57,7 @@ export {
   checkMcpPolicySchema,
   claimSchema,
   completeSchema,
+  createTaskSchema,
   failSchema,
   heartbeatSchema,
   listReadyQuerySchema,

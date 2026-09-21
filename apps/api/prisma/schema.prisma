@@ -71,6 +71,13 @@ model Task {
   archivedAt           String? @map("archived_at")
   // v0.0.4 W7 §15.1/0012：拆解会话来源标记，确认创建时写入；不建外键关系字段（同 parent_task_id 语义松散）。
   breakdownSessionId   String? @map("breakdown_session_id")
+  // v0.0.4 W8 §8.9/0013：任务来源五列（§20 全量表）。origin_type 默认 user；
+  // board.create_task 建的任务落 agent + session/agent 标识 + 当次 confirmation_mode。
+  originType      String? @default("user") @map("origin_type")
+  originAgent     String? @map("origin_agent")
+  originSkill     String? @map("origin_skill")
+  originSessionId String? @map("origin_session_id")
+  confirmationMode String? @map("confirmation_mode")
   leaseId              String? @map("lease_id")
   leaseExpiresAt       String? @map("lease_expires_at")
   leaseRevokedAt       String? @map("lease_revoked_at")
@@ -366,4 +373,35 @@ model BreakdownProgress {
   createdAt String           @default(dbgenerated("(datetime('now'))")) @map("created_at")
 
   @@map("breakdown_progress")
+}
+
+// v0.0.4 W8 会话创建闭环（§8.7 闭环语义 r3 / §8.9，迁移 0013）。
+// agent_sessions：§8.7「按 session_id upsert，刷新 last_active_at/task_count」——
+// session_id 是 Agent 侧会话标识（单列 UNIQUE），id 为内部主键（UUIDv7）。
+model AgentSession {
+  id           String @id
+  sessionId    String @unique @map("session_id")
+  agentName    String @map("agent_name")
+  startedAt    String @default(dbgenerated("(datetime('now'))")) @map("started_at")
+  lastActiveAt String @default(dbgenerated("(datetime('now'))")) @map("last_active_at")
+  taskCount    Int    @default(0) @map("task_count")
+
+  @@map("agent_sessions")
+}
+
+// task_creation_logs：每次创建/取消/超时各记一条（§8.7）；source/confirmation/user_action
+// 是开放审计词表（CHECK 只在需要处收敛），task_id 无外键——撤销物理删任务后日志仍可读。
+model TaskCreationLog {
+  id           Int     @id @default(autoincrement())
+  taskId       String  @map("task_id")
+  sessionId    String? @map("session_id")
+  agentName    String? @map("agent_name")
+  source       String
+  confirmation String?
+  userAction   String? @map("user_action")
+  createdAt    String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
+
+  @@index([taskId], map: "idx_creation_logs_task")
+  @@index([sessionId], map: "idx_creation_logs_session")
+  @@map("task_creation_logs")
 }

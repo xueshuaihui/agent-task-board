@@ -173,6 +173,28 @@ export type BreakdownDraftReportInput = z.infer<typeof breakdownDraftReportSchem
 export const breakdownSessionActionSchema = z.object({ session_id: breakdownSessionId });
 export type BreakdownSessionActionInput = z.infer<typeof breakdownSessionActionSchema>;
 
+/**
+ * v0.0.4 W8 §8.7 `board.create_task` 入参（样例 JSON 的契约化）。
+ * session_id 必填：§8.7 闭环语义要求每次 create_task 都在事务内按 session_id
+ * upsert `agent_sessions` 并落 `task_creation_logs`，没有会话标识就无处记账。
+ * confirmation_mode 按 §8.2 三模式收：direct=直接创建 / light=轻确认 / silent=静默创建；
+ * 缺省按「默认轻确认」解析（§8.2 优先级：参数 > 设置 > light，设置键归下一切片）。
+ * skills 与 breakdown 草案同口径：可填技能 id 或技能名，服务端按 §7.5 规则解析。
+ */
+export const createTaskSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  description: z.string().max(20000).optional().nullable(),
+  group_id: idParam.optional().nullable(),
+  type: z.string().trim().min(1).max(16),
+  priority: z.number().int().min(0).max(3).default(3),
+  tags: z.array(z.string().trim().min(1).max(50)).max(20).default([]),
+  skills: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
+  session_id: z.string().trim().min(1).max(100),
+  agent_name: z.string().trim().max(100).optional().nullable(),
+  confirmation_mode: z.enum(['direct', 'light', 'silent']).optional(),
+});
+export type CreateTaskToolInput = z.infer<typeof createTaskSchema>;
+
 export const listReadyQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   capabilities: z.array(capabilitySchema).max(20).default([]),

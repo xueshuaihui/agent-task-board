@@ -18,7 +18,8 @@ let client: Client;
 
 /**
  * §12 + §16.1 已落地子集（9 基础 + W6 的 block_task / wait_for_resume / 技能三工具 / 策略二工具
- * + W7 的 board.* 拆解五工具）；board.wait_for_confirmation 与 board.create_task 留桩在 W8。
+ * + W7 的 board.* 拆解五工具 + W8 的 board.create_task）；board.wait_for_confirmation 与
+ * get_creation_status 留桩在 W8 决策闭环切片。
  * 顺序不敏感但一条都不能多、不能少。
  */
 const W6_TOOL_NAMES = [
@@ -26,6 +27,7 @@ const W6_TOOL_NAMES = [
   'block_task',
   'board.begin_breakdown',
   'board.cancel_breakdown',
+  'board.create_task',
   'board.finish_breakdown',
   'board.report_progress',
   'board.report_task_draft',
@@ -57,6 +59,7 @@ beforeAll(async () => {
     skills: h.skills,
     policy: h.policy,
     breakdown: h.breakdown,
+    creation: h.creation,
   });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
@@ -194,7 +197,7 @@ describe('MCP 工具面', () => {
   });
 
   it('工具表与服务层一一对应：MCP 不复制业务逻辑', () => {
-    expect(buildAgentTools({ claims: h.claims, leases: h.leases, writeback: h.writeback, query: h.query, skills: h.skills, policy: h.policy, breakdown: h.breakdown }).map((tool) => tool.name).sort()).toEqual(
+    expect(buildAgentTools({ claims: h.claims, leases: h.leases, writeback: h.writeback, query: h.query, skills: h.skills, policy: h.policy, breakdown: h.breakdown, creation: h.creation }).map((tool) => tool.name).sort()).toEqual(
       W6_TOOL_NAMES,
     );
   });
@@ -327,6 +330,7 @@ describe('MCP 工具面', () => {
     skills: h.skills,
     policy: h.policy,
     breakdown: h.breakdown,
+    creation: h.creation,
   });
   const ui: RequestAuth = { kind: 'ui' };
 

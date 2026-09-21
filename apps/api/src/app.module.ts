@@ -8,6 +8,8 @@ import { AuthModule } from './auth/auth.module';
 import { BackupModule } from './backup/backup.module';
 // v0.0.4 W7：需求拆解服务层（controller 端点在下一切片接入）。
 import { BreakdownModule } from './breakdown/breakdown.module';
+// v0.0.4 W8：会话创建闭环服务层（board.create_task 直建/静默；决策端点在下一切片）。
+import { CreationModule } from './creation/creation.module';
 import { DataModule } from './data/data.module';
 import { FieldDefsModule } from './field-defs/field-defs.module';
 import { InfraModule } from './infra/infra.module';
@@ -35,6 +37,7 @@ import { WsModule } from './ws/ws.module';
     McpModule,
     TasksModule,
     BreakdownModule,
+    CreationModule,
     TokensModule,
     SettingsApiModule,
     TemplatesModule,

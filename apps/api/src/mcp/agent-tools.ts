@@ -12,6 +12,7 @@ import {
   checkMcpPolicySchema,
   claimSchema,
   completeSchema,
+  createTaskSchema,
   failSchema,
   getTaskSchema,
   heartbeatSchema,
@@ -29,6 +30,7 @@ import {
   type CheckMcpPolicyInput,
   type ClaimInput,
   type CompleteInput,
+  type CreateTaskToolInput,
   type FailInput,
   type GetTaskInput,
   type LeaseTriple,
@@ -44,6 +46,7 @@ import type { LeaseService } from '../agent/lease.service';
 import type { McpPolicyService } from '../agent/mcp-policy.service';
 import type { WritebackService } from '../agent/writeback.service';
 import type { BreakdownService } from '../breakdown/breakdown.service';
+import type { CreationService } from '../creation/creation.service';
 import {
   skillListQuerySchema,
   type SkillListQuery,
@@ -67,6 +70,8 @@ export interface AgentToolContext {
   policy: McpPolicyService;
   /** v0.0.4 W7 §16.1：board.* 拆解五工具的生命周期落点（begin/progress/draft/finish/cancel）。 */
   breakdown: BreakdownService;
+  /** v0.0.4 W8 §8.7：board.create_task 的会话创建闭环落点（直建/静默；light 占位）。 */
+  creation: CreationService;
 }
 
 export interface AgentTool {
@@ -80,7 +85,9 @@ export interface AgentTool {
  * 12 章的九个基础工具 + v0.0.4 W6 §16.1 的人工块/恢复工具（block_task、wait_for_resume）
  * 与技能三工具（list_skills、get_skill、search_skills，只读，W2 语义由 SkillsService 保证）
  * + v0.0.4 W7 §16.1 的拆解五工具（board.begin_breakdown / report_progress / report_task_draft /
- * finish_breakdown / cancel_breakdown；wait_for_confirmation 与 create_task 归 W8）。
+ * finish_breakdown / cancel_breakdown）
+ * + v0.0.4 W8 §8.7 的 board.create_task（直建/静默两模式核心落库；light 决策闭环与
+ * board.wait_for_confirmation、get_creation_status 归下一切片）。
  * 业务逻辑全在 Agent 服务层，这里只做「工具名 → 服务方法」的映射，
  * 因此 REST 与 MCP 共用同一套校验与错误语义（13 章错误码只有一份实现）。
  */
@@ -247,6 +254,19 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
         agentOf(auth);
         const { session_id: sessionId } = args as BreakdownSessionActionInput;
         return ctx.breakdown.cancel(sessionId);
+      },
+    },
+    // ------------------------------------------- v0.0.4 W8 §8.7：会话创建闭环（Agent 凭证专属）
+    {
+      name: 'board.create_task',
+      description:
+        '会话创建单个任务（§8.7；confirmation_mode=direct/silent 即时落库并记账 agent_sessions/task_creation_logs，light 轻确认待决策闭环切片）',
+      input: createTaskSchema,
+      run: async (args, auth) => {
+        const agent = agentOf(auth);
+        const input = args as CreateTaskToolInput;
+        // agent_name 缺省取凭证名：来源列与流水都据此记账（同 begin_breakdown 口径）。
+        return ctx.creation.createFromAgent(input, agent.tokenName);
       },
     },
   ];

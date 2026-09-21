@@ -20,6 +20,10 @@ export const ERROR_STATUS = {
   SKILL_ID_CONFLICT: 409,
   // 默认技能只读（§9.1）：拒改拒删拒发版本。
   SKILL_READONLY: 403,
+  // v0.0.4 #19③（W2/W3 遗留）：技能子引用 skillRef 的自引用（入参本身非法，400）
+  // 与引用成环（与库内既有图冲突，409）。原就近定义在 skills/skill-reference.ts，已归位。
+  SKILL_REF_SELF: 400,
+  SKILL_REF_CYCLE: 409,
   // v0.0.4 W1b §5.5：活跃分组达到上限 50 后拒绝新建。
   GROUP_LIMIT_REACHED: 409,
   // v0.0.4 W1-D1 §5.2/§5.5：预置「默认」分组不可删除；§5.6 口径下同样不可归档。

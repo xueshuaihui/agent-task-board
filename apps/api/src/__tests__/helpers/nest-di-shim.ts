@@ -18,6 +18,7 @@ import { BackupService } from '../../backup/backup.service';
 import { BackupController } from '../../backup/backup.controller';
 import { BreakdownController } from '../../breakdown/breakdown.controller';
 import { BreakdownService } from '../../breakdown/breakdown.service';
+import { CreationService } from '../../creation/creation.service';
 import { DataService } from '../../data/data.service';
 import { ImportService } from '../../data/import.service';
 import { DataController } from '../../data/data.controller';
@@ -96,7 +97,7 @@ export function applyDiShim(): void {
   declare(ClaimService, [PrismaService, SettingsService, LeaseService, AuditService, EventsService, AgentQueryService]);
   declare(WritebackService, [PrismaService, LeaseService, AuditService, EventsService, NotificationsService, AgentQueryService]);
   declare(AgentController, [ClaimService, LeaseService, WritebackService, AgentQueryService]);
-  declare(McpController, [ClaimService, LeaseService, WritebackService, AgentQueryService, SkillsService, McpPolicyService, BreakdownService]);
+  declare(McpController, [ClaimService, LeaseService, WritebackService, AgentQueryService, SkillsService, McpPolicyService, BreakdownService, CreationService]);
 
   // ── tasks
   declare(TasksService, [
@@ -115,6 +116,9 @@ export function applyDiShim(): void {
   // ── v0.0.4 W7 需求拆解
   declare(BreakdownService, [PrismaService, AuditService, EventsService]);
   declare(BreakdownController, [BreakdownService]);
+
+  // ── v0.0.4 W8 会话创建闭环（board.create_task 服务层；REST 决策端点切片时补 declare）
+  declare(CreationService, [PrismaService, SettingsService, AuditService, EventsService, SkillsService]);
 
   // ── field-defs / templates / tokens
   declare(FieldDefsService, [PrismaService, AuditService, SettingsService]);

@@ -1,4 +1,3 @@
-import { ApiException } from '../contract/errors';
 import { parseJson, type SkillContent } from './skills.dto';
 
 /**
@@ -8,39 +7,11 @@ import { parseJson, type SkillContent } from './skills.dto';
  * 「引用图」。若 A→B→…→A（含 A→A 自引用）成环，Agent 沿子技能下钻会无限递归，必须在写入
  * 路径拦截。口径参照 breakdown 的成环拒绝风格（`assertDraftGraph`，commit 76a1410）：
  * 组装邻接图 → DFS 找回到起点的路径 → 抛出带 chain 的冲突错误。
- */
-
-/**
- * 技能引用图错误码：就近定义于 skills 模块。
  *
- * 待归位：`contract/errors.ts` 的 `ERROR_STATUS` 此刻被并行改动冻结（本次不可改），
- * 合流后应把 `SKILL_REF_SELF` / `SKILL_REF_CYCLE` 搬进 `ERROR_STATUS` 并删除下面的
- * `SkillRefException`，改用普通 `new ApiException('SKILL_REF_CYCLE', ...)`。
+ * 错误码 `SKILL_REF_SELF`(400) / `SKILL_REF_CYCLE`(409) 已归位 `contract/errors.ts`
+ * 的 `ERROR_STATUS`（v0.0.4 W8 解冻时合并），原先的 `SkillRefException` 子类已删除，
+ * 抛错方一律用普通 `new ApiException('SKILL_REF_CYCLE', ...)`。
  */
-export const SKILL_REF_ERROR_STATUS = {
-  // 子技能块把 skillRef 指向技能自身：入参本身即非法（400）。
-  SKILL_REF_SELF: 400,
-  // 技能之间的 skillRef 组成引用环：与库内既有图冲突（409）。
-  SKILL_REF_CYCLE: 409,
-} as const;
-export type SkillRefErrorCode = keyof typeof SKILL_REF_ERROR_STATUS;
-
-/**
- * 承载「非 ErrorCode 联合」的技能专用错误码：`ApiException` 的 code 受 `ERROR_STATUS`
- * 联合约束、status 走 getter 查表——这里以子类改写对外 code 并覆写 status，令错误响应体
- * 保持 13 章 `{ error: { code, message, ...上下文 } }` 形状（全局过滤器仍按 instanceof 命中）。
- */
-export class SkillRefException extends ApiException {
-  constructor(code: SkillRefErrorCode, message: string, context: Record<string, unknown> = {}) {
-    // 基类 code 只是满足 ErrorCode 类型的占位；真实对外 code 在下一行改写。
-    super('DEPENDENCY_CYCLE', message, undefined, context);
-    (this as { code: string }).code = code;
-  }
-
-  override get status(): number {
-    return SKILL_REF_ERROR_STATUS[this.code as SkillRefErrorCode];
-  }
-}
 
 /** 空内容兜底（与 service 的 EMPTY_CONTENT 同构）：坏 JSON 读作无块，不炸图检测。 */
 const EMPTY: SkillContent = { blocks: [], entryBlockId: null };
