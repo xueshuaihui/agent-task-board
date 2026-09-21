@@ -8,7 +8,9 @@ import { countTasksByType, useSettingsWriter } from '../queries';
 import { optionsWithCurrent, TASK_TYPE_LIST_MAX, TASK_TYPE_MAX } from '../utils';
 
 /**
- * 通用 Tab（8.5 / 原型 7.2）：七个键，全部即时 `PATCH /settings`，**没有「保存」按钮**。
+ * 通用 Tab（8.5 / 原型 7.2）：九个键，全部即时 `PATCH /settings`，**没有「保存」按钮**。
+ * 「Agent 创建任务」分区是 §8.8 的两种可存键（创建模式 / 轻确认超时）；该节其余项
+ * （允许的 Agent、自动绑定技能等）在 20.9 无对应键，待后续版本落契约再补。
  *
  * 档位取自 20.9 的区间，但只显示常用的几档；库里存着档位外的值时
  * `optionsWithCurrent` 会把它补进候选，select 不会把一个合法值显示成别的数字。
@@ -24,6 +26,14 @@ const ARTIFACT_MB = [5, 10, 20, 50, 100] as const;
 const BOARD_LIMIT = [20, 50, 100, 200] as const;
 const LEASE_MINUTES = [5, 10, 15, 30, 60, 120] as const;
 const HEARTBEAT_SECONDS = [60, 120, 300, 600] as const;
+const LIGHT_CONFIRM_SECONDS = [10, 15, 30, 60, 120, 300] as const;
+
+/** §8.2 三模式，标签用 PRD 原文（直接创建 / 轻确认 / 静默创建）。 */
+const CREATION_MODE_OPTIONS = [
+  { value: 'direct', label: '直接创建', description: 'Agent 调用即创建，无确认' },
+  { value: 'light', label: '轻确认', description: 'Board 弹出轻量确认卡片（默认）' },
+  { value: 'silent', label: '静默创建', description: '创建后仅通知' },
+] as const;
 
 export function GeneralTab() {
   const { settings, set, patch, errorText } = useSettingsWriter();
@@ -164,6 +174,41 @@ export function GeneralTab() {
               (v) => `${v} 秒`,
             )}
             onChange={(event) => set('heartbeat_interval_seconds', Number(event.target.value))}
+          />
+        </SettingRow>
+      </SettingSection>
+
+      <SettingSection title="Agent 创建任务">
+        <SettingRow
+          label="创建模式"
+          width="fluid"
+          hint="生效优先级：请求参数 confirmation_mode ＞ 本设置 ＞ 默认轻确认（§8.2）。「直接创建」不弹卡片，但重复检测命中时升级为轻确认卡片；「静默创建」不弹确认卡片、仅发通知，创建后仍保留 5 秒撤销 Toast。"
+        >
+          <RadioGroup
+            layout="column"
+            value={settings?.agent_creation_mode ?? 'light'}
+            options={CREATION_MODE_OPTIONS}
+            onChange={(value) =>
+              set('agent_creation_mode', value as Settings['agent_creation_mode'])
+            }
+          />
+        </SettingRow>
+
+        <SettingRow
+          label="轻确认超时"
+          width="narrow"
+          htmlFor="light-confirm-timeout"
+          hint="轻确认卡片右下角停留时长，到期按「超时→不创建」处理（§8.3/§8.7）；服务端阻塞等待另有 5 秒宽限。取值 1–300 秒。"
+        >
+          <Select
+            id="light-confirm-timeout"
+            value={String(settings?.light_confirm_timeout_seconds ?? 30)}
+            options={optionsWithCurrent(
+              LIGHT_CONFIRM_SECONDS,
+              settings?.light_confirm_timeout_seconds ?? 30,
+              (v) => `${v} 秒`,
+            )}
+            onChange={(event) => set('light_confirm_timeout_seconds', Number(event.target.value))}
           />
         </SettingRow>
       </SettingSection>

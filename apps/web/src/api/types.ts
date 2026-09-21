@@ -558,6 +558,10 @@ export interface Settings {
   task_types: string[];
   ui_theme: 'system' | 'light' | 'dark';
   review_reuse_last_opinion: boolean;
+  /** §8.2 创建模式（优先级：参数 confirmation_mode > 此设置 > 默认 light）。 */
+  agent_creation_mode: 'direct' | 'light' | 'silent';
+  /** §8.8 轻确认卡片超时秒数（20.9 区间 1–300，缺省 30）。 */
+  light_confirm_timeout_seconds: number;
 }
 export type SettingsKey = keyof Settings;
 
