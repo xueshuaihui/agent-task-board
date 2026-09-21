@@ -312,8 +312,10 @@ export class BreakdownService {
       return { parentTaskId, taskIds };
     });
 
-    this.events.emit('task.created', { id: created.parentTaskId });
-    for (const taskId of created.taskIds) this.events.emit('task.created', { id: taskId });
+    // §8.6：拆解确认建的任务按 user 来源广播（origin_type 与落库默认列一致）。
+    this.events.emit('task.created', { id: created.parentTaskId, origin_type: 'user' });
+    for (const taskId of created.taskIds)
+      this.events.emit('task.created', { id: taskId, origin_type: 'user' });
     return {
       session: await this.requireSession(sessionId),
       parent_task_id: created.parentTaskId,

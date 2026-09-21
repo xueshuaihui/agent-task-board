@@ -235,7 +235,10 @@ describe('board.create_task 直接创建（direct）', () => {
       agent_name: 'qoder-1',
       session_id: baseInput.session_id,
     });
-    expect(h.emitted.filter((e) => e.event === 'task.created').length).toBe(before + 1);
+    const createdEvents = h.emitted.filter((e) => e.event === 'task.created');
+    expect(createdEvents.length).toBe(before + 1);
+    // §8.6（W8-a4）：载荷带 origin_type，作为前端 5 秒撤销入口的观察通道。
+    expect(createdEvents.at(-1)!.data).toMatchObject({ id: taskId, origin_type: 'agent' });
   });
 });
 

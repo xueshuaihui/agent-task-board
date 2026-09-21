@@ -157,7 +157,8 @@ export class TasksService {
       return taskId;
     });
 
-    this.events.emit('task.created', { id });
+    // §8.6：载荷带 origin_type，前端据此判断是否挂 5 秒撤销入口。REST/存量路径落的都是默认 user 来源。
+    this.events.emit('task.created', { id, origin_type: 'user' });
     return this.getDetail(id);
   }
 

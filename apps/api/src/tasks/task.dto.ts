@@ -32,6 +32,8 @@ export interface TaskRawRow {
   group_id?: string | null;
   parent_task_id?: string | null;
   sort_order?: number;
+  /** 0013/v0.0.4 §8.6：来源列（t.* 带回；建列前造的测试行可缺省，读侧回落 'user'）。 */
+  origin_type?: string | null;
 }
 
 /** tasks 行 + 卡片需要的聚合列（当前 Run 的进度、阻塞数、产物数、上一次时长）。 */
@@ -113,6 +115,8 @@ export interface TaskCardDto {
   custom_fields: Record<string, unknown>;
   /** 0919：子任务的父任务摘要（含父任务下子任务完成度）；无父任务为 null。 */
   parent?: { id: string; title: string; done: number; total: number } | null;
+  /** v0.0.4 §8.6 读侧最小集：'user' | 'agent'，前端按它给 agent 直建任务挂 5 秒撤销入口。 */
+  origin_type: string;
 }
 
 export interface TaskDetailDto extends TaskCardDto {
@@ -238,5 +242,6 @@ export function toCardDto(
     custom_fields: extra.cardFields ?? {},
     group_id: row.group_id ?? null,
     parent: extra.parent ?? null,
+    origin_type: row.origin_type ?? 'user',
   };
 }

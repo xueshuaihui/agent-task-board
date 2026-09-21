@@ -573,7 +573,8 @@ export class CreationService implements OnModuleDestroy {
       return id;
     });
 
-    this.events.emit('task.created', { id: taskId });
+    // §8.6：direct/silent 直建的任务是 agent 来源——载荷 origin_type 供前端挂 5 秒撤销入口。
+    this.events.emit('task.created', { id: taskId, origin_type: 'agent' });
     // §8.2/§13.9：静默模式「不弹确认卡片、仅发通知」，直接/静默创建成功同走 creation_request
     // 规则键（direct 弹不弹卡片都不影响这条站内通知，§8.8「创建后通知」）。
     if (mode === 'direct' || mode === 'silent') {

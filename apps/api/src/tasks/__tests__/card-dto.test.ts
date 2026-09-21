@@ -57,3 +57,15 @@ describe('toCardDto 的 status_label', () => {
     expect(card.status_label).toBe('');
   });
 });
+
+// §8.6（W8-a4）：读侧透出 origin 最小集——卡片/列表/board/详情共用 toCardDto，一处映射全覆盖。
+describe('toCardDto 的 origin_type', () => {
+  it('agent 来源任务原样带出，供前端挂 5 秒撤销入口', () => {
+    expect(toCardDto(row({ origin_type: 'agent' })).origin_type).toBe('agent');
+  });
+
+  it('建列前的旧行/测试造行缺列回落 user', () => {
+    expect(toCardDto(row({ origin_type: null })).origin_type).toBe('user');
+    expect(toCardDto(row({})).origin_type).toBe('user');
+  });
+});
