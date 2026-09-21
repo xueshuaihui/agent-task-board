@@ -114,6 +114,10 @@ export const AUDIT_ACTIONS = [
   'group_archive',
   'group_unarchive',
   'pref_change',
+  // v0.0.4 W6 §12.6：MCP 治理审计两条——调用前的策略决策记录（check_mcp_policy）
+  // 与调用后的结果上报（report_mcp_call），本地信任模型下的尽力记录。
+  'mcp_policy_check',
+  'mcp_call',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -129,6 +133,8 @@ export const AUDIT_TARGET_TYPES = [
   'data',
   'group',
   'preference',
+  // v0.0.4 W6 §12.6：MCP 策略决策与调用结果的审计对象类型。
+  'mcp',
 ] as const;
 export type AuditTargetType = (typeof AUDIT_TARGET_TYPES)[number];
 

@@ -6,6 +6,7 @@ import { Auth, AuthScope, type RequestAuth } from '../auth/auth.scope';
 import { AgentQueryService } from '../agent/agent-query.service';
 import { ClaimService } from '../agent/claim.service';
 import { LeaseService } from '../agent/lease.service';
+import { McpPolicyService } from '../agent/mcp-policy.service';
 import { WritebackService } from '../agent/writeback.service';
 import { SkillsService } from '../skills/skills.service';
 import { createAgentMcpServer, type AgentToolContext } from './mcp.server';
@@ -32,6 +33,7 @@ export class McpController {
     private readonly writeback: WritebackService,
     private readonly query: AgentQueryService,
     private readonly skills: SkillsService,
+    private readonly policy: McpPolicyService,
   ) {}
 
   @Post()
@@ -42,6 +44,7 @@ export class McpController {
       writeback: this.writeback,
       query: this.query,
       skills: this.skills,
+      policy: this.policy,
     };
     // 每请求一个 server：Token 上下文（tokenId / capabilities）是请求级的，复用会串能力集合。
     const server = createAgentMcpServer(auth, context);

@@ -91,6 +91,44 @@ export const reviewFeedbackQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(5),
 });
 
+/** v0.0.4 W6 §16.1 技能工具与策略工具里的技能 ID（`skl_` + uuidv7，最长 40，不放 idLike 的 24）。 */
+export const skillIdParam = z.string().trim().min(1).max(64);
+
+/**
+ * §12.4/§12.6 `check_mcp_policy`：Agent 调第三方 MCP 前请求本地策略裁决。
+ * 依据是被检技能当前声明的 `mcp_dependencies`（策略包随技能下发）：
+ * 服务器未声明即拒（deny_undeclared），工具必须精确到工具级（§12.2）。
+ * task_id / run_id 可选，只进审计（§12.6 的「调用发起」三要素），不做存在性校验——
+ * 策略裁决先于 Run 生命周期的场景（技能调试）也要能查。
+ */
+export const checkMcpPolicySchema = z.object({
+  skill_id: skillIdParam,
+  server: z.string().trim().min(1).max(100),
+  tool: z.string().trim().min(1).max(100),
+  task_id: idParam.optional(),
+  run_id: idParam.optional(),
+});
+export type CheckMcpPolicyInput = z.infer<typeof checkMcpPolicySchema>;
+
+/**
+ * §12.6 `report_mcp_call`：调用后回传结果，与 check 的决策记录合起来构成 MCP 审计数据源。
+ * 本地信任模型下的尽力上报：字段宽松、只落审计，不做外键校验。
+ */
+export const reportMcpCallSchema = z.object({
+  skill_id: skillIdParam.optional(),
+  task_id: idParam.optional(),
+  run_id: idParam.optional(),
+  server: z.string().trim().min(1).max(100),
+  url: z.string().trim().max(2048).optional(),
+  tool: z.string().trim().min(1).max(100),
+  success: z.boolean(),
+  duration_ms: z.number().int().min(0).max(86_400_000).optional(),
+  error: z.string().max(2000).optional(),
+  /** 调用前是否拿到过策略裁决：allow/deny/unchecked 三态进审计。 */
+  policy_decision: z.enum(['allow', 'deny', 'unchecked']).default('unchecked'),
+});
+export type ReportMcpCallInput = z.infer<typeof reportMcpCallSchema>;
+
 export const listReadyQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   capabilities: z.array(capabilitySchema).max(20).default([]),

@@ -5,6 +5,7 @@ import type { RequestAuth } from '../auth/auth.scope';
 import {
   appendLogSchema,
   blockedSchema,
+  checkMcpPolicySchema,
   claimSchema,
   completeSchema,
   failSchema,
@@ -12,10 +13,12 @@ import {
   heartbeatSchema,
   listReadyQuerySchema,
   progressSchema,
+  reportMcpCallSchema,
   reviewFeedbackQuerySchema,
   waitForResumeSchema,
   type AppendLogInput,
   type BlockedInput,
+  type CheckMcpPolicyInput,
   type ClaimInput,
   type CompleteInput,
   type FailInput,
@@ -23,12 +26,14 @@ import {
   type LeaseTriple,
   type ListReadyInput,
   type ProgressInput,
+  type ReportMcpCallInput,
   type ReviewFeedbackInput,
   type WaitResumeInput,
 } from '../agent/agent-inputs';
 import type { AgentQueryService } from '../agent/agent-query.service';
 import type { ClaimService } from '../agent/claim.service';
 import type { LeaseService } from '../agent/lease.service';
+import type { McpPolicyService } from '../agent/mcp-policy.service';
 import type { WritebackService } from '../agent/writeback.service';
 import {
   skillListQuerySchema,
@@ -49,6 +54,8 @@ export interface AgentToolContext {
   query: AgentQueryService;
   /** v0.0.4 W6 §16.1：list_skills / get_skill / search_skills 直接复用 SkillsService 的读侧方法。 */
   skills: SkillsService;
+  /** v0.0.4 W6 §12.6：check_mcp_policy / report_mcp_call 的策略裁决与审计落点。 */
+  policy: McpPolicyService;
 }
 
 export interface AgentTool {
@@ -159,6 +166,19 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
         agentOf(auth);
         return ctx.skills.list(args as SkillListQuery);
       },
+    },
+    {
+      name: 'check_mcp_policy',
+      description:
+        '调用第三方 MCP 前的策略裁决（§12.4/§12.6；未声明服务器或工具一律拒，落决策审计，Agent 凭证专属）',
+      input: checkMcpPolicySchema,
+      run: (args, auth) => ctx.policy.check(args as CheckMcpPolicyInput, auth),
+    },
+    {
+      name: 'report_mcp_call',
+      description: '上报一次第三方 MCP 调用结果，写入 MCP 审计（§12.6；只落库不回查外键）',
+      input: reportMcpCallSchema,
+      run: (args, auth) => ctx.policy.report(args as ReportMcpCallInput, auth),
     },
   ];
 }

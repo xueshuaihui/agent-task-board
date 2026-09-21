@@ -14,6 +14,7 @@ import { AgentQueryService } from '../agent-query.service';
 import { SkillsService } from '../../skills/skills.service';
 import { ClaimService } from '../claim.service';
 import { LeaseService } from '../lease.service';
+import { McpPolicyService } from '../mcp-policy.service';
 import { WritebackService } from '../writeback.service';
 
 /**
@@ -34,6 +35,8 @@ export interface AgentHarness {
   writeback: WritebackService;
   /** W6 §16.1：技能三工具的上下文需要 SkillsService（与 query 内部是同一实例）。 */
   skills: SkillsService;
+  /** W6 §12.6：策略两工具（check_mcp_policy / report_mcp_call）的上下文。 */
+  policy: McpPolicyService;
   /** 造一个 Agent 凭证：只返回服务层真正用到的那部分（tokenId / name / capabilities）。 */
   agent(name: string, capabilities?: string[]): Promise<RequestAuth>;
   dispose: () => Promise<void>;
@@ -57,6 +60,7 @@ export function createAgentHarness(): AgentHarness {
   const query = new AgentQueryService(prisma, skills);
   const claims = new ClaimService(prisma, settings, leases, audit, events, query);
   const writeback = new WritebackService(prisma, leases, audit, events, notifications, query);
+  const policy = new McpPolicyService(prisma, audit);
 
   return {
     dir,
@@ -70,6 +74,7 @@ export function createAgentHarness(): AgentHarness {
     claims,
     writeback,
     skills,
+    policy,
     agent: async (name: string, capabilities: string[] = []) => {
       const id = newId();
       await prisma.apiToken.create({

@@ -5,6 +5,7 @@ import { AgentQueryService } from '../../agent/agent-query.service';
 import { AgentController } from '../../agent/agent.controller';
 import { ClaimService } from '../../agent/claim.service';
 import { LeaseService } from '../../agent/lease.service';
+import { McpPolicyService } from '../../agent/mcp-policy.service';
 import { WritebackService } from '../../agent/writeback.service';
 import { ArtifactSignService } from '../../artifacts/artifact-sign.service';
 import { ArtifactsService } from '../../artifacts/artifacts.service';
@@ -86,13 +87,14 @@ export function applyDiShim(): void {
   declare(AgentQueryService, [PrismaService, SkillsService]);
   declare(SkillsService, [PrismaService]);
   declare(SkillsController, [SkillsService]);
+  declare(McpPolicyService, [PrismaService, AuditService]);
 
   // index 5 由 @Inject(LEASE_SWEEP_OPTIONS) 自行声明，Object 只用来把数组撑到构造参数个数。
   declare(LeaseService, [PrismaService, SettingsService, AuditService, EventsService, NotificationsService, Object]);
   declare(ClaimService, [PrismaService, SettingsService, LeaseService, AuditService, EventsService, AgentQueryService]);
   declare(WritebackService, [PrismaService, LeaseService, AuditService, EventsService, NotificationsService, AgentQueryService]);
   declare(AgentController, [ClaimService, LeaseService, WritebackService, AgentQueryService]);
-  declare(McpController, [ClaimService, LeaseService, WritebackService, AgentQueryService, SkillsService]);
+  declare(McpController, [ClaimService, LeaseService, WritebackService, AgentQueryService, SkillsService, McpPolicyService]);
 
   // ── tasks
   declare(TasksService, [

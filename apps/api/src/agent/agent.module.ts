@@ -5,6 +5,7 @@ import { AgentController } from './agent.controller';
 import { AgentQueryService } from './agent-query.service';
 import { ClaimService } from './claim.service';
 import { LeaseService } from './lease.service';
+import { McpPolicyService } from './mcp-policy.service';
 import { WritebackService } from './writeback.service';
 
 /**
@@ -15,7 +16,7 @@ import { WritebackService } from './writeback.service';
 @Module({
   imports: [InfraModule, SkillsModule],
   controllers: [AgentController],
-  providers: [LeaseService, AgentQueryService, ClaimService, WritebackService],
-  exports: [LeaseService, AgentQueryService, ClaimService, WritebackService],
+  providers: [LeaseService, AgentQueryService, ClaimService, WritebackService, McpPolicyService],
+  exports: [LeaseService, AgentQueryService, ClaimService, WritebackService, McpPolicyService],
 })
 export class AgentModule {}

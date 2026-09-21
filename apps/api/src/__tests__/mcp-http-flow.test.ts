@@ -50,6 +50,7 @@ import {
 const CHAPTER_12_TOOLS = [
   'append_log',
   'block_task',
+  'check_mcp_policy',
   'claim_next_task',
   'complete_task',
   'fail_task',
@@ -59,6 +60,7 @@ const CHAPTER_12_TOOLS = [
   'heartbeat',
   'list_ready_tasks',
   'list_skills',
+  'report_mcp_call',
   'search_skills',
   'update_progress',
   'wait_for_resume',

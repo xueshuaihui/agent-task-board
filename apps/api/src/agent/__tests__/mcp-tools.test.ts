@@ -17,13 +17,14 @@ let agent: RequestAuth;
 let client: Client;
 
 /**
- * §12 + §16.1 W6 已落地子集（9 基础 + block_task + wait_for_resume + 技能三工具）；
- * 策略二工具、`board.*` 全套分别在后续切片补齐（拆解/创建归 W7/W8）。
+ * §12 + §16.1 W6 已落地子集（9 基础 + block_task + wait_for_resume + 技能三工具 + 策略二工具）；
+ * `board.*` 全套留桩在后续切片补齐（拆解归 W7、会话创建闭环归 W8/#11）。
  * 顺序不敏感但一条都不能多、不能少。
  */
 const W6_TOOL_NAMES = [
   'append_log',
   'block_task',
+  'check_mcp_policy',
   'claim_next_task',
   'complete_task',
   'fail_task',
@@ -33,6 +34,7 @@ const W6_TOOL_NAMES = [
   'heartbeat',
   'list_ready_tasks',
   'list_skills',
+  'report_mcp_call',
   'search_skills',
   'update_progress',
   'wait_for_resume',
@@ -48,6 +50,7 @@ beforeAll(async () => {
     writeback: h.writeback,
     query: h.query,
     skills: h.skills,
+    policy: h.policy,
   });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
@@ -174,7 +177,7 @@ describe('MCP 工具面', () => {
   });
 
   it('工具表与服务层一一对应：MCP 不复制业务逻辑', () => {
-    expect(buildAgentTools({ claims: h.claims, leases: h.leases, writeback: h.writeback, query: h.query, skills: h.skills }).map((tool) => tool.name).sort()).toEqual(
+    expect(buildAgentTools({ claims: h.claims, leases: h.leases, writeback: h.writeback, query: h.query, skills: h.skills, policy: h.policy }).map((tool) => tool.name).sort()).toEqual(
       W6_TOOL_NAMES,
     );
   });
@@ -305,16 +308,24 @@ describe('MCP 工具面', () => {
     writeback: h.writeback,
     query: h.query,
     skills: h.skills,
+    policy: h.policy,
   });
   const ui: RequestAuth = { kind: 'ui' };
 
   /** 造技能：走 skillCreateSchema.parse 补全默认字段，origin 透传给服务层（W2 三来源）。 */
   async function seedSkill(
-    input: Partial<SkillCreateInput> & Pick<SkillCreateInput, 'name'>,
+    input: Partial<SkillCreateInput> & { name?: string },
     origin?: SkillOrigin,
   ) {
     return h.skills.create(
-      skillCreateSchema.parse({ type: 'prompt', description: '', tags: [], mcp_dependencies: [], ...input }),
+      skillCreateSchema.parse({
+        name: '测试技能',
+        type: 'prompt',
+        description: '',
+        tags: [],
+        mcp_dependencies: [],
+        ...input,
+      }),
       origin,
     );
   }
@@ -374,5 +385,113 @@ describe('MCP 工具面', () => {
     ] as const) {
       await expect(callAgentTool(skillCtx(), ui, name, args)).rejects.toMatchObject({ code: 'FORBIDDEN' });
     }
+  });
+
+  // ---------------------------------------- v0.0.4 W6 §12.4/§12.6：check_mcp_policy / report_mcp_call
+
+  async function auditRows(action: string) {
+    return h.prisma.auditLog.findMany({ where: { action } });
+  }
+
+  it('check_mcp_policy 命中声明：allow + required 透传，并落一条策略决策审计', async () => {
+    const skill = await seedSkill({
+      mcp_dependencies: [{ server: 'github', tools: ['get_pull_request'], required: false }],
+    });
+    const result = structured(
+      await call('check_mcp_policy', { skill_id: skill.id, server: 'github', tool: 'get_pull_request' }),
+    )!;
+    expect(result).toMatchObject({
+      skill_id: skill.id,
+      server: 'github',
+      tool: 'get_pull_request',
+      allowed: true,
+      decision: 'allow',
+      required: false,
+    });
+    const rows = await auditRows('mcp_policy_check');
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0]!.after!)).toMatchObject({ skill_id: skill.id, allowed: true });
+    expect([rows[0]!.actorType, rows[0]!.targetType]).toEqual(['agent', 'mcp']);
+  });
+
+  it('check_mcp_policy 未声明服务器：deny（deny_undeclared），同样留决策审计', async () => {
+    const skill = await seedSkill({
+      mcp_dependencies: [{ server: 'github', tools: ['get_pull_request'], required: true }],
+    });
+    const result = structured(
+      await call('check_mcp_policy', { skill_id: skill.id, server: 'gitlab', tool: 'get_merge_request' }),
+    )!;
+    expect(result).toMatchObject({ allowed: false, decision: 'deny', required: true });
+    expect(String(result.reason)).toContain('deny_undeclared');
+    expect((await auditRows('mcp_policy_check'))[0]!.after).toContain('deny');
+  });
+
+  it('check_mcp_policy 服务器命中但工具越界：deny（工具级精确声明，§12.2）', async () => {
+    const skill = await seedSkill({
+      mcp_dependencies: [{ server: 'github', tools: ['get_pull_request'], required: true }],
+    });
+    const result = structured(
+      await call('check_mcp_policy', { skill_id: skill.id, server: 'github', tool: 'delete_repository' }),
+    )!;
+    expect(result).toMatchObject({ allowed: false, decision: 'deny' });
+    expect(String(result.reason)).toContain('工具级');
+  });
+
+  it('check_mcp_policy 技能不存在回 NOT_FOUND；缺参回 VALIDATION_FAILED；UI Token 回 FORBIDDEN', async () => {
+    const missing = await call('check_mcp_policy', { skill_id: 'skl_absent', server: 'github', tool: 'x' });
+    expect(missing.isError).toBe(true);
+    expect(structured(missing)!.code).toBe('NOT_FOUND');
+
+    await expect(
+      callAgentTool(skillCtx(), agent, 'check_mcp_policy', { skill_id: 'skl_a', server: 'github' }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    await expect(
+      callAgentTool(skillCtx(), ui, 'check_mcp_policy', { skill_id: 'skl_a', server: 'github', tool: 'x' }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('report_mcp_call 成功/失败结果都落 mcp_call 审计，policy_decision 默认 unchecked', async () => {
+    const skill = await seedSkill({});
+    const ok = structured(
+      await call('report_mcp_call', {
+        skill_id: skill.id,
+        server: 'github',
+        url: 'https://api.githubcopilot.com/mcp/',
+        tool: 'get_pull_request',
+        success: true,
+        duration_ms: 240,
+        policy_decision: 'allow',
+      }),
+    )!;
+    expect(ok).toEqual({ recorded: true });
+
+    await call('report_mcp_call', {
+      skill_id: skill.id,
+      server: 'github',
+      tool: 'create_review',
+      success: false,
+      error: 'upstream 500',
+    });
+
+    const rows = await auditRows('mcp_call');
+    expect(rows).toHaveLength(2);
+    const first = JSON.parse(rows.find((row) => row.after!.includes('240'))!.after!);
+    expect(first).toMatchObject({ skill_id: skill.id, success: true, duration_ms: 240, policy_decision: 'allow' });
+    const second = JSON.parse(rows.find((row) => !row.after!.includes('240'))!.after!);
+    expect(second).toMatchObject({ success: false, error: 'upstream 500', policy_decision: 'unchecked' });
+  });
+
+  it('report_mcp_call 入参校验（success 必填、server 必填）与 UI Token 越界拒绝', async () => {
+    await expect(
+      callAgentTool(skillCtx(), agent, 'report_mcp_call', { server: 'github', tool: 'x' }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    await expect(
+      callAgentTool(skillCtx(), agent, 'report_mcp_call', { tool: 'x', success: true }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    await expect(
+      callAgentTool(skillCtx(), ui, 'report_mcp_call', { server: 'github', tool: 'x', success: true }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(await auditRows('mcp_call')).toHaveLength(0);
   });
 });
