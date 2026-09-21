@@ -345,7 +345,7 @@ export class BreakdownService {
         const taskId = await nextTaskId(tx);
         refToTask.set(draft.ref, taskId);
         taskIds.push(taskId);
-        const skills = parseArray<string>(draft.skill_ids).filter((value) => skillIds.has(value));
+        const skills = parseSkillIdsColumn(draft.skill_ids).ids.filter((value) => skillIds.has(value));
         await tx.$executeRawUnsafe(
           `INSERT INTO tasks (id, group_id, parent_task_id, sort_order, type, title, description, status, priority, skills, breakdown_session_id)
            VALUES (?, ?, ?, ?, '子任务', ?, ?, 'BACKLOG', ?, ?, ?)`,
@@ -501,15 +501,31 @@ export class BreakdownService {
           ? (row.depends_on as string)
           : JSON.stringify(parseArray<string>(row.depends_on))
         : JSON.stringify(normalizeRefs(patch.depends_on, 'depends_on'));
+    // 裁定 3（2026-09-21「重选即消歧」）：本次 PATCH 携带 skill_ids 且全部是真实技能 id
+    // （用户在候选列表上显式重选落定）→ 行上落 user_disambiguated 标记，读侧不再把这条
+    // 标 ambiguous；含名字/查无值的列表不标记，走 §7.5 原口径。未传 skill_ids 时原样保留
+    // 现列——落定值与既有标记都不丢也不误清。
+    let nextSkillIds: string;
+    if (patch.skill_ids === undefined) {
+      nextSkillIds = row.skill_ids ?? '[]';
+    } else {
+      const ids = normalizeRefs(patch.skill_ids, 'skill_ids');
+      const explicitIds =
+        ids.length > 0 &&
+        (
+          await this.prisma.$queryRawUnsafe<{ id: string }[]>(
+            `SELECT id FROM skills WHERE id IN (${placeholders(ids.length)})`,
+            ...ids,
+          )
+        ).length === ids.length;
+      nextSkillIds = explicitIds ? skillColumnJson(ids, true) : JSON.stringify(ids);
+    }
+
     const next = {
       title: patch.title === undefined ? row.title : text(patch.title, 'title'),
       description: patch.description === undefined ? row.description : patch.description,
       priority: patch.priority ?? row.priority ?? 3,
-      skill_ids: JSON.stringify(
-        patch.skill_ids === undefined
-          ? parseArray<string>(row.skill_ids)
-          : normalizeRefs(patch.skill_ids, 'skill_ids'),
-      ),
+      skill_ids: nextSkillIds,
       acceptance: JSON.stringify(
         patch.acceptance === undefined
           ? parseArray<string>(row.acceptance)
@@ -777,7 +793,8 @@ export class BreakdownService {
   private async annotateSkills(
     drafts: DraftRow[],
   ): Promise<{ perDraft: SkillStatusEntry[][]; report: SkillResolutionReport }> {
-    const values = [...new Set(drafts.flatMap((d) => parseArray<string>(d.skill_ids)))];
+    const columns = drafts.map((draft) => parseSkillIdsColumn(draft.skill_ids));
+    const values = [...new Set(columns.flatMap((column) => column.ids))];
     const info = new Map<string, SkillStatusEntry>();
     if (values.length > 0) {
       const idHits = await this.prisma.$queryRawUnsafe<{ id: string; name: string }[]>(
@@ -827,11 +844,16 @@ export class BreakdownService {
       }
     }
     const report: SkillResolutionReport = { ambiguous: [], unresolved: [] };
-    const perDraft = drafts.map((draft) => {
-      const statuses = parseArray<string>(draft.skill_ids).flatMap((value) => {
+    const perDraft = drafts.map((draft, index) => {
+      const statuses = columns[index]!.ids.flatMap((value) => {
         const entry = info.get(value);
         if (!entry) return [];
         if (entry.state === 'ambiguous') {
+          // 裁定 3：用户重选即消歧——带标记的行是用户显式落定的 id，同名碰撞不再标
+          // ambiguous、不进 skill_resolution；未标记的行维持条款 81 原标注口径。
+          if (columns[index]!.userDisambiguated) {
+            return [{ ...entry, state: 'resolved' as const, skill_id: value, candidates: [value] }];
+          }
           report.ambiguous.push({ ref: draft.ref, name: entry.name, skill_id: entry.skill_id!, candidates: entry.candidates });
         } else if (entry.state === 'unresolved') {
           report.unresolved.push({ ref: draft.ref, name: value });
@@ -915,6 +937,8 @@ export interface DraftDtoShape {
   skills_status?: SkillStatusEntry[];
   /** §7.4「重新生成」：草案已重置、待 Agent 重报。仅置真时出现（旧消费者零扰动）。 */
   regeneration_pending?: boolean;
+  /** 裁定 3「重选即消歧」：技能列表由用户显式重选落定。仅置真时出现（旧消费者零扰动）。 */
+  user_disambiguated?: boolean;
 }
 
 /** GET 载荷里每条草案技能值的解析态（resolved id / ambiguous 候选列表 / unresolved 原样保留）。 */
@@ -951,18 +975,20 @@ function toSessionDto(row: SessionRow): SessionDtoShape {
 }
 
 function toDraftDto(row: DraftRow): DraftDtoShape {
+  const skills = parseSkillIdsColumn(row.skill_ids);
   const dto: DraftDtoShape = {
     id: row.id,
     ref: row.ref,
     title: row.title,
     description: row.description,
     priority: row.priority ?? 3,
-    skill_ids: parseArray<string>(row.skill_ids),
+    skill_ids: skills.ids,
     acceptance: parseArray<string>(row.acceptance),
     depends_on: parseArray<string>(row.depends_on),
     sort_order: row.sort_order ?? 0,
   };
   if (hasRegenerationFlag(row.depends_on)) dto.regeneration_pending = true;
+  if (skills.userDisambiguated) dto.user_disambiguated = true;
   return dto;
 }
 
@@ -988,6 +1014,44 @@ function hasRegenerationFlag(json: string | null): boolean {
   }
 }
 
+/**
+ * 裁定 3（2026-09-21）「重选即消歧」的标记载体：skill_ids 列除既有的 JSON 数组外，
+ * 新增对象形 `{"skill_ids":[...], "user_disambiguated":true}`——只在用户 PATCH 显式
+ * id 列表时落标记，未标记行仍存纯数组（旧消费者零扰动）。选它而不选 depends_on 哨兵
+ * 同款「对象顶掉数组」：技能列表不能被标记顶掉（confirm/toDraftDto 都要读 id），
+ * 数组旁挂哨兵又会污染逐值消费者；对象包数组让 parseArray 对未升级读者自然降级
+ * ——本仓库内 skill_ids 的读方只有本文件，已全部走 parseSkillIdsColumn。
+ * reportDraft（含 #34 哨兵 B 通道重报）整行覆盖必写回纯数组，标记随覆盖消失，
+ * 回到名字碰撞解析原语义（条款 81 口径一字不动）。
+ */
+interface SkillIdsColumn {
+  ids: string[];
+  userDisambiguated: boolean;
+}
+
+function parseSkillIdsColumn(json: string | null): SkillIdsColumn {
+  if (!json) return { ids: [], userDisambiguated: false };
+  try {
+    const value: unknown = JSON.parse(json);
+    if (Array.isArray(value)) return { ids: value as string[], userDisambiguated: false };
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      Array.isArray((value as { skill_ids?: unknown }).skill_ids)
+    ) {
+      const column = value as { skill_ids: string[]; user_disambiguated?: unknown };
+      return { ids: column.skill_ids, userDisambiguated: column.user_disambiguated === true };
+    }
+    return { ids: [], userDisambiguated: false };
+  } catch {
+    return { ids: [], userDisambiguated: false };
+  }
+}
+
+function skillColumnJson(ids: string[], userDisambiguated: boolean): string {
+  return userDisambiguated ? JSON.stringify({ skill_ids: ids, user_disambiguated: true }) : JSON.stringify(ids);
+}
+
 function parseArray<T>(json: string | null): T[] {
   if (!json) return [];
   try {
@@ -999,7 +1063,7 @@ function parseArray<T>(json: string | null): T[] {
 }
 
 function unionSkillRefs(drafts: DraftRow[]): string[] {
-  return [...new Set(drafts.flatMap((d) => parseArray<string>(d.skill_ids)))];
+  return [...new Set(drafts.flatMap((d) => parseSkillIdsColumn(d.skill_ids).ids))];
 }
 
 function placeholders(count: number): string {
