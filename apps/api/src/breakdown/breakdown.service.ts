@@ -430,6 +430,14 @@ export class BreakdownService {
       this.assertProspectiveGraph(existing, ref, nextDeps, sessionId);
     }
 
+    // depends_on 未显式改动时：若行上挂着「待重新生成」哨兵（JSON 对象，
+    // parseArray 会误吞成 []），原样保留——改标题/描述不该悄悄清除待重报态。
+    const nextDependsOn =
+      patch.depends_on === undefined
+        ? hasRegenerationFlag(row.depends_on)
+          ? (row.depends_on as string)
+          : JSON.stringify(parseArray<string>(row.depends_on))
+        : JSON.stringify(normalizeRefs(patch.depends_on, 'depends_on'));
     const next = {
       title: patch.title === undefined ? row.title : text(patch.title, 'title'),
       description: patch.description === undefined ? row.description : patch.description,
@@ -444,11 +452,7 @@ export class BreakdownService {
           ? parseArray<string>(row.acceptance)
           : toStringArray(patch.acceptance, 'acceptance').map((v) => v.trim()).filter(Boolean),
       ),
-      depends_on: JSON.stringify(
-        patch.depends_on === undefined
-          ? parseArray<string>(row.depends_on)
-          : normalizeRefs(patch.depends_on, 'depends_on'),
-      ),
+      depends_on: nextDependsOn,
       sort_order: patch.sort_order ?? row.sort_order ?? 0,
     };
     await this.prisma.$transaction(async (tx) => {
@@ -495,6 +499,35 @@ export class BreakdownService {
         );
       }
       await recountActualTasks(tx, sessionId);
+    });
+    this.events.emit('breakdown.task_draft', { session_id: sessionId, ref });
+    return (await this.drafts(sessionId)).map(toDraftDto);
+  }
+
+  /**
+   * §7.4「重新生成」（条款 81 补齐）：重置该草案待 Agent 重报——title 置占位、
+   * description/skill_ids/acceptance 清空，depends_on 列改存「待重报」哨兵（见
+   * REGENERATION_PLACEHOLDER_TITLE 注释）。priority/sort_order 属用户在确认页
+   * 可调的排布字段，原样保留。仅 reviewing 可写，并发守卫与其余写端点同款；
+   * 广播既有 `breakdown.task_draft` 事件，读侧回 GET 拿真相。
+   */
+  async userRegenerateDraft(sessionId: string, ref: string): Promise<DraftDtoShape[]> {
+    const session = await this.requireSession(sessionId);
+    this.assertStatus(session, 'reviewing', ['reviewing']);
+    const existing = await this.drafts(sessionId);
+    const row = existing.find((draft) => draft.ref === ref);
+    if (!row) throw draftNotFound(sessionId, ref);
+
+    await this.prisma.$transaction(async (tx) => {
+      this.assertReviewingGuard(await guardReviewingUpdate(tx, sessionId));
+      await tx.$executeRawUnsafe(
+        `UPDATE breakdown_drafts
+            SET title = ?, description = NULL, skill_ids = '[]', acceptance = '[]', depends_on = ?
+          WHERE id = ?`,
+        REGENERATION_PLACEHOLDER_TITLE,
+        regenerationFlagJson(),
+        row.id,
+      );
     });
     this.events.emit('breakdown.task_draft', { session_id: sessionId, ref });
     return (await this.drafts(sessionId)).map(toDraftDto);
@@ -815,6 +848,8 @@ export interface DraftDtoShape {
   sort_order: number;
   /** 条款 81：仅 GET 详情填充（reportDraft 的即时回显不含读侧标注）。 */
   skills_status?: SkillStatusEntry[];
+  /** §7.4「重新生成」：草案已重置、待 Agent 重报。仅置真时出现（旧消费者零扰动）。 */
+  regeneration_pending?: boolean;
 }
 
 /** GET 载荷里每条草案技能值的解析态（resolved id / ambiguous 候选列表 / unresolved 原样保留）。 */
@@ -851,7 +886,7 @@ function toSessionDto(row: SessionRow): SessionDtoShape {
 }
 
 function toDraftDto(row: DraftRow): DraftDtoShape {
-  return {
+  const dto: DraftDtoShape = {
     id: row.id,
     ref: row.ref,
     title: row.title,
@@ -862,6 +897,30 @@ function toDraftDto(row: DraftRow): DraftDtoShape {
     depends_on: parseArray<string>(row.depends_on),
     sort_order: row.sort_order ?? 0,
   };
+  if (hasRegenerationFlag(row.depends_on)) dto.regeneration_pending = true;
+  return dto;
+}
+
+/**
+ * §7.4「重新生成」哨兵（条款 81 补齐）：纯本地架构服务端回调不了 Agent，
+ * 「重新生成」= 把草案重置为**待 Agent 重报**。「待重报」状态存进 depends_on 列的
+ * JSON 对象 `{"regeneration_pending":true}`——parseArray 对非数组一律回 []，
+ * finish/confirm/读侧全部自然降级为「无依赖」，零 Prisma 迁移。
+ */
+const REGENERATION_PLACEHOLDER_TITLE = '（待重新生成）';
+
+function regenerationFlagJson(): string {
+  return JSON.stringify({ regeneration_pending: true });
+}
+
+function hasRegenerationFlag(json: string | null): boolean {
+  if (!json) return false;
+  try {
+    const value: unknown = JSON.parse(json);
+    return typeof value === 'object' && value !== null && (value as { regeneration_pending?: unknown }).regeneration_pending === true;
+  } catch {
+    return false;
+  }
 }
 
 function parseArray<T>(json: string | null): T[] {

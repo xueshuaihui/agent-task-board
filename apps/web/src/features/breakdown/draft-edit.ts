@@ -154,3 +154,38 @@ export function hasDependencyCycle(drafts: readonly BreakdownDraft[]): boolean {
   }
   return processed < drafts.length;
 }
+
+// ------------------------------------------------------- §7.4 验收标准编辑 + 重新生成（条款 81）
+
+/**
+ * 验收标准输入归一：逐条 trim、丢空白项——与 api userUpdateDraft 的
+ * `toStringArray → trim → filter(Boolean)` 同一口径，前后端算出的结果串一致，
+ * 编辑面板据此判断「有没有真改动」，避免把服务端回执又 PATCH 回去。
+ */
+export function normalizeAcceptance(items: readonly string[]): string[] {
+  return items.map((item) => item.trim()).filter(Boolean);
+}
+
+/** 「重新生成」占位标题——与 api breakdown.service 的 REGENERATION_PLACEHOLDER_TITLE 同串。 */
+export const REGEN_PLACEHOLDER_TITLE = '（待重新生成）';
+
+/**
+ * §7.4「重新生成」的乐观覆盖：本地把 agent 生成字段清空并挂上待重报标记。
+ * 真相在服务端 regenerate 端点（depends_on 列哨兵），回执/GET 以
+ * `regeneration_pending` 字段还原此态；priority/sort_order 与 api 口径一致保留。
+ */
+export function applyRegeneration(drafts: readonly BreakdownDraft[], ref: string): BreakdownDraft[] {
+  return drafts.map((draft) =>
+    draft.ref === ref
+      ? {
+          ...draft,
+          title: REGEN_PLACEHOLDER_TITLE,
+          description: null,
+          skill_ids: [],
+          acceptance: [],
+          depends_on: [],
+          regeneration_pending: true,
+        }
+      : draft,
+  );
+}

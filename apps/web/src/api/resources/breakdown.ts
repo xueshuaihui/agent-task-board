@@ -42,4 +42,11 @@ export const breakdownApi = {
   /** §7.4 删除任务：服务端同事务级联清悬空 depends_on；未知草案 404。 */
   deleteDraft: (id: string, ref: string) =>
     http.del<BreakdownDraft[]>(`/breakdown/sessions/${enc(id)}/drafts/${encodeURIComponent(ref)}`),
+
+  /** §7.4「重新生成」（条款 81）：重置草案待 Agent 重报（清空生成字段 + 占位标题 + 哨兵）。 */
+  regenerateDraft: (id: string, ref: string) =>
+    http.post<BreakdownDraft[]>(
+      `/breakdown/sessions/${enc(id)}/drafts/${encodeURIComponent(ref)}/regenerate`,
+      {},
+    ),
 };

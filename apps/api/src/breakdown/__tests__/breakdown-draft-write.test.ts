@@ -177,3 +177,69 @@ describe('DELETE /breakdown/sessions/{id}/drafts/{ref}（§7.4 删除 + 级联�
     expect(errorCode(late)).toBe('BREAKDOWN_BAD_STATE');
   });
 });
+
+describe('POST /breakdown/sessions/{id}/drafts/{ref}/regenerate（§7.4 重新生成=重置待 Agent 重报）', () => {
+  it('成功：agent 生成字段清空、标题占位、回执带 regeneration_pending；priority/sort_order 保留', async () => {
+    const session = await reviewingSession();
+    await ui.patch(`${API}/breakdown/sessions/${session.id}/drafts/d1`, {
+      priority: 1,
+      acceptance: ['条目一', '条目二'],
+    });
+    const res = await ui.post(`${API}/breakdown/sessions/${session.id}/drafts/d1/regenerate`);
+    expect(res.status).toBe(201);
+    const d1 = (res.body as { ref: string; depends_on: string[]; regeneration_pending?: boolean }[]).find(
+      (d) => d.ref === 'd1',
+    );
+    expect(d1).toMatchObject({
+      title: '（待重新生成）',
+      description: null,
+      skill_ids: [],
+      acceptance: [],
+      depends_on: [],
+      priority: 1,
+      regeneration_pending: true,
+    });
+    // d2 的依赖边仍指向 d1 的 ref（重置不删行，边不断）。
+    const d2 = (res.body as { ref: string; depends_on: string[] }[]).find((d) => d.ref === 'd2');
+    expect(d2?.depends_on).toEqual(['d1']);
+  });
+
+  it('哨兵语义：只读侧映射为 regeneration_pending；confirm 图检查不受影响（空依赖）', async () => {
+    const session = await reviewingSession();
+    await ui.post(`${API}/breakdown/sessions/${session.id}/drafts/d1/regenerate`);
+    const detail = await svc.get(session.id);
+    expect(detail.drafts.find((d) => d.ref === 'd1')?.regeneration_pending).toBe(true);
+    expect(detail.drafts.find((d) => d.ref === 'd2')?.regeneration_pending).toBeUndefined();
+  });
+
+  it('哨兵不被误清：重新生成后改标题仍待重报；显式改 depends_on 视为用户接管、哨兵清除', async () => {
+    const session = await reviewingSession();
+    await ui.post(`${API}/breakdown/sessions/${session.id}/drafts/d1/regenerate`);
+    const renamed = await ui.patch(`${API}/breakdown/sessions/${session.id}/drafts/d1`, { title: '手工改名' });
+    const kept = (renamed.body as { ref: string; regeneration_pending?: boolean }[]).find((d) => d.ref === 'd1');
+    expect(kept).toMatchObject({ title: '手工改名', regeneration_pending: true });
+
+    const retaken = await ui.patch(`${API}/breakdown/sessions/${session.id}/drafts/d2`, { depends_on: [] });
+    expect(retaken.status).toBe(200);
+    const after = await svc.get(session.id);
+    expect(after.drafts.find((d) => d.ref === 'd1')?.regeneration_pending).toBe(true);
+  });
+
+  it('错误：receiving 会话 409 BREAKDOWN_BAD_STATE；未知草案 404；未知会话 404', async () => {
+    const receiving = await svc.begin({ requirement_text: '还没拆完', parent_title: '过早重生成' });
+    const early = await ui.post(`${API}/breakdown/sessions/${receiving.id}/drafts/d1/regenerate`);
+    expect(early.status).toBe(409);
+    expect(errorCode(early)).toBe('BREAKDOWN_BAD_STATE');
+
+    const session = await reviewingSession();
+    const missing = await ui.post(`${API}/breakdown/sessions/${session.id}/drafts/n9/regenerate`);
+    expect(missing.status).toBe(404);
+    expect(errorCode(missing)).toBe('NOT_FOUND');
+
+    const gone = await ui.post(
+      `${API}/breakdown/sessions/01947c3e-6f2a-7a11-9c31-8d5f2e1b7c99/drafts/d1/regenerate`,
+    );
+    expect(gone.status).toBe(404);
+    expect(errorCode(gone)).toBe('NOT_FOUND');
+  });
+});

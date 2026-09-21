@@ -24,7 +24,7 @@ import { useBreakdownOverlayStore } from './store';
 import { SessionActionDialog } from './session-action-dialog';
 import { DraftFlowGraph } from './draft-graph';
 import { DraftEditor } from './draft-editor';
-import { addDraft, hasDependencyCycle, nextDraftRef, patchDraft, removeDraft, toggleDependency } from './draft-edit';
+import { addDraft, applyRegeneration, hasDependencyCycle, nextDraftRef, patchDraft, removeDraft, toggleDependency } from './draft-edit';
 import type { AnnotatedDraft } from './skill-status';
 
 /** §7.8「撤销：5 秒内可撤销」——确认动作延迟 5 秒提交，期间可撤销（api 无事后撤销端点）。 */
@@ -306,6 +306,10 @@ function SessionDetail({
   const removeOne = (ref: string) =>
     write.commit(removeDraft(drafts, ref), () => api.breakdown.deleteDraft(session.id, ref));
 
+  /** §7.4「重新生成」（条款 81）：重置草案待 Agent 重报——本地清空只是乐观态，哨兵在服务端。 */
+  const regenerateOne = (ref: string) =>
+    write.commit(applyRegeneration(drafts, ref), () => api.breakdown.regenerateDraft(session.id, ref));
+
   /** 点边/点开关共用：断边失败（成环/自环）时给文案，成功后 PATCH 依赖边集合。 */
   const toggleDep = (from: string, to: string) => {
     const result = toggleDependency(drafts, from, to);
@@ -407,6 +411,7 @@ function SessionDetail({
               onPatch={patchOne}
               onDelete={removeOne}
               onAdd={addOne}
+              onRegenerate={regenerateOne}
               skillNames={skillNames}
             />
           ) : null}

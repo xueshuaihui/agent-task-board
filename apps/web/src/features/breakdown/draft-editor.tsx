@@ -1,22 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Link2, Link2Off, Plus, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Link2, Link2Off, Plus, RotateCcw, Trash2, X } from 'lucide-react';
 import type { BreakdownDraftEdit } from '@/api/types';
 import { Button, Card, Field, Input, Select, Textarea, useToast } from '@/components/ui';
 import { PRIORITY_LABEL } from '@/lib/labels';
 import { cn } from '@/lib/cn';
 import { useSkills } from '@/features/skills/hooks';
-import { toggleDependency } from './draft-edit';
+import { normalizeAcceptance, toggleDependency } from './draft-edit';
 import { duplicateSkillNames, skillCandidateLabel, skillOptionLabel, skillStatusOf, type AnnotatedDraft } from './skill-status';
 
 /**
  * §7.4 草案编辑面板（W7 遗留 b3 起接服务端写端点，不再是本地暂存）。
  *
  * 覆盖 PRD 表格里的最小集：标题、描述、优先级、技能（标签删 + 选择器加/换，
- * 条款 81 的歧义/未解析重选走 onPatch({ skill_ids })）、依赖连/断、删草案、加草案；
- * 验收标准编辑与「重新生成」不在本片。父需求原文（session.requirement_text）不可编辑。
+ * 条款 81 的歧义/未解析重选走 onPatch({ skill_ids })）、验收标准（逐条编辑/增删，
+ * onPatch({ acceptance })）、依赖连/断、删草案、加草案；「重新生成」调专用端点
+ * （重置该草案待 Agent 重报，见 onRegenerate）。父需求原文（session.requirement_text）不可编辑。
  *
  * 变更全部经 onPatch/onDelete/onAdd 上抛给 overlay 的真实 mutation（乐观更新 +
- * 失败回滚）；离散控件即时提交，标题/描述这类连续输入本地缓冲、失焦才落库，
+ * 失败回滚）；离散控件即时提交，标题/描述/验收条目这类连续输入本地缓冲、失焦才落库，
  * 避免逐键打服务端。
  */
 export interface DraftEditorProps {
@@ -31,22 +32,26 @@ export interface DraftEditorProps {
   onDelete: (ref: string) => void;
   /** POST 添加新草案，ref 由 overlay 取号。 */
   onAdd: () => void;
+  /** POST 重新生成（§7.4 条款 81：重置待 Agent 重报，走专用端点）。 */
+  onRegenerate: (ref: string) => void;
   /** 技能 id → name（null = 技能表未加载）。 */
   skillNames: Map<string, string> | null;
 }
 
-export function DraftEditor({ drafts, draftRef, onSelect, onPatch, onDelete, onAdd, skillNames }: DraftEditorProps) {
+export function DraftEditor({ drafts, draftRef, onSelect, onPatch, onDelete, onAdd, onRegenerate, skillNames }: DraftEditorProps) {
   const toast = useToast();
   const skills = useSkills(undefined, { enabled: true });
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const draft = draftRef ? (drafts.find((item) => item.ref === draftRef) ?? null) : null;
 
-  /* 标题/描述本地缓冲（null = 无未提交输入）；切草案即丢弃缓冲。 */
+  /* 标题/描述/验收标准本地缓冲（null = 无未提交输入）；切草案即丢弃缓冲。 */
   const [titleBuffer, setTitleBuffer] = useState<string | null>(null);
   const [descBuffer, setDescBuffer] = useState<string | null>(null);
+  const [accBuffer, setAccBuffer] = useState<string[] | null>(null);
   useEffect(() => {
     setTitleBuffer(null);
     setDescBuffer(null);
+    setAccBuffer(null);
   }, [draftRef]);
 
   /* 条款 81 真机反馈：选择器里 4 个同名「发布检查」无从分辨——全量表中重名的
@@ -77,6 +82,22 @@ export function DraftEditor({ drafts, draftRef, onSelect, onPatch, onDelete, onA
     const next = descBuffer.trim() ? descBuffer : null;
     setDescBuffer(null);
     if ((next ?? '') !== (draft.description ?? '')) onPatch(draft.ref, { description: next });
+  };
+
+  /* §7.4 验收标准（条款 81）：逐条编辑本地缓冲、失焦才整表提交；删行是离散动作即时落库。
+   * 与 normalizeAcceptance 同口径判等，无真改动不打服务端。 */
+  const acceptance = accBuffer ?? draft.acceptance;
+  const commitAcceptance = (items: readonly string[]) => {
+    const next = normalizeAcceptance(items);
+    if (next.join('\n') !== normalizeAcceptance(draft.acceptance).join('\n')) {
+      onPatch(draft.ref, { acceptance: next });
+    }
+  };
+  const removeAcceptance = (index: number) => {
+    const next = [...acceptance];
+    next.splice(index, 1);
+    setAccBuffer(next);
+    commitAcceptance(next);
   };
 
   return (
@@ -217,6 +238,53 @@ export function DraftEditor({ drafts, draftRef, onSelect, onPatch, onDelete, onA
         </Field>
       </div>
 
+      <Field label="验收标准">
+        <div className="flex flex-col gap-1.5" data-testid="breakdown-draft-acceptance">
+          {acceptance.length === 0 ? (
+            <span className="text-aux text-text-tertiary">尚无验收标准条目。</span>
+          ) : null}
+          {acceptance.map((item, index) => (
+            <div key={index} className="flex items-center gap-1.5">
+              <span className="shrink-0 font-mono text-badge text-text-tertiary">{index + 1}.</span>
+              <Input
+                value={item}
+                aria-label={`验收标准 ${index + 1}`}
+                placeholder="例：单测与门禁全绿"
+                onChange={(event) => {
+                  const next = [...acceptance];
+                  next[index] = event.target.value;
+                  setAccBuffer(next);
+                }}
+                onBlur={() => {
+                  if (accBuffer) commitAcceptance(accBuffer);
+                }}
+                data-testid="breakdown-draft-acceptance-item"
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={`删除验收标准 ${index + 1}`}
+                className="shrink-0 text-text-tertiary hover:text-status-failed"
+                onClick={() => removeAcceptance(index)}
+                data-testid="breakdown-draft-acceptance-remove"
+              >
+                <Trash2 className="size-3.5" aria-hidden />
+              </Button>
+            </div>
+          ))}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="self-start"
+            onClick={() => setAccBuffer([...acceptance, ''])}
+            data-testid="breakdown-draft-acceptance-add"
+          >
+            <Plus className="size-3.5" aria-hidden />
+            添加验收标准
+          </Button>
+        </div>
+      </Field>
+
       <Field label="依赖（前置任务）">
         <div className="flex flex-wrap gap-1.5">
           {others.length === 0 ? (
@@ -259,19 +327,32 @@ export function DraftEditor({ drafts, draftRef, onSelect, onPatch, onDelete, onA
       </Field>
 
       <div className="flex items-center justify-between">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-status-failed hover:text-status-failed"
-          onClick={() => {
-            onDelete(draft.ref);
-            onSelect(null);
-          }}
-          data-testid="breakdown-draft-delete"
-        >
-          <Trash2 className="size-3.5" aria-hidden />
-          删除任务
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-status-review hover:text-status-review"
+            title="清空本草案的 Agent 生成内容，等待 Agent 重新上报（§7.4）"
+            onClick={() => onRegenerate(draft.ref)}
+            data-testid="breakdown-draft-regenerate"
+          >
+            <RotateCcw className="size-3.5" aria-hidden />
+            重新生成
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-status-failed hover:text-status-failed"
+            onClick={() => {
+              onDelete(draft.ref);
+              onSelect(null);
+            }}
+            data-testid="breakdown-draft-delete"
+          >
+            <Trash2 className="size-3.5" aria-hidden />
+            删除任务
+          </Button>
+        </div>
         <Button variant="default" size="sm" onClick={onAdd} data-testid="breakdown-draft-add">
           <Plus className="size-3.5" aria-hidden />
           添加任务

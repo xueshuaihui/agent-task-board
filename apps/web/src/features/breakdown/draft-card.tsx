@@ -47,6 +47,16 @@ export function DraftCard({ draft, skillNames }: DraftCardProps) {
           </Badge>
         </div>
 
+        {draft.regeneration_pending ? (
+          // §7.4「重新生成」（条款 81）：已重置待 Agent 重报——与歧义技能同一告警语汇。
+          <Badge
+            className="self-start bg-status-review-soft text-status-review"
+            icon={<AlertTriangle className="size-3" aria-hidden />}
+          >
+            待 Agent 重新生成
+          </Badge>
+        ) : null}
+
         {draft.description ? (
           <p className="line-clamp-2 text-aux text-text-secondary" title={draft.description}>
             {draft.description}

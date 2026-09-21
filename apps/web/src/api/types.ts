@@ -799,6 +799,8 @@ export interface BreakdownDraft {
   /** 会话内稳定引用号（不是任务 id），依赖边以它为坐标。 */
   depends_on: string[];
   sort_order: number;
+  /** §7.4「重新生成」：草案已重置、待 Agent 重报（服务端 depends_on 哨兵映射；false 时字段省略）。 */
+  regeneration_pending?: boolean;
 }
 
 /**
