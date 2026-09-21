@@ -3,6 +3,7 @@
  * 也不要绕过 `qk` 现写 query key。
  */
 import { artifactsApi } from './resources/artifacts';
+import { creationApi } from './resources/creation';
 import { auditApi } from './resources/audit';
 import { breakdownApi } from './resources/breakdown';
 import { dataApi } from './resources/data';
@@ -29,6 +30,7 @@ export const api = {
   data: dataApi,
   prefs: prefsApi,
   breakdown: breakdownApi,
+  creation: creationApi,
 } as const;
 
 export { http, buildQuery, requestUrl } from './client';

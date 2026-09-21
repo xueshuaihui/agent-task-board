@@ -3,6 +3,7 @@ import { TaskDetailDrawer } from '@/features/task-detail';
 import { ReviewFormDialog } from '@/features/review';
 import { DependencyGraphGlobalHost, RequirementDrawerHost } from '@/features/requirements';
 import { BreakdownOverlayHost } from '@/features/breakdown';
+import { CreationRequestHost } from '@/features/creation';
 import { useWSEvent } from '@/ws';
 
 /**
@@ -36,6 +37,8 @@ export function OverlaySlot() {
       <DependencyGraphGlobalHost />
       {/* v0.0.4 W7 §7.3：拆解创建页是覆盖层不是路由，宿主在此挂一份（含右下角待处理浮标）。 */}
       <BreakdownOverlayHost />
+      {/* v0.0.4 W8 §8.4：Agent 建任务轻确认卡片是全局右下角浮层，同样只挂一份。 */}
+      <CreationRequestHost />
     </>
   );
 }

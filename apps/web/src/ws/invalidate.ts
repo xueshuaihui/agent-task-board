@@ -37,6 +37,12 @@ export function keysForEvent(frame: WsFrame): readonly (readonly unknown[])[] {
       // v0.0.4 W7 §16.3 拆解五条：载荷带 session_id/ref 也只当失效信号，
       // 会话列表与打开着的详情回 GET 拿真相（confirm 建的 task.created 走 default 分支刷看板）。
       return [qk.breakdownRoot];
+    case 'agent.task_requested':
+      // v0.0.4 W8 §8.7 r3 的例外：这条事件的载荷就是轻确认卡片本体（CreationRequestView），
+      // 由 `features/creation/store.ts` 直接收进本地卡片栈，不触发回查——
+      // 服务端待决请求驻内存、GET 列表还带近期终结项，逐条回查只会让卡片闪烁。
+      // 断线重连的补拉在 `refreshAfterReconnect` 里，决策落库的 task.created 走 default 分支刷看板。
+      return [];
     default:
       return taskIds.length
         ? [qk.boardRoot, qk.tasksRoot, ...taskIds.map((id) => qk.taskRoot(id))]
@@ -65,6 +71,8 @@ export function applyEvent(queryClient: QueryClient, frame: WsFrame): void {
   }
   // 分组事件的 `id` 是分组 id，不是任务 id——闪卡名单只收任务侧事件。
   if (frame.event === 'group.archived' || frame.event === 'group.unarchived') return;
+  // 轻确认请求的 `task_id` 是「将要创建」的任务（待决期为 null），同理不进闪卡名单。
+  if (frame.event === 'agent.task_requested') return;
   const ids = taskIdsOf(frame);
   if (ids.length > 0) useFlashStore.getState().mark(ids);
 }
@@ -82,6 +90,8 @@ export function refreshAfterReconnect(queryClient: QueryClient): void {
   void queryClient.invalidateQueries({ queryKey: qk.groupsRoot, refetchType: 'active' });
   // W7：同理，断线期间错过的 breakdown.* 五条不补发——拆解会话列表与打开着的确认页一起重取。
   void queryClient.invalidateQueries({ queryKey: qk.breakdownRoot, refetchType: 'active' });
+  // W8 §8.7：断线期间漏掉的 `agent.task_requested` 靠 GET /creation-requests 补齐（含未决卡片）。
+  void queryClient.invalidateQueries({ queryKey: qk.creationRoot, refetchType: 'active' });
   // 打开着的抽屉也要回到服务端真相。
   for (const query of queryClient.getQueryCache().getAll()) {
     const key = query.queryKey;

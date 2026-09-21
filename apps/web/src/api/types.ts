@@ -178,6 +178,8 @@ export const ERROR_CODES = [
   'BACKUP_NOT_FOUND',
   // v0.0.4 W7 §7.7：拆解动作从表外状态发起（confirm 只允许 reviewing、cancel 只允许 receiving/reviewing）。
   'BREAKDOWN_BAD_STATE',
+  // v0.0.4 W8 §8.7 r3：轻确认请求已终结（含 30s+5s 宽限到期），decision 拒收；context.status 带归宿。
+  'CREATION_REQUEST_RESOLVED',
   'INTERNAL',
   'NETWORK_ERROR',
   'UNKNOWN',
@@ -816,8 +818,64 @@ export interface BreakdownConfirmResult {
   task_ids: string[];
 }
 
-/* ------------------------------------------------------------- WS 事件载荷 */
+/* ------------------------------------------------- 会话创建轻确认（§8 / W8） */
 
+/** §8.2 三模式（`tasks.confirmation_mode` 列同词表）。 */
+export const CREATION_MODES = ['direct', 'light', 'silent'] as const;
+export type CreationMode = (typeof CREATION_MODES)[number];
+
+/** task_creation_logs.user_action 词表：pending + 四种归宿（edited 也回 created 语义的 task_id）。 */
+export const CREATION_REQUEST_STATUSES = [
+  'pending',
+  'created',
+  'edited',
+  'cancelled',
+  'timeout',
+] as const;
+export type CreationRequestStatus = (typeof CREATION_REQUEST_STATUSES)[number];
+
+/** §8.5 重复检测命中：卡片顶部「疑似重复任务」链接的数据源。 */
+export interface CreationDuplicateHit {
+  task_id: string;
+  title: string;
+  /** 0~1 的 Jaccard 相似度（>0.8 才进名单，§8.5）。 */
+  similarity: number;
+}
+
+/**
+ * 轻确认卡片本体：WS `agent.task_requested` 的载荷与 `GET /creation-requests` 的元素同形。
+ * 倒计时锚 `expires_at`（§8.4「30 秒超时」）；`decision_deadline_at` = expires_at + 5s 宽限，
+ * 之后服务端强制转 timeout 并对 decision 回 409 `CREATION_REQUEST_RESOLVED`（§8.7 r3）。
+ */
+export interface CreationRequestView {
+  request_id: string;
+  status: CreationRequestStatus;
+  task_id: string | null;
+  agent_name: string;
+  session_id: string | null;
+  source: 'mcp' | 'rest';
+  title: string;
+  description: string | null;
+  group_id: string;
+  type: string;
+  priority: number;
+  tags: string[];
+  skills: string[];
+  duplicates: CreationDuplicateHit[];
+  created_at: string;
+  expires_at: string;
+  decision_deadline_at: string;
+}
+
+/** POST /creation-requests/{id}/decision 入参：edit 必带修改后载荷（§8.7 r3，api 侧 zod 同款约束）。 */
+export interface CreationDecisionInput {
+  action: 'create' | 'edit' | 'cancel';
+  payload?: Partial<
+    Pick<CreationRequestView, 'title' | 'description' | 'group_id' | 'type' | 'priority' | 'tags' | 'skills'>
+  >;
+}
+
+/* ------------------------------------------------------------- WS 事件载荷 */
 export const WS_EVENT_NAMES = [
   'task.created',
   'task.updated',
@@ -838,6 +896,8 @@ export const WS_EVENT_NAMES = [
   'breakdown.task_draft',
   'breakdown.finished',
   'breakdown.cancelled',
+  // v0.0.4 W8 §8.7 r3：轻确认卡片下发（这条是例外——载荷就是卡片本体，见 features/creation）。
+  'agent.task_requested',
 ] as const;
 export type WsEventName = (typeof WS_EVENT_NAMES)[number];
 
@@ -870,6 +930,8 @@ export interface WsEventPayloads {
   'breakdown.task_draft': { session_id: string; ref: string };
   'breakdown.finished': { session_id: string; actual_tasks: number };
   'breakdown.cancelled': { session_id: string };
+  // §8.7 r3：轻确认卡片下发的是请求本体（含倒计时锚点），与 GET 列表同一份视图。
+  'agent.task_requested': CreationRequestView;
 }
 
 /**

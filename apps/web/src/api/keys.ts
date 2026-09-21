@@ -77,4 +77,8 @@ export const qk = {
   breakdownSessions: () => ['breakdown', 'sessions'] as const,
   breakdownSession: (id: string) => ['breakdown', 'sessions', id] as const,
   breakdownRoot: ['breakdown'] as const,
+
+  /** v0.0.4 W8 §8.7（features/creation）：轻确认请求列表（断线重连补卡片的数据源）。 */
+  creationRequests: () => ['creation-requests'] as const,
+  creationRoot: ['creation-requests'] as const,
 } as const;

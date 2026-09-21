@@ -73,6 +73,8 @@ export const ERROR_CODE_COPY: Record<ErrorCode, string> = {
   BACKUP_NOT_FOUND: '备份文件已不在磁盘上',
   // v0.0.4 W7 §7.7：拆解动作与当前状态不匹配（confirm 需在「待确认」、cancel 需在接收/待确认）。
   BREAKDOWN_BAD_STATE: '拆解会话状态已变化，请刷新后重试',
+  // v0.0.4 W8 §8.7 r3：卡片终态就地收口用（界面自己出文案，不走通用 Toast），兜底给一行说明。
+  CREATION_REQUEST_RESOLVED: '该创建请求已终结，决策未生效',
   INTERNAL: '本地服务内部错误',
   NETWORK_ERROR: COPY.sidecarDown,
   UNKNOWN: '请求失败',
