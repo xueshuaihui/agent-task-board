@@ -2,6 +2,10 @@ import { z } from 'zod';
 import {
   appendLogSchema,
   blockedSchema,
+  breakdownBeginSchema,
+  breakdownDraftReportSchema,
+  breakdownProgressReportSchema,
+  breakdownSessionActionSchema,
   checkMcpPolicySchema,
   claimSchema,
   completeSchema,
@@ -27,6 +31,12 @@ export type ReviewFeedbackInput = z.infer<typeof reviewFeedbackQuerySchema>;
 export type WaitResumeInput = z.infer<typeof waitForResumeSchema>;
 export type CheckMcpPolicyInput = z.infer<typeof checkMcpPolicySchema>;
 export type ReportMcpCallInput = z.infer<typeof reportMcpCallSchema>;
+export type {
+  BreakdownBeginToolInput,
+  BreakdownDraftReportInput,
+  BreakdownProgressReportInput,
+  BreakdownSessionActionInput,
+} from '../contract/agent-schemas';
 
 /** 12 章：`get_task` 是只读工具，不需要三元组（三元组只在写回侧强制）。 */
 export const getTaskSchema = z.object({ task_id: idLike });
@@ -38,6 +48,10 @@ export const reviewFeedbackLimitSchema = reviewFeedbackQuerySchema.omit({ task_i
 export {
   appendLogSchema,
   blockedSchema,
+  breakdownBeginSchema,
+  breakdownDraftReportSchema,
+  breakdownProgressReportSchema,
+  breakdownSessionActionSchema,
   checkMcpPolicySchema,
   claimSchema,
   completeSchema,

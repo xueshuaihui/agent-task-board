@@ -5,6 +5,10 @@ import type { RequestAuth } from '../auth/auth.scope';
 import {
   appendLogSchema,
   blockedSchema,
+  breakdownBeginSchema,
+  breakdownDraftReportSchema,
+  breakdownProgressReportSchema,
+  breakdownSessionActionSchema,
   checkMcpPolicySchema,
   claimSchema,
   completeSchema,
@@ -18,6 +22,10 @@ import {
   waitForResumeSchema,
   type AppendLogInput,
   type BlockedInput,
+  type BreakdownBeginToolInput,
+  type BreakdownDraftReportInput,
+  type BreakdownProgressReportInput,
+  type BreakdownSessionActionInput,
   type CheckMcpPolicyInput,
   type ClaimInput,
   type CompleteInput,
@@ -35,6 +43,7 @@ import type { ClaimService } from '../agent/claim.service';
 import type { LeaseService } from '../agent/lease.service';
 import type { McpPolicyService } from '../agent/mcp-policy.service';
 import type { WritebackService } from '../agent/writeback.service';
+import type { BreakdownService } from '../breakdown/breakdown.service';
 import {
   skillListQuerySchema,
   type SkillListQuery,
@@ -56,6 +65,8 @@ export interface AgentToolContext {
   skills: SkillsService;
   /** v0.0.4 W6 §12.6：check_mcp_policy / report_mcp_call 的策略裁决与审计落点。 */
   policy: McpPolicyService;
+  /** v0.0.4 W7 §16.1：board.* 拆解五工具的生命周期落点（begin/progress/draft/finish/cancel）。 */
+  breakdown: BreakdownService;
 }
 
 export interface AgentTool {
@@ -67,7 +78,9 @@ export interface AgentTool {
 
 /**
  * 12 章的九个基础工具 + v0.0.4 W6 §16.1 的人工块/恢复工具（block_task、wait_for_resume）
- * 与技能三工具（list_skills、get_skill、search_skills，只读，W2 语义由 SkillsService 保证）。
+ * 与技能三工具（list_skills、get_skill、search_skills，只读，W2 语义由 SkillsService 保证）
+ * + v0.0.4 W7 §16.1 的拆解五工具（board.begin_breakdown / report_progress / report_task_draft /
+ * finish_breakdown / cancel_breakdown；wait_for_confirmation 与 create_task 归 W8）。
  * 业务逻辑全在 Agent 服务层，这里只做「工具名 → 服务方法」的映射，
  * 因此 REST 与 MCP 共用同一套校验与错误语义（13 章错误码只有一份实现）。
  */
@@ -179,6 +192,62 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
       description: '上报一次第三方 MCP 调用结果，写入 MCP 审计（§12.6；只落库不回查外键）',
       input: reportMcpCallSchema,
       run: (args, auth) => ctx.policy.report(args as ReportMcpCallInput, auth),
+    },
+    // ------------------------------------------- v0.0.4 W7 §16.1：board.* 拆解工具面（Agent 凭证专属）
+    {
+      name: 'board.begin_breakdown',
+      description:
+        '发起需求拆解会话（§7.2 阶段 1；传入需求文本、分组、父任务标题、预估任务数，返回 session_id）',
+      input: breakdownBeginSchema,
+      run: async (args, auth) => {
+        const agent = agentOf(auth);
+        const input = args as BreakdownBeginToolInput;
+        // agent_name 缺省取凭证名：确认页「正在接收 Qoder 的拆解结果」据此渲染（§7.3）。
+        return ctx.breakdown.begin({ ...input, agent_name: input.agent_name ?? agent.tokenName });
+      },
+    },
+    {
+      name: 'board.report_progress',
+      description: '上报拆解进度（§7.2 阶段 3；step/total 正整数且 step ≤ total，会话须处于 receiving）',
+      input: breakdownProgressReportSchema,
+      run: async (args, auth) => {
+        agentOf(auth);
+        const { session_id: sessionId, ...rest } = args as BreakdownProgressReportInput;
+        await ctx.breakdown.reportProgress(sessionId, rest);
+        return { recorded: true };
+      },
+    },
+    {
+      name: 'board.report_task_draft',
+      description:
+        '上报单个任务草案（§7.2 阶段 4；同 ref 重报即覆盖；skill_ids 可填技能名，finish 时统一解析 §7.5）',
+      input: breakdownDraftReportSchema,
+      run: async (args, auth) => {
+        agentOf(auth);
+        const { session_id: sessionId, ...rest } = args as BreakdownDraftReportInput;
+        return ctx.breakdown.reportDraft(sessionId, rest);
+      },
+    },
+    {
+      name: 'board.finish_breakdown',
+      description:
+        '完成拆解：依赖图校验 + 技能名→ID 解析（§7.5），会话转 reviewing 等用户确认；返回 skill_resolution 告警',
+      input: breakdownSessionActionSchema,
+      run: async (args, auth) => {
+        agentOf(auth);
+        const { session_id: sessionId } = args as BreakdownSessionActionInput;
+        return ctx.breakdown.finish(sessionId);
+      },
+    },
+    {
+      name: 'board.cancel_breakdown',
+      description: '取消拆解会话（§7.7；receiving / reviewing 可取消，转 cancelled）',
+      input: breakdownSessionActionSchema,
+      run: async (args, auth) => {
+        agentOf(auth);
+        const { session_id: sessionId } = args as BreakdownSessionActionInput;
+        return ctx.breakdown.cancel(sessionId);
+      },
     },
   ];
 }

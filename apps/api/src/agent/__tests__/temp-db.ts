@@ -11,6 +11,7 @@ import { NotificationsService } from '../../infra/notifications.service';
 import { PrismaService } from '../../infra/prisma.service';
 import { SettingsService } from '../../infra/settings.service';
 import { AgentQueryService } from '../agent-query.service';
+import { BreakdownService } from '../../breakdown/breakdown.service';
 import { SkillsService } from '../../skills/skills.service';
 import { ClaimService } from '../claim.service';
 import { LeaseService } from '../lease.service';
@@ -37,6 +38,8 @@ export interface AgentHarness {
   skills: SkillsService;
   /** W6 §12.6：策略两工具（check_mcp_policy / report_mcp_call）的上下文。 */
   policy: McpPolicyService;
+  /** W7 §16.1：board.* 拆解五工具的上下文（与 REST 确认页同一服务层实现）。 */
+  breakdown: BreakdownService;
   /** 造一个 Agent 凭证：只返回服务层真正用到的那部分（tokenId / name / capabilities）。 */
   agent(name: string, capabilities?: string[]): Promise<RequestAuth>;
   dispose: () => Promise<void>;
@@ -61,6 +64,7 @@ export function createAgentHarness(): AgentHarness {
   const claims = new ClaimService(prisma, settings, leases, audit, events, query);
   const writeback = new WritebackService(prisma, leases, audit, events, notifications, query);
   const policy = new McpPolicyService(prisma, audit);
+  const breakdown = new BreakdownService(prisma, audit, events);
 
   return {
     dir,
@@ -75,6 +79,7 @@ export function createAgentHarness(): AgentHarness {
     writeback,
     skills,
     policy,
+    breakdown,
     agent: async (name: string, capabilities: string[] = []) => {
       const id = newId();
       await prisma.apiToken.create({

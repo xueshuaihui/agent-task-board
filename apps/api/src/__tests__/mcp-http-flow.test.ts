@@ -44,12 +44,18 @@ import {
  */
 
 /**
- * §12 + §16.1 W6 已落地子集（9 基础 + block_task + wait_for_resume）。
+ * §12 + §16.1 已落地子集（9 基础 + block_task + wait_for_resume + 技能三工具 + 策略二工具
+ * + W7 board.* 拆解五工具）。
  * 与内存传输那份各写一份是有意的：两边都得独立对表，不互相引用。
  */
 const CHAPTER_12_TOOLS = [
   'append_log',
   'block_task',
+  'board.begin_breakdown',
+  'board.cancel_breakdown',
+  'board.finish_breakdown',
+  'board.report_progress',
+  'board.report_task_draft',
   'check_mcp_policy',
   'claim_next_task',
   'complete_task',

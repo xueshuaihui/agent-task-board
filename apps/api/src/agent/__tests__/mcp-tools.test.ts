@@ -17,13 +17,18 @@ let agent: RequestAuth;
 let client: Client;
 
 /**
- * §12 + §16.1 W6 已落地子集（9 基础 + block_task + wait_for_resume + 技能三工具 + 策略二工具）；
- * `board.*` 全套留桩在后续切片补齐（拆解归 W7、会话创建闭环归 W8/#11）。
+ * §12 + §16.1 已落地子集（9 基础 + W6 的 block_task / wait_for_resume / 技能三工具 / 策略二工具
+ * + W7 的 board.* 拆解五工具）；board.wait_for_confirmation 与 board.create_task 留桩在 W8。
  * 顺序不敏感但一条都不能多、不能少。
  */
 const W6_TOOL_NAMES = [
   'append_log',
   'block_task',
+  'board.begin_breakdown',
+  'board.cancel_breakdown',
+  'board.finish_breakdown',
+  'board.report_progress',
+  'board.report_task_draft',
   'check_mcp_policy',
   'claim_next_task',
   'complete_task',
@@ -51,6 +56,7 @@ beforeAll(async () => {
     query: h.query,
     skills: h.skills,
     policy: h.policy,
+    breakdown: h.breakdown,
   });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
@@ -90,7 +96,7 @@ function structured(result: ToolResult) {
 }
 
 describe('MCP 工具面', () => {
-  it('tools/list 暴露 12 章基础工具与 W6 技能三工具且都带 JSON Schema', async () => {
+  it('tools/list 暴露 12 章基础工具、W6 技能/策略工具与 W7 board.* 拆解工具，都带 JSON Schema', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((tool) => tool.name).sort()).toEqual(W6_TOOL_NAMES);
     expect(MCP_SERVER_NAME).toBe('agent-task-board');
@@ -108,6 +114,17 @@ describe('MCP 工具面', () => {
       'run_id',
       'summary',
       'task_id',
+    ]);
+    // §7.2 阶段 1：begin 的 JSON Schema 形状锁死（客户端侧配置/文档以此为契约）。
+    const begin = tools.find((tool) => tool.name === 'board.begin_breakdown');
+    expect(Object.keys(begin?.inputSchema.properties ?? {}).sort()).toEqual([
+      'agent_name',
+      'estimated_tasks',
+      'group_id',
+      'parent_description',
+      'parent_title',
+      'requirement_text',
+      'skill_used',
     ]);
   });
 
@@ -177,7 +194,7 @@ describe('MCP 工具面', () => {
   });
 
   it('工具表与服务层一一对应：MCP 不复制业务逻辑', () => {
-    expect(buildAgentTools({ claims: h.claims, leases: h.leases, writeback: h.writeback, query: h.query, skills: h.skills, policy: h.policy }).map((tool) => tool.name).sort()).toEqual(
+    expect(buildAgentTools({ claims: h.claims, leases: h.leases, writeback: h.writeback, query: h.query, skills: h.skills, policy: h.policy, breakdown: h.breakdown }).map((tool) => tool.name).sort()).toEqual(
       W6_TOOL_NAMES,
     );
   });
@@ -309,6 +326,7 @@ describe('MCP 工具面', () => {
     query: h.query,
     skills: h.skills,
     policy: h.policy,
+    breakdown: h.breakdown,
   });
   const ui: RequestAuth = { kind: 'ui' };
 

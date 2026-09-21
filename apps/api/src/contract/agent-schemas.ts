@@ -129,6 +129,50 @@ export const reportMcpCallSchema = z.object({
 });
 export type ReportMcpCallInput = z.infer<typeof reportMcpCallSchema>;
 
+/**
+ * v0.0.4 W7 §7.2/§7.5：拆解 board.* 工具面（begin / report_progress / report_task_draft /
+ * finish / cancel）。session_id 是 begin 返回的 UUIDv7，工具侧一律按 uuid 收；
+ * report_task_draft 的 skill_ids 允许填技能名（§7.5 r3 闭环：finish 时统一解析成 id）。
+ */
+const breakdownSessionId = z.string().uuid();
+
+export const breakdownBeginSchema = z.object({
+  requirement_text: z.string().trim().min(1).max(20000),
+  group_id: idParam.optional().nullable(),
+  parent_title: z.string().trim().min(1).max(200),
+  parent_description: z.string().trim().max(20000).optional().nullable(),
+  estimated_tasks: z.number().int().min(1).max(100).optional().nullable(),
+  agent_name: z.string().trim().max(100).optional().nullable(),
+  skill_used: z.string().trim().max(200).optional().nullable(),
+});
+export type BreakdownBeginToolInput = z.infer<typeof breakdownBeginSchema>;
+
+export const breakdownProgressReportSchema = z.object({
+  session_id: breakdownSessionId,
+  step: z.number().int().min(1).max(1000),
+  total: z.number().int().min(1).max(1000),
+  message: z.string().trim().max(500).optional().nullable(),
+});
+export type BreakdownProgressReportInput = z.infer<typeof breakdownProgressReportSchema>;
+
+export const breakdownDraftReportSchema = z.object({
+  session_id: breakdownSessionId,
+  ref: z.string().trim().min(1).max(32),
+  title: z.string().trim().min(1).max(200),
+  description: z.string().max(20000).optional().nullable(),
+  priority: z.number().int().min(0).max(3).optional(),
+  /** 值可以是技能 id 或技能名（§7.5 解析闭环）。 */
+  skill_ids: z.array(z.string().trim().min(1).max(64)).max(20).optional(),
+  acceptance: z.array(z.string().trim().min(1).max(2000)).max(20).optional(),
+  depends_on: z.array(z.string().trim().min(1).max(32)).max(50).optional(),
+  sort_order: z.number().int().min(0).max(9999).optional(),
+});
+export type BreakdownDraftReportInput = z.infer<typeof breakdownDraftReportSchema>;
+
+/** finish / cancel 同形：只有 session_id。 */
+export const breakdownSessionActionSchema = z.object({ session_id: breakdownSessionId });
+export type BreakdownSessionActionInput = z.infer<typeof breakdownSessionActionSchema>;
+
 export const listReadyQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   capabilities: z.array(capabilitySchema).max(20).default([]),

@@ -16,6 +16,7 @@ import { AuditApiController } from '../../audit-api/audit-api.controller';
 import { AuthGuard } from '../../auth/auth.guard';
 import { BackupService } from '../../backup/backup.service';
 import { BackupController } from '../../backup/backup.controller';
+import { BreakdownController } from '../../breakdown/breakdown.controller';
 import { BreakdownService } from '../../breakdown/breakdown.service';
 import { DataService } from '../../data/data.service';
 import { ImportService } from '../../data/import.service';
@@ -95,7 +96,7 @@ export function applyDiShim(): void {
   declare(ClaimService, [PrismaService, SettingsService, LeaseService, AuditService, EventsService, AgentQueryService]);
   declare(WritebackService, [PrismaService, LeaseService, AuditService, EventsService, NotificationsService, AgentQueryService]);
   declare(AgentController, [ClaimService, LeaseService, WritebackService, AgentQueryService]);
-  declare(McpController, [ClaimService, LeaseService, WritebackService, AgentQueryService, SkillsService, McpPolicyService]);
+  declare(McpController, [ClaimService, LeaseService, WritebackService, AgentQueryService, SkillsService, McpPolicyService, BreakdownService]);
 
   // ── tasks
   declare(TasksService, [
@@ -113,6 +114,7 @@ export function applyDiShim(): void {
 
   // ── v0.0.4 W7 需求拆解
   declare(BreakdownService, [PrismaService, AuditService, EventsService]);
+  declare(BreakdownController, [BreakdownService]);
 
   // ── field-defs / templates / tokens
   declare(FieldDefsService, [PrismaService, AuditService, SettingsService]);
