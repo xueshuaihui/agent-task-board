@@ -503,11 +503,21 @@ export class TasksService {
     return this.getCard(id);
   }
 
-  /** 4.3.1 规则 4：物理删除 + 级联产物目录；RUNNING 必须先强制停止。 */
+  /**
+   * 4.3.1 规则 4：物理删除 + 级联产物目录；RUNNING 必须先强制停止。
+   *
+   * v0.0.4 W8-a3 §8.6/§8.7（r3）撤销守卫：「5 秒撤销」= UI 在 5 秒窗口内调用本存量端点，
+   * 时限归前端（服务端不复核窗口），服务端守的是「仅允许撤销 origin_type=agent 且未领取」——
+   * agent 直建且未领取（无 lease_id / claimed_at）的任务允许 UI 凭证删除，并在
+   * task_creation_logs 补记一条 user_action='cancelled' 流水（撤销与创建/取消/超时同表同词表）；
+   * 已领取或非 agent 来源沿用现行规则（RUNNING/子任务护栏不变），不记撤销流水。
+   */
   async remove(id: string): Promise<{
     id: string;
     deleted_runs: number;
     unblocked_ids: string[];
+    /** §8.6：本次删除是否按「撤销 agent 直建任务」记账。 */
+    undone: boolean;
   }> {
     const task = await this.requireTask(id);
     if (task.status === 'RUNNING') {
@@ -520,11 +530,24 @@ export class TasksService {
         children: childCount,
       });
     }
+    const undone = task.originType === 'agent' && !task.leaseId && !task.claimedAt;
     const runCount = await this.prisma.taskRun.count({ where: { taskId: id } });
     const dependents = await this.unfinishedDependents(id);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.task.delete({ where: { id } });
+      if (undone) {
+        // 撤销流水与任务删除同事务：task_creation_logs.task_id 无外键（0013），
+        // 物理删行后日志仍可读；source 记 'ui' 标明这是 UI 撤销动作的记账而非创建通道。
+        await tx.$executeRawUnsafe(
+          `INSERT INTO task_creation_logs (task_id, session_id, agent_name, source, confirmation, user_action)
+           VALUES (?, ?, ?, 'ui', ?, 'cancelled')`,
+          id,
+          task.originSessionId,
+          task.originAgent,
+          task.confirmationMode,
+        );
+      }
       await this.audit.record(
         {
           actorType: 'user',
@@ -551,7 +574,7 @@ export class TasksService {
     }
     const unblocked = await this.recomputeUnblocked(dependents);
     this.events.emit('task.deleted', { task_id: id, unblocked_ids: unblocked });
-    return { id, deleted_runs: runCount, unblocked_ids: unblocked };
+    return { id, deleted_runs: runCount, unblocked_ids: unblocked, undone };
   }
 
   // ---------------------------------------------------------------- 依赖

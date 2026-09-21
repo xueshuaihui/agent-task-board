@@ -68,7 +68,7 @@ export function createAgentHarness(): AgentHarness {
   const writeback = new WritebackService(prisma, leases, audit, events, notifications, query);
   const policy = new McpPolicyService(prisma, audit);
   const breakdown = new BreakdownService(prisma, audit, events);
-  const creation = new CreationService(prisma, settings, audit, events, skills);
+  const creation = new CreationService(prisma, settings, audit, events, skills, notifications);
 
   return {
     dir,

@@ -8,6 +8,11 @@ import { applyMigrations, migrationsDir } from '../../infra/bootstrap';
 import { callAgentTool } from '../../mcp/mcp.server';
 import { createAgentHarness, type AgentHarness } from '../../agent/__tests__/temp-db';
 import { skillCreateSchema } from '../../skills/skills.dto';
+import type { ArtifactsService } from '../../artifacts/artifacts.service';
+import { AuditService } from '../../infra/audit.service';
+import type { AppLogger } from '../../infra/logger';
+import { NotificationsService } from '../../infra/notifications.service';
+import { TasksService } from '../../tasks/tasks.service';
 
 /**
  * v0.0.4 W8 第一片 + W8-a2 第二片（§8.7）：board.create_task 三模式全闭环。
@@ -85,14 +90,14 @@ describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0013）', 
       const upTo12 = applyMigrations();
       expect(upTo12[upTo12.length - 1]).toBe(12);
 
-      // 2) 切回全量迁移目录：应只增量应用 0013。
+      // 2) 切回全量迁移目录：应只增量应用 0013/0014（W8-a3 追加通知 kind 词表）。
       delete process.env.ATB_MIGRATIONS_DIR;
       const applied = applyMigrations();
-      expect(applied).toEqual([13]); // 0001~0012 不重放
+      expect(applied).toEqual([13, 14]); // 0001~0012 不重放
 
       const check = new DatabaseSync(path.join(dir, 'jarvis.db'), { readOnly: true });
       const version = check.prepare('PRAGMA user_version').get() as { user_version: number };
-      expect(version.user_version).toBe(13);
+      expect(version.user_version).toBe(14);
       const tables = check
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('agent_sessions','task_creation_logs')")
         .all() as { name: string }[];
@@ -105,6 +110,14 @@ describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0013）', 
       }
       // 升级前已存在的任务行吃常量默认 'user'（演练库此刻还没有行，用显式插入验证默认值语义）。
       check.close();
+      // 0014：notifications.kind CHECK 整表重建后放行 creation_request（§13.9 r3 新规则键），
+      // 未知 kind 仍被词表挡住。演练库此时可读写，直接拿 sqlite 句柄探一次。
+      const probe = new DatabaseSync(path.join(dir, 'jarvis.db'));
+      probe.prepare(`INSERT INTO notifications (id, kind, message) VALUES ('n_ok', 'creation_request', 'x')`).run();
+      expect(() =>
+        probe.prepare(`INSERT INTO notifications (id, kind, message) VALUES ('n_bad', 'sms', 'x')`).run(),
+      ).toThrow();
+      probe.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });
       if (previous.data === undefined) delete process.env.ATB_DATA_DIR;
@@ -302,7 +315,8 @@ describe('board.create_task light 轻确认决策闭环', () => {
     expect(pending).toMatchObject({ created: false, pending: true, confirmation_mode: 'light' });
     expect(pending.expires_at).toBeTruthy();
     expect(requestedCount()).toBe(before + 1);
-    const card = h.emitted.slice(-1).find((e) => e.event === 'agent.task_requested')!;
+    // notification.created（§13.9 待处理通知）会紧跟卡片事件入列，倒序找最近一张卡片。
+    const card = [...h.emitted].reverse().find((e) => e.event === 'agent.task_requested')!;
     expect(card.data).toMatchObject({
       request_id: pending.request_id,
       status: 'pending',
@@ -516,5 +530,149 @@ describe('board.create_task 校验与鉴权', () => {
     await expect(
       call('board.create_task', { ...baseInput, title: '  ', confirmation_mode: 'direct' }),
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+  });
+});
+
+// ---------------------------------------------------------------- W8-a3：§13.9 通知 / §8.7 批量 / §8.6 撤销
+
+describe('§13.9 creation_request 站内通知', () => {
+  it('silent 创建成功 → 带 task_id 的 creation_request 通知一条 + notification.created WS 事件', async () => {
+    const before = h.emitted.filter((e) => e.event === 'notification.created').length;
+    const result = (await call('board.create_task', {
+      title: '静默通知探针任务',
+      type: '缺陷',
+      session_id: 'conv-notif-1',
+      agent_name: 'qoder-1',
+      confirmation_mode: 'silent',
+    })) as { task_id: string };
+    const rows = await h.prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+      `SELECT kind, task_id, message FROM notifications WHERE kind = 'creation_request' AND task_id = ?`,
+      result.task_id,
+    );
+    expect(rows).toHaveLength(1);
+    expect(String(rows[0]!.message)).toContain('已创建任务');
+    expect(h.emitted.filter((e) => e.event === 'notification.created').length).toBeGreaterThan(before);
+  });
+
+  it('light 待决请求 → 挂空 task_id 的 creation_request 通知（§13.9 待处理区数据源）', async () => {
+    const pending = (await call('board.create_task', {
+      title: '轻确认通知探针',
+      type: '缺陷',
+      session_id: 'conv-notif-2',
+      agent_name: 'qoder-1',
+      confirmation_mode: 'light',
+      wait: false,
+    })) as { request_id: string };
+    const rows = await h.prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+      `SELECT task_id, message FROM notifications WHERE kind = 'creation_request' AND message LIKE ?`,
+      '%轻确认通知探针%',
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.task_id).toBeNull();
+    expect(String(rows[0]!.message)).toContain('请求创建任务');
+    await settle(pending.request_id, 'cancel');
+  });
+});
+
+describe('board.create_tasks_batch（§8.7 批量·轻量版）', () => {
+  it('UI 凭证调用 → FORBIDDEN（Agent 凭证专属）', async () => {
+    await expect(
+      call('board.create_tasks_batch', { tasks: [{ title: 'x', type: '缺陷' }], session_id: 'conv-b0' }, ui),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('direct 三条含一条坏类型：逐条结果对位、坏条目不熔断、会话计数与通知逐条就位', async () => {
+    const res = (await call('board.create_tasks_batch', {
+      tasks: [{ title: '走查登录页样式', type: '缺陷' }, { title: '批量坏条目', type: '太空类型' }, { title: '补导出接口说明', type: '子任务' }],
+      session_id: 'conv-batch-1',
+      agent_name: 'qoder-1',
+      confirmation_mode: 'direct',
+    })) as { results: unknown[]; task_ids: string[]; request_ids: string[] };
+    expect(res.results).toHaveLength(3);
+    expect(res.task_ids).toHaveLength(2);
+    expect(res.request_ids).toEqual([]);
+    expect(res.results[1]).toMatchObject({ index: 1, created: false, error: { code: 'VALIDATION_FAILED' } });
+    const sessions = await h.prisma.$queryRawUnsafe<{ task_count: number }[]>(
+      `SELECT task_count FROM agent_sessions WHERE session_id = 'conv-batch-1'`,
+    );
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.task_count).toBe(2); // 只给真正建成的条目记账
+    expect(
+      await countOf('notifications', "WHERE kind = 'creation_request' AND task_id IN (?, ?)", res.task_ids),
+    ).toBe(2); // §13.9：direct/silent 成功逐条通知
+  });
+
+  it('light 条目缺省不阻塞：即时返回 request_id，get_creation_status 可查待决', async () => {
+    const res = (await call('board.create_tasks_batch', {
+      tasks: [{ title: '批量轻确认甲', type: '缺陷' }],
+      session_id: 'conv-batch-2',
+      agent_name: 'qoder-1',
+      confirmation_mode: 'light',
+    })) as { request_ids: string[] };
+    expect(res.request_ids).toHaveLength(1);
+    const view = h.creation.status(res.request_ids[0]!);
+    expect(view).toMatchObject({ status: 'pending', title: '批量轻确认甲', source: 'mcp' });
+    await settle(res.request_ids[0]!, 'cancel');
+  });
+});
+
+describe('§8.6 撤销守卫（DELETE /tasks/{id} 的撤销记账）', () => {
+  const tasksService = () =>
+    new TasksService(
+      h.prisma,
+      h.settings,
+      new AuditService(h.prisma),
+      h.events,
+      new NotificationsService(h.prisma, h.events),
+      { cleanupTaskDir: () => {} } as unknown as ArtifactsService,
+      h.skills,
+      { error: () => {} } as unknown as AppLogger,
+    );
+
+  it('agent 直建且未领取：UI 凭证删除成功并补记 cancelled 流水（undone:true）', async () => {
+    const created = (await call('board.create_task', {
+      title: '撤销探针任务',
+      type: '缺陷',
+      session_id: 'conv-undo',
+      agent_name: 'qoder-1',
+      confirmation_mode: 'direct',
+    })) as { task_id: string };
+    const res = await tasksService().remove(created.task_id);
+    expect(res.undone).toBe(true);
+    expect(await countOf('tasks', 'WHERE id = ?', [created.task_id])).toBe(0);
+    const logs = await h.prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+      `SELECT source, confirmation, user_action, agent_name, session_id FROM task_creation_logs WHERE task_id = ? ORDER BY id`,
+      created.task_id,
+    );
+    expect(logs).toHaveLength(2); // 创建一条 + 撤销一条（task_id 无外键，物理删后仍可读）
+    expect(logs[0]).toMatchObject({ source: 'mcp', user_action: 'created' });
+    expect(logs[1]).toMatchObject({
+      source: 'ui',
+      confirmation: 'direct',
+      user_action: 'cancelled',
+      agent_name: 'qoder-1',
+      session_id: 'conv-undo',
+    });
+  });
+
+  it('非 agent 来源 / 已领取的 agent 任务：沿用现行规则，不记 cancelled 流水', async () => {
+    await h.prisma.$executeRawUnsafe(`INSERT INTO tasks (id, type, title) VALUES ('undo_manual', '缺陷', '手工任务')`);
+    expect((await tasksService().remove('undo_manual')).undone).toBe(false);
+
+    const created = (await call('board.create_task', {
+      title: '已领取探针任务',
+      type: '缺陷',
+      session_id: 'conv-undo2',
+      agent_name: 'qoder-1',
+      confirmation_mode: 'silent',
+    })) as { task_id: string };
+    await h.prisma.task.update({
+      where: { id: created.task_id },
+      data: { claimedAt: '2026-09-20 00:00:00', leaseId: 'lease-undo' },
+    });
+    expect((await tasksService().remove(created.task_id)).undone).toBe(false);
+    expect(
+      await countOf('task_creation_logs', "WHERE task_id = ? AND user_action = 'cancelled'", [created.task_id]),
+    ).toBe(0);
   });
 });

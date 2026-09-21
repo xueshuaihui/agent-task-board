@@ -19,7 +19,8 @@ let client: Client;
 /**
  * §12 + §16.1 已落地子集（9 基础 + W6 的 block_task / wait_for_resume / 技能三工具 / 策略二工具
  * + W7 的 board.* 拆解五工具 + W8-a2 的创建闭环三工具
- * （board.create_task / get_creation_status / wait_for_confirmation，§8.7 r3）。
+ * （board.create_task / get_creation_status / wait_for_confirmation，§8.7 r3）
+ * + W8-a3 的 board.create_tasks_batch（§8.7 批量轻量版））。
  * 顺序不敏感但一条都不能多、不能少。
  */
 const W6_TOOL_NAMES = [
@@ -28,6 +29,7 @@ const W6_TOOL_NAMES = [
   'board.begin_breakdown',
   'board.cancel_breakdown',
   'board.create_task',
+  'board.create_tasks_batch',
   'board.finish_breakdown',
   'board.get_creation_status',
   'board.report_progress',

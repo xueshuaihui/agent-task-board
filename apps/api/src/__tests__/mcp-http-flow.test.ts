@@ -54,6 +54,7 @@ const CHAPTER_12_TOOLS = [
   'board.begin_breakdown',
   'board.cancel_breakdown',
   'board.create_task',
+  'board.create_tasks_batch',
   'board.finish_breakdown',
   'board.get_creation_status',
   'board.report_progress',

@@ -79,6 +79,9 @@ export const NOTIFICATION_KINDS = [
   'lease_expired',
   'review_rejected',
   'task_unblocked',
+  // v0.0.4 W8-a3 §13.9（r3）：会话创建通知规则键（light 待决请求 / silent·direct 创建成功）；
+  // 落库词表权威在迁移 0014 的 notifications.kind CHECK。
+  'creation_request',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 

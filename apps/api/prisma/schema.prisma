@@ -268,6 +268,7 @@ model IdSequence {
 
 model Notification {
   id        String  @id
+  // 词表权威在迁移 CHECK（0001 五类 + 0014 追加 creation_request，§13.9 r3）；镜像列保持无约束 String。
   kind      String
   taskId    String? @map("task_id")
   message   String

@@ -198,6 +198,28 @@ export const createTaskSchema = z.object({
 });
 export type CreateTaskToolInput = z.infer<typeof createTaskSchema>;
 
+/**
+ * v0.0.4 W8-a3 §8.7：board.create_tasks_batch（批量创建·轻量版）。
+ * 会话/Agent 标识/确认模式是批次级（同一次会话发一批），单条载荷只带任务字段；
+ * 最多 20 条——批量是轻量路径，不开无上限的口子。
+ */
+export const createTaskBatchItemSchema = createTaskSchema.omit({
+  session_id: true,
+  agent_name: true,
+  confirmation_mode: true,
+  wait: true,
+});
+export const createTasksBatchSchema = z.object({
+  tasks: z.array(createTaskBatchItemSchema).min(1).max(20),
+  session_id: z.string().trim().min(1).max(100),
+  agent_name: z.string().trim().max(100).optional().nullable(),
+  confirmation_mode: z.enum(['direct', 'light', 'silent']).optional(),
+  // 批量缺省 wait:false（区别于单条缺省阻塞）：light 逐条即时返回 request_id 供轮询，
+  // 避免最坏 N×35s 串行阻塞；wait:true 时逐条走与单条一致的阻塞等决策语义。
+  wait: z.boolean().optional(),
+});
+export type CreateTasksBatchInput = z.infer<typeof createTasksBatchSchema>;
+
 /** v0.0.4 W8-a2 §8.7：board.get_creation_status / board.wait_for_confirmation 共用入参（按请求 id 查/等）。 */
 export const creationRequestRefSchema = z.object({
   request_id: z.string().trim().min(1).max(64),

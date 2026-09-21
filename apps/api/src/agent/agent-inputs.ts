@@ -10,6 +10,7 @@ import {
   claimSchema,
   completeSchema,
   createTaskSchema,
+  createTasksBatchSchema,
   creationRequestRefSchema,
   failSchema,
   heartbeatSchema,
@@ -39,6 +40,7 @@ export type {
   BreakdownProgressReportInput,
   BreakdownSessionActionInput,
   CreateTaskToolInput,
+  CreateTasksBatchInput,
   CreationRequestRefInput,
 } from '../contract/agent-schemas';
 
@@ -60,6 +62,7 @@ export {
   claimSchema,
   completeSchema,
   createTaskSchema,
+  createTasksBatchSchema,
   creationRequestRefSchema,
   failSchema,
   heartbeatSchema,

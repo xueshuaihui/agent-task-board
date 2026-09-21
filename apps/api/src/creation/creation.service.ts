@@ -2,10 +2,11 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ApiException } from '../contract/errors';
 import { DEFAULT_GROUP_ID } from '../contract/enums';
 import { newId, nextTaskId } from '../contract/ids';
-import type { CreateTaskToolInput } from '../contract/agent-schemas';
+import type { CreateTaskToolInput, CreateTasksBatchInput } from '../contract/agent-schemas';
 import type { CreationDecisionInput, CreationRequestCreateInput } from './creation.dto';
 import { AuditService } from '../infra/audit.service';
 import { EventsService } from '../infra/events.service';
+import { NotificationsService } from '../infra/notifications.service';
 import { PrismaService } from '../infra/prisma.service';
 import { SettingsService } from '../infra/settings.service';
 import { SkillsService } from '../skills/skills.service';
@@ -98,6 +99,23 @@ export interface CreateTaskPendingResult {
 
 export type CreateTaskToolResult = CreateTaskResult | CreateTaskNotCreatedResult | CreateTaskPendingResult;
 
+/** §8.7 批量：单条载荷校验/落库失败不熔断整批，逐条归宿各回各的。 */
+export interface CreateTaskBatchItemFailure {
+  index: number;
+  created: false;
+  error: { code: string; message: string };
+}
+
+export type CreateTaskBatchItemResult = CreateTaskToolResult | CreateTaskBatchItemFailure;
+
+export interface CreateTasksBatchResult {
+  /** 与入参 tasks 一一对位的逐条结果（含 index 定位的失败条目）。 */
+  results: CreateTaskBatchItemResult[];
+  task_ids: string[];
+  /** light 条目（含 direct 命中重复升级的）的待决请求 id 列表，get_creation_status 轮询用。 */
+  request_ids: string[];
+}
+
 /** validate 的入参形状：REST/edit 载荷可能没有 session_id（或为 null），统一按可空收。 */
 type ValidateInput = Partial<Omit<CreateTaskToolInput, 'session_id'>> & { session_id?: string | null };
 
@@ -153,6 +171,8 @@ export class CreationService implements OnModuleDestroy {
     private readonly events: EventsService,
     /** 技能名→ID 解析后的绑定归一（{skill_id, version} JSON，与 REST 建任务同一存储形状）。 */
     private readonly skills: SkillsService,
+    /** §13.9（r3）：creation_request 规则键的站内通知落库处（复用存量 notifications 模块，不新增存储）。 */
+    private readonly notifications: NotificationsService,
   ) {}
 
   onModuleDestroy(): void {
@@ -185,6 +205,41 @@ export class CreationService implements OnModuleDestroy {
       agent_name: agentName,
       confirmation_mode: mode,
       skill_resolution: { unresolved },
+    };
+  }
+
+  // ---------------------------------------------------------------- board.create_tasks_batch
+
+  /**
+   * §8.7 批量创建（轻量版）：串行逐条复用 createFromAgent——direct/silent 的落库仍是
+   * 每条自己的单事务（任务+会话记账+流水+审计），轻量版不开跨条 all-or-nothing 大事务；
+   * 重复检测（§8.5）逐条生效，批内先建/先待决的条目会进入后条目的检测视野。
+   * 单条失败（校验/归档组等）记条目错误后继续，不熔断整批。
+   */
+  async createBatchFromAgent(input: CreateTasksBatchInput, credentialName: string): Promise<CreateTasksBatchResult> {
+    const results: CreateTaskBatchItemResult[] = [];
+    for (const [index, item] of input.tasks.entries()) {
+      try {
+        const outcome = await this.createFromAgent(
+          {
+            ...item,
+            session_id: input.session_id,
+            agent_name: input.agent_name,
+            confirmation_mode: input.confirmation_mode,
+            wait: input.wait ?? false,
+          },
+          credentialName,
+        );
+        results.push(outcome);
+      } catch (error) {
+        if (!(error instanceof ApiException)) throw error;
+        results.push({ index, created: false, error: { code: error.code, message: error.message } });
+      }
+    }
+    return {
+      results,
+      task_ids: results.flatMap((r) => ('created' in r && r.created === true ? [r.task_id] : [])),
+      request_ids: results.flatMap((r) => ('request_id' in r && r.request_id ? [r.request_id] : [])),
     };
   }
 
@@ -304,6 +359,9 @@ export class CreationService implements OnModuleDestroy {
     this.pruneSettled();
 
     this.events.emit('agent.task_requested', this.view(entry) as unknown as Record<string, unknown>);
+    // §13.9（r3）creation_request 规则键的「待处理」通知：待决期任务未落库，挂空 task_id
+    // （notifications.task_id 有外键，请求 id 不能塞进去）；W9 前端铃铛已白名单此 kind。
+    await this.notifications.push('creation_request', null, `🤖 ${agentName} 请求创建任务 · ${draft.title}`);
 
     if (!wait) {
       return {
@@ -516,6 +574,11 @@ export class CreationService implements OnModuleDestroy {
     });
 
     this.events.emit('task.created', { id: taskId });
+    // §8.2/§13.9：静默模式「不弹确认卡片、仅发通知」，直接/静默创建成功同走 creation_request
+    // 规则键（direct 弹不弹卡片都不影响这条站内通知，§8.8「创建后通知」）。
+    if (mode === 'direct' || mode === 'silent') {
+      await this.notifications.push('creation_request', taskId, `🤖 ${agentName} 已创建任务 ${taskId} · ${draft.title}`);
+    }
     return { taskId, unresolved };
   }
 

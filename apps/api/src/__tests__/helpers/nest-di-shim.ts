@@ -119,7 +119,7 @@ export function applyDiShim(): void {
   declare(BreakdownController, [BreakdownService]);
 
   // ── v0.0.4 W8 会话创建闭环（board.create_task 服务层 + W8-a2 REST 决策端点 §16.2）
-  declare(CreationService, [PrismaService, SettingsService, AuditService, EventsService, SkillsService]);
+  declare(CreationService, [PrismaService, SettingsService, AuditService, EventsService, SkillsService, NotificationsService]);
   declare(CreationController, [CreationService]);
 
   // ── field-defs / templates / tokens

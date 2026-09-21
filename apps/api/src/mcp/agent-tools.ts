@@ -13,6 +13,7 @@ import {
   claimSchema,
   completeSchema,
   createTaskSchema,
+  createTasksBatchSchema,
   creationRequestRefSchema,
   failSchema,
   getTaskSchema,
@@ -32,6 +33,7 @@ import {
   type ClaimInput,
   type CompleteInput,
   type CreateTaskToolInput,
+  type CreateTasksBatchInput,
   type CreationRequestRefInput,
   type FailInput,
   type GetTaskInput,
@@ -270,6 +272,18 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
         const input = args as CreateTaskToolInput;
         // agent_name 缺省取凭证名：来源列与流水都据此记账（同 begin_breakdown 口径）。
         return ctx.creation.createFromAgent(input, agent.tokenName);
+      },
+    },
+    {
+      name: 'board.create_tasks_batch',
+      description:
+        '批量创建任务（§8.7 轻量版；≤20 条，串行逐条复用 create_task 落库与重复检测，单条失败不熔断整批；' +
+        'light 条目缺省不阻塞、即时返回 request_id，wait:true 逐条阻塞等决策）',
+      input: createTasksBatchSchema,
+      run: async (args, auth) => {
+        const agent = agentOf(auth);
+        const input = args as CreateTasksBatchInput;
+        return ctx.creation.createBatchFromAgent(input, input.agent_name?.trim() || agent.tokenName);
       },
     },
     {
