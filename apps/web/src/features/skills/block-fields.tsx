@@ -1,4 +1,5 @@
 import { ChevronDown } from 'lucide-react';
+import { useState } from 'react';
 import { cn } from '@/lib/cn';
 import { Field, Input, Menu, Select, Textarea, type MenuGroup } from '@/components/ui';
 import { ON_ERROR_META, PARALLEL_MERGE_META, SKILL_ORIGIN_META, VALUE_TYPE_OPTIONS } from './meta';
@@ -287,6 +288,8 @@ export function BlockFields({ block, variableOptions, targetOptions, readOnly = 
  * content 是 passthrough JSON，版本快照/导出 .atskill/SKILL.md 天然兼容）。
  * 三来源分组 + 来源徽标（§9.10 既有口径）；重名技能追加 id 后 6 位消歧后缀
  * （§9.2 r2 允许重名，与技能卡片同口径）。技能库空/加载中退回手填 id 输入框。
+ * W3 遗留①：列表顶部提供名称搜索框，大小写不敏感子串过滤，保留分组与消歧口径；
+ * 无匹配时渲染「无匹配技能」禁用态。
  */
 function SubskillField({
   block,
@@ -296,6 +299,7 @@ function SubskillField({
   onPatch: (patch: Partial<SkillBlock>) => void;
 }) {
   const skills = useSkills();
+  const [query, setQuery] = useState('');
   const items = skills.data?.items ?? [];
   if (items.length === 0) {
     return (
@@ -304,14 +308,16 @@ function SubskillField({
       </Field>
     );
   }
-  // r2 允许重名：同名集合驱动 id 短后缀消歧（与 skill-library-page 同口径）。
+  // r2 允许重名：同名集合基于全量列表统计，保证过滤前后消歧后缀口径一致。
   const nameCount = new Map<string, number>();
   for (const skill of items) nameCount.set(skill.name, (nameCount.get(skill.name) ?? 0) + 1);
+  const needle = query.trim().toLowerCase();
+  const visible = needle ? items.filter((skill) => skill.name.toLowerCase().includes(needle)) : items;
   const selected = items.find((skill) => skill.id === block.skillRef);
   const groups: { label: string; skills: Skill[] }[] = (
     ['custom', 'imported', 'default'] as SkillOrigin[]
   )
-    .map((origin) => ({ label: SKILL_ORIGIN_META[origin].label, skills: items.filter((skill) => skill.source === origin) }))
+    .map((origin) => ({ label: SKILL_ORIGIN_META[origin].label, skills: visible.filter((skill) => skill.source === origin) }))
     .filter((group) => group.skills.length > 0);
   const menuGroups: MenuGroup[] = groups.map((group) => ({
     label: group.label,
@@ -321,6 +327,12 @@ function SubskillField({
       onSelect: () => onPatch({ skillRef: skill.id }),
     })),
   }));
+  if (menuGroups.length === 0) {
+    menuGroups.push({
+      label: '搜索结果',
+      items: [{ id: '__no-match', disabled: true, label: <span className="text-text-tertiary">无匹配技能「{query.trim()}」</span> }],
+    });
+  }
   if (block.skillRef && !selected) {
     menuGroups.unshift({
       label: '技能库外引用',
@@ -333,31 +345,40 @@ function SubskillField({
   });
   return (
     <Field label="引用技能" hint="从技能库选择子技能，按唯一 id 绑定；徽标为来源">
-      <Menu
-        width={300}
-        selectedId={selected ? selected.id : block.skillRef}
-        groups={menuGroups}
-        trigger={() => (
-          <button
-            type="button"
-            className={cn(
-              'flex h-8 w-full items-center justify-between gap-2 rounded-control border border-border bg-bg-raised px-3 text-left text-body text-text-primary',
-              'transition-colors duration-120 ease-out hover:border-border-strong',
-              'focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary-ring',
-              'disabled:cursor-not-allowed disabled:opacity-60',
-            )}
-          >
-            {selected ? (
-              <SkillRefOption skill={selected} duplicateName={(nameCount.get(selected.name) ?? 0) > 1} />
-            ) : (
-              <span className="min-w-0 flex-1 truncate text-text-tertiary">
-                {block.skillRef ? `${block.skillRef}（不在技能库）` : '（选择子技能）'}
-              </span>
-            )}
-            <ChevronDown className="pointer-events-none size-4 shrink-0 text-text-tertiary" />
-          </button>
-        )}
-      />
+      <div className="flex flex-col gap-1.5">
+        <Input
+          value={query}
+          placeholder="搜索技能名称…"
+          aria-label="搜索技能名称"
+          className="h-7 text-aux"
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <Menu
+          width={300}
+          selectedId={selected ? selected.id : block.skillRef}
+          groups={menuGroups}
+          trigger={() => (
+            <button
+              type="button"
+              className={cn(
+                'flex h-8 w-full items-center justify-between gap-2 rounded-control border border-border bg-bg-raised px-3 text-left text-body text-text-primary',
+                'transition-colors duration-120 ease-out hover:border-border-strong',
+                'focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary-ring',
+                'disabled:cursor-not-allowed disabled:opacity-60',
+              )}
+            >
+              {selected ? (
+                <SkillRefOption skill={selected} duplicateName={(nameCount.get(selected.name) ?? 0) > 1} />
+              ) : (
+                <span className="min-w-0 flex-1 truncate text-text-tertiary">
+                  {block.skillRef ? `${block.skillRef}（不在技能库）` : '（选择子技能）'}
+                </span>
+              )}
+              <ChevronDown className="pointer-events-none size-4 shrink-0 text-text-tertiary" />
+            </button>
+          )}
+        />
+      </div>
     </Field>
   );
 }
