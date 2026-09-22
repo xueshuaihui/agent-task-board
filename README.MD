@@ -329,7 +329,9 @@ export GH_TOKEN=<你的 fine-grained token>        # 用完即撤销，见下⚠
 
 ## 运行须知（签名与 Gatekeeper，无证书降级方案）
 
-**当前发布口径：未签名（本机无 Apple Developer 证书，阶段一按降级方案交付）。**
+**当前发布口径：ad-hoc 签名（本机无 Apple Developer 证书，阶段一按无证书降级方案交付）。**
+产物由 `scripts/package-release.sh` 在 .app 产出后执行 `codesign --force --deep --sign -` ad-hoc 签名并过验签门禁：
+Apple Silicon 上不再判「已损坏，无法打开」；但仍未做付费证书公证，首次打开会拦「无法验证开发者」，二选一解除：
 
 - **首次打开被 Gatekeeper 拦截**是预期行为，两种解除方式：
   1. 右键 `.app` →「打开」→ 再点「打开」（弹窗确认一次即可，之后正常启动）；

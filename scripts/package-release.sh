@@ -3,8 +3,8 @@
 # Jarvis Workbench 一键打包脚本（macOS）
 #
 # 把 README「路径 C」+《docs/发布手册.md》的构建→冒烟→校验和全流程串成一条命令：
-#   质量门禁 → 构建 api/web → 装配 sidecar → tauri build(.app) → hdiutil(.dmg)
-#   → 产物冒烟（ATB_READY + REST 401）→ SHA-256 校验和
+#   质量门禁 → 构建 api/web → 装配 sidecar → tauri build(.app) → codesign ad-hoc 签名/验签
+#   → hdiutil(.dmg) → 产物冒烟（ATB_READY + REST 401）→ SHA-256 校验和
 #
 # 用法：
 #   bash scripts/package-release.sh                 # 全流程（含门禁与冒烟）
@@ -19,8 +19,11 @@
 #   - 仓库已 npm install（脚本缺 node_modules 时会自动补装）
 #
 # 已知坑（脚本已内置处理，见发布手册 §5.2）：
-#   - 无头会话下 `tauri build` 的 DMG 步骤可能失败（osascript），属预期；
-#     只要 .app 产出即视为成功，.dmg tauri 已出则复用，未出才由本脚本用 hdiutil 兜底生成。
+#   - 无头会话下 `tauri build` 的 DMG 步骤可能失败（osascript），属预期；只要 .app 产出即视为成功。
+#   - 未签名 .app 在 Apple Silicon 上双击必报「已损坏，无法打开」（arm64 强制至少 ad-hoc 签名），
+#     故第 4.5 步对 .app 做 codesign ad-hoc 签名 + 验签硬门禁；tauri 若已出 .dmg 打包的是未签名
+#     .app，一律作废删除，签名后由本脚本用 hdiutil 统一重出（每架构只生成一次，二次生成会挤爆
+#     runner 磁盘报 No space left，也不复用 tauri dmg）。
 
 set -euo pipefail
 
@@ -128,26 +131,30 @@ else
   fail "tauri build 后未找到 ${APP_PATH}（退出码 ${TAURI_EXIT}）"
 fi
 
-# ---------------------------------------------------------------- 第 5 步：生成 .dmg（tauri 已出则复用，未出才 hdiutil 兜底）
+# ---------------------------------------------------------------- 第 4.5 步：codesign ad-hoc 签名 + 验签硬门禁
+# 无 Apple Developer 证书的降级方案：`--sign -` 即 ad-hoc 签名，满足 Apple Silicon「二进制至少
+# ad-hoc 签名」的硬要求（否则双击必报「已损坏」）；--deep 覆盖 resources/sidecar 内嵌套二进制
+# （node、Prisma query engine .dylib/.node 等）。付费证书公证是后续升级项，见手册 §2.4。
+step "第 4.5 步 · codesign ad-hoc 签名 + 验签"
+codesign --force --deep --sign - "$APP_PATH" \
+  || fail "codesign ad-hoc 签名失败：${APP_PATH}"
+codesign --verify --deep --strict "$APP_PATH" \
+  || fail "ad-hoc 签名校验未过：${APP_PATH}"
+ok ".app 已 ad-hoc 签名并通过验签"
+
+# ---------------------------------------------------------------- 第 5 步：签名后统一重出 .dmg（tauri dmg 打包的是未签名 .app，一律作废）
 if [ "$SKIP_DMG" -eq 1 ]; then
   step "第 5 步 · 生成 .dmg（--skip-dmg 已跳过）"
 else
-  step "第 5 步 · 生成 .dmg"
-  TAURI_DMG=""
-  if [ -d "$BUNDLE_DIR/dmg" ]; then
-    TAURI_DMG="$(find "$BUNDLE_DIR/dmg" -maxdepth 1 -name '*.dmg' -print -quit 2>/dev/null || true)"
-  fi
-  if [ -n "$TAURI_DMG" ]; then
-    DMG_PATH="$TAURI_DMG"
-    ok ".dmg 产出：${DMG_PATH}（复用 tauri 产物，跳过兜底 hdiutil）"
-  else
-    mkdir -p "$BUNDLE_DIR/dmg"
-    rm -f "$DMG_PATH"
-    hdiutil create -volname "Jarvis Workbench" \
-      -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH" > /dev/null \
-      || fail "hdiutil 生成 .dmg 失败"
-    ok ".dmg 产出：${DMG_PATH}（hdiutil 兜底生成）"
-  fi
+  step "第 5 步 · 生成 .dmg（基于已签名 .app）"
+  # tauri 若已产出 .dmg，其内容是签名前的 .app，必须删除后从已签名 .app 重出；
+  # 每架构只生成一次（beta.1 二次生成曾把 arm64 runner 磁盘挤爆报 No space left）。
+  rm -f "$BUNDLE_DIR"/dmg/*.dmg
+  mkdir -p "$BUNDLE_DIR/dmg"
+  hdiutil create -volname "Jarvis Workbench" \
+    -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH" > /dev/null \
+    || fail "hdiutil 生成 .dmg 失败"
+  ok ".dmg 产出：${DMG_PATH}（签名后 hdiutil 重出）"
 fi
 
 # ---------------------------------------------------------------- 第 6 步：产物冒烟
@@ -184,7 +191,10 @@ else
   HTTP_CODE="$(curl -s --noproxy '*' -o /dev/null -w '%{http_code}' "http://127.0.0.1:$SMOKE_PORT/api/v1/tasks")"
   [ "$HTTP_CODE" = "401" ] || fail "REST 未返回 401（实际 ${HTTP_CODE}），鉴权守卫异常"
   ok "REST /api/v1/tasks → 401（鉴权正常）"
-  warn "冒烟通过。两个历史缺陷（缺依赖、水位撞表）都靠这一步抓出来——发布前请勿 --skip-smoke"
+
+  codesign --verify "$APP_PATH" || fail "签名复核未过：${APP_PATH}"
+  ok ".app 签名复核通过（codesign --verify）"
+  warn "冒烟通过。三个历史缺陷（缺依赖、水位撞表、未签名「已损坏」）都靠这一步抓出来——发布前请勿 --skip-smoke"
 fi
 
 # ---------------------------------------------------------------- 第 7 步：校验和与产物清单
