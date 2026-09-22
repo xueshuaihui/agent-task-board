@@ -5,6 +5,10 @@
 > 以本文件为准；未被覆盖的条目（信息架构、交互逻辑、字段语义）仍然有效。
 >
 > 改 token 只改 `src/styles/globals.css`；改这里必须同步改 globals.css。
+>
+> **2026-09-23 起：动效与交互层的权威规范迁移至仓库根 `docs/motion-spec.md`（Motion Spec v1.0）。**
+> 本文件 §1.6、§3 页面过渡/指示器、§5 通用片段及 §2 中各组件的出入场动画描述均被其取代，
+> 仅保留指针；组件 API、色板、字号、尺寸等非动效契约仍以本文件为准。
 
 ## 0. 技术选型（本次改版引入）
 
@@ -84,18 +88,12 @@ soft 底规则同上（深色 = 14% 透明度）。
 
 ### 1.6 动效 token
 
-- 缓动：`ease-settle = cubic-bezier(.2,0,0,1)`（默认）、`ease-emphasis = cubic-bezier(.32,.72,0,1)`（浮层/抽屉）。
-- 时长：hover/按压 140ms；浮层出入 200ms；页面过渡 240ms；状态高亮 800ms（`animate-status-flash` 保留）。
-- motion 弹簧（业务侧直接 `import { springs } from '@/lib/motion'`）：
-  - `springs.gentle = { type: 'spring', stiffness: 380, damping: 34 }` — 布局动画、指示器滑动
-  - `springs.snappy = { type: 'spring', stiffness: 520, damping: 40 }` — 拖拽落点、开关
-  - `springs.pop = { type: 'spring', stiffness: 600, damping: 30 }` — 徽标数字、小元素弹出
-- 过渡曲线常量：`transitions.fade = { duration: 0.14 }`、`transitions.rise = { duration: 0.24, ease: [0.32, 0.72, 0, 1] }`。
+已迁移：见 `docs/motion-spec.md` §1（四层模型）、§3（token 定稿）。要点口径变更：微交互统一 **140ms**（废弃散点 120ms）、浮层退场 ≈ 入场×0.7、新增 `transitions.menu/exit` 档、删除 CSS 死 keyframes（drawer-in/dialog-in/pop-in）。
 
 ## 2. 组件库契约（`src/components/ui/*`）
 
 **对外 API 与改版前保持兼容**（组件名、props 名、导出名都不变），业务侧只需要做视觉层调整。
-交互行为一律由 Radix 提供，动画一律由 motion/sonner 提供。要点：
+交互行为一律由 Radix 提供，动画一律由 motion/sonner 提供。**各组件出入场动画的具体参数以 `docs/motion-spec.md` §1-L2/§2/§4 为准**，本节仅列 API 与视觉要点。要点：
 
 - `Button`：6 variant（primary/default/ghost/danger/outlineDanger/subtle）× 4 size（md/sm/icon/iconSm）。
   primary 用渐变底 + 顶部内高光；按压 `active:scale-[.98]`；loading 转圈不变。
@@ -118,9 +116,10 @@ soft 底规则同上（深色 = 14% 透明度）。
 ## 3. 应用外壳
 
 - **顶栏**：`h-14` 毛玻璃（`bg-surface/80 backdrop-blur-xl`）+ 底部 1px 边框；左侧渐变 Logo 标 + 应用名；
-  中部导航为胶囊式，激活项由 motion `layoutId="nav-pill"` 滑动指示；右侧主题切换（太阳/月亮/显示器三态循环）
-  + 通知铃铛（角标数字变化带 `springs.pop` 弹跳）。
-- **页面过渡**：`AppShell` 内用 `AnimatePresence mode="wait"` + `PageTransition` 包裹当前页
+  右侧主题切换（太阳/月亮/显示器三态循环）+ 通知铃铛（角标数字变化带 `springs.pop` 弹跳）。
+  **导航激活指示（v0.0.4 起实态为准）**：导航位于左侧 Sidebar，激活项为左缘 3px 主色竖条
+  （`layoutId="nav-active-bar"` + `springs.gentle`）；旧「顶栏胶囊 `nav-pill`」表述作废，见 `docs/motion-spec.md` §1-L3。
+- **页面过渡**：细则见 `docs/motion-spec.md` §1-L3/§5；实现为 `AppShell` 内 `AnimatePresence mode="wait"` + `PageTransition`
   （淡入 + 上移 6px，240ms `ease-emphasis`）；路由切换不保留滚动（与现状一致）。
 - **主题**：`lib/theme.ts` 的 `applyUiTheme` 继续落 `<html data-ui-theme>`；顶栏切换即
   `PATCH /settings { ui_theme }`（乐观更新本地缓存），三态循环 浅色→深色→跟随系统。
@@ -150,8 +149,7 @@ soft 底规则同上（深色 = 14% 透明度）。
 
 ## 5. 通用片段
 
-- **页面入场**（页面根元素）：`<motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={transitions.rise}>`。
-- **列表入场**：父容器 `variants` 里 `staggerChildren: 0.04`，子项 `{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }`。
-- **数字徽标**：`<motion.span key={count} initial={{ scale: 0.6 }} animate={{ scale: 1 }} transition={springs.pop}>`。
-- **卡片 hover**：CSS 即可——`transition-[transform,box-shadow,border-color] duration-140 ease-out hover:-translate-y-0.5 hover:shadow-card-hover hover:border-border-strong`。
-- **滚动条**：全局 `.atb-scroll` 已提供细滚动条样式，容器沿用。
+已迁移：页面入场、列表 stagger、数字徽标、卡片 hover 等动效片段统一收录于 `docs/motion-spec.md`（§1 四层模型 + §2 映射表）。
+其中卡片 hover 定稿为：`transition-[transform,box-shadow,border-color] duration-140 ease-settle hover:-translate-y-0.5 hover:shadow-card-hover hover:border-border-strong`（看板卡需补抬升，见 motion-spec §8-P0）。
+
+（非动效条目保留：**滚动条**——全局 `.atb-scroll` 已提供细滚动条样式，容器沿用。）
