@@ -4,7 +4,7 @@
 #
 # 把 README「路径 C」+《docs/发布手册.md》的构建→冒烟→校验和全流程串成一条命令：
 #   质量门禁 → 构建 api/web → 装配 sidecar → tauri build(.app) → codesign ad-hoc 签名/验签
-#   → hdiutil(.dmg) → 产物冒烟（ATB_READY + REST 401）→ SHA-256 校验和
+#   → hdiutil(.dmg) → 产物冒烟（ATB_READY + REST 401 + dmg 完整性/挂载验签）→ SHA-256 校验和
 #
 # 用法：
 #   bash scripts/package-release.sh                 # 全流程（含门禁与冒烟）
@@ -167,6 +167,8 @@ else
   SMOKE_PID=""
   cleanup_smoke() {
     [ -n "$SMOKE_PID" ] && kill "$SMOKE_PID" 2>/dev/null
+    # dmg 挂载点兜底卸载：上面任何 fail 退出都会先走这里，不泄漏挂载（未挂载时静默跳过）
+    hdiutil detach "$TMPD/dmg-mnt" -force >/dev/null 2>&1 || true
     rm -rf "$TMPD" "$SMOKE_LOG"
   }
   trap cleanup_smoke EXIT
@@ -194,6 +196,27 @@ else
 
   codesign --verify "$APP_PATH" || fail "签名复核未过：${APP_PATH}"
   ok ".app 签名复核通过（codesign --verify）"
+
+  # dmg 本体验收：上面复核的是构建目录里的 .app，这里验最终镜像里那份——
+  # 防 dmg 装配环节丢签/装错旧包（beta.2 零签名出货的残留盲区）。--skip-dmg 整体跳过。
+  if [ "$SKIP_DMG" -eq 1 ]; then
+    warn "--skip-dmg：跳过 dmg 完整性校验与挂载验签"
+  else
+    hdiutil verify "$DMG_PATH" >/dev/null 2>&1 \
+      || fail "dmg 镜像完整性校验未过：${DMG_PATH}"
+    ok "dmg 镜像完整性校验通过（hdiutil verify）"
+
+    mkdir -p "$TMPD/dmg-mnt"
+    hdiutil attach "$DMG_PATH" -nobrowse -mountpoint "$TMPD/dmg-mnt" >/dev/null \
+      || fail "dmg 挂载失败：${DMG_PATH}"
+    # detach 两条路径都覆盖：此处显式卸载 + cleanup_smoke（EXIT trap）里 -force 兜底，
+    # 无论 codesign 验签成功还是 fail 退出都不泄漏挂载点。
+    codesign --verify --deep --strict "$TMPD/dmg-mnt/Jarvis Workbench.app" \
+      || fail "dmg 镜像内 .app 验签未过（装配环节丢签或装错旧包）：${DMG_PATH}"
+    hdiutil detach "$TMPD/dmg-mnt" >/dev/null \
+      || fail "dmg 挂载点卸载失败：$TMPD/dmg-mnt"
+    ok "dmg 镜像内 .app 验签通过（挂载 codesign --verify --deep --strict）"
+  fi
   warn "冒烟通过。三个历史缺陷（缺依赖、水位撞表、未签名「已损坏」）都靠这一步抓出来——发布前请勿 --skip-smoke"
 fi
 
