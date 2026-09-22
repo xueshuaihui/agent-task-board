@@ -105,8 +105,10 @@ export const BoardCardView = memo(function BoardCardView({
       className={cn(
         'group relative min-h-24 w-full cursor-grab overflow-hidden rounded-card',
         'border border-border bg-bg-surface py-3 pl-[11px] pr-2 text-left',
-        'shadow-card transition-shadow duration-120 ease-out',
+        'shadow-card transition-[transform,box-shadow,border-color] duration-140 ease-settle',
         'hover:border-border-strong hover:shadow-card-hover focus-visible:border-primary',
+        // hover 抬升只作用于普通卡态：overlay 的 transform 由 dnd 与 rotate-2 控制，占位皮不参与。
+        !asOverlay && !dragging && 'hover:-translate-y-0.5',
         asOverlay && 'w-card rotate-2 cursor-grabbing shadow-card-drag',
         dragging && 'border-dashed border-border-strong bg-bg-muted opacity-60 shadow-none',
         flashed && FLASH_CLASS,
@@ -355,7 +357,7 @@ function ArtifactIcon({ artifact }: { artifact: CardArtifact }) {
 function CardQuickActions({ card, actions }: { card: TaskCard; actions: CardActions }) {
   return (
     <span
-      className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-120 ease-out group-hover:opacity-100 group-focus-within:opacity-100"
+      className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-140 ease-settle group-hover:opacity-100 group-focus-within:opacity-100"
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
     >
