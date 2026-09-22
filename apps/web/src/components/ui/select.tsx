@@ -18,7 +18,7 @@ export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
 /** 1.1：raised 底 + focus ring（primary-ring）；全局 :focus-visible 也会补描边。 */
 const selectClass = cn(
   'h-8 w-full appearance-none rounded-control border border-border bg-bg-raised px-3 pr-8 text-body text-text-primary',
-  'transition-colors duration-120 ease-out',
+  'transition-colors duration-140 ease-settle',
   'hover:border-border-strong',
   'focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary-ring',
   'disabled:cursor-not-allowed disabled:opacity-60',

@@ -106,7 +106,7 @@ export const Menu = forwardRef<HTMLSpanElement, MenuProps>(function Menu(
                           disabled={item.disabled}
                           onSelect={() => item.onSelect?.()}
                           className={cn(
-                            'flex h-8 w-full cursor-default select-none items-center gap-2 px-3 text-left text-body outline-none transition-colors duration-120 ease-out',
+                            'flex h-8 w-full cursor-default select-none items-center gap-2 px-3 text-left text-body outline-none transition-colors duration-140 ease-settle',
                             'data-[highlighted]:bg-bg-muted',
                             item.danger && 'text-status-failed data-[highlighted]:bg-status-failed-soft',
                             item.disabled && 'cursor-not-allowed opacity-40 data-[highlighted]:bg-transparent',
@@ -139,5 +139,5 @@ export const Menu = forwardRef<HTMLSpanElement, MenuProps>(function Menu(
 
 /** 触发器常用的「文字 + ▾」组合（「新建任务 ▾」「移动到 ▾」）。 */
 export function MenuCaret({ open }: { open: boolean }) {
-  return <ChevronDown className={cn('size-3.5 transition-transform duration-120', open && 'rotate-180')} />;
+  return <ChevronDown className={cn('size-3.5 transition-transform duration-140 ease-settle', open && 'rotate-180')} />;
 }

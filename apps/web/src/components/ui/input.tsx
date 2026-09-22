@@ -5,7 +5,7 @@ import { cn } from '@/lib/cn';
  * focus ring 走全局 `:focus-visible`（primary-ring），这里只换边框色。 */
 export const inputClass = cn(
   'h-8 w-full rounded-control border border-border bg-bg-raised px-3 text-body text-text-primary',
-  'placeholder:text-text-tertiary transition-colors duration-120 ease-out',
+  'placeholder:text-text-tertiary transition-colors duration-140 ease-settle',
   'hover:border-border-strong focus:border-primary',
   'disabled:cursor-not-allowed disabled:opacity-60',
   'aria-[invalid=true]:border-status-failed',

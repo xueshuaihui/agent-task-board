@@ -12,7 +12,7 @@ import { cn } from '@/lib/cn';
  * 颜色一律走 token，不硬编码 hex。
  */
 const button = cva(
-  'inline-flex shrink-0 items-center justify-center gap-2 rounded-control font-medium transition-[background-color,color,box-shadow,transform] duration-120 ease-out active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100',
+  'inline-flex shrink-0 items-center justify-center gap-2 rounded-control font-medium transition-[background-color,color,box-shadow,transform] duration-140 ease-settle active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100',
   {
     variants: {
       variant: {

@@ -12,7 +12,7 @@ export function Card({ className, hoverable, children, ...rest }: CardProps) {
     <div
       className={cn(
         'rounded-card border border-border bg-bg-surface shadow-card',
-        hoverable && 'transition-shadow duration-120 ease-out hover:shadow-card-hover',
+        hoverable && 'transition-shadow duration-140 ease-settle hover:shadow-card-hover',
         className,
       )}
       {...rest}

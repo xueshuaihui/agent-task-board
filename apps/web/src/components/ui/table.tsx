@@ -39,7 +39,7 @@ export function TR({ className, children, ...rest }: HTMLAttributes<HTMLTableRow
       className={cn(
         // 行分隔用边框而不是阴影：整行可点时 hover 才有一致的落点。
         // hover 左侧 2px 主色指示条走 inset box-shadow，不改变行高与列宽。
-        'border-b border-border transition-[background-color,box-shadow] duration-120 ease-out',
+        'border-b border-border transition-[background-color,box-shadow] duration-140 ease-settle',
         'hover:bg-primary-light hover:shadow-[inset_2px_0_0_0_var(--color-primary)]',
         className,
       )}

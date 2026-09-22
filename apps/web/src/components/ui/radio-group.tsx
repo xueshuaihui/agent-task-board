@@ -64,7 +64,7 @@ export function RadioGroup({
               value={option.value}
               disabled={option.disabled || disabled}
               className={cn(
-                'mt-[3px] flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full border transition-colors duration-120 ease-out',
+                'mt-[3px] flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full border transition-colors duration-140 ease-settle',
                 'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary',
                 'disabled:cursor-not-allowed disabled:opacity-50',
                 'data-[state=checked]:border-primary data-[state=checked]:bg-bg-surface',

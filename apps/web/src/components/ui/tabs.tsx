@@ -71,7 +71,7 @@ export function Tabs({
                 disabled={item.disabled}
                 className={cn(
                   // shrink-0 + whitespace-nowrap：窄容器下中文标签会被逐字竖排断行
-                  'relative flex h-11 shrink-0 items-center gap-1 whitespace-nowrap rounded-none text-nav outline-none transition-colors duration-120 ease-out',
+                  'relative flex h-11 shrink-0 items-center gap-1 whitespace-nowrap rounded-none text-nav outline-none transition-colors duration-140 ease-settle',
                   active ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary',
                   item.disabled && 'cursor-not-allowed opacity-50',
                 )}
@@ -104,7 +104,7 @@ export function Tabs({
                 value={item.value}
                 disabled={item.disabled}
                 className={cn(
-                  'relative flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-[4px] px-2 text-aux outline-none transition-colors duration-120 ease-out',
+                  'relative flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-[4px] px-2 text-aux outline-none transition-colors duration-140 ease-settle',
                   active ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary',
                   item.disabled && 'cursor-not-allowed opacity-50',
                 )}

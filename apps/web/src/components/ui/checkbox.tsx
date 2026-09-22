@@ -58,7 +58,7 @@ export const Checkbox = forwardRef<HTMLButtonElement, CheckboxProps>(function Ch
         onCheckedChange={(next) => onChange?.(toSyntheticChangeEvent(next === true))}
         disabled={disabled}
         className={cn(
-          'inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-tag border transition-colors duration-120 ease-out',
+          'inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-tag border transition-colors duration-140 ease-settle',
           'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary',
           'disabled:cursor-not-allowed disabled:opacity-50',
           'data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-text-inverse',

@@ -68,7 +68,7 @@ export function Pagination({
               aria-current={item === current ? 'page' : undefined}
               onClick={() => onPageChange(item)}
               className={cn(
-                'inline-flex size-7 items-center justify-center rounded-control text-badge tabular-nums transition-colors duration-120 ease-out',
+                'inline-flex size-7 items-center justify-center rounded-control text-badge tabular-nums transition-colors duration-140 ease-settle',
                 item === current
                   ? 'bg-primary-light font-medium text-primary'
                   : 'text-text-secondary hover:bg-bg-muted hover:text-text-primary',
@@ -107,7 +107,7 @@ function PageArrow({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex size-7 items-center justify-center rounded-control text-text-secondary transition-colors duration-120 ease-out hover:bg-bg-muted hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-secondary"
+      className="inline-flex size-7 items-center justify-center rounded-control text-text-secondary transition-colors duration-140 ease-settle hover:bg-bg-muted hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-secondary"
     >
       {children}
     </button>

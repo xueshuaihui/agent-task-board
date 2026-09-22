@@ -27,7 +27,7 @@ export function Switch({ checked, onChange, disabled, label, className }: Switch
       disabled={disabled}
       aria-label={label}
       className={cn(
-        'relative inline-flex h-8 w-12 shrink-0 items-center rounded-full px-1 transition-colors duration-120 ease-out',
+        'relative inline-flex h-8 w-12 shrink-0 items-center rounded-full px-1 transition-colors duration-140 ease-settle',
         checked ? 'bg-primary' : 'bg-bg-muted',
         'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary-ring',
         'disabled:cursor-not-allowed disabled:opacity-50',
