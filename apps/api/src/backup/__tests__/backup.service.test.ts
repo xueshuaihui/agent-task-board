@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, utimesSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ApiException, USER_COPY } from '../../contract/errors';
 import { nowSql } from '../../contract/time';
 import { paths } from '../../common/paths';
@@ -31,6 +31,8 @@ beforeAll(() => {
 });
 
 afterEach(async () => {
+  // 兜底：任何用例里开的假时钟都不带进下一个用例
+  vi.useRealTimers();
   await h.reset();
 });
 
@@ -74,10 +76,23 @@ function junkAt(name: string, body = 'junk'): void {
 describe('立即备份（VACUUM INTO）', () => {
   it('文件名就是 atb-YYYYMMDD-HHmmss.db，落在 backups 目录里，字节非空', async () => {
     await seedSnapshot(h.prisma, 'A');
-    const created = await h.backups.create();
+    // 冻结时钟只盖住 Date：create() 内部 freeSlot 用 backupNameAt()（new Date()）取名，
+    // 若期望值在备份落盘后再现算，跨过 1 秒边界就会偶发差 1 秒（CI macOS runner flaky）。
+    // toFake 限定 ['Date']，setTimeout/IO 仍走真实时钟，不影响 prisma 异步链；
+    // afterEach 里 vi.useRealTimers() 兜底，波及其他用例。
+    const frozen = new Date(2026, 8, 22, 15, 3, 55);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(frozen);
+    let created: Awaited<ReturnType<typeof h.backups.create>>;
+    try {
+      created = await h.backups.create();
+    } finally {
+      vi.useRealTimers();
+    }
 
     expect(created.name).toMatch(/^atb-\d{8}-\d{6}\.db$/);
-    expect(created.name).toBe(backupNameAt());
+    // 被测实现与期望值读同一个冻结时钟：精确等于固定时刻格式化出的名字
+    expect(created.name).toBe(backupNameAt(frozen));
     expect(created.path).toBe(path.join(paths.backupsDir(), created.name));
     expect(created.size_bytes).toBeGreaterThan(0);
     expect(statSync(created.path).size).toBe(created.size_bytes);
