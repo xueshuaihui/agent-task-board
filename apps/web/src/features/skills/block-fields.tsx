@@ -374,7 +374,7 @@ function SubskillField({
               type="button"
               className={cn(
                 'flex h-8 w-full items-center justify-between gap-2 rounded-control border border-border bg-bg-raised px-3 text-left text-body text-text-primary',
-                'transition-colors duration-120 ease-out hover:border-border-strong',
+                'transition-colors duration-140 ease-settle hover:border-border-strong',
                 'focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary-ring',
                 'disabled:cursor-not-allowed disabled:opacity-60',
               )}

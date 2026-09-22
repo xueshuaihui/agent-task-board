@@ -248,7 +248,7 @@ export function SettingsTable<T>({
             <div
               key={rowKey(item)}
               className={cn(
-                'group/row grid gap-x-3 border-b border-border px-4 last:border-b-0 transition-colors duration-120 ease-out hover:bg-primary-light',
+                'group/row grid gap-x-3 border-b border-border px-4 last:border-b-0 transition-colors duration-140 ease-settle hover:bg-primary-light',
                 cols,
                 align === 'center' ? 'items-center py-2' : 'items-start py-3',
                 rowTone?.(item) === 'muted' && 'bg-bg-muted text-text-tertiary hover:bg-bg-muted',
@@ -272,7 +272,7 @@ export function SettingsTable<T>({
 /** 一组行内小按钮（编辑 / 停用 / 删除 / 恢复）：行 hover 或键盘聚焦时浮现（DESIGN §4 设置行）。 */
 export function RowActions({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1 opacity-0 translate-x-1 transition-[opacity,transform] duration-140 ease-out group-hover/row:opacity-100 group-hover/row:translate-x-0 focus-within:opacity-100 focus-within:translate-x-0">
+    <span className="inline-flex items-center gap-1 opacity-0 translate-x-1 transition-[opacity,transform] duration-140 ease-settle group-hover/row:opacity-100 group-hover/row:translate-x-0 focus-within:opacity-100 focus-within:translate-x-0">
       {children}
     </span>
   );

@@ -89,7 +89,7 @@ export function DiffViewer({ artifactId, collapseAfterLines }: DiffViewerProps) 
                 setExpandedKey(null);
               }}
               className={cn(
-                'flex w-full items-center gap-1 rounded-tag px-2 py-1 text-left text-aux transition-colors duration-120 ease-out',
+                'flex w-full items-center gap-1 rounded-tag px-2 py-1 text-left text-aux transition-colors duration-140 ease-settle',
                 index === activeIndex ? 'bg-bg-surface text-text-primary' : 'text-text-secondary hover:bg-bg-surface',
               )}
             >

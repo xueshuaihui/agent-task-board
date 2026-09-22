@@ -149,7 +149,7 @@ export function CommentsTab({ taskId }: { taskId: string }) {
             aria-pressed={types.includes(value)}
             onClick={() => toggle(value)}
             className={cn(
-              'rounded-tag px-2 py-0.5 text-aux transition-colors duration-120 ease-out',
+              'rounded-tag px-2 py-0.5 text-aux transition-colors duration-140 ease-settle',
               types.includes(value)
                 ? 'bg-primary-light text-primary'
                 : 'bg-bg-muted text-text-secondary hover:text-text-primary',

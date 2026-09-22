@@ -119,7 +119,7 @@ export function BoardToolbar({ onCreate, grouping, graphTasks }: BoardToolbarPro
               onClick={() => setGroupingOpen(true)}
               aria-haspopup="dialog"
               className={cn(
-                'inline-flex h-7 shrink-0 items-center gap-1 rounded-control border px-2 text-body transition-colors duration-120 ease-out',
+                'inline-flex h-7 shrink-0 items-center gap-1 rounded-control border px-2 text-body transition-colors duration-140 ease-settle',
                 grouping.grouped
                   ? 'border-primary bg-primary-light text-primary'
                   : 'border-border text-text-secondary hover:bg-bg-muted hover:text-text-primary',
@@ -181,7 +181,7 @@ function ViewSegmented({ value, onChange }: { value: BoardView; onChange: (view:
             aria-pressed={active}
             onClick={() => onChange(item.view)}
             className={cn(
-              'h-7 shrink-0 rounded-control border px-2.5 text-body transition-colors duration-120 ease-out',
+              'h-7 shrink-0 rounded-control border px-2.5 text-body transition-colors duration-140 ease-settle',
               active
                 ? 'border-border-strong bg-bg-surface text-primary'
                 : 'border-transparent text-text-secondary hover:bg-bg-muted hover:text-text-primary',
@@ -228,7 +228,7 @@ function DisplaySegmented() {
               setMode(item.id);
             }}
             className={cn(
-              'inline-flex h-7 shrink-0 items-center gap-1 rounded-control border px-2 text-body transition-colors duration-120 ease-out',
+              'inline-flex h-7 shrink-0 items-center gap-1 rounded-control border px-2 text-body transition-colors duration-140 ease-settle',
               active
                 ? 'border-border-strong bg-bg-surface text-primary'
                 : 'border-transparent text-text-secondary hover:bg-bg-muted hover:text-text-primary',
@@ -287,7 +287,7 @@ function Chip({ label, selected, groups, selectedId, width = 180 }: ChipProps) {
           onClick={toggle}
           aria-expanded={open}
           className={cn(
-            'inline-flex h-7 shrink-0 items-center gap-1 rounded-control border px-2 text-body transition-colors duration-120 ease-out',
+            'inline-flex h-7 shrink-0 items-center gap-1 rounded-control border px-2 text-body transition-colors duration-140 ease-settle',
             selected > 0
               ? 'border-primary bg-primary-light text-primary'
               : 'border-border text-text-secondary hover:bg-bg-muted hover:text-text-primary',

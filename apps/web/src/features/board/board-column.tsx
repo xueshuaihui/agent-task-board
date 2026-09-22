@@ -164,7 +164,7 @@ function ColumnHeader({
       type="button"
       onClick={go}
       aria-label={`查看${label}的全部任务`}
-      className="ml-auto shrink-0 rounded-badge bg-bg-muted px-2 py-px text-badge text-text-secondary transition-colors duration-120 ease-out hover:bg-border hover:text-text-primary"
+      className="ml-auto shrink-0 rounded-badge bg-bg-muted px-2 py-px text-badge text-text-secondary transition-colors duration-140 ease-settle hover:bg-border hover:text-text-primary"
     >
       <motion.span
         key={column.count}

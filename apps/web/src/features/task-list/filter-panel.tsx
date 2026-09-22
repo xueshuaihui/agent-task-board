@@ -385,7 +385,7 @@ function ToggleChip({
       aria-pressed={active}
       onClick={onToggle}
       className={cn(
-        'inline-flex items-center gap-1 rounded-tag border px-1.5 py-px text-badge transition-colors duration-120 ease-out',
+        'inline-flex items-center gap-1 rounded-tag border px-1.5 py-px text-badge transition-colors duration-140 ease-settle',
         active
           ? 'border-primary bg-primary-light text-primary'
           : 'border-border text-text-secondary hover:text-text-primary',

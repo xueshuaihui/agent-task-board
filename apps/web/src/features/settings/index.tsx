@@ -69,7 +69,7 @@ export function SettingsPage() {
                   aria-current={active ? 'page' : undefined}
                   onClick={() => select(item.id)}
                   className={cn(
-                    'relative z-10 flex h-10 w-full items-center rounded-control px-3 text-nav transition-colors duration-120 ease-out',
+                    'relative z-10 flex h-10 w-full items-center rounded-control px-3 text-nav transition-colors duration-140 ease-settle',
                     active
                       ? 'text-text-primary'
                       : 'text-text-secondary hover:text-text-primary',

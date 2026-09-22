@@ -156,7 +156,7 @@ function DependencyRow({
           aria-label={`移除与 ${ref.id} 的依赖`}
           title="移除依赖"
           onClick={() => remove.mutate(ref.dep_id)}
-          className="shrink-0 rounded-tag p-1 text-text-tertiary opacity-0 transition-opacity duration-120 ease-out hover:bg-status-failed-soft hover:text-status-failed focus-visible:opacity-100 group-hover:opacity-100"
+          className="shrink-0 rounded-tag p-1 text-text-tertiary opacity-0 transition-opacity duration-140 ease-settle hover:bg-status-failed-soft hover:text-status-failed focus-visible:opacity-100 group-hover:opacity-100"
         >
           <Trash2 className="size-3.5" aria-hidden />
         </button>

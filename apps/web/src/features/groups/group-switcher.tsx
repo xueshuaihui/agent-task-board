@@ -111,7 +111,7 @@ export function GroupSwitcher() {
           aria-expanded={open}
           aria-label="选择分组"
           className={cn(
-            'inline-flex h-7 shrink-0 items-center gap-1 rounded-control border px-2 text-body transition-colors duration-120 ease-out',
+            'inline-flex h-7 shrink-0 items-center gap-1 rounded-control border px-2 text-body transition-colors duration-140 ease-settle',
             allSelected
               ? 'border-border text-text-secondary hover:bg-bg-muted hover:text-text-primary'
               : 'border-primary bg-primary-light text-primary',

@@ -185,7 +185,7 @@ export function GlobalSearch() {
                   onMouseEnter={() => setActive(index)}
                   onClick={() => onSelect(row.id)}
                   className={cn(
-                    'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors duration-120 ease-out hover:bg-primary-light',
+                    'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors duration-140 ease-settle hover:bg-primary-light',
                     isActive && 'bg-primary-light',
                   )}
                 >

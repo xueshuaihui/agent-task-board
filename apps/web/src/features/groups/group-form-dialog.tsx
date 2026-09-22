@@ -131,7 +131,7 @@ function GroupForm({ group, onClose }: { group: Group | null; onClose: () => voi
               title={option.label}
               onClick={() => setColor(option.value)}
               className={cn(
-                'inline-flex size-7 items-center justify-center rounded-full border-2 transition-colors duration-120 ease-out',
+                'inline-flex size-7 items-center justify-center rounded-full border-2 transition-colors duration-140 ease-settle',
                 color === option.value ? 'border-primary' : 'border-transparent hover:border-border-strong',
               )}
             >
@@ -151,7 +151,7 @@ function GroupForm({ group, onClose }: { group: Group | null; onClose: () => voi
               aria-checked={icon === option}
               onClick={() => setIcon(option)}
               className={cn(
-                'inline-flex size-8 items-center justify-center rounded-control border text-body transition-colors duration-120 ease-out',
+                'inline-flex size-8 items-center justify-center rounded-control border text-body transition-colors duration-140 ease-settle',
                 icon === option
                   ? 'border-primary bg-primary-light'
                   : 'border-transparent hover:bg-bg-muted',

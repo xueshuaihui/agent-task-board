@@ -45,7 +45,7 @@ export function Sidebar() {
           aria-label={collapsed ? '展开导航' : '折叠导航'}
           title={collapsed ? '展开导航' : '折叠导航'}
           aria-expanded={!collapsed}
-          className="inline-flex size-8 shrink-0 items-center justify-center rounded-control text-primary transition-colors duration-120 ease-out hover:bg-primary-light"
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-control text-primary transition-colors duration-140 ease-settle hover:bg-primary-light"
         >
           <Diamond className="size-6" aria-hidden />
         </button>
@@ -67,7 +67,7 @@ export function Sidebar() {
               title={collapsed ? label : undefined}
               onClick={() => navigate(name)}
               className={cn(
-                'relative flex h-11 items-center rounded-control text-nav transition-colors duration-120 ease-out',
+                'relative flex h-11 items-center rounded-control text-nav transition-colors duration-140 ease-settle',
                 collapsed ? 'justify-center' : 'gap-3 px-3',
                 active
                   ? 'bg-primary-light font-medium text-primary'

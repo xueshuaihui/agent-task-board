@@ -325,7 +325,7 @@ function PendingRow({ row, index, reduced }: { row: TaskListItem; index: number;
       <div
         className={cn(
           'cursor-pointer rounded-card border border-border bg-bg-surface shadow-card',
-          'transition-[transform,box-shadow,border-color] duration-140 ease-out',
+          'transition-[transform,box-shadow,border-color] duration-140 ease-settle',
           'hover:-translate-y-0.5 hover:border-border-strong hover:shadow-card-hover',
           flashed && 'animate-status-flash',
         )}

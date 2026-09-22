@@ -205,7 +205,7 @@ function NotificationRow({ item, onOpen }: { item: NotificationItem; onOpen: (i:
         type="button"
         onClick={() => onOpen(item)}
         className={cn(
-          'flex w-full items-start gap-2.5 px-5 py-3 text-left transition-colors duration-120 ease-out hover:bg-bg-muted',
+          'flex w-full items-start gap-2.5 px-5 py-3 text-left transition-colors duration-140 ease-settle hover:bg-bg-muted',
           unread && 'bg-primary-light/40',
         )}
       >

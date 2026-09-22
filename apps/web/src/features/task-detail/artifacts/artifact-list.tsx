@@ -116,7 +116,7 @@ function ArtifactRow({ artifact, maxMb, onPreview, active }: ArtifactRowProps) {
     <li
       className={cn(
         // DESIGN §4：行 hover 浮现操作按钮（group/group-hover），hover 底用 raised token。
-        'group flex items-center gap-2 px-3 py-2 transition-colors duration-140 ease-out hover:bg-bg-raised',
+        'group flex items-center gap-2 px-3 py-2 transition-colors duration-140 ease-settle hover:bg-bg-raised',
         active && 'bg-primary-light',
         lost && 'bg-bg-muted',
       )}
@@ -185,4 +185,4 @@ function ArtifactRow({ artifact, maxMb, onPreview, active }: ArtifactRowProps) {
 
 /** hover 浮现的动作按钮样式：默认隐藏 + 右移 1 格，行 hover 或按钮/行内聚焦时回到原位。 */
 const ACTION_REVEAL_CLASS =
-  'translate-x-1 opacity-0 transition-[opacity,transform] duration-140 ease-out group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:translate-x-0 group-focus-within:opacity-100 focus-visible:translate-x-0 focus-visible:opacity-100';
+  'translate-x-1 opacity-0 transition-[opacity,transform] duration-140 ease-settle group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:translate-x-0 group-focus-within:opacity-100 focus-visible:translate-x-0 focus-visible:opacity-100';
