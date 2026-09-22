@@ -149,11 +149,62 @@ else
   step "第 5 步 · 生成 .dmg（基于已签名 .app）"
   # tauri 若已产出 .dmg，其内容是签名前的 .app，必须删除后从已签名 .app 重出；
   # 每架构只生成一次（beta.1 二次生成曾把 arm64 runner 磁盘挤爆报 No space left）。
+  #
+  # 为什么 create 前先 detach：tauri build 的 bundle_dmg.sh 在 CI runner 上成功后会把
+  # 产出的 .dmg 挂载残留在系统（/Volumes/Jarvis Workbench，tauri 自己不清理）。对同一
+  # 曾被挂载过的路径再 hdiutil create 会报 "hdiutil: create failed - Resource busy"
+  # （实例：beta.3 x64 / run 35722363692，step 5 fail；arm64 job 因产物名不同躲过了）。
+  # 为什么要临时名出图：create 写到 .tmp-${ARCH_SUFFIX}.dmg 这个从未被挂载过的路径，
+  # 从根上避开 busy 窗口，成功后再 mv -f 到目标名（先卸载再删旧 dmg，顺序不能反）。
+  detach_bundle_dmgs() {
+    # 找出 image-path 位于 $BUNDLE_DIR/dmg/ 下的全部已挂载 dmg，解析出各自的 /dev/diskN
+    # 整盘节点逐个强卸（hdiutil detach 实测不吃 image-path 参数，只认 disk 节点/挂载点）。
+    # 按 `====`/`==>` 分隔线分块解析 hdiutil info：块内 image-path 在前、
+    # 首个 `/dev/diskN <TAB>` 整盘节点行在后，两块都拿到且 image-path 命中前缀
+    # 才输出该节点；detach 失败容忍（|| true），
+    # 无挂载时输出为空、安全返回 0（bash 3.2 + set -u）。
+    local dmg_dir prefix devs img
+    dmg_dir="$BUNDLE_DIR/dmg"
+    # hdiutil info 汇报的是解析过符号链接的真实路径（如 /tmp 会被规范成 /private/tmp），
+    # 前缀比对先把 dmg 目录 pwd -P 规范化；目录不存在时退回原始路径（此时也几乎无挂载可匹配）。
+    prefix="$( { cd "$dmg_dir" 2>/dev/null && pwd -P; } || true )"
+    [ -n "$prefix" ] || prefix="$dmg_dir"
+    devs="$(hdiutil info 2>/dev/null | awk -v prefix="${prefix}/" '
+      function flush() {
+        if (dev != "" && img != "" && index(img, prefix) == 1) print dev
+        dev = ""; img = ""
+      }
+      BEGIN { dev = ""; img = "" }
+      /^=/ { flush(); next }
+      dev == "" && /^\/dev\/disk[0-9]+[ \t]/ { split($0, a, /[ \t]+/); dev = a[1] }
+      /^image-path[ \t]*:/ {
+        img = $0
+        sub(/^image-path[ \t]*:[ \t]*/, "", img)
+        gsub(/^"|"$/, "", img)
+      }
+      END { flush() }')"
+    [ -n "$devs" ] || return 0
+    while IFS= read -r img; do
+      [ -n "$img" ] || continue
+      warn "清理 tauri dmg 挂载残留：detach ${img}"
+      hdiutil detach "$img" -force >/dev/null 2>&1 || true
+    done <<< "$devs"
+  }
+  detach_bundle_dmgs
   rm -f "$BUNDLE_DIR"/dmg/*.dmg
   mkdir -p "$BUNDLE_DIR/dmg"
-  hdiutil create -volname "Jarvis Workbench" \
-    -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH" > /dev/null \
-    || fail "hdiutil 生成 .dmg 失败"
+  TMP_DMG="$BUNDLE_DIR/dmg/.tmp-${ARCH_SUFFIX}.dmg"
+  rm -f "$TMP_DMG"
+  if ! hdiutil create -volname "Jarvis Workbench" \
+    -srcfolder "$APP_PATH" -ov -format UDZO "$TMP_DMG" > /dev/null; then
+    # create 再挂也不至于无现场：把挂载表与 dmg 目录打进 CI 日志再退出
+    printf '%s\n' '---- hdiutil info（create 失败现场取证） ----' >&2
+    { hdiutil info || true; } >&2
+    { ls -la "$BUNDLE_DIR/dmg" || true; } >&2
+    fail "hdiutil 生成 .dmg 失败"
+  fi
+  mv -f "$TMP_DMG" "$DMG_PATH" \
+    || fail "hdiutil 生成 .dmg 失败（临时镜像 mv 到目标名失败：${DMG_PATH}）"
   ok ".dmg 产出：${DMG_PATH}（签名后 hdiutil 重出）"
 fi
 
