@@ -46,7 +46,9 @@ export function SkillDetailDrawer({ skillId, open, onClose, onEdit }: SkillDetai
         </span>
       }
       headerExtra={
-        <div className="flex items-center gap-3 px-5 pb-3">
+        /* 常规流容器：Tabs 的 className 现作用于 List（-mx-5 让下边框通铺、
+           List 自带 px-5 让页签与父级内容对齐），不再依赖 Root flex-1 拉伸。 */
+        <div className="px-5 pb-3">
           <Tabs
             variant="underline"
             value={tab}

@@ -21,6 +21,10 @@ export interface TabsProps {
    * `underline` = 4.2 抽屉 Tab 与 2.2 顶栏导航那套下划线。
    */
   variant?: 'segmented' | 'underline';
+  /**
+   * 合并到 `List`（border/px 等行级类都写在 List 上，44 走查：此前只给 Root，
+   * 调用方 `border-b-0 px-0` 覆盖不到 List 的 `border-b px-5`，完全不生效）。
+   */
   className?: string;
   ariaLabel?: string;
 }
@@ -44,9 +48,20 @@ export function Tabs({
   const indicatorTransition = reduceMotion ? { duration: 0 } : springs.gentle;
 
   return (
-    <TabsPrimitive.Root value={value} onValueChange={onChange} className={className}>
+    /* Root 只做 min-w-0：它在抽屉头/工具栏里常是 flex item，若不收缩则 List 的
+       overflow-x 滚动永远不触发、页签照旧被挤扁（44 走查）。行级覆盖类见
+       TabsProps.className——改合并到 List。 */
+    <TabsPrimitive.Root value={value} onValueChange={onChange} className="min-w-0">
       {variant === 'underline' ? (
-        <TabsPrimitive.List aria-label={ariaLabel} className="flex items-center gap-6 border-b border-border px-5">
+        <TabsPrimitive.List
+          aria-label={ariaLabel}
+          className={cn(
+            // pb-px：overflow-x-auto 会按 padding box 裁切，不留这 1px 的话
+            // Trigger 里 -bottom-px 的指示器下沿会被裁掉半像素。
+            'atb-scroll flex min-w-0 items-center gap-6 overflow-x-auto border-b border-border px-5 pb-px',
+            className,
+          )}
+        >
           {items.map((item) => {
             const active = item.value === value;
             return (
@@ -55,7 +70,8 @@ export function Tabs({
                 value={item.value}
                 disabled={item.disabled}
                 className={cn(
-                  'relative flex h-11 items-center gap-1 rounded-none text-nav outline-none transition-colors duration-120 ease-out',
+                  // shrink-0 + whitespace-nowrap：窄容器下中文标签会被逐字竖排断行
+                  'relative flex h-11 shrink-0 items-center gap-1 whitespace-nowrap rounded-none text-nav outline-none transition-colors duration-120 ease-out',
                   active ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary',
                   item.disabled && 'cursor-not-allowed opacity-50',
                 )}
@@ -76,7 +92,10 @@ export function Tabs({
           })}
         </TabsPrimitive.List>
       ) : (
-        <TabsPrimitive.List aria-label={ariaLabel} className="inline-flex h-8 items-center gap-1 rounded-control bg-bg-muted p-1">
+        <TabsPrimitive.List
+          aria-label={ariaLabel}
+          className={cn('inline-flex h-8 items-center gap-1 rounded-control bg-bg-muted p-1', className)}
+        >
           {items.map((item) => {
             const active = item.value === value;
             return (
@@ -85,7 +104,7 @@ export function Tabs({
                 value={item.value}
                 disabled={item.disabled}
                 className={cn(
-                  'relative flex h-6 items-center gap-1 rounded-[4px] px-2 text-aux outline-none transition-colors duration-120 ease-out',
+                  'relative flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-[4px] px-2 text-aux outline-none transition-colors duration-120 ease-out',
                   active ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary',
                   item.disabled && 'cursor-not-allowed opacity-50',
                 )}
