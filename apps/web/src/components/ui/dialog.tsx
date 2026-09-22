@@ -70,6 +70,9 @@ export function Dialog({
               key="dialog-content"
               forceMount
               asChild
+              // DismissableLayer 在 modal 下会给 Content 根元素内联 pointer-events:auto，
+              // 这里用内联 style 覆盖回 none（其 style 合并顺序为 { computed, ...props.style }），保证暗区点击落回 Overlay 触发关闭
+              style={{ pointerEvents: 'none' }}
               aria-describedby={undefined}
               aria-label={title === undefined ? '对话框' : undefined}
               onEscapeKeyDown={(event) => {
@@ -82,35 +85,39 @@ export function Dialog({
               <motion.div
                 {...panelMotion}
                 transition={transitions.overlay}
-                className={cn(
-                  // inset-0 + m-auto：定宽高 fit 内容的双轴居中，避让开动画 transform 的位移冲突
-                  'fixed inset-0 z-50 m-auto flex h-fit max-h-[calc(100%-3rem)] w-[calc(100%-3rem)] flex-col overflow-hidden rounded-modal bg-bg-surface shadow-modal outline-none',
-                  size === 'review' ? 'max-w-review-form' : 'max-w-dialog',
-                  className,
-                )}
+                // fit-content 绝对定位面板在 WKWebView 下 flex-1 滚动子项高度算 0，故用全屏居中层 + max-h-full 常规流；缩放动画打在全屏层，面板居中时视觉等价
+                className="pointer-events-none fixed inset-0 z-50 grid place-items-center p-6 outline-none"
               >
-                {title !== undefined || dismissible ? (
-                  <header className="flex h-11 shrink-0 items-center justify-between gap-4 border-b border-border px-5">
-                    {title !== undefined ? (
-                      <DialogPrimitive.Title asChild>
-                        <h2 className="truncate text-section-title text-text-primary">{title}</h2>
-                      </DialogPrimitive.Title>
-                    ) : null}
-                    {dismissible ? (
-                      <DialogPrimitive.Close asChild>
-                        <IconButton label="关闭" size="iconSm" icon={<X className="size-4" />} />
-                      </DialogPrimitive.Close>
-                    ) : null}
-                  </header>
-                ) : null}
-                <div data-selectable className="atb-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4">
-                  {children}
+                <div
+                  className={cn(
+                    'pointer-events-auto flex max-h-full w-full flex-col overflow-hidden rounded-modal bg-bg-surface shadow-modal outline-none',
+                    size === 'review' ? 'max-w-review-form' : 'max-w-dialog',
+                    className,
+                  )}
+                >
+                  {title !== undefined || dismissible ? (
+                    <header className="flex h-11 shrink-0 items-center justify-between gap-4 border-b border-border px-5">
+                      {title !== undefined ? (
+                        <DialogPrimitive.Title asChild>
+                          <h2 className="truncate text-section-title text-text-primary">{title}</h2>
+                        </DialogPrimitive.Title>
+                      ) : null}
+                      {dismissible ? (
+                        <DialogPrimitive.Close asChild>
+                          <IconButton label="关闭" size="iconSm" icon={<X className="size-4" />} />
+                        </DialogPrimitive.Close>
+                      ) : null}
+                    </header>
+                  ) : null}
+                  <div data-selectable className="atb-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                    {children}
+                  </div>
+                  {footer ? (
+                    <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-5 py-4">
+                      {footer}
+                    </footer>
+                  ) : null}
                 </div>
-                {footer ? (
-                  <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-5 py-4">
-                    {footer}
-                  </footer>
-                ) : null}
               </motion.div>
             </DialogPrimitive.Content>
           ) : null}
