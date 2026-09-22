@@ -1,14 +1,14 @@
-# v0.0.4-beta.3 真机验证清单（#14 销账）
+# v0.0.4-beta.4 真机验证清单（#14 销账）
 
-对象 Release：<https://github.com/xuesh/www/agent-task-board/releases/tag/v0.0.4-beta.3>（prerelease，tag → `44092fd`，同名重打：携带 cf8f4f9 弹窗基座 WKWebView 修复 + 60d34c3 抽屉 Tabs 换行修复 + #41 千问迁移 93 条内置技能）
-本清单覆盖矩阵「#14 销账清单」四项：条款 1、4、68 首启、§20.3-8。全部打勾即 #14 关单、宣布进入预发布。
+对象 Release：<https://github.com/xueshuaihui/agent-task-board/releases/tag/v0.0.4-beta.4>（prerelease，tag → `23a66b8`：#46 贾维斯唤醒词 MCP 工作模式 + 手册同步；含 beta.3 全量修复链：cf8f4f9 弹窗基座 WKWebView、60d34c3 抽屉 Tabs、44092fd flaky、#41 千问迁移 93 条内置技能。注：CI「创建 Release」job 因 GitHub Actions 账单问题未运行，Release 由本地下载 run 35752816415 双架构产物手动汇集，构建/门禁仍全部在 CI 完成）
+本清单覆盖矩阵「#14 销账清单」四项：条款 1、4、68 首启、§20.3-8；另加 §5 beta.4 唤醒词功能项。前四项全过即 #14 关单、宣布进入预发布。
 
 ## 0. 下载与完整性（前置）
 
-- [ ] 按本机架构下载对应 dmg：Apple Silicon → `Jarvis.Workbench_0.1.0_arm64.dmg`（55.1MB）；Intel → `Jarvis.Workbench_0.1.0_x64.dmg`（57.8MB）
+- [ ] 按本机架构下载对应 dmg：Apple Silicon → `Jarvis.Workbench_0.1.0_arm64.dmg`（57.7MB）；Intel → `Jarvis.Workbench_0.1.0_x64.dmg`（59.8MB）
 - [ ] 校验 SHA-256 与 Release 内 `SHA256SUMS.txt` 一致（注意 SUMS 内以空格名登记，比对以哈希为准）：
-  - arm64：`c89cdc65577e7e61d8e9a3a1bfb1973315f5a0fcd78a8fe6955f713f857d14cc`
-  - x64：`c03914668c3a1dd91dce8573ff94e4ad6e8157cbdaef8ddbd79aeb2106c76f27`
+  - arm64：`2a392f9d7ad06b1ff00be3c313360dbc2ef2a3101ed3de47a42336dda9809c41`
+  - x64：`215999d680e9c93e83f41fdd5e294ffdb9bff384e6789f7d74bb9416cc82b791`
   - 命令：`shasum -a 256 "Jarvis.Workbench_0.1.0_<arch>.dmg"`
 - [ ] （建议，非门禁）挂载 dmg 前对旧库手动再拷一份保险副本：`cp ~/.agent-board/atb.db /tmp/atb.db.insure-$(date +%F)`
 
@@ -46,7 +46,14 @@
 - [ ] macOS 系统通知出现（点击通知可唤起窗口）
 - [ ] 会话正常收口（cancel/完成）路径不再弹窗（只在需要用户时弹）
 
-## 5. 收尾
+## 5. #46 · 贾维斯唤醒词 MCP 工作模式（beta.4 新增）
+
+- [ ] 设置 → Token → 「贾维斯唤醒模式」区块可见，默认「单次对话」；切「连续对话」保存成功，重启 app 后仍为连续对话
+- [ ] MCP 客户端（重连或新开会话）后对 Agent 说「贾维斯，创建一个任务：明天发布」：Agent 直接进入工作模式建任务、不反问
+- [ ] 连续对话模式下操作完成后继续追问看板操作仍走工具；说「退出贾维斯」后回到普通对话
+- [ ] 与唤醒无关的普通闲聊不触发看板工具调用
+
+## 6. 收尾
 
 - [ ] 四项全过后把结果回填 `docs/v0.0.4/回归验收矩阵.md`（条款 1/4/68 改「通过—真机轮已过」、§20.3-8 销账），主 agent push 并关 #14
 - [ ] 若手动保险副本 `/tmp/atb.db.insure-*` 确认多余可删；`~/.agent-board` 旧目录按迁移指引处置
@@ -59,3 +66,4 @@
 | §2 条款 4 | | |
 | §3 条款 68 | | |
 | §4 §20.3-8 | | |
+| §5 #46 唤醒词 | | |
