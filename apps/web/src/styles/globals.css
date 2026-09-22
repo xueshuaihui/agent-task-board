@@ -131,41 +131,10 @@
   /* —— 1.6 缓动与关键帧 —— */
   --ease-settle: cubic-bezier(0.2, 0, 0, 1);
   --ease-emphasis: cubic-bezier(0.32, 0.72, 0, 1);
-  --animate-drawer-in: drawer-in 260ms var(--ease-emphasis);
-  --animate-dialog-in: dialog-in 200ms var(--ease-emphasis);
-  --animate-pop-in: pop-in 140ms var(--ease-settle);
   --animate-status-flash: status-flash 800ms ease-out;
   --animate-shimmer: shimmer 1400ms ease-in-out infinite;
   --animate-flow: flow 1.6s linear infinite;
 
-  @keyframes drawer-in {
-    from {
-      transform: translateX(100%);
-    }
-    to {
-      transform: translateX(0);
-    }
-  }
-  @keyframes dialog-in {
-    from {
-      opacity: 0;
-      transform: translateY(8px) scale(0.96);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-  }
-  @keyframes pop-in {
-    from {
-      opacity: 0;
-      transform: scale(0.97);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
   @keyframes status-flash {
     0% {
       background-color: var(--color-primary-light);
@@ -415,8 +384,8 @@
   height: 9px;
   background: var(--color-bg-surface);
   border: 1.5px solid var(--color-border-strong);
-  transition: transform 120ms var(--ease-settle), border-color 120ms var(--ease-settle),
-    background-color 120ms var(--ease-settle);
+  transition: transform 140ms var(--ease-settle), border-color 140ms var(--ease-settle),
+    background-color 140ms var(--ease-settle);
 }
 .atb-rf .react-flow__handle-bottom {
   bottom: -5px;
