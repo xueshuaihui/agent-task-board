@@ -5,11 +5,11 @@
 
 ## 0. 下载与完整性（前置）
 
-- [ ] 按本机架构下载对应 dmg：Apple Silicon → `Jarvis Workbench_0.1.0_arm64.dmg`（57.7MB）；Intel → `Jarvis Workbench_0.1.0_x64.dmg`（59.8MB）
-- [ ] 校验 SHA-256 与 Release 内 `SHA256SUMS.txt` 一致：
+- [ ] 按本机架构下载对应 dmg：Apple Silicon → `Jarvis.Workbench_0.1.0_arm64.dmg`（57.7MB）；Intel → `Jarvis.Workbench_0.1.0_x64.dmg`（59.8MB）
+- [ ] 校验 SHA-256 与 Release 内 `SHA256SUMS.txt` 一致（注意 SUMS 内以空格名登记，比对以哈希为准）：
   - arm64：`27e83de1a0fad73764a30450fba5b821a32db5e78801eff5be98a49719cc9d9f`
   - x64：`904cf102dec918c45e6c9e859d9749b88a568a5a2a9274658223c092e307bdb6`
-  - 命令：`shasum -a 256 "Jarvis Workbench_0.1.0_<arch>.dmg"`
+  - 命令：`shasum -a 256 "Jarvis.Workbench_0.1.0_<arch>.dmg"`
 - [ ] （建议，非门禁）挂载 dmg 前对旧库手动再拷一份保险副本：`cp ~/.agent-board/atb.db /tmp/atb.db.insure-$(date +%F)`
 
 ## 1. 条款 1 · 双击启动 + 托盘图标
