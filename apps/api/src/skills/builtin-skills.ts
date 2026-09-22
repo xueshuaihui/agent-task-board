@@ -1,0 +1,111 @@
+import type { DefaultSkillSeed } from './default-skills';
+import { markdownToBlocks } from './skill-markdown';
+import { BUILTIN_SKILL_CHUNKS } from './builtin-skills.data';
+import type { SkillContent } from './skills.dto';
+
+/**
+ * v0.0.4 #41：千问工作台技能迁移批次（映射表口径见 docs/v0.0.4/千问技能迁移映射表.md）。
+ *
+ * 正文数据链路：docs/v0.0.4/skills-data 目录清单 + src/skills/builtin-skills/*.md
+ * （降级改写/裁剪后的终稿，入库）→ scripts/gen-builtin-seeds.mjs 生成
+ * builtin-skills.data.<n>.ts 分片（JSON 字符串常量，入库）→ 本模块启动期解析。
+ * 选 .ts 分片而非运行时读 md：sidecar 是 webpack 单文件 bundle、nest build 不拷非 ts
+ * 资源，fs 读 md 在打包态必挂；.ts 常量三态（dev ts-node / vitest / sidecar）一致。
+ */
+
+/** 与 blockSchema 的 prompt.max(20000) 对齐：兜底块按字符切片不越界。 */
+const PROMPT_CHUNK_CHARS = 19000;
+
+export interface BuiltinSkillRaw {
+  slug: string;
+  nameCn: string;
+  description: string;
+  tags: string[];
+  markdown: string;
+}
+
+export const BUILTIN_SKILLS_RAW: BuiltinSkillRaw[] = BUILTIN_SKILL_CHUNKS.flatMap((chunk) =>
+  JSON.parse(chunk) as BuiltinSkillRaw[],
+);
+
+/** markdown→blocks；返回 null 表示该正文不适合走解析器（判据见 convertBuiltinMarkdown）。 */
+function splitFallbackPrompt(text: string): string[] {
+  if (text.length <= PROMPT_CHUNK_CHARS) return [text];
+  const parts: string[] = [];
+  let rest = text;
+  while (rest.length > 0) {
+    let cut = Math.min(rest.length, PROMPT_CHUNK_CHARS);
+    const nl = rest.lastIndexOf('\n', cut);
+    if (nl > PROMPT_CHUNK_CHARS / 2) cut = nl; // 尽量不切断行
+    parts.push(rest.slice(0, cut));
+    rest = rest.slice(cut);
+  }
+  return parts;
+}
+
+export interface BuiltinConversionResult {
+  content: SkillContent;
+  /** 'flow'=markdownToBlocks 无损解析成多块；'prompt'=单提示词块兜底（全文保留）。 */
+  mode: 'flow' | 'prompt';
+}
+
+/**
+ * 解析判据（镜像前端约定 + #41 迁移扩展）：
+ * - 解析器按 ### 切块，会丢弃首个 ### 之前的正文（千问正文普遍以 # 标题+导语开头）。
+ *   迁移侧把这段前言补成一个提示词块置于队首——全文无损，不改动解析器本体；
+ * - 补块后仍不足 2 块（没有 ### 结构）或超 200 块（blockSchema 上限）走单提示词兜底
+ *   （迁移口径：宁可保留，兜底也全文保留）。
+ */
+export function convertBuiltinMarkdown(raw: BuiltinSkillRaw): BuiltinConversionResult {
+  const fallback = (): BuiltinConversionResult => {
+    const parts = splitFallbackPrompt(raw.markdown);
+    const blocks = parts.map((part, index) => ({
+      id: index === 0 ? 'b-entry' : `b-more-${index}`,
+      kind: 'prompt' as const,
+      title: index === 0 ? raw.nameCn : `${raw.nameCn}（续${index}）`,
+      prompt: part,
+      next: [{ when: '', to: index === parts.length - 1 ? '' : `b-more-${index + 1}` }],
+    }));
+    return { content: { blocks, entryBlockId: 'b-entry' }, mode: 'prompt' };
+  };
+  const parsed = markdownToBlocks(raw.markdown);
+  const blocks = [...parsed.content.blocks] as SkillContent['blocks'];
+  if (parsed.warnings.some((w) => w.includes('小节标题（###）之前的正文未导入'))) {
+    const preamble = raw.markdown.slice(0, raw.markdown.search(/^### /m)).trim();
+    const firstId = blocks[0]?.id;
+    if (preamble && firstId) {
+      blocks.unshift({
+        id: 'b-preamble',
+        kind: 'prompt',
+        title: raw.nameCn,
+        prompt: preamble,
+        next: [{ when: '', to: firstId }],
+      } as SkillContent['blocks'][number]);
+    }
+  }
+  const content: SkillContent = {
+    blocks,
+    entryBlockId: blocks.some((block) => block.id === parsed.content.entryBlockId)
+      ? parsed.content.entryBlockId
+      : (blocks[0]?.id ?? null),
+  };
+  if (content.blocks.length >= 2 && content.blocks.length <= 200 && content.entryBlockId) {
+    return { content, mode: 'flow' };
+  }
+  return fallback();
+}
+
+/** 93 条迁移种子（id=skl_builtin_<slug>，与既有 code-review 同一 id 惯例）。 */
+export const BUILTIN_SKILL_SEEDS: DefaultSkillSeed[] = BUILTIN_SKILLS_RAW.map((raw) => {
+  const { content, mode } = convertBuiltinMarkdown(raw);
+  return {
+    id: `skl_builtin_${raw.slug}`,
+    name: raw.slug,
+    type: mode === 'flow' ? 'flow' : 'prompt',
+    description: raw.description,
+    tags: raw.tags,
+    content,
+    // 千问平台专属依赖已在清洗阶段降级写进正文说明，不造 MCP 依赖（迁移口径 3）。
+    mcpDependencies: [],
+  };
+});

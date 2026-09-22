@@ -1,5 +1,6 @@
 import type { PrismaService } from '../infra/prisma.service';
 import { nowSql } from '../contract/time';
+import { BUILTIN_SKILL_SEEDS } from './builtin-skills';
 import { DEFAULT_SKILL_VERSION, type SkillContent, type SkillMcpDependency, type SkillType } from './skills.dto';
 
 /**
@@ -10,9 +11,9 @@ import { DEFAULT_SKILL_VERSION, type SkillContent, type SkillMcpDependency, type
  * builtin 版本、W2 0010 三来源迁移）已具备，此处只补「预置种子清单本体」——不改迁移，
  * 走代码按 id upsert（schema 冻结）。
  *
- * 清单来源：PRD 未逐条列出应预置哪些默认技能（§9.2 只给了一份 SKILL.md 规范样例：
- * 代码审查）。遵照「不编造多条目」，本清单仅落该规范样例这 1 条作为内置默认技能示例，
- * 后续默认技能以安装包 `builtin/` 目录 + 本清单增补为准。
+ * 清单来源：#19 落 PRD §9.2 规范样例「代码审查」1 条；v0.0.4 #41 批量并入千问工作台
+ * 技能迁移的 93 条内置种子（BUILTIN_SKILL_SEEDS，正文走 builtin-skills.data 分片，
+ * 口径与映射表见 docs/v0.0.4/千问技能迁移映射表.md）。
  */
 export interface DefaultSkillSeed {
   /** 稳定 id：预置按此 id upsert，导出/绑定引用终身不变（§9.2 唯一 id 口径）。 */
@@ -61,6 +62,8 @@ export const DEFAULT_SKILL_SEEDS: DefaultSkillSeed[] = [
     content: CODE_REVIEW,
     mcpDependencies: [{ server: 'github', tools: ['get_pull_request'], required: false, reason: '拉取待审查 diff' }],
   },
+  // v0.0.4 #41：千问工作台技能批量迁移的内置种子（清洗正文→.ts 分片→markdownToBlocks）。
+  ...BUILTIN_SKILL_SEEDS,
 ];
 
 export interface DefaultSkillSeedResult {
@@ -76,6 +79,10 @@ export interface DefaultSkillSeedResult {
 export async function ensureDefaultSkills(prisma: PrismaService): Promise<DefaultSkillSeedResult> {
   const created: string[] = [];
   const updated: string[] = [];
+  // #41 后种子近百条：存在性一次查齐，避免每条 seed 两次往返。
+  const seededIds = DEFAULT_SKILL_SEEDS.map((seed) => seed.id);
+  const existingRows = await prisma.skill.findMany({ where: { id: { in: seededIds } }, select: { id: true } });
+  const existingIds = new Set(existingRows.map((row) => row.id));
   for (const seed of DEFAULT_SKILL_SEEDS) {
     const builtin = {
       name: seed.name,
@@ -87,8 +94,7 @@ export async function ensureDefaultSkills(prisma: PrismaService): Promise<Defaul
       mcpDependencies: JSON.stringify(seed.mcpDependencies),
       sourceType: 'default',
     };
-    const existing = await prisma.skill.findUnique({ where: { id: seed.id }, select: { id: true } });
-    if (existing) {
+    if (existingIds.has(seed.id)) {
       await prisma.skill.update({ where: { id: seed.id }, data: { ...builtin, updatedAt: nowSql() } });
       updated.push(seed.id);
     } else {

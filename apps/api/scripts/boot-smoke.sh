@@ -71,6 +71,24 @@ for _ in $(seq 1 90); do
   sleep 0.5
 done
 
+# v0.0.4 #41：默认技能批量预置（千问迁移 93 条 + code-review = 94）必须真启动落库。
+# 读 GET /skills?source=default 的 total——必须在 kill 前查，进程停了 curl 只会拿 000。
+SKILL_FAIL=""
+if [ "${READY}" = "1" ]; then
+  SCODE=$(curl -s -o "${TMP_DIR}/skills.json" -w '%{http_code}' \
+    -H "Authorization: Bearer ${TOKEN}" "${BASE}/skills?source=default&pageSize=1" 2>/dev/null || true)
+  if [ "${SCODE}" = "200" ]; then
+    DEFAULT_TOTAL=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).total ?? -1)' "${TMP_DIR}/skills.json")
+    if [ "${DEFAULT_TOTAL}" -ge 94 ] 2>/dev/null; then
+      echo "  ok  默认技能入库 total=${DEFAULT_TOTAL}"
+    else
+      SKILL_FAIL="FAIL: 默认技能仅 ${DEFAULT_TOTAL} 条（期望 ≥94：93 条千问迁移 + code-review）"
+    fi
+  else
+    SKILL_FAIL="FAIL: GET /api/v1/skills?source=default -> ${SCODE:-无}"
+  fi
+fi
+
 kill "${API_PID}" 2>/dev/null
 wait "${API_PID}" 2>/dev/null
 
@@ -80,8 +98,15 @@ if [ "${READY}" != 1 ]; then
   exit 1
 fi
 
+if [ -n "${SKILL_FAIL}" ]; then
+  echo "${SKILL_FAIL}"
+  tail -30 "${LOG_FILE}"
+  exit 1
+fi
+
 echo "  ok  GET /api/v1/board -> ${CODE}"
 head -c 200 "${TMP_DIR}/resp.json"; echo
 grep -q ATB_READY "${LOG_FILE}" && echo "  ok  ATB_READY 行存在" || echo "  warn 未见 ATB_READY（不影响门禁）"
-echo "PASS: api 真启动冒烟通过（DI 全链路可解析）"
+grep -q "默认技能预置" "${LOG_FILE}" && echo "  ok  boot 日志含默认技能预置行" || { echo "FAIL: boot 日志未见默认技能预置行"; exit 1; }
+echo "PASS: api 真启动冒烟通过（DI 全链路可解析、默认技能预置落库）"
 exit 0

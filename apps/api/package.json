@@ -13,7 +13,8 @@
     "test": "vitest run",
     "prisma": "node scripts/db.mjs",
     "db:deploy": "node scripts/db.mjs migrate deploy",
-    "boot:smoke": "bash scripts/boot-smoke.sh"
+    "boot:smoke": "bash scripts/boot-smoke.sh",
+    "gen:builtin": "node scripts/gen-builtin-seeds.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

@@ -24,14 +24,15 @@ describe('默认技能预置种子（①）', () => {
     await t.close();
   });
 
-  it('清单只落 PRD §9.2 规范样例这 1 条内置默认技能，不编造多条目', () => {
-    expect(DEFAULT_SKILL_SEEDS).toHaveLength(1);
+  it('#41 后清单并入千问迁移批次：code-review 仍在首位，总数 94', () => {
     expect(DEFAULT_SKILL_SEEDS[0]!.id).toBe('skl_builtin_code-review');
+    expect(DEFAULT_SKILL_SEEDS).toHaveLength(94);
   });
 
   it('首次预置：列表读到 source=default、版本 builtin、只读，且不写版本历史', async () => {
     const result = await ensureDefaultSkills(t.prisma);
-    expect(result.created).toEqual([DEFAULT_SKILL_SEEDS[0]!.id]);
+    expect(result.created).toHaveLength(DEFAULT_SKILL_SEEDS.length);
+    expect(result.created).toContain(DEFAULT_SKILL_SEEDS[0]!.id);
     expect(result.updated).toEqual([]);
 
     const detail = await ui.get(`${API}/skills/${DEFAULT_SKILL_SEEDS[0]!.id}`);
@@ -58,9 +59,9 @@ describe('默认技能预置种子（①）', () => {
   it('重复预置幂等：无副本、走更新分支、内置内容随包刷新', async () => {
     const second = await ensureDefaultSkills(t.prisma);
     expect(second.created).toEqual([]);
-    expect(second.updated).toEqual([DEFAULT_SKILL_SEEDS[0]!.id]);
+    expect(second.updated).toHaveLength(DEFAULT_SKILL_SEEDS.length);
     const defaults = await ui.get(`${API}/skills?source=default`);
-    expect(defaults.body.total).toBe(1);
+    expect(defaults.body.total).toBe(DEFAULT_SKILL_SEEDS.length);
     expect(defaults.body.items.map((row: { id: string }) => row.id)).toContain(DEFAULT_SKILL_SEEDS[0]!.id);
   });
 });
