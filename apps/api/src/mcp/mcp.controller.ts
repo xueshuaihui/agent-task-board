@@ -11,6 +11,7 @@ import { WritebackService } from '../agent/writeback.service';
 import { BreakdownService } from '../breakdown/breakdown.service';
 import { CreationService } from '../creation/creation.service';
 import { SkillsService } from '../skills/skills.service';
+import { SettingsService } from '../infra/settings.service';
 import { createAgentMcpServer, type AgentToolContext } from './mcp.server';
 
 /**
@@ -38,6 +39,7 @@ export class McpController {
     private readonly policy: McpPolicyService,
     private readonly breakdown: BreakdownService,
     private readonly creation: CreationService,
+    private readonly settings: SettingsService,
   ) {}
 
   @Post()
@@ -53,7 +55,9 @@ export class McpController {
       creation: this.creation,
     };
     // 每请求一个 server：Token 上下文（tokenId / capabilities）是请求级的，复用会串能力集合。
-    const server = createAgentMcpServer(auth, context);
+    // 唤醒模式同样每请求现读：mcp_wake_mode 在 20.9 标了 hot，SettingsService 有进程内缓存，
+    // 用户在设置页改完，下一个 initialize 就是新措辞，不需要重启 sidecar。
+    const server = createAgentMcpServer(auth, context, await this.settings.get('mcp_wake_mode'));
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: MCP_TRANSPORT === 'stateless' ? undefined : () => uuidv7(),
       enableJsonResponse: MCP_TRANSPORT === 'stateless',

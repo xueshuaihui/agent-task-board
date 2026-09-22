@@ -42,6 +42,9 @@ export const SETTINGS_SPECS = {
     hot: true,
   },
   light_confirm_timeout_seconds: { schema: z.number().int().min(1).max(300), default: 30, hot: true },
+  // v0.0.4 #46「贾维斯唤醒词 MCP 工作模式」：唤醒词的监测在客户端对话里，服务端唯一的权威
+  // 杠杆是 MCP initialize 的 instructions——这里存的只是「下发哪一种措辞」。
+  mcp_wake_mode: { schema: z.enum(['single', 'continuous']), default: 'single', hot: true },
 } as const satisfies Record<string, { schema: z.ZodTypeAny; default: unknown; hot: boolean }>;
 
 export type SettingsKey = keyof typeof SETTINGS_SPECS;

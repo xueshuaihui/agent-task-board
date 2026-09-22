@@ -553,6 +553,10 @@ export interface IssuedToken extends AgentToken {
 
 /* --------------------------------------------------------------- 设置 */
 
+/** #46 贾维斯唤醒词的工作模式：single 一轮即退、continuous 保持到「退出贾维斯」。 */
+export const MCP_WAKE_MODES = ['single', 'continuous'] as const;
+export type McpWakeMode = (typeof MCP_WAKE_MODES)[number];
+
 export interface Settings {
   lease_ttl_minutes: number;
   heartbeat_interval_seconds: number;
@@ -571,6 +575,8 @@ export interface Settings {
   agent_creation_mode: 'direct' | 'light' | 'silent';
   /** §8.8 轻确认卡片超时秒数（20.9 区间 1–300，缺省 30）。 */
   light_confirm_timeout_seconds: number;
+  /** #46 唤醒词工作模式，随 MCP initialize 的 instructions 下发（hot：改后下一次连接生效）。 */
+  mcp_wake_mode: McpWakeMode;
 }
 export type SettingsKey = keyof Settings;
 

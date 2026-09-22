@@ -5,7 +5,7 @@ import { LATEST_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS } from '@modelcont
 import { appVersion } from '../common/version';
 import { USER_COPY } from '../contract/errors';
 import { toIso } from '../contract/time';
-import { MCP_SERVER_NAME } from '../mcp/mcp.server';
+import { MCP_SERVER_NAME, MCP_WAKE_EXIT, MCP_WAKE_WORD } from '../mcp/mcp.server';
 import {
   createTestApp,
   errorCode,
@@ -196,6 +196,9 @@ describe('MCP HTTP 主链路', () => {
     expect(Object.keys(res.body.result.capabilities as object)).toEqual(['tools']);
     expect(appVersion).toMatch(/^\d+\.\d+\.\d+/);
     expect(res.body.result.serverInfo).toMatchObject({ name: MCP_SERVER_NAME, version: appVersion });
+    // #46：唤醒词口径经 initialize 的 instructions 下发，缺省模式（20.9 single）即单次措辞。
+    expect(String(res.body.result.instructions)).toContain(MCP_WAKE_WORD);
+    expect(String(res.body.result.instructions)).toContain('单次模式');
   });
 
   it('notifications/initialized 回 202 空体', async () => {
@@ -710,6 +713,29 @@ describe('真实 MCP 客户端经 HTTP + Token 领取与回写（验收 5/20）'
     } finally {
       await client.close();
     }
+  });
+});
+
+describe('贾维斯唤醒模式的热生效（#46）', () => {
+  it('mcp_wake_mode 改 continuous 后，新一次 initialize 的 instructions 即连续措辞', async () => {
+    const patched = await ui.patch(`${API}/settings`, { mcp_wake_mode: 'continuous' });
+    expect(patched.status).toBe(200);
+    expect(patched.body.mcp_wake_mode).toBe('continuous');
+
+    const res = await rpc(agent.token, 'initialize', {
+      protocolVersion: LATEST_PROTOCOL_VERSION,
+      capabilities: {},
+      clientInfo: { name: 'atb-wake-mode', version: '0.0.0' },
+    });
+    expect(res.status).toBe(200);
+    const instructions = String(res.body.result.instructions);
+    expect(instructions).toContain(MCP_WAKE_WORD);
+    expect(instructions).toContain('连续模式');
+    expect(instructions).toContain(MCP_WAKE_EXIT);
+    expect(instructions).not.toContain('单次模式');
+
+    // 还原缺省：本文件的其余用例与后续文件共用这套约定，不留副作用。
+    expect((await ui.patch(`${API}/settings`, { mcp_wake_mode: 'single' })).status).toBe(200);
   });
 });
 

@@ -5,6 +5,7 @@ import type {
   CommentType,
   DependencyType,
   FieldType,
+  McpWakeMode,
   NotificationKind,
   ReviewConclusion,
   RunStatus,
@@ -158,6 +159,15 @@ export const AUDIT_ACTION_LABEL: Record<AuditAction, string> = {
   breakdown_confirm: '确认拆解',
   breakdown_cancel: '取消拆解',
   breakdown_timeout: '拆解超期中断',
+};
+
+/**
+ * #46 贾维斯唤醒词的工作模式（20.9 `mcp_wake_mode`）：短标签在此，长说明属设置页文案。
+ * 取值集合与 apps/api/src/contract/settings.ts 的枚举一一对应。
+ */
+export const MCP_WAKE_MODE_LABEL: Record<McpWakeMode, string> = {
+  single: '单次对话',
+  continuous: '连续对话',
 };
 
 /**
