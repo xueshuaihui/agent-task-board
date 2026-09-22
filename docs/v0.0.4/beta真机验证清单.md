@@ -1,14 +1,14 @@
 # v0.0.4-beta.3 真机验证清单（#14 销账）
 
-对象 Release：<https://github.com/xueshuaihui/agent-task-board/releases/tag/v0.0.4-beta.3>（prerelease，tag → `e32d73c`，同名重打：携带 #41 千问迁移 93 条内置技能）
+对象 Release：<https://github.com/xueshuaihui/agent-task-board/releases/tag/v0.0.4-beta.3>（prerelease，tag → `b34e50d`，同名重打：携带 cf8f4f9 弹窗基座 WKWebView 修复 + #41 千问迁移 93 条内置技能）
 本清单覆盖矩阵「#14 销账清单」四项：条款 1、4、68 首启、§20.3-8。全部打勾即 #14 关单、宣布进入预发布。
 
 ## 0. 下载与完整性（前置）
 
 - [ ] 按本机架构下载对应 dmg：Apple Silicon → `Jarvis.Workbench_0.1.0_arm64.dmg`（57.7MB）；Intel → `Jarvis.Workbench_0.1.0_x64.dmg`（59.8MB）
 - [ ] 校验 SHA-256 与 Release 内 `SHA256SUMS.txt` 一致（注意 SUMS 内以空格名登记，比对以哈希为准）：
-  - arm64：`27e83de1a0fad73764a30450fba5b821a32db5e78801eff5be98a49719cc9d9f`
-  - x64：`904cf102dec918c45e6c9e859d9749b88a568a5a2a9274658223c092e307bdb6`
+  - arm64：`29b62261ef34d627cf022e3838505b3786874c8aeb9c1a9925113d239a3607a1`
+  - x64：`6542a1caabada74b76f49e6f05524c4566383b92721dbf3e90947375f122953e`
   - 命令：`shasum -a 256 "Jarvis.Workbench_0.1.0_<arch>.dmg"`
 - [ ] （建议，非门禁）挂载 dmg 前对旧库手动再拷一份保险副本：`cp ~/.agent-board/atb.db /tmp/atb.db.insure-$(date +%F)`
 
