@@ -2,7 +2,6 @@ import { useQueries, useQuery, type UseQueryOptions } from '@tanstack/react-quer
 import { api } from '@/api';
 import { qk } from '@/api/keys';
 import type {
-  BoardColumn,
   BoardQuery,
   BoardResponse,
   ListSortField,
@@ -15,14 +14,10 @@ import { useGroupingStore } from '@/features/board/grouping/useGroupingState';
 /**
  * 7.8 / 4.5「多分组切换」的数据层接缝。
  *
- * 服务端 `GET /board` 与 `GET /tasks` 的 `group_id` 都是**单值**（契约见
- * `apps/api/src/contract/schemas.ts` 的 boardQuerySchema/listQuerySchema），而切换器是
- * 多选。方案对比：
- * - 拉全量后前端过滤——列表分页会被打穿（页内过滤后条数不齐），看板列上限
- *   `board_column_limit` 也会先截断再过滤，直接错；
- * - **每个选中分组各发一次请求、前端按列合并（本实现）**——服务端过滤与列上限都对
- *   每个分组独立生效，N = 已选分组数（本地单用户、并发请求开销可忽略）。
- * 单选与全选（未选 = 全部）仍走原来的单请求，不多花一个 RTT。
+ * B15-①：`GET /board` 的 `groups` 已是多值（维内 OR），看板不再按分组扇出合并。
+ * `GET /tasks` 的 `group_id` 仍是单值契约——列表页多选分组继续走
+ * 「每分组一请求 + 前端按列/按页合并」，N = 已选分组数（本地单用户可忽略）。
+ * 单选与全选（未选 = 全部）不多花一个 RTT。
  */
 
 type Options<TData> = Pick<UseQueryOptions<TData, Error, TData>, 'enabled' | 'placeholderData'>;
@@ -32,46 +27,15 @@ export function useSelectedGroupIds(): string[] {
   return useGroupingStore((state) => state.groupIds);
 }
 
-/**
- * 看板数据源：0/1 个选中分组时走 `useBoard` 的单请求语义（key 仍是 `qk.board(params)`），
- * 多选时拆成每分组一个 `qk.board({...params, group_id})`，按六列对齐合并。
- */
+/** 看板数据源：选中分组直接进 `groups` 参数，单请求。 */
 export function useBoardWithGroups(params: BoardQuery, options?: Options<BoardResponse>) {
   const groupIds = useSelectedGroupIds();
-  const multi = groupIds.length > 1;
-
-  const single = useQuery({
-    queryKey: qk.board(multi ? params : withGroup(params, groupIds[0])),
-    queryFn: () => api.board.get(multi ? params : withGroup(params, groupIds[0])),
-    // 多选时单请求不发货（结果不进返回值），只保留 hook 的形状给调用方。
-    enabled: multi ? false : options?.enabled,
+  return useQuery({
+    queryKey: qk.board(groupIds.length ? { ...params, groups: groupIds } : params),
+    queryFn: () => api.board.get(groupIds.length ? { ...params, groups: groupIds } : params),
+    enabled: options?.enabled,
     placeholderData: options?.placeholderData,
   });
-
-  const results = useQueries({
-    queries: multi
-      ? groupIds.map((id) => ({
-          queryKey: qk.board(withGroup(params, id)),
-          queryFn: () => api.board.get(withGroup(params, id)),
-        }))
-      : [],
-  });
-
-  if (!multi) return single;
-
-  const pending = results.some((result) => result.isPending);
-  const failed = results.find((result) => result.isError);
-  const data = pending || failed ? undefined : mergeBoards(results.map((result) => result.data));
-  return {
-    ...single,
-    data,
-    isPending: pending,
-    isError: Boolean(failed),
-    error: failed?.error ?? null,
-    refetch: async () => {
-      await Promise.all(results.map((result) => result.refetch()));
-    },
-  };
 }
 
 /** 列表页数据源：多选时同样每分组一请求；分页语义见文件头的方案说明。 */
@@ -115,7 +79,7 @@ export function useTaskListWithGroups(params: TaskListQuery, options?: Options<P
   };
 }
 
-/* ------------------------------------------------------------------ 合并 */
+/* ------------------------------------------------------------------ 合并（列表页专用，见文件头） */
 
 function withGroup<T extends { group_id?: string }>(params: T, groupId?: string): T {
   return groupId ? { ...params, group_id: groupId } : params;
@@ -123,37 +87,6 @@ function withGroup<T extends { group_id?: string }>(params: T, groupId?: string)
 
 function isPage(value: unknown): value is Page<import('@/api/types').TaskListItem> {
   return typeof value === 'object' && value !== null && 'items' in value;
-}
-
-/**
- * 六列一一对应合并：任务拼一起、计数求和、`has_more` 取或（任一分组还有更多就该显示
- * 「还有 N 条」）。列内顺序沿用各分组请求自己的 pinned/优先级序，分组之间按切换器的选择序。
- */
-function mergeBoards(boards: (BoardResponse | undefined)[]): BoardResponse | undefined {
-  const valid = boards.filter((board): board is BoardResponse => board !== undefined);
-  if (valid.length === 0) return undefined;
-  const byStatus = new Map<string, BoardColumn>();
-  for (const board of valid) {
-    for (const column of board.columns) {
-      const merged = byStatus.get(column.status);
-      if (merged) {
-        merged.tasks.push(...column.tasks);
-        merged.count += column.count;
-        merged.has_more = merged.has_more || column.has_more;
-      } else {
-        byStatus.set(column.status, { ...column, tasks: [...column.tasks] });
-      }
-    }
-  }
-  // 以第一份响应的列序为准（20.7 固定六列、固定顺序），缺列补空。
-  const columns = valid[0].columns.map(
-    (column) => byStatus.get(column.status) ?? { ...column, tasks: [], count: 0, has_more: false },
-  );
-  return {
-    generated_at: valid[0].generated_at,
-    columns,
-    unread_notifications: Math.max(...valid.map((board) => board.unread_notifications)),
-  };
 }
 
 /**

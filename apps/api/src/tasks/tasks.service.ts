@@ -1440,19 +1440,27 @@ export class TasksService {
     );
   }
 
-  private async buildFilters(query: BoardQuery & { group_id?: string }): Promise<{ predicate: Prisma.Sql }> {
+  private async buildFilters(query: BoardQuery): Promise<{ predicate: Prisma.Sql }> {
     const parts: Prisma.Sql[] = [];
-    if (query.group_id !== undefined) {
-      parts.push(
-        query.group_id === 'none'
-          ? Prisma.sql`t.group_id IS NULL`
-          : Prisma.sql`t.group_id = ${query.group_id}`,
-      );
+    if (query.groups?.length) {
+      parts.push(inListPredicate(Prisma.sql`t.group_id`, query.groups));
     } else {
       // §5.6（W4）：归档分组从看板默认隐藏——未显式按分组过滤时排除归档组任务；
-      // 显式 `group_id=<归档组>` 仍可见（泳道归档折叠区展开该组时用的就是这个口）。
+      // 显式选中归档组（groups 过滤）仍可见（分组过滤 chip 是唯一的这个口）。
       parts.push(Prisma.sql`NOT EXISTS (
         SELECT 1 FROM groups g WHERE g.id = t.group_id AND g.status = 'ARCHIVED')`);
+    }
+    if (query.requirements?.length) {
+      parts.push(inListPredicate(Prisma.sql`t.parent_task_id`, query.requirements));
+    }
+    if (query.agents?.length) {
+      // 卡片上的 Agent 来自当前 run（decorate 同口径）；无 current_run 视为「未设置」。
+      parts.push(
+        inListPredicate(
+          Prisma.sql`(SELECT r.agent_name FROM task_runs r WHERE r.id = t.current_run_id)`,
+          query.agents,
+        ),
+      );
     }
     const priorities = (query.priority ?? []).map(Number).filter((value) => !Number.isNaN(value));
     if (priorities.length > 0) parts.push(Prisma.sql`t.priority IN (${Prisma.join(priorities)})`);
@@ -1460,6 +1468,15 @@ export class TasksService {
     parts.push(...jsonFilterParts(query.tags, query.custom_fields));
     return { predicate: parts.length ? Prisma.sql`AND ${Prisma.join(parts, ' AND ')}` : Prisma.empty };
   }
+}
+
+/** `column IN (values)` 且 values 里的 `none` 归一为 `column IS NULL`（OR 语义）。 */
+function inListPredicate(column: Prisma.Sql, values: string[]): Prisma.Sql {
+  const ids = values.filter((value) => value !== 'none');
+  const eq = ids.length ? Prisma.sql`${column} IN (${Prisma.join(ids)})` : null;
+  const isNull = values.includes('none') ? Prisma.sql`${column} IS NULL` : null;
+  if (eq && isNull) return Prisma.sql`(${eq} OR ${isNull})`;
+  return (eq ?? isNull)!;
 }
 
 function viewScope(view: BoardQuery['view']): {

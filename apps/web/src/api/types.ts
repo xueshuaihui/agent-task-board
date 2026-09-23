@@ -613,8 +613,10 @@ export interface ImportPreview {
 
 export interface BoardQuery {
   view?: BoardView;
-  /** 0919：按分组过滤；`none` = 未分配分组。服务端只收单值，多选由 `useGroupScoped` 拆请求合并。 */
-  group_id?: string;
+  /** B15-①：维内 OR、维间 AND；`none` = 该维未设置。序列化走逗号分隔。 */
+  groups?: string[];
+  requirements?: string[];
+  agents?: string[];
   priority?: number[];
   type?: string[];
   tags?: string[];

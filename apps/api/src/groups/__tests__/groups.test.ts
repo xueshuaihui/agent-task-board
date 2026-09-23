@@ -319,7 +319,7 @@ describe('§5.6 分组归档（W4）', () => {
     expect(out.body.group_id).toBe(outside.body.id);
   });
 
-  it('看板默认隐藏归档组任务；显式 group_id 仍可见（§5.6 归档泳道折叠区的数据面）', async () => {
+  it('看板默认隐藏归档组任务；显式 groups 过滤仍可见（B15 分组即过滤维度）', async () => {
     await freeActiveQuota(2);
     const group = await createGroup('泳道隐藏组');
     const id = await newTask(t, { title: '归档组看板行', group_id: group.body.id });
@@ -335,9 +335,14 @@ describe('§5.6 分组归档（W4）', () => {
     const hidden = await ui.get<{ columns: { tasks: { id: string }[] }[] }>(`${API}/board`);
     expect(visible(hidden.body)).toBe(false);
     const scoped = await ui.get<{ columns: { tasks: { id: string }[] }[] }>(
-      `${API}/board?group_id=${group.body.id}`,
+      `${API}/board?groups=${group.body.id}`,
     );
     expect(visible(scoped.body)).toBe(true);
+    // 多值 = 维内 OR：混选（归档组 + 不存在的组）仍只回该组任务，不报错。
+    const multi = await ui.get<{ columns: { tasks: { id: string }[] }[] }>(
+      `${API}/board?groups=${group.body.id},grp_never_exists`,
+    );
+    expect(visible(multi.body)).toBe(true);
   });
 
   it('反归档：恢复 ACTIVE、archived_at 清回 null；上限已满时拒绝恢复（§5.6 查看与恢复）', async () => {

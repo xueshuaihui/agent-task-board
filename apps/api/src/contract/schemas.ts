@@ -303,8 +303,11 @@ export type CustomFieldFilter = z.infer<typeof customFieldFilterSchema>;
 
 export const boardQuerySchema = z.object({
   view: z.enum(BOARD_VIEWS).default('all'),
-  // 0919：按分组过滤；`none` 表示「未分配分组」。
-  group_id: z.string().trim().max(64).optional(),
+  // B15-①：过滤维度全部多值化（维内 OR、维间 AND），`none` 表示该维「未设置」。
+  // 取代旧的单值 group_id 与前端按分组扇出合并的临时方案。
+  groups: stringListSchema.optional(),
+  requirements: stringListSchema.optional(),
+  agents: stringListSchema.optional(),
   priority: priorityListSchema.optional(),
   type: stringListSchema.optional(),
   tags: stringListSchema.optional(),
