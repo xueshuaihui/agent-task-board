@@ -12,6 +12,7 @@ export { Badge, StatusDot, TagBadge, type BadgeProps } from './badge';
 export { Card, CardBody, CardHeader, type CardProps } from './card';
 export { Tooltip, type TooltipProps } from './tooltip';
 export { Menu, MenuCaret, type MenuItem, type MenuGroup, type MenuProps } from './menu';
+export { Popover, type PopoverProps } from './popover';
 export { ToastProvider, useToast, type ToastApi, type ToastVariant } from './toast';
 export { Table, TBody, TD, TH, THead, TR, MonoCell } from './table';
 export { Pagination, type PaginationProps } from './pagination';

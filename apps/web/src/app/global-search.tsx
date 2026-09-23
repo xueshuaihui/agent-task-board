@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Loader2, Search } from 'lucide-react';
 import { api } from '@/api';
 import type { TaskListItem } from '@/api/types';
-import { StatusDot } from '@/components/ui';
+import { StatusDot, Popover } from '@/components/ui';
 import { priorityStyle, statusStyle } from '@/lib/status-style';
 import { cn } from '@/lib/cn';
 import { useShellStore } from './store/shell';
@@ -11,6 +11,10 @@ import { useShellStore } from './store/shell';
 /**
  * 2.md 2.4 全局搜索：顶栏中部搜索框，Cmd/Ctrl+K 聚焦、Esc 收起。
  * 下拉可用 ↑↓ 在结果间移动、Enter 选中（纯键盘也能走完「⌘K → 输入 → 打开任务」）。
+ *
+ * 下拉面板不再自绘 absolute（motion-spec §4.1：浮层必须经 ui 封装）：渲染进
+ * `ui/Popover`（Radix Popover + motion 140/100ms 出入），锚点即输入容器、宽度对齐、
+ * 点外关闭交给 Radix；焦点全程留在输入框（aria-activedescendant combobox 模式不变）。
  *
  * 范围本期只做任务：输入 ≥1 字符防抖 300ms 后调 `GET /api/v1/tasks?keyword=…`
  * （服务端 `listQuerySchema.keyword`，上限 120，这里按同口径截断），下拉最多展示
@@ -60,15 +64,8 @@ export function GlobalSearch() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  // 点击框外收起下拉（Mousedown 而非 Click：赶在输入框 blur 清场之前判断）。
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onPointerDown);
-    return () => document.removeEventListener('mousedown', onPointerDown);
-  }, [open]);
+  // 点外收起交给 Radix Popover 的 dismiss（见下方 onInteractOutside 的锚点豁免），
+  // 原 document mousedown 手判随自绘面板一并删除。
 
   useEffect(() => {
     const timer = window.setTimeout(() => setKeyword(value), DEBOUNCE_MS);
@@ -96,7 +93,9 @@ export function GlobalSearch() {
     inputRef.current?.blur();
   };
 
-  return (
+  // 锚点 = 搜索输入容器：Radix 以它为定位与宽度基准（--radix-popover-trigger-width），
+  // 等价于原面板 left-0 right-0 + top-calc(100%+4px) 的贴合布局。
+  const anchor = (
     <div ref={rootRef} className="relative w-full max-w-[480px]">
       <Search
         className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-text-tertiary"
@@ -153,56 +152,70 @@ export function GlobalSearch() {
       <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded-badge border border-border bg-bg-muted px-1.5 py-0.5 font-mono text-badge text-text-tertiary">
         {navigator.platform.includes('Mac') ? '⌘K' : 'Ctrl+K'}
       </kbd>
-
-      {showDropdown ? (
-        <div
-          role="listbox"
-          id="global-search-listbox"
-          aria-label="搜索结果"
-          className="absolute left-0 right-0 top-[calc(100%+4px)] z-40 max-h-[360px] overflow-y-auto rounded-card border border-border bg-bg-surface py-1 shadow-card"
-        >
-          {query.isPending ? (
-            <p className="flex items-center gap-2 px-3 py-3 text-aux text-text-secondary">
-              <Loader2 className="size-3.5 animate-spin" aria-hidden />
-              搜索中…
-            </p>
-          ) : query.isError ? (
-            <p className="px-3 py-3 text-aux text-status-failed">搜索失败，请稍后重试。</p>
-          ) : items.length === 0 ? (
-            <p className="px-3 py-3 text-aux text-text-secondary">没有匹配「{debounced}」的任务。</p>
-          ) : (
-            items.map((row, index) => {
-              const status = statusStyle(row.status);
-              const priority = priorityStyle(row.priority);
-              const isActive = index === Math.min(active, items.length - 1);
-              return (
-                <button
-                  key={row.id}
-                  id={optionId(row.id)}
-                  type="button"
-                  role="option"
-                  aria-selected={isActive}
-                  onMouseEnter={() => setActive(index)}
-                  onClick={() => onSelect(row.id)}
-                  className={cn(
-                    'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors duration-140 ease-settle hover:bg-primary-light',
-                    isActive && 'bg-primary-light',
-                  )}
-                >
-                  <StatusDot className={status.dot} />
-                  <span className="font-mono text-aux text-text-tertiary">{row.id}</span>
-                  <span className="min-w-0 flex-1 truncate text-body text-text-primary">
-                    {row.title || '（无标题）'}
-                  </span>
-                  <span className={cn('shrink-0 text-aux font-mono', priority.text)}>
-                    {priorityText(row.priority)}
-                  </span>
-                </button>
-              );
-            })
-          )}
-        </div>
-      ) : null}
     </div>
+  );
+
+  return (
+    <Popover
+      open={showDropdown}
+      onOpenChange={(next) => {
+        // 壳不内置 Trigger：Radix 只在 dismiss（点外兜底）时回调 false，开合仍由上面的状态驱动。
+        if (!next) setOpen(false);
+      }}
+      anchor={anchor}
+      id="global-search-listbox"
+      role="listbox"
+      ariaLabel="搜索结果"
+      // 原面板观感由 className 覆盖壳默认（圆角/阴影/最大高）；sideOffset 4 即原 top-calc(+4px)。
+      className="max-h-[360px] rounded-card shadow-card"
+      // Esc 两段语义仍归输入框 onKeyDown：preventDefault 挡下 Radix 抢先关层，
+      // 按键事件照常派发到输入框，原 handler 一字不动。
+      onEscapeKeyDown={(event) => event.preventDefault()}
+      // 原「点击框内不收下拉」判据（rootRef.contains）：锚点子树内的交互不算层外。
+      onInteractOutside={(event) => {
+        if (rootRef.current && rootRef.current.contains(event.target as Node)) event.preventDefault();
+      }}
+    >
+      {query.isPending ? (
+        <p className="flex items-center gap-2 px-3 py-3 text-aux text-text-secondary">
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          搜索中…
+        </p>
+      ) : query.isError ? (
+        <p className="px-3 py-3 text-aux text-status-failed">搜索失败，请稍后重试。</p>
+      ) : items.length === 0 ? (
+        <p className="px-3 py-3 text-aux text-text-secondary">没有匹配「{debounced}」的任务。</p>
+      ) : (
+        items.map((row, index) => {
+          const status = statusStyle(row.status);
+          const priority = priorityStyle(row.priority);
+          const isActive = index === Math.min(active, items.length - 1);
+          return (
+            <button
+              key={row.id}
+              id={optionId(row.id)}
+              type="button"
+              role="option"
+              aria-selected={isActive}
+              onMouseEnter={() => setActive(index)}
+              onClick={() => onSelect(row.id)}
+              className={cn(
+                'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors duration-140 ease-settle hover:bg-primary-light',
+                isActive && 'bg-primary-light',
+              )}
+            >
+              <StatusDot className={status.dot} />
+              <span className="font-mono text-aux text-text-tertiary">{row.id}</span>
+              <span className="min-w-0 flex-1 truncate text-body text-text-primary">
+                {row.title || '（无标题）'}
+              </span>
+              <span className={cn('shrink-0 text-aux font-mono', priority.text)}>
+                {priorityText(row.priority)}
+              </span>
+            </button>
+          );
+        })
+      )}
+    </Popover>
   );
 }
