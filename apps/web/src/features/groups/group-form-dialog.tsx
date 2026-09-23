@@ -30,17 +30,19 @@ export const COLOR_OPTIONS: readonly { value: string; label: string }[] = [
 export const ICON_OPTIONS: readonly string[] = ['📁', '🚀', '🛠️', '📊', '🧪', '🎨', '💼', '🌐'];
 
 export interface GroupFormDialogProps {
-  /** 传 null = 新建；传分组 = 编辑。 */
+  /** 传 null = 新建；传分组 = 编辑。关闭过渡期间由内部 ref 保留末次非空值，内容不闪空。 */
   group: Group | null;
+  /** 受控开关：false 时 Dialog 播 140ms 退场而不是被卸载。 */
+  open: boolean;
   onClose: () => void;
 }
 
-export function GroupFormDialog({ group, onClose }: GroupFormDialogProps) {
+export function GroupFormDialog({ group, open, onClose }: GroupFormDialogProps) {
   const editing = group !== null;
   const title = editing ? `编辑分组：${group.name}` : '新建分组';
 
   return (
-    <Dialog open size="form" title={title} onClose={onClose}>
+    <Dialog open={open} size="form" title={title} onClose={onClose}>
       <GroupForm group={group} onClose={onClose} />
     </Dialog>
   );

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { TaskCard } from '@/api/types';
 import { api, qk } from '@/api';
@@ -20,20 +20,29 @@ export interface DangerDialogProps {
 
 /** 🔒「执行中 → 异常/失败」的唯一入口（4.5：拖拽落点与卡片菜单都落到这里）。 */
 export function StopDialog({ card, mutations, onClose }: DangerDialogProps) {
+  // 退场动画接线：Dialog 常驻、`open={!!card}` 受控——card 变 null 时组件不卸载，
+  // 让 Dialog 经历 open true→false 过渡帧播 140ms 退场；期间内容仍用末次非空 card。
+  const lastCardRef = useRef<TaskCard | null>(null);
+  if (card) lastCardRef.current = card;
+  const shown = card ?? lastCardRef.current;
   const [reason, setReason] = useState('');
-  if (!card) return null;
+  // 每次真正打开（false→true）清空「原因」输入框，回到空态（与旧的「null→整体卸载」等价）。
+  const wasOpenRef = useRef(false);
+  if (card && !wasOpenRef.current) setReason('');
+  wasOpenRef.current = Boolean(card);
+  if (!shown) return null;
   const busy = mutations.stop.isPending;
   const submit = () => {
     mutations.stop.mutate(
-      { id: card.id, reason: reason.trim() || undefined },
+      { id: shown.id, reason: reason.trim() || undefined },
       { onSuccess: () => onClose() },
     );
   };
   return (
     <Dialog
-      open
+      open={Boolean(card)}
       size="form"
-      title={`强制停止 ${card.id}`}
+      title={`强制停止 ${shown.id}`}
       onClose={busy ? () => undefined : onClose}
       footer={
         <>
@@ -47,7 +56,7 @@ export function StopDialog({ card, mutations, onClose }: DangerDialogProps) {
       }
     >
       <div className="flex flex-col gap-3">
-        <p className="text-body text-text-primary">{card.title}</p>
+        <p className="text-body text-text-primary">{shown.title}</p>
         {/* 4.3.1 规则 2：平台只吊销租约，不下发中止指令，所以这句话必须出现。 */}
         <p className="rounded-card bg-status-failed-soft px-3 py-2 text-aux text-status-failed">
           {COPY.stopConfirm}
@@ -73,26 +82,30 @@ export function StopDialog({ card, mutations, onClose }: DangerDialogProps) {
  * N 用卡片自带的 `run_count`，M 要现问 `/dependencies`（20.7 的卡片 DTO 不带下游）。
  */
 export function DeleteDialog({ card, mutations, onClose }: DangerDialogProps) {
-  const id = card?.id ?? '';
+  // 同 StopDialog：常驻 + open 受控；关闭过渡期间继续用末次非空 card（依赖查询也保留命中该 id 的缓存）。
+  const lastCardRef = useRef<TaskCard | null>(null);
+  if (card) lastCardRef.current = card;
+  const shown = card ?? lastCardRef.current;
+  const id = shown?.id ?? '';
   const deps = useQuery({
     queryKey: qk.taskDependencies(id),
     queryFn: () => api.tasks.dependencies(id),
     enabled: id !== '',
     staleTime: 10_000,
   });
-  if (!card) return null;
+  if (!shown) return null;
 
   const downstream = (deps.data?.blocks ?? []).filter((item) => item.status !== 'DONE').length;
   const busy = mutations.remove.isPending;
   const submit = () => {
-    mutations.remove.mutate(card.id, { onSuccess: () => onClose() });
+    mutations.remove.mutate(shown.id, { onSuccess: () => onClose() });
   };
 
   return (
     <Dialog
-      open
+      open={Boolean(card)}
       size="form"
-      title={`删除任务 ${card.id}`}
+      title={`删除任务 ${shown.id}`}
       onClose={busy ? () => undefined : onClose}
       footer={
         <>
@@ -106,8 +119,8 @@ export function DeleteDialog({ card, mutations, onClose }: DangerDialogProps) {
       }
     >
       <div className="flex flex-col gap-3">
-        <p className="text-body text-text-primary">{card.title}</p>
-        <p className="text-aux text-text-secondary">{COPY.deleteConfirm(card.run_count, downstream)}</p>
+        <p className="text-body text-text-primary">{shown.title}</p>
+        <p className="text-aux text-text-secondary">{COPY.deleteConfirm(shown.run_count, downstream)}</p>
         {downstream > 0 ? (
           <ul className="flex flex-col gap-1 rounded-card border border-border px-3 py-2">
             {(deps.data?.blocks ?? [])

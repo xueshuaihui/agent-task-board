@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Network } from 'lucide-react';
 import { useActiveGroups } from '@/features/groups';
 import { useTaskOverview } from '@/features/task-detail/queries';
@@ -36,41 +36,66 @@ const TAB_ITEMS: readonly TabItem[] = [
   { value: 'activity', label: '活动' },
 ];
 
-/** 壳层挂载点：`requirementId` 非空才渲染，与任务抽屉同一生命周期约定。 */
+/** 壳层挂载点：ref 保留末次非空 requirementId，抽屉常驻挂载、用 open 控制开关（退场动画需要 true→false 过渡帧）。 */
 export function RequirementDrawerHost() {
   const requirementId = useRequirementDrawerStore((state) => state.requirementId);
   const close = useRequirementDrawerStore((state) => state.closeRequirement);
-  if (!requirementId) return null;
-  return <RequirementDrawer requirementId={requirementId} onClose={close} />;
+  const lastRequirementIdRef = useRef<string | null>(null);
+  if (requirementId) lastRequirementIdRef.current = requirementId;
+  const shownRequirementId = requirementId ?? lastRequirementIdRef.current;
+  // 每次真正打开（false→true）递增 key 重挂：Tab 回到「子任务」，与旧的「null→整体卸载」等价。
+  const wasOpenRef = useRef(false);
+  const sessionRef = useRef(0);
+  if (requirementId && !wasOpenRef.current) sessionRef.current += 1;
+  wasOpenRef.current = Boolean(requirementId);
+  if (!shownRequirementId) return null;
+  return (
+    <RequirementDrawer
+      key={sessionRef.current}
+      requirementId={shownRequirementId}
+      open={Boolean(requirementId)}
+      onClose={close}
+    />
+  );
 }
 
 export interface RequirementDrawerProps {
   requirementId: string;
+  /** 受控开关：`false` 时抽屉只播退场，内容仍是末次 id 的那份数据。 */
+  open: boolean;
   onClose: () => void;
 }
 
-export function RequirementDrawer({ requirementId, onClose }: RequirementDrawerProps) {
+export function RequirementDrawer({ requirementId, open, onClose }: RequirementDrawerProps) {
   const overview = useTaskOverview(requirementId);
   const detail = overview.data;
 
   if (overview.isPending) {
     return (
-      <Drawer open title={`需求 ${requirementId}`} onClose={onClose}>
+      <Drawer open={open} title={`需求 ${requirementId}`} onClose={onClose}>
         <LoadingBlock lines={5} />
       </Drawer>
     );
   }
   if (!detail) {
     return (
-      <Drawer open title={`需求 ${requirementId}`} onClose={onClose}>
+      <Drawer open={open} title={`需求 ${requirementId}`} onClose={onClose}>
         <InlineError text={overview.error?.message ?? '需求详情加载失败'} />
       </Drawer>
     );
   }
-  return <RequirementDrawerBody key={detail.id} detail={detail} onClose={onClose} />;
+  return <RequirementDrawerBody key={detail.id} detail={detail} open={open} onClose={onClose} />;
 }
 
-function RequirementDrawerBody({ detail, onClose }: { detail: TaskDetail; onClose: () => void }) {
+function RequirementDrawerBody({
+  detail,
+  open,
+  onClose,
+}: {
+  detail: TaskDetail;
+  open: boolean;
+  onClose: () => void;
+}) {
   const [tab, setTab] = useState<RequirementTab>('subtasks');
   const groups = useActiveGroups();
   const group = detail.group_id
@@ -88,7 +113,7 @@ function RequirementDrawerBody({ detail, onClose }: { detail: TaskDetail; onClos
 
   return (
     <Drawer
-      open
+      open={open}
       title={title}
       onClose={onClose}
       headerExtra={

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { errorMessage } from '@/api/errors';
 import { useToast } from '@/components/ui';
@@ -33,19 +33,24 @@ export function GroupDeleteDialog({ group, onClose }: GroupDeleteDialogProps) {
   /** 迁移目标是否就是预置默认分组（决定单选项文案，对齐 §5.4 对话框样式）。 */
   const targetIsDefault = target?.is_default === 1;
 
-  if (!group) return null;
+  // 退场动画接线（统一套路）：ref 保留末次非空 group + open 受控，关闭过渡期间不 return null，
+  // 让 Dialog 经历 true→false 过渡帧播 140ms 退场，内容仍是刚才那份。
+  const lastGroupRef = useRef<Group | null>(null);
+  if (group) lastGroupRef.current = group;
+  const shown = group ?? lastGroupRef.current;
+  if (!shown) return null;
 
   const confirm = async () => {
     if (strategy === 'migrate' && !target) return;
     try {
       const result = await mutations.remove.mutateAsync({
-        id: group.id,
+        id: shown.id,
         strategy,
         ...(strategy === 'migrate' && target ? { targetGroupId: target.id } : {}),
       });
       const action = result.strategy === 'migrate' ? '迁移' : '删除';
       toast.success(
-        `已删除分组 ${group.name}`,
+        `已删除分组 ${shown.name}`,
         `${action}了 ${result.affected_tasks} 个任务${result.strategy === 'cascade' ? '（含执行记录，不可恢复）' : ''}`,
       );
       onClose();
@@ -56,9 +61,9 @@ export function GroupDeleteDialog({ group, onClose }: GroupDeleteDialogProps) {
 
   return (
     <Dialog
-      open
+      open={group !== null}
       size="form"
-      title={`删除分组：${group.name}`}
+      title={`删除分组：${shown.name}`}
       onClose={onClose}
       footer={
         <>

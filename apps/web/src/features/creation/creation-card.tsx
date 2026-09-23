@@ -254,14 +254,14 @@ export function CreationCard({ card }: CreationCardProps) {
         ) : null}
       </div>
 
-      {editOpen ? (
-        <CreationEditDialog
-          card={card}
-          submitting={submitting}
-          onClose={() => setEditOpen(false)}
-          onSubmit={(payload) => void submit('edit', payload)}
-        />
-      ) : null}
+      {/* 退场动画接线：不再按 editOpen 条件挂载——Dialog 常驻，open 由「card 是否非空」驱动，
+          关闭时传 null 让 open true→false 播退场；字段回填由组件内 `[card]` effect 在下次打开时复位。 */}
+      <CreationEditDialog
+        card={editOpen ? card : null}
+        submitting={submitting}
+        onClose={() => setEditOpen(false)}
+        onSubmit={(payload) => void submit('edit', payload)}
+      />
     </motion.article>
   );
 }

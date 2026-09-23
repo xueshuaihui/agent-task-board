@@ -78,11 +78,27 @@ export interface ReviewFormDialogProps {
   onClose: () => void;
 }
 
-/** `taskId` 为空必须返回 null：挂一个 `open=false` 的 Dialog 只是白占一层 portal 与滚动锁。 */
+/** 退场动画接线：`taskId` 变 null 不卸载——ref 保留末次非空 id，Dialog 用 open 受控播 140ms 退场。 */
 export function ReviewFormDialog({ taskId, prefill, onClose }: ReviewFormDialogProps) {
-  if (!taskId) return null;
-  // 换任务等于换表单：草稿、错误、滚动位置都不该跨任务残留（key 让整棵子树重建）。
-  return <ReviewFormBody key={taskId} taskId={taskId} prefill={prefill} onClose={onClose} />;
+  const lastTaskIdRef = useRef<string | null>(null);
+  if (taskId) lastTaskIdRef.current = taskId;
+  const shownTaskId = taskId ?? lastTaskIdRef.current;
+  // 每次真正打开（false→true）递增 key 重挂表单：草稿、错误、滚动位置不跨次残留（与旧卸载语义等价）。
+  const wasOpenRef = useRef(false);
+  const sessionRef = useRef(0);
+  if (taskId && !wasOpenRef.current) sessionRef.current += 1;
+  wasOpenRef.current = Boolean(taskId);
+  if (!shownTaskId) return null;
+  // 换任务等于换表单：key 带会话号 + 任务 id，草稿、错误、滚动位置都不该跨任务残留（key 让整棵子树重建）。
+  return (
+    <ReviewFormBody
+      key={`${sessionRef.current}:${shownTaskId}`}
+      taskId={shownTaskId}
+      open={Boolean(taskId)}
+      prefill={prefill}
+      onClose={onClose}
+    />
+  );
 }
 
 /** 预填只动两个单选项：通过时无「退回目标」（原型 5.3 字段可见性行），故按存在与否合并。 */
@@ -97,10 +113,12 @@ function applyPrefill(draft: ReviewDraft, prefill: ReviewPrefill | null | undefi
 
 function ReviewFormBody({
   taskId,
+  open,
   prefill,
   onClose,
 }: {
   taskId: string;
+  open: boolean;
   prefill?: ReviewPrefill | null;
   onClose: () => void;
 }) {
@@ -284,7 +302,7 @@ function ReviewFormBody({
 
   return (
     <Dialog
-      open
+      open={open}
       size="review"
       title={dialogTitle}
       onClose={onClose}

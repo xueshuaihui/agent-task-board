@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import type { TaskDetail } from '@/api';
 import { Button, Dialog, useToast } from '@/components/ui';
 import { statusLabel } from '@/lib/labels';
@@ -116,10 +116,15 @@ export function useDrawerActions({ detail, onJumpToLogs }: DrawerActionsOptions)
       .catch(() => toast.info(detail.id));
   };
 
-  const confirmNode = confirmAction ? (
+  // 退场动画接线（统一套路）：ref 保留末次非空 confirmAction + open 受控——
+  // 关闭时 Dialog 不立即卸载（return null），经历 true→false 过渡帧播 140ms 退场，内容仍是刚才那份。
+  const lastConfirmRef = useRef<TaskAction | null>(null);
+  if (confirmAction) lastConfirmRef.current = confirmAction;
+  const shownConfirm = confirmAction ?? lastConfirmRef.current;
+  const confirmNode = shownConfirm ? (
     <Dialog
-      open
-      title={confirmAction.confirm?.title ?? '确认操作'}
+      open={confirmAction !== null}
+      title={shownConfirm.confirm?.title ?? '确认操作'}
       onClose={() => setConfirmAction(null)}
       footer={
         <>
@@ -128,18 +133,18 @@ export function useDrawerActions({ detail, onJumpToLogs }: DrawerActionsOptions)
           </Button>
           <Button
             size="sm"
-            variant={confirmAction.danger ? 'danger' : 'primary'}
-            loading={busyId === confirmAction.id}
-            onClick={() => perform(confirmAction)}
+            variant={shownConfirm.danger ? 'danger' : 'primary'}
+            loading={busyId === shownConfirm.id}
+            onClick={() => perform(shownConfirm)}
           >
-            {confirmAction.label}
+            {shownConfirm.label}
           </Button>
         </>
       }
     >
       <p className="text-body text-text-primary">{detail.title}</p>
-      <p className="mt-2 text-body text-text-secondary">{confirmAction.confirm?.body}</p>
-      {confirmAction.id === 'delete' ? (
+      <p className="mt-2 text-body text-text-secondary">{shownConfirm.confirm?.body}</p>
+      {shownConfirm.id === 'delete' ? (
         <p className="mt-2 text-aux text-text-tertiary">
           物理删除并级联产物文件，不可撤销（4.3.1 规则 4）。
         </p>

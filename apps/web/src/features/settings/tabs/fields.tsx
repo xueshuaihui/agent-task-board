@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
 import { Button, Dialog, IconButton, Input, Select, Switch, Tooltip } from '@/components/ui';
 import { contextNumber, errorMessage, isApiError } from '@/api';
@@ -66,6 +66,17 @@ export function FieldsTab() {
 
   const [editing, setEditing] = useState<FieldDef | null>(null);
   const [creating, setCreating] = useState(false);
+  // 退场动画接线（统一套路）：ref 保留末次非空表单描述符 + open 受控——FieldDefDialog 常驻不卸载，
+  // Dialog 经历 true→false 过渡帧播 140ms 退场；每次真正打开（false→true）递增 key 重挂，
+  // 输入框回到初始值（与旧的「条件挂载」等价）。
+  const formOpen = creating || editing !== null;
+  const lastFormRef = useRef<{ creating: boolean; def: FieldDef | null } | null>(null);
+  if (formOpen) lastFormRef.current = { creating, def: editing };
+  const shownForm = formOpen ? { creating, def: editing } : lastFormRef.current;
+  const wasFormOpenRef = useRef(false);
+  const formSeqRef = useRef(0);
+  if (formOpen && !wasFormOpenRef.current) formSeqRef.current += 1;
+  wasFormOpenRef.current = formOpen;
   const [removing, setRemoving] = useState<FieldDef | null>(null);
   /** 409 回来的字段：就地提示「改为停用」并把停用按钮标出来（7.4）。 */
   const [inUse, setInUse] = useState<{ def: FieldDef; count: number | null } | null>(null);
@@ -240,10 +251,11 @@ export function FieldsTab() {
 
       {inUse ? null : errorText ? <FormError>{errorText}</FormError> : null}
 
-      {creating || editing ? (
+      {shownForm ? (
         <FieldDefDialog
-          open
-          def={editing}
+          key={formSeqRef.current}
+          open={formOpen}
+          def={shownForm.def}
           taskTypes={taskTypes}
           existing={items}
           cardCount={cardCount}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useActiveGroups } from '@/features/groups';
 import { Button, Dialog, Field, Input, Select, Textarea } from '@/components/ui';
 import { PRIORITY_LABEL } from '@/lib/labels';
@@ -19,6 +19,12 @@ export interface CreationEditDialogProps {
 }
 
 export function CreationEditDialog({ card, onClose, onSubmit, submitting }: CreationEditDialogProps) {
+  // 退场动画接线：消费方关闭时把 card 置 null（`open={card !== null}` 随之翻转）——
+  // 这里用 ref 记住「曾打开过」，从未打开则整体不渲染，打开过就保留挂载让 Dialog 播 140ms 退场。
+  const everOpenedRef = useRef(card !== null);
+  if (card !== null) everOpenedRef.current = true;
+  if (!everOpenedRef.current) return null;
+
   const groups = useActiveGroups();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');

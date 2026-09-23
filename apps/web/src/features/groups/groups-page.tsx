@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Archive, ArchiveRestore, FolderPlus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { errorMessage } from '@/api/errors';
@@ -27,6 +27,15 @@ export function GroupsPage() {
 
   const [formTarget, setFormTarget] = useState<'create' | Group | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Group | null>(null);
+  // 退场动画接线（统一套路）：ref 保留末次非空 formTarget，Dialog 常驻、open 受控；
+  // 每次真正打开（false→true）递增 key 重挂表单，输入框回到初始值（与旧的「条件挂载」等价）。
+  const lastFormTargetRef = useRef<'create' | Group | null>(null);
+  if (formTarget) lastFormTargetRef.current = formTarget;
+  const shownFormTarget = formTarget ?? lastFormTargetRef.current;
+  const wasFormOpenRef = useRef(false);
+  const formSessionRef = useRef(0);
+  if (formTarget && !wasFormOpenRef.current) formSessionRef.current += 1;
+  wasFormOpenRef.current = Boolean(formTarget);
 
   const items = groups.data?.items ?? [];
   const active = useMemo(() => items.filter((group) => group.status === 'ACTIVE'), [items]);
@@ -109,9 +118,12 @@ export function GroupsPage() {
         </div>
       )}
 
-      {formTarget ? (
+      {shownFormTarget ? (
         <GroupFormDialog
-          group={formTarget === 'create' ? null : formTarget}
+          // key 只在「打开瞬间」变化触发重挂；关闭过渡期间 key 不变，退场动画照常播完。
+          key={formSessionRef.current}
+          open={formTarget !== null}
+          group={shownFormTarget === 'create' ? null : shownFormTarget}
           onClose={() => setFormTarget(null)}
         />
       ) : null}

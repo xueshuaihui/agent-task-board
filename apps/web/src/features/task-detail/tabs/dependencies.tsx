@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Plus, Trash2, X } from 'lucide-react';
 import {
@@ -224,8 +224,6 @@ function DependencyPickerDialog({ taskId, preset, existing, onClose }: PickerPro
     (item) => item.id !== taskId && !linked.has(item.id),
   );
 
-  if (!preset) return null;
-
   const submit = () => {
     if (!selected) return;
     add.mutate(
@@ -241,9 +239,16 @@ function DependencyPickerDialog({ taskId, preset, existing, onClose }: PickerPro
 
   const errorText = add.isError ? dependencyCycleText(add.error) : null;
 
+  // 退场动画接线（统一套路）：ref 保留末次非空 preset + open 受控——preset 变 null 时不卸载，
+  // Dialog 经历 true→false 过渡帧播 140ms 退场；关闭瞬间既有的 `[preset]` effect 已把表单复位。
+  const lastPresetRef = useRef<{ type: DependencyType } | null>(null);
+  if (preset) lastPresetRef.current = preset;
+  const shown = preset ?? lastPresetRef.current;
+  if (!shown) return null;
+
   return (
     <Dialog
-      open
+      open={preset !== null}
       onClose={onClose}
       title={type === 'blocks' ? '添加前置任务' : '添加关联任务'}
       footer={

@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { api, fieldErrorsOf, isApiError, qk, useApiMutation, useSettings, useTaskList } from '@/api';
 import { useActiveGroups } from '@/features/groups';
 import type { TaskCreateInput } from '@/api';
@@ -31,10 +31,18 @@ export interface TaskCreateDialogProps {
 }
 
 export function TaskCreateDialog({ open, onClose, asRequirement = false, parentTaskId, heading }: TaskCreateDialogProps) {
-  if (!open) return null;
+  // 退场动画接线（统一套路）：open 变 false 不再整体卸载——Dialog 常驻、受控传给内层，
+  // 经历 true→false 过渡帧播 140ms 退场，关闭期间表单快照仍是刚才那份。
+  // 每次真正打开（false→true）递增 key 重挂内层：输入回到空态（与旧的 `!open → return null` 等价）。
+  const wasOpenRef = useRef(false);
+  const sessionRef = useRef(0);
+  if (open && !wasOpenRef.current) sessionRef.current += 1;
+  wasOpenRef.current = open;
+  if (!open && sessionRef.current === 0) return null; // 从未打开过：不渲染（首开不受影响）
   return (
     <TaskCreateForm
-      key={`${asRequirement ? 'req' : 'task'}-${parentTaskId ?? 'none'}`}
+      key={`${asRequirement ? 'req' : 'task'}-${parentTaskId ?? 'none'}-s${sessionRef.current}`}
+      open={open}
       asRequirement={asRequirement}
       initialParent={parentTaskId ?? ''}
       heading={heading}
@@ -44,11 +52,13 @@ export function TaskCreateDialog({ open, onClose, asRequirement = false, parentT
 }
 
 function TaskCreateForm({
+  open,
   asRequirement,
   initialParent,
   heading,
   onClose,
 }: {
+  open: boolean;
   asRequirement: boolean;
   initialParent: string;
   heading?: string;
@@ -122,7 +132,7 @@ function TaskCreateForm({
 
   return (
     <Dialog
-      open
+      open={open}
       size="form"
       title={heading ?? (asRequirement ? '新建需求' : parentId ? '新建任务（挂到需求）' : '新建任务')}
       onClose={onClose}

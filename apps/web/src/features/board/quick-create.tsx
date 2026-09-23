@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import type { TaskCreateInput, TaskStatus, TemplatePreset } from '@/api/types';
 import { errorMessage, fieldErrorsOf, isApiError, useFieldDefs, useSettings } from '@/api';
 import { useActiveGroups } from '@/features/groups';
@@ -37,12 +37,23 @@ export interface QuickCreateDialogProps {
 }
 
 export function QuickCreateDialog({ state, mutations, onClose }: QuickCreateDialogProps) {
-  if (!state) return null;
+  // 退场动画接线（统一套路）：ref 保留末次非空 state + open 受控——变 null 时不卸载，
+  // Dialog 经历 true→false 过渡帧播 140ms 退场，表单仍是刚才那份。
+  const lastStateRef = useRef<QuickCreateTarget | null>(null);
+  if (state) lastStateRef.current = state;
+  const shown = state ?? lastStateRef.current;
+  // 每次真正打开（false→true）递增 key 重挂表单：输入与已建行 id 回到初始态（与旧条件挂载等价）。
+  const wasOpenRef = useRef(false);
+  const sessionRef = useRef(0);
+  if (state && !wasOpenRef.current) sessionRef.current += 1;
+  wasOpenRef.current = Boolean(state);
+  if (!shown) return null;
   return (
     <QuickCreateForm
-      // 每次换目标列/换前置都重挂一份，表单状态自然复位。
-      key={`${state.target}-${state.dependsOn?.id ?? 'none'}`}
-      state={state}
+      // 每次换目标列/换前置都重挂一份，表单状态自然复位；会话号保证重开同一目标也是干净表单。
+      key={`${shown.target}-${shown.dependsOn?.id ?? 'none'}-s${sessionRef.current}`}
+      state={shown}
+      open={Boolean(state)}
       mutations={mutations}
       onClose={onClose}
     />
@@ -51,11 +62,13 @@ export function QuickCreateDialog({ state, mutations, onClose }: QuickCreateDial
 
 interface QuickCreateFormProps {
   state: QuickCreateTarget;
+  /** 受控开关：false 时 Dialog 播退场而不是被卸载。 */
+  open: boolean;
   mutations: BoardMutations;
   onClose: () => void;
 }
 
-function QuickCreateForm({ state, mutations, onClose }: QuickCreateFormProps) {
+function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormProps) {
   const toast = useToast();
   const settings = useSettings();
   const fieldDefs = useFieldDefs();
@@ -131,7 +144,7 @@ function QuickCreateForm({ state, mutations, onClose }: QuickCreateFormProps) {
 
   return (
     <Dialog
-      open
+      open={open}
       size="form"
       title={state.dependsOn ? `新建后续任务（前置 ${state.dependsOn.id}）` : `新建任务 → ${STATUS_LABEL[state.target]}`}
       onClose={onClose}

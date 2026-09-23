@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { TaskDetail } from '@/api';
 import { useSettings } from '@/api';
@@ -23,7 +23,8 @@ import { InlineError, LoadingBlock } from './ui-bits';
  * 任务详情抽屉（原型 4.1 \~4.9）：容器由壳层挂（`src/app/overlay-slot.tsx`），
  * 这里只做「概览 + Tab 条 + 底部操作栏」的组合，各 Tab 的内容在 ./tabs/*。
  *
- * @param taskId 打开的任务 id；`null` 时返回 `null`——不渲染、也不留挂着的查询。
+ * @param taskId 打开的任务 id；变 `null` 时不卸载——抽屉保持挂载并播 drawerOut 退场，
+ * 过渡期间继续用末次非空 id（详情查询命中缓存则直接渲染正文，不闪骨架）。
  * @param onClose 由壳层给（`useShellStore.closeTask`）。
  */
 export interface TaskDetailDrawerProps {
@@ -32,33 +33,56 @@ export interface TaskDetailDrawerProps {
 }
 
 export function TaskDetailDrawer({ taskId, onClose }: TaskDetailDrawerProps) {
-  if (!taskId) return null;
-  return <DrawerWithOverview taskId={taskId} onClose={onClose} />;
+  // 退场动画接线（统一套路）：ref 保留末次非空 taskId + open 受控，Drawer 才能经历 true→false 过渡帧。
+  const lastTaskIdRef = useRef<string | null>(null);
+  if (taskId) lastTaskIdRef.current = taskId;
+  const shownTaskId = taskId ?? lastTaskIdRef.current;
+  // 每次真正打开（false→true）递增 key 重挂子树：Tab 回到概览，与旧的「null→整体卸载」等价。
+  const wasOpenRef = useRef(false);
+  const sessionRef = useRef(0);
+  if (taskId && !wasOpenRef.current) sessionRef.current += 1;
+  wasOpenRef.current = Boolean(taskId);
+  if (!shownTaskId) return null;
+  return (
+    <DrawerWithOverview key={sessionRef.current} taskId={shownTaskId} open={Boolean(taskId)} onClose={onClose} />
+  );
 }
 
-function DrawerWithOverview({ taskId, onClose }: Required<TaskDetailDrawerProps>) {
+function DrawerWithOverview({
+  taskId,
+  open,
+  onClose,
+}: Required<TaskDetailDrawerProps> & { open: boolean }) {
   const overview = useTaskOverview(taskId);
   const detail = overview.data;
 
   if (overview.isPending) {
     return (
-      <Drawer open title={`任务 ${taskId}`} onClose={onClose}>
+      <Drawer open={open} title={`任务 ${taskId}`} onClose={onClose}>
         <LoadingBlock lines={5} />
       </Drawer>
     );
   }
   if (!detail) {
     return (
-      <Drawer open title={`任务 ${taskId}`} onClose={onClose}>
+      <Drawer open={open} title={`任务 ${taskId}`} onClose={onClose}>
         <InlineError text={overview.error?.message ?? '任务详情加载失败'} />
       </Drawer>
     );
   }
-  return <DrawerBody key={detail.id} detail={detail} onClose={onClose} />;
+  return <DrawerBody key={detail.id} detail={detail} open={open} onClose={onClose} />;
 }
 
 /** 拆一层是因为 `useDrawerActions` 要拿 `detail` 建动作集，没数据之前不能挂它。 */
-function DrawerBody({ detail, onClose }: { detail: TaskDetail; onClose: () => void }) {
+function DrawerBody({
+  detail,
+  open,
+  onClose,
+}: {
+  detail: TaskDetail;
+  open: boolean;
+  onClose: () => void;
+}) {
   const [tab, setTab] = useState<DrawerTab>('overview');
   const settings = useSettings();
   const commentCount = useTaskCommentCount(detail.id);
@@ -73,7 +97,7 @@ function DrawerBody({ detail, onClose }: { detail: TaskDetail; onClose: () => vo
 
   return (
     <Drawer
-      open
+      open={open}
       title={<DrawerTitle detail={detail} />}
       onClose={onClose}
       headerExtra={

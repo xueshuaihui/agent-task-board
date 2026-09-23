@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Download, ExternalLink } from 'lucide-react';
 import { Button, Dialog, EmptyState, Skeleton } from '@/components/ui';
 import { errorMessage } from '@/api';
@@ -33,18 +34,23 @@ export interface ArtifactPreviewDialogProps {
 }
 
 export function ArtifactPreviewDialog({ target, maxMb, onClose }: ArtifactPreviewDialogProps) {
-  if (!target) return null;
+  // 退场动画接线（统一套路）：ref 保留末次非空 target + open 受控——target 变 null 时不卸载，
+  // Dialog 经历 true→false 过渡帧播 140ms 退场；标题/正文仍是刚才那份（meta 查询命中同 id 缓存）。
+  const lastTargetRef = useRef<PreviewTarget | null>(null);
+  if (target) lastTargetRef.current = target;
+  const shown = target ?? lastTargetRef.current;
+  if (!shown) return null;
   return (
     <Dialog
-      open
+      open={target !== null}
       onClose={onClose}
       size="review"
       title={
         <span className="flex min-w-0 items-baseline gap-2">
-          <span className="truncate">{target.name}</span>
+          <span className="truncate">{shown.name}</span>
           <span className="shrink-0 text-aux font-normal text-text-tertiary">
-            {labelOf(ARTIFACT_TYPE_LABEL, target.type)}
-            {target.size_bytes !== null ? ` · ${formatBytes(target.size_bytes)}` : ''}
+            {labelOf(ARTIFACT_TYPE_LABEL, shown.type)}
+            {shown.size_bytes !== null ? ` · ${formatBytes(shown.size_bytes)}` : ''}
           </span>
         </span>
       }
@@ -53,18 +59,18 @@ export function ArtifactPreviewDialog({ target, maxMb, onClose }: ArtifactPrevie
         // 给了就是一个只会报错的死按钮；4.5 明确不要这种按钮。
         // 判 `target.type` 就够：服务端 `previewFor` 只在 type 为 link 时才回 kind: 'link'。
         // 同理，列表行已经标了 `missing` 的丢失文件也不给下载（`/raw` 回 404 ARTIFACT_LOST）。
-        target.type === 'link' || target.missing ? null : (
+        shown.type === 'link' || shown.missing ? null : (
           <Button
             size="sm"
             icon={<Download className="size-3.5" />}
-            onClick={() => void downloadArtifact(target.id, target.name).catch(() => undefined)}
+            onClick={() => void downloadArtifact(shown.id, shown.name).catch(() => undefined)}
           >
             下载
           </Button>
         )
       }
     >
-      <PreviewBody target={target} maxMb={maxMb} />
+      <PreviewBody target={shown} maxMb={maxMb} />
     </Dialog>
   );
 }

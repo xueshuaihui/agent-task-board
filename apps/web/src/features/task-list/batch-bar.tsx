@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Archive, Tag, X } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { api, qk, useApiMutation, useTags } from '@/api';
@@ -408,12 +408,17 @@ function ResultDialog({
   outcome: BatchOutcome | null;
   onClose: () => void;
 }) {
-  if (!outcome) return null;
+  // 退场动画接线（统一套路）：ref 保留末次非空 outcome + open 受控，
+  // 关闭过渡期间不 return null，Dialog 播完 140ms 退场，结果明细仍是刚才那份。
+  const lastOutcomeRef = useRef<BatchOutcome | null>(null);
+  if (outcome) lastOutcomeRef.current = outcome;
+  const shown = outcome ?? lastOutcomeRef.current;
+  if (!shown) return null;
   return (
     <Dialog
-      open
+      open={outcome !== null}
       onClose={onClose}
-      title={`${outcome.label}结果`}
+      title={`${shown.label}结果`}
       footer={
         <Button variant="primary" onClick={onClose}>
           知道了
@@ -422,17 +427,17 @@ function ResultDialog({
     >
       <div className="flex flex-col gap-3">
         <p className="text-body text-text-primary" data-selectable>
-          成功 {outcome.succeeded.length} 条，跳过 {outcome.failures.length} 条
-          {outcome.failures.length > 0 ? '（逐条判定，不整体回滚）' : ''}
+          成功 {shown.succeeded.length} 条，跳过 {shown.failures.length} 条
+          {shown.failures.length > 0 ? '（逐条判定，不整体回滚）' : ''}
         </p>
-        {outcome.failures.length > 0 ? (
+        {shown.failures.length > 0 ? (
           <Table>
             <THead>
               <TH className="w-[90px]">任务</TH>
               <TH>跳过原因</TH>
             </THead>
             <TBody>
-              {outcome.failures.map((failure) => (
+              {shown.failures.map((failure) => (
                 <TR key={failure.id}>
                   <TD>
                     <MonoCell>{failure.id}</MonoCell>
@@ -443,12 +448,12 @@ function ResultDialog({
             </TBody>
           </Table>
         ) : null}
-        {outcome.succeeded.length > 0 ? (
+        {shown.succeeded.length > 0 ? (
           <p className="text-aux text-text-tertiary" data-selectable>
-            已生效：{outcome.succeeded.join('、')}
+            已生效：{shown.succeeded.join('、')}
           </p>
         ) : null}
-        {outcome.failures.length > 0 ? (
+        {shown.failures.length > 0 ? (
           <p className="text-aux text-text-secondary">
             失败的任务仍保留勾选，改完条件可以直接重试。
           </p>

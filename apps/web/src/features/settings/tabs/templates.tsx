@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Copy, Plus, Trash2 } from 'lucide-react';
 import { Button, Dialog, IconButton, Input, Select, Textarea } from '@/components/ui';
 import { errorMessage, fieldErrorsOf } from '@/api';
@@ -62,6 +62,16 @@ export function TemplatesTab() {
   );
 
   const [draft, setDraft] = useState<{ source: Template | null } | null>(null);
+  // 退场动画接线（统一套路）：ref 保留末次非空 draft + open 受控——弹窗常驻不卸载，
+  // 关闭时 Dialog 经历 true→false 过渡帧播 140ms 退场；每次真正打开（false→true）递增 key
+  // 重挂内层，表单回到初始值（与旧的「条件挂载」等价）。
+  const lastDraftRef = useRef<{ source: Template | null } | null>(null);
+  if (draft) lastDraftRef.current = draft;
+  const shownDraft = draft ?? lastDraftRef.current;
+  const wasDraftOpenRef = useRef(false);
+  const draftSeqRef = useRef(0);
+  if (draft && !wasDraftOpenRef.current) draftSeqRef.current += 1;
+  wasDraftOpenRef.current = Boolean(draft);
   const [removing, setRemoving] = useState<Template | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -158,9 +168,11 @@ export function TemplatesTab() {
 
       {errorText ? <FormError>{errorText}</FormError> : null}
 
-      {draft ? (
+      {shownDraft ? (
         <TemplateDialog
-          source={draft.source}
+          key={draftSeqRef.current}
+          open={draft !== null}
+          source={shownDraft.source}
           taskTypes={taskTypes}
           defs={enabledDefs}
           pending={create.isPending || patch.isPending}
@@ -199,6 +211,8 @@ export function TemplatesTab() {
 /* ------------------------------------------------------------- 弹窗 */
 
 interface TemplateDialogProps {
+  /** 受控开关：false 时 Dialog 播 140ms 退场而不是被卸载。 */
+  open: boolean;
   /** null = 新建；「复制」传的是源模板的浅拷贝（id 已清空、名称加了「副本」）。 */
   source: Template | null;
   taskTypes: readonly string[];
@@ -213,6 +227,7 @@ interface TemplateDialogProps {
 }
 
 function TemplateDialog({
+  open,
   source,
   taskTypes,
   defs,
@@ -280,7 +295,7 @@ function TemplateDialog({
 
   return (
     <Dialog
-      open
+      open={open}
       onClose={onClose}
       title={editing ? `编辑模板「${source?.name ?? ''}」` : '新建模板'}
       footer={

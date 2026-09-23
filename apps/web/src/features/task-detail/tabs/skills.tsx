@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { errorMessage, qk, useApiMutation } from '@/api';
 import { navigate } from '@/app/router';
@@ -191,11 +191,22 @@ function SkillStatusBadge({ skill }: { skill: Skill }) {
 
 /** 详情抽屉挂载在 Tab 内部：编辑跳技能库页的 `?edit=` 深链（路由接线见 features/skills README）。 */
 function SkillDetailDrawerHost({ skillId, onClose }: { skillId: string | undefined; onClose: () => void }) {
-  if (!skillId) return null;
+  // 退场动画接线（统一套路）：ref 保留末次非空 skillId、open 受控——变 undefined 时不卸载，
+  // 让 Drawer 经历 true→false 过渡帧播 drawerOut；关闭期间内容仍是刚才那份（AnimatePresence 冻结末次渲染）。
+  const lastSkillIdRef = useRef<string | undefined>(undefined);
+  if (skillId) lastSkillIdRef.current = skillId;
+  const shownSkillId = skillId ?? lastSkillIdRef.current;
+  // 每次真正打开递增 key 重挂：Tab 回到「概览」，与旧的「undefined→整体卸载」等价。
+  const wasOpenRef = useRef(false);
+  const sessionRef = useRef(0);
+  if (skillId && !wasOpenRef.current) sessionRef.current += 1;
+  wasOpenRef.current = Boolean(skillId);
+  if (!shownSkillId) return null;
   return (
     <SkillDetailDrawer
-      skillId={skillId}
-      open
+      key={sessionRef.current}
+      skillId={shownSkillId}
+      open={Boolean(skillId)}
       onClose={onClose}
       onEdit={(skill) => {
         onClose();

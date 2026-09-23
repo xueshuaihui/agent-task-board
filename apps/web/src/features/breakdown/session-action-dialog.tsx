@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { Button, Dialog } from '@/components/ui';
 import type { BreakdownSession } from '@/api/types';
@@ -24,11 +25,16 @@ export function SessionActionDialog({
   onClose,
   onAction,
 }: SessionActionDialogProps) {
-  if (!session) return null;
+  // 退场动画接线（统一套路）：ref 保留末次非空 session + open 受控——
+  // session 变 null 时不卸载，Dialog 经历 true→false 过渡帧播 140ms 退场，内容仍是刚才那份。
+  const lastSessionRef = useRef<BreakdownSession | null>(null);
+  if (session) lastSessionRef.current = session;
+  const shown = session ?? lastSessionRef.current;
+  if (!shown) return null;
   const isConfirm = kind === 'confirm';
   return (
     <Dialog
-      open
+      open={session !== null}
       size="form"
       dismissible={!busy}
       onClose={onClose}
@@ -54,13 +60,13 @@ export function SessionActionDialog({
         <p className="text-body text-text-primary">
           {isConfirm ? (
             <>
-              将按草案批量创建 <b>1 个需求</b>「{session.parent_title}」与{' '}
+              将按草案批量创建 <b>1 个需求</b>「{shown.parent_title}」与{' '}
               <b>{draftCount} 个子任务</b>，并自动建立依赖、绑定技能（§7.2 阶段 7）。
               点「确认创建」后进入 <b>5 秒撤销窗口</b>（§7.8），倒计时结束前可撤销。
             </>
           ) : (
             <>
-              会话「{session.parent_title}」将标记为<b>已取消</b>，已接收的 {draftCount}{' '}
+              会话「{shown.parent_title}」将标记为<b>已取消</b>，已接收的 {draftCount}{' '}
               条草案不会创建任何任务。
             </>
           )}
