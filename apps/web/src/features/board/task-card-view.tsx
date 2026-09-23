@@ -1,4 +1,5 @@
 import { memo, type KeyboardEvent, type MouseEvent, type ReactElement } from 'react';
+import { useReducedMotion } from 'motion/react';
 import {
   Bell,
   CircleCheck,
@@ -301,17 +302,31 @@ function LeaseBadge({ card, overlay }: { card: TaskCard; overlay: RunOverlay }):
 }
 
 /**
- * 执行中卡片的中间块（原型 3.3）：`progress === null`（Agent 从未上报，20.2）时
- * **不渲染进度条与百分比**，整块留空、分割线上移，不给 0% 的假进度。
+ * 执行中卡片的中间块（原型 3.3）：`progress === null`（新 Run 尚未被 Agent 上报，20.2）时
+ * 渲染**不确定态占位条**（不画假 0%）：轨道 + 循环滚动的半透明填充，文案并进
+ * 「已运行」同一行；reduced-motion 下填充静止居中。progress 有值（含 0）维持精确条。
  */
 function RunningBody({ card, overlay }: { card: TaskCard; overlay: RunOverlay }) {
   const progress = overlay.progress ?? card.progress;
   const message = overlay.progressMsg !== undefined ? overlay.progressMsg : card.progress_msg;
+  const reducedMotion = useReducedMotion();
   if (progress === null || progress === undefined) {
     return (
-      <p className="mt-2 truncate text-aux text-text-secondary">
-        {card.agent_name ?? 'Agent'} 已运行 {formatRelative(card.updated_at)}
-      </p>
+      <div className="mt-2 flex flex-col gap-1">
+        <p className="truncate text-aux text-text-secondary">
+          {card.agent_name ?? 'Agent'} 已运行 {formatRelative(card.updated_at)} · 等待 Agent 上报进度
+        </p>
+        {/* 不确定态：无百分比可报，aria-hidden，语义由上方文案承载（20.2） */}
+        <div aria-hidden className="h-1 w-full overflow-hidden rounded-full bg-bg-muted">
+          <div
+            className={cn(
+              'h-full w-1/3 rounded-full bg-primary/40',
+              // motion 口径见 globals.css `.atb-progress-indeterminate`；reduced-motion 静止居中
+              reducedMotion ? 'mx-auto' : 'atb-progress-indeterminate',
+            )}
+          />
+        </div>
+      </div>
     );
   }
   return (
