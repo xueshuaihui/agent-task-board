@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Plus, Trash2, X } from 'lucide-react';
 import {
   COPY_DEPENDENCY_HINT,
@@ -14,6 +15,7 @@ import {
   RadioGroup,
 } from '@/components/ui';
 import { COPY } from '@/lib/copy';
+import { itemVariants, listVariants } from '@/lib/motion';
 import { DEPENDENCY_TYPE_LABEL, labelOf, statusLabel } from '@/lib/labels';
 import { useShellStore } from '@/app/store/shell';
 import { SHOW_DEPENDENCY_GRAPH } from '@/lib/phase';
@@ -116,12 +118,21 @@ function DependencyRows({
   taskId: string;
   removable?: boolean;
 }) {
+  const reduce = useReducedMotion();
   return (
-    <ul className="divide-y divide-border overflow-hidden rounded-card border border-border bg-bg-surface">
-      {refs.map((ref) => (
-        <DependencyRow key={ref.dep_id} ref_={ref} taskId={taskId} removable={removable} />
-      ))}
-    </ul>
+    // motion-spec §9-P1-8：依赖列表首屏 stagger（40ms 间隔、延迟上限 240ms）+ 移除 140ms 退场。
+    <motion.ul
+      className="divide-y divide-border overflow-hidden rounded-card border border-border bg-bg-surface"
+      variants={listVariants}
+      initial={reduce ? false : 'hidden'}
+      animate="show"
+    >
+      <AnimatePresence>
+        {refs.map((ref, index) => (
+          <DependencyRow key={ref.dep_id} ref_={ref} taskId={taskId} removable={removable} index={index} />
+        ))}
+      </AnimatePresence>
+    </motion.ul>
   );
 }
 
@@ -129,14 +140,24 @@ function DependencyRow({
   ref_: ref,
   taskId,
   removable,
+  index = 0,
 }: {
   ref_: DependencyRef;
   taskId: string;
   removable: boolean;
+  index?: number;
 }) {
   const remove = useRemoveDependency(taskId);
+  const reduce = useReducedMotion();
   return (
-    <li className="group flex items-center gap-2 px-3 py-2">
+    <motion.li
+      className="group flex items-center gap-2 px-3 py-2"
+      variants={itemVariants}
+      initial={reduce ? false : 'hidden'}
+      animate={reduce ? undefined : 'show'}
+      custom={index}
+      exit={reduce ? undefined : { opacity: 0, y: 8, transition: { duration: 0.14, ease: 'easeOut' } }}
+    >
       <StatusGlyph status={ref.status} />
       <Mono className="shrink-0">{ref.id}</Mono>
       <button
@@ -161,7 +182,7 @@ function DependencyRow({
           <Trash2 className="size-3.5" aria-hidden />
         </button>
       ) : null}
-    </li>
+    </motion.li>
   );
 }
 

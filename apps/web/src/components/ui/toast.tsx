@@ -110,6 +110,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
+      {/* §4.6：位置/停留时长在此收口；出入场动画（入 200ms y -8→0 淡入、退 140ms 淡出）
+          由 globals.css 末尾的 sonner 状态规则覆盖实现（sonner 动画是 CSS 状态驱动，JS 侧不可配）。 */}
       <Toaster position="top-center" offset={16} gap={8} visibleToasts={5} />
     </ToastContext.Provider>
   );

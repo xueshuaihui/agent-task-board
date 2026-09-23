@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ChevronDown, Copy, FileCode2, FileText, Package, Plus, Search, Sparkles, Upload } from 'lucide-react';
 import {
   Button,
@@ -11,6 +12,7 @@ import {
   useToast,
 } from '@/components/ui';
 import { errorMessage } from '@/api';
+import { itemVariants, listVariants } from '@/lib/motion';
 import { blocksToMarkdown } from './markdown';
 import { skillsApi } from './api';
 import { CreateSkillDialog } from './create-skill-dialog';
@@ -39,6 +41,7 @@ function libraryHref(search: string): string {
 
 export function SkillLibraryPage() {
   const toast = useToast();
+  const reduce = useReducedMotion();
   const [keywordInput, setKeywordInput] = useState('');
   const [type, setType] = useState<SkillType | ''>('');
   const [status, setStatus] = useState<SkillStatus | ''>('');
@@ -373,26 +376,44 @@ export function SkillLibraryPage() {
           }
         />
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(248px,1fr))] gap-3">
-          {visibleItems.map((skill) => (
-            <SkillCard
-              key={skill.id}
-              skill={skill}
-              duplicateName={duplicateNames.has(skill.name)}
-              onOpen={(target) => setDetailId(target.id)}
-              onEdit={openEditor}
-              onPublish={openEditor}
-              onExport={(target) => {
-                skillsApi
-                  .export(target.id, target.name)
-                  .catch((error) => toast.error('导出失败', errorMessage(error)));
-              }}
-              onExportMarkdown={exportMarkdown}
-              onCopy={copySkill}
-              onDelete={confirmDelete}
-            />
-          ))}
-        </div>
+        /* motion-spec §9-P1-8：主列表首屏 stagger 入场（40ms 间隔、延迟上限 240ms）；
+         * 子项显式 initial/animate + custom 索引，WS 刷新新项仅单项淡入不重放编排。 */
+        <motion.div
+          className="grid grid-cols-[repeat(auto-fill,minmax(248px,1fr))] gap-3"
+          variants={listVariants}
+          initial={reduce ? false : 'hidden'}
+          animate="show"
+        >
+          <AnimatePresence>
+            {visibleItems.map((skill, index) => (
+              <motion.div
+                key={skill.id}
+                variants={itemVariants}
+                initial={reduce ? false : 'hidden'}
+                animate={reduce ? undefined : 'show'}
+                custom={index}
+                exit={reduce ? undefined : { opacity: 0, y: 8, transition: { duration: 0.14, ease: 'easeOut' } }}
+              >
+                <SkillCard
+                  className="h-full"
+                  skill={skill}
+                  duplicateName={duplicateNames.has(skill.name)}
+                  onOpen={(target) => setDetailId(target.id)}
+                  onEdit={openEditor}
+                  onPublish={openEditor}
+                  onExport={(target) => {
+                    skillsApi
+                      .export(target.id, target.name)
+                      .catch((error) => toast.error('导出失败', errorMessage(error)));
+                  }}
+                  onExportMarkdown={exportMarkdown}
+                  onCopy={copySkill}
+                  onDelete={confirmDelete}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </motion.div>
       )}
 
       <CreateSkillDialog

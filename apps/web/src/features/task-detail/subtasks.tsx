@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Plus } from 'lucide-react';
 import { api, errorMessage, fieldErrorsOf, isApiError, qk, useApiMutation, useSettings } from '@/api';
 import type { TaskAggregate, TaskChildRef } from '@/api';
 import { Badge, Button, Field, Input, Progress, Select, StatusDot } from '@/components/ui';
 import { cn } from '@/lib/cn';
+import { itemVariants, listVariants } from '@/lib/motion';
 import { clearFieldError } from '@/lib/forms';
 import { priorityText, statusLabel } from '@/lib/labels';
 import { statusStyle } from '@/lib/status-style';
@@ -43,6 +45,7 @@ export interface SubtasksSectionProps {
 
 export function SubtasksSection({ taskId, items, aggregate, className }: SubtasksSectionProps) {
   const [adding, setAdding] = useState(false);
+  const reduce = useReducedMotion();
 
   return (
     <div className={cn('flex flex-col gap-3', className)}>
@@ -71,11 +74,19 @@ export function SubtasksSection({ taskId, items, aggregate, className }: Subtask
       {items.length === 0 ? (
         <p className="text-aux text-text-tertiary">还没有子任务。需求不直接执行，拆成子任务后由 Agent 领取（1.md 5.2）。</p>
       ) : (
-        <ul className="flex flex-col divide-y divide-border rounded-card border border-border bg-bg-surface">
-          {items.map((child) => (
-            <SubtaskRow key={child.id} child={child} />
-          ))}
-        </ul>
+        // motion-spec §9-P1-8：需求抽屉/概览的子任务列表首屏 stagger（40ms、上限 240ms）+ 移除退场。
+        <motion.ul
+          className="flex flex-col divide-y divide-border rounded-card border border-border bg-bg-surface"
+          variants={listVariants}
+          initial={reduce ? false : 'hidden'}
+          animate="show"
+        >
+          <AnimatePresence>
+            {items.map((child, index) => (
+              <SubtaskRow key={child.id} child={child} index={index} />
+            ))}
+          </AnimatePresence>
+        </motion.ul>
       )}
     </div>
   );
@@ -96,10 +107,17 @@ function AggregateSummary({ aggregate }: { aggregate: TaskAggregate }) {
   );
 }
 
-function SubtaskRow({ child }: { child: TaskChildRef }) {
+function SubtaskRow({ child, index = 0 }: { child: TaskChildRef; index?: number }) {
   const style = statusStyle(child.status === 'DONE' || child.status === 'BACKLOG' ? child.status : 'RUNNING');
+  const reduce = useReducedMotion();
   return (
-    <li>
+    <motion.li
+      variants={itemVariants}
+      initial={reduce ? false : 'hidden'}
+      animate={reduce ? undefined : 'show'}
+      custom={index}
+      exit={reduce ? undefined : { opacity: 0, y: 8, transition: { duration: 0.14, ease: 'easeOut' } }}
+    >
       <button
         type="button"
         onClick={() => useShellStore.getState().openTask(child.id)}
@@ -114,7 +132,7 @@ function SubtaskRow({ child }: { child: TaskChildRef }) {
         </span>
         <span className="shrink-0 text-aux text-text-tertiary">{priorityText(child.priority)}</span>
       </button>
-    </li>
+    </motion.li>
   );
 }
 
