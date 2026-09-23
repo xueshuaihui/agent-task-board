@@ -6,7 +6,7 @@
 >
 > 改 token 只改 `src/styles/globals.css`；改这里必须同步改 globals.css。
 >
-> **2026-09-23 起：动效与交互层的权威规范迁移至仓库根 `docs/motion-spec.md`（Motion Spec v1.0）。**
+> **2026-09-23 起：动效与交互层的权威规范迁移至仓库根 `docs/motion-spec.md`（Motion Spec v1.2）。**
 > 本文件 §1.6、§3 页面过渡/指示器、§5 通用片段及 §2 中各组件的出入场动画描述均被其取代，
 > 仅保留指针；组件 API、色板、字号、尺寸等非动效契约仍以本文件为准。
 
@@ -150,6 +150,6 @@ soft 底规则同上（深色 = 14% 透明度）。
 ## 5. 通用片段
 
 已迁移：页面入场、列表 stagger、数字徽标、卡片 hover 等动效片段统一收录于 `docs/motion-spec.md`（§1 四层模型 + §2 映射表）。
-其中卡片 hover 定稿为：`transition-[transform,box-shadow,border-color] duration-140 ease-settle hover:-translate-y-0.5 hover:shadow-card-hover hover:border-border-strong`（看板卡需补抬升，见 motion-spec §8-P0）。
+其中卡片 hover 定稿为：`transition-[transform,box-shadow,border-color] duration-140 ease-settle hover:-translate-y-0.5 hover:shadow-card-hover hover:border-border-strong`（看板卡需补抬升，见 motion-spec §9 P0-2）。
 
 （非动效条目保留：**滚动条**——全局 `.atb-scroll` 已提供细滚动条样式，容器沿用。）

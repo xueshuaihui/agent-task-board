@@ -13,6 +13,9 @@
 > drawer 退场 200→180ms 以自守「≤入场×0.7」；纯 opacity 淡变曲线认 easeOut；
 > spinner 认现状 Tailwind animate-spin 1s；reduced-motion 残余口径放宽为「纯 opacity、时长随浮层档」；
 > §5.2 回落规则 5 扩展到「刚释放的拖拽源（同帧）」。
+> 落地注记（§9 P0/P1 实现后回填，未升版本号）：§1-L2 曲线列口径澄清（exit 位移类走 exit/drawerOut 档）；
+> §4.6 补 sonner 机制豁免（height 收拢/stack 缩放保留内置值）与退场两个边缘态偏差记录；
+> §5.2 补触发面注记（飞行限用户发起 direct 换列，WS 重取换列设回落规则 6；泳道整体不参与；scale 1.02 划掉）。
 
 ---
 
@@ -43,7 +46,7 @@
   | Tooltip | 120ms：淡入 + y 4→0 | 100ms 淡出 | `easeOut` |
   | Toast | 200ms：y -8→0 + 淡入 | 140ms 淡出 | `ease-emphasis`（实现走 §4.6） |
 
-  **曲线豁免**：纯 opacity 淡变（无位移/缩放分量）允许 `easeOut` 代替 `ease-settle`（曲线为准的裁决对 L1 位移类过渡仍然全部换 settle）。遮罩（overlay）出入统一 200/140ms；现状退场复用入场 200ms，P0 补 `exit: transitions.exit`。
+  **曲线豁免**：纯 opacity 淡变（无位移/缩放分量）允许 `easeOut` 代替 `ease-settle`（曲线为准的裁决对 L1 位移类过渡仍然全部换 settle）。遮罩（overlay）出入统一 200/140ms；现状退场复用入场 200ms，P0 补 `exit: transitions.exit`。**曲线列辖入场**：位移/缩放类退场曲线的正典是 §3.2 `exit` 档（easeOut）与 `drawerOut` 档（emphasis），实现按档位取，不再另判。
 
 - **原则**：退场必须比入场快——大浮层（Dialog/Drawer/Toast）退场 ≤ 入场×0.7；中小浮层（Menu/Popover）至少缩短 40ms；≤140ms 的微型浮层（Tooltip）出入差 ≥ 20ms 即可。用户按 Esc/点击遮罩关闭时不得有可感知滞留。
 
@@ -100,7 +103,7 @@
 | Sidebar 折叠 width | L3 | 200ms CSS | ✅ |
 | 看板列 stagger / 退场 | L3 | listVariants + 140ms exit | ✅ |
 | 拖拽 overlay/落位 | L3 | rotate 2° + 160ms settle | ✅ |
-| **看板卡换列飞行** | L3 | layoutId + gentle ≤260ms | ❌ 新增，P1，细则 §5.2 |
+| **看板卡换列飞行** | L3 | layoutId + gentle ≤260ms | ✅ 已落地（触发面与回落细则 §5.2） |
 | 批量操作条 | L3 | y 16 滑入 + scale .97 | ✅ |
 | 审核队列切换 | L3 | layout + gentle | ✅ |
 | 任务详情 Tab 内容切换 | L3 | AnimatePresence wait 淡入 | ✅ |
@@ -153,6 +156,7 @@ listVariants / itemVariants                  // 现有实现即为准（含 cust
 4. 遮罩统一 `bg-black/45`（深色 `/60`）+ `backdrop-blur-[2px]`，淡入随面板、淡出 140ms。
 5. 同时刻最多一个 modal 级浮层；二级浮层只允许确认 Dialog 与 Tooltip。
 6. **Toast 收口**：仍在 `ui/toast.tsx` 内配置 sonner（业务只走 `useToast()`）；规格定死为——位置顶部居中；入场 y -8→0 + 淡入 200ms、退场淡出 140ms（sonner 原生 transition 覆盖不了的部分用封装内 CSS keyframes 实现，不得泄漏到业务层）；停留时长 2.4s/4s/6s（success/info/warning/error）现状不变。
+   **sonner 机制豁免（落地注记）**：栈展开/收起的 `height 400ms`、`box-shadow 200ms`、非最前卡的堆叠收拢缩放属 sonner 高度重排机制内置值，不入 §1 允许值集合校验；两个边缘态维持 sonner 默认、记录在案——①展开态移除最前卡仍走飞离 transform，②折叠态非最前卡移除走 sonner 内置 `.5s/.2s`（CSS 分值更高，覆写需 `!important`，收益不抵侵入性）。
 
 ---
 
@@ -170,14 +174,17 @@ listVariants / itemVariants                  // 现有实现即为准（含 cust
 
 ### 5.2 看板卡跨列飞行（换列动画）
 
-- **实现**：卡片根元素挂 `layoutId={task.id}`，跨列时由共享元素过渡完成飞行；`springs.gentle`，总时长 ≤260ms；飞行中卡片带轻微 `scale 1.02` 与 `shadow-card`（不起 2° 倾斜——倾斜是拖拽专属语言）。
+- **实现**：卡片根元素挂 `layoutId={task.id}`，跨列时由共享元素过渡完成飞行；`springs.gentle`，总时长 ≤260ms；飞行中卡片带 `shadow-card`（不起 2° 倾斜——倾斜是拖拽专属语言）。
+- **触发面（落地注记，§9-P1-10）**：本项目无本地乐观更新，换列一律来自快照异步重取，旧列 exit 的抑止只有「用户动作发起 → 快照回传」这段 pending 期一个可靠窗口。因此飞行只覆盖**用户发起的 direct 换列**（菜单移动到/行内移列/键盘 ←→，发起同帧登记 pending-mark）；**WS/轮询重取驱动的换列**旧列最后一次渲染已把 140ms exit 定死，再挂 layoutId 会双画面，按方案 B 处理（视同回落规则 6）。同帧竞态由 `layoutId` 命名空间 + `LayoutGroup` 圈定六列作用域，滚动祖先挂 `layoutScroll` 尽力修正。
 - **回落规则（任一命中即退化为「旧列 exit 140ms + 新列单项淡入 200ms」）**：
-  1. 目标列/泳道未渲染（分组折叠、横向溢出未滚动到）；
+  1. 目标列/泳道未渲染（分组折叠、横向溢出未滚动到）；**泳道视图整体不参与飞行**（折叠泳道 display 即卸载，规则 1 常态命中）；
   2. 起止点跨滚动容器导致 layoutId 测量失效；
   3. `prefers-reduced-motion`；
   4. 同帧内换列 ≥ 4 张（批量操作/导入场景，全部走瞬时）；
-  5. 该卡是当前**或刚释放的**拖拽源（释放同帧内 dnd-kit dropAnimation 已在播，禁止双动画；拖拽换位一律以落位动画为唯一语言）。
-- **验证门槛（P1 验收条件）**：双列同屏、泳道展开态、深浅主题、960px 最小宽四组合实测无鬼影/跳位，否则本片退回按回落规则实现。
+  5. 该卡是当前**或刚释放的**拖拽源（释放同帧内 dnd-kit dropAnimation 已在播，禁止双动画；拖拽换位一律以落位动画为唯一语言。确认弹窗延迟到 210ms 抑制窗之后的 `actions.move` 属独立用户确认，按 direct 路径正常参与飞行）；
+  6. WS/轮询重取驱动的换列（无用户动作先手窗口，见上条触发面注记）。
+- **scale 1.02 划掉（落地注记）**：投影节点上叠加 scale 与 layout 测量互相干扰，实测风险大于观感收益，飞行体以 `shadow-card` 与位移本身为唯一语言。
+- **验证门槛（P1 验收条件）**：双列同屏、泳道展开态、深浅主题、960px 最小宽四组合实测无鬼影/跳位，否则本片退回按回落规则实现（代码侧留 `fly-motion.ts FLY_ENABLED` 一键开关）。
 
 ---
 
