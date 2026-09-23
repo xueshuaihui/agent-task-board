@@ -47,28 +47,12 @@ export function Sidebar() {
         collapsed ? 'w-16' : 'w-[200px]',
       )}
     >
-      {/* 品牌 + 折叠开关：13.1 顶部 [◆] 是纯品牌标识；开/收用独立的 PanelLeft 按钮
-          （展开态在标题行右端，折叠态在菱形下方），与分组侧栏折叠入口同款式。 */}
-      <div
-        className={cn(
-          'shrink-0 border-b border-border',
-          collapsed ? 'flex flex-col items-center gap-1 px-0 py-2' : 'flex h-14 items-center gap-2 px-4',
-        )}
-      >
+      {/* 品牌：13.1 顶部 [◆] 纯标识；折叠按钮固定在导航最底部（用户拍板 2026-09-23）。 */}
+      <div className={cn('flex h-14 shrink-0 items-center gap-2 border-b border-border', collapsed ? 'justify-center px-0' : 'px-4')}>
         <Diamond className="size-6 shrink-0 text-primary" aria-hidden />
         {!collapsed ? (
           <span className="min-w-0 flex-1 truncate text-logo text-text-primary">Jarvis</span>
         ) : null}
-        <button
-          type="button"
-          onClick={() => setNavCollapsed(!collapsed)}
-          aria-label={collapsed ? '展开导航' : '折叠导航'}
-          title={collapsed ? '展开导航' : '折叠导航'}
-          aria-expanded={!collapsed}
-          className="inline-flex size-8 shrink-0 items-center justify-center rounded-control text-text-secondary transition-colors duration-140 ease-settle hover:bg-bg-muted hover:text-text-primary"
-        >
-          {collapsed ? <PanelLeftOpen className="size-4" aria-hidden /> : <PanelLeftClose className="size-4" aria-hidden />}
-        </button>
       </div>
 
       <nav aria-label="主导航" className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 py-3">
@@ -106,6 +90,29 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      <div className={cn('shrink-0 border-t border-border py-2', collapsed ? 'px-0' : 'px-2')}>
+        <button
+          type="button"
+          onClick={() => setNavCollapsed(!collapsed)}
+          aria-label={collapsed ? '展开导航' : '折叠导航'}
+          title={collapsed ? '展开导航' : '折叠导航'}
+          aria-expanded={!collapsed}
+          className={cn(
+            'flex h-11 w-full items-center rounded-control text-nav text-text-secondary transition-colors duration-140 ease-settle hover:bg-bg-muted hover:text-text-primary',
+            collapsed ? 'justify-center' : 'gap-3 px-3',
+          )}
+        >
+          {collapsed ? (
+            <PanelLeftOpen className="size-5 shrink-0" aria-hidden />
+          ) : (
+            <>
+              <PanelLeftClose className="size-5 shrink-0" aria-hidden />
+              <span className="truncate">收起导航</span>
+            </>
+          )}
+        </button>
+      </div>
     </aside>
   );
 }
