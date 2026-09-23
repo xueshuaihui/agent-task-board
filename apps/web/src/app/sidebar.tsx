@@ -2,7 +2,7 @@ import { ClipboardList, Diamond, FolderTree, Kanban, ListTodo, Settings as Setti
 import { motion, useReducedMotion } from 'motion/react';
 import type { ComponentType, SVGProps } from 'react';
 import { navigate, NAV_ORDER, ROUTES, type RouteName, useRoute } from '@/app/router';
-import { useShellStore } from '@/app/store/shell';
+import { useNavCollapsed, useShellStore } from '@/app/store/shell';
 import { cn } from '@/lib/cn';
 import { springs } from '@/lib/motion';
 
@@ -12,7 +12,7 @@ import { springs } from '@/lib/motion';
  *
  * PRD 13.2 只列了「看板 / 技能 / 设置」三项，但存量还有分组/审核两个独立页面，
  * 为不丢入口这里保留 5 项导航（看板/分组/技能/审核/设置），路由与深链不变。
- * 折叠态由 `useShellStore.navCollapsed` 持有并本地持久化。
+ * 折叠态：手动偏好优先，未表过态时窗口 <win-lg 动态收成 64px 图标轨（`useNavCollapsed`）。
  */
 const NAV_ICON: Record<RouteName, ComponentType<SVGProps<SVGSVGElement>>> = {
   board: Kanban,
@@ -26,8 +26,8 @@ const NAV_ICON: Record<RouteName, ComponentType<SVGProps<SVGSVGElement>>> = {
 
 export function Sidebar() {
   const route = useRoute();
-  const collapsed = useShellStore((state) => state.navCollapsed);
-  const toggleNav = useShellStore((state) => state.toggleNav);
+  const collapsed = useNavCollapsed();
+  const setNavCollapsed = useShellStore((state) => state.setNavCollapsed);
   const reducedMotion = useReducedMotion();
 
   return (
@@ -41,7 +41,7 @@ export function Sidebar() {
       <div className={cn('flex h-14 shrink-0 items-center gap-2 border-b border-border', collapsed ? 'justify-center px-0' : 'px-4')}>
         <button
           type="button"
-          onClick={toggleNav}
+          onClick={() => setNavCollapsed(!collapsed)}
           aria-label={collapsed ? '展开导航' : '折叠导航'}
           title={collapsed ? '展开导航' : '折叠导航'}
           aria-expanded={!collapsed}

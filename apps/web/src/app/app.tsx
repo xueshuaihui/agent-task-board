@@ -8,7 +8,7 @@ import { SettingsPage } from '@/features/settings';
 import { SkillLibraryPage } from '@/features/skills';
 import { TaskListPage } from '@/features/task-list';
 import { applyUiTheme } from '@/lib/theme';
-import { useShellStore } from '@/app/store/shell';
+import { useNavCollapsed } from '@/app/store/shell';
 import { useWSWarning } from '@/ws';
 import type { RouteName } from './router';
 import { useRoute } from './router';
@@ -78,7 +78,7 @@ function WorkspaceShell({
 }) {
   const ws = useWSWarning();
   useUiThemeSync();
-  const navCollapsed = useShellStore((state) => state.navCollapsed);
+  const navCollapsed = useNavCollapsed();
 
   // 13.8：左弹出的浮层（通知中心）覆盖内容区、不覆盖左侧导航。抽屉/通知面板都 portal 到
   // `document.body`，变量必须挂在 `<html>` 上，挂在壳层 div 上 portal 出去的元素读不到。
