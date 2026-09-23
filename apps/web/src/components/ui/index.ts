@@ -18,3 +18,4 @@ export { Pagination, type PaginationProps } from './pagination';
 export { Skeleton, CardSkeleton } from './skeleton';
 export { EmptyState, type EmptyStateProps } from './empty-state';
 export { Progress, type ProgressProps } from './progress';
+export { ChipGroup, type ChipGroupOption, type ChipGroupProps } from './chip-group';

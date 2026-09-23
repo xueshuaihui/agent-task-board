@@ -3,6 +3,7 @@ import { ChevronDown, Copy, FileCode2, FileText, Package, Plus, Search, Sparkles
 import {
   Button,
   CardSkeleton,
+  ChipGroup,
   EmptyState,
   Input,
   Menu,
@@ -16,7 +17,7 @@ import { CreateSkillDialog } from './create-skill-dialog';
 import { CopySkillPicker } from './copy-skill-picker';
 import { ImportCenterDialog } from './import-center-dialog';
 import { useCreateSkill, useDeleteSkill, useSkills } from './hooks';
-import { SKILL_ORIGIN_OPTIONS, SKILL_STARTER_TEMPLATES, SKILL_STATUS_META, SKILL_TYPE_OPTIONS } from './meta';
+import { SKILL_ORIGIN_OPTIONS, SKILL_STARTER_TEMPLATES, SKILL_STATUS_META, SKILL_TYPE_OPTIONS, categoryTagsOf } from './meta';
 import { SkillCard } from './skill-card';
 import { SkillDetailDrawer } from './skill-detail-drawer';
 import { SkillEditorPage } from './skill-editor-page';
@@ -42,6 +43,8 @@ export function SkillLibraryPage() {
   const [type, setType] = useState<SkillType | ''>('');
   const [status, setStatus] = useState<SkillStatus | ''>('');
   const [source, setSource] = useState<SkillOrigin | ''>('');
+  /** 分类多选（OR 语义）：不选即全部，选项由当前列表 tags 聚合而来。 */
+  const [categories, setCategories] = useState<string[]>([]);
 
   /* `?edit=` 挂编辑器；其余查询参数留给后续（如 tag 深链）。 */
   const search = typeof window !== 'undefined' ? window.location.hash.split('?')[1] ?? '' : '';
@@ -57,6 +60,22 @@ export function SkillLibraryPage() {
     [keywordInput, type, status, source],
   );
   const skills = useSkills(query);
+  /* 分类筛选（前端侧，/skills 已带 tags）：分类词 = tags 剔除 官方/社区，
+   * 选项按技能数降序聚合；在服务端结果之上叠加过滤，与类型/状态/来源正交。 */
+  const categoryOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of skills.data?.items ?? []) {
+      for (const tag of categoryTagsOf(item.tags)) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([value, count]) => ({ value, label: value, count }));
+  }, [skills.data]);
+  const visibleItems = useMemo(() => {
+    const items = skills.data?.items ?? [];
+    if (categories.length === 0) return items;
+    return items.filter((item) => categoryTagsOf(item.tags).some((tag) => categories.includes(tag)));
+  }, [skills.data, categories]);
   // r2 允许重名：同名集合驱动卡片上的 id 短后缀消歧（§9.2）。
   const duplicateNames = useMemo(() => {
     const seen = new Map<string, number>();
@@ -234,7 +253,7 @@ export function SkillLibraryPage() {
     );
   }
 
-  const filtersActive = Boolean(keywordInput || type || status || source);
+  const filtersActive = Boolean(keywordInput || type || status || source || categories.length > 0);
   const isEmptyLibrary = !filtersActive && (skills.data?.items.length ?? 0) === 0;
 
   return (
@@ -291,6 +310,16 @@ export function SkillLibraryPage() {
         />
       </div>
 
+      {/* 分类：tags 聚合的多选按钮组（OR 语义，不选即全部），只在前端过滤。 */}
+      {categoryOptions.length > 0 ? (
+        <ChipGroup
+          label="分类"
+          options={categoryOptions}
+          selected={categories}
+          onChange={setCategories}
+        />
+      ) : null}
+
       {skills.isPending ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(248px,1fr))] gap-3">
           <CardSkeleton />
@@ -324,7 +353,7 @@ export function SkillLibraryPage() {
           }}
           onCopy={() => setCopyPickerOpen(true)}
         />
-      ) : (skills.data?.items.length ?? 0) === 0 ? (
+      ) : visibleItems.length === 0 ? (
         <EmptyState
           title="没有匹配的技能"
           description="试试放宽筛选条件"
@@ -336,6 +365,7 @@ export function SkillLibraryPage() {
                 setType('');
                 setStatus('');
                 setSource('');
+                setCategories([]);
               }}
             >
               清除筛选
@@ -344,7 +374,7 @@ export function SkillLibraryPage() {
         />
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(248px,1fr))] gap-3">
-          {skills.data.items.map((skill) => (
+          {visibleItems.map((skill) => (
             <SkillCard
               key={skill.id}
               skill={skill}

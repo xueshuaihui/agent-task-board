@@ -1,10 +1,10 @@
 import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/cn';
-import { Field, Input, Menu, Select, Textarea, type MenuGroup } from '@/components/ui';
-import { ON_ERROR_META, PARALLEL_MERGE_META, SKILL_ORIGIN_META, VALUE_TYPE_OPTIONS } from './meta';
+import { Badge, Field, Input, Menu, Select, Textarea, type MenuGroup } from '@/components/ui';
+import { ON_ERROR_META, PARALLEL_MERGE_META, SKILL_ORIGIN_META, VALUE_TYPE_OPTIONS, audienceTagOf, categoryTagsOf } from './meta';
 import { useSkills } from './hooks';
-import type { OnError, ParallelMerge, Skill, SkillBlock, SkillOrigin } from './types';
+import type { OnError, ParallelMerge, Skill, SkillBlock } from './types';
 import { VariableTextarea, type VariableMenuProps } from './variable-picker';
 
 /**
@@ -286,8 +286,10 @@ export function BlockFields({ block, variableOptions, targetOptions, readOnly = 
  * 子技能块字段（W3 §9.4/§7 智能辅助「技能插入」）：从技能库（GET /skills 存量）
  * 下拉选择，按唯一 id 写入块载荷 `skillRef`（§9.2 r2：绑定/下发一律按 id，
  * content 是 passthrough JSON，版本快照/导出 .atskill/SKILL.md 天然兼容）。
- * 三来源分组 + 来源徽标（§9.10 既有口径）；重名技能追加 id 后 6 位消歧后缀
- * （§9.2 r2 允许重名，与技能卡片同口径）。技能库空/加载中退回手填 id 输入框。
+ * 分组轴为分类（技能 tags 去掉 官方/社区 后的分类词，多分类归第一个分类词组，
+ * 无分类词归「未分类」且恒排最后）；官方/社区/来源缩为行尾小徽标，不再作分组轴。
+ * 重名技能追加 id 后 6 位消歧后缀（§9.2 r2 允许重名，与技能卡片同口径）。
+ * 技能库空/加载中退回手填 id 输入框。
  * W3 遗留①：列表顶部提供名称搜索框，大小写不敏感子串过滤，保留分组与消歧口径；
  * 无匹配时渲染「无匹配技能」禁用态。
  */
@@ -314,11 +316,21 @@ function SubskillField({
   const needle = query.trim().toLowerCase();
   const visible = needle ? items.filter((skill) => skill.name.toLowerCase().includes(needle)) : items;
   const selected = items.find((skill) => skill.id === block.skillRef);
-  const groups: { label: string; skills: Skill[] }[] = (
-    ['custom', 'imported', 'default'] as SkillOrigin[]
-  )
-    .map((origin) => ({ label: SKILL_ORIGIN_META[origin].label, skills: visible.filter((skill) => skill.source === origin) }))
-    .filter((group) => group.skills.length > 0);
+  // 分组轴 = 分类词（tags 剔除 官方/社区 后取第一个）；无分类词的归「未分类」。
+  const byCategory = new Map<string, Skill[]>();
+  for (const skill of visible) {
+    const label = categoryTagsOf(skill.tags)[0] ?? '未分类';
+    const bucket = byCategory.get(label);
+    if (bucket) bucket.push(skill);
+    else byCategory.set(label, [skill]);
+  }
+  const groups: { label: string; skills: Skill[] }[] = [...byCategory.entries()]
+    .sort((a, b) => {
+      if (a[0] === '未分类') return 1;
+      if (b[0] === '未分类') return -1;
+      return b[1].length - a[1].length || a[0].localeCompare(b[0]);
+    })
+    .map(([label, skills]) => ({ label: `${label}（${skills.length}）`, skills }));
   const menuGroups: MenuGroup[] = groups.map((group) => ({
     label: group.label,
     items: group.skills.map((skill) => ({
@@ -344,7 +356,7 @@ function SubskillField({
     items: [{ id: '__clear', label: '（清除引用）', onSelect: () => onPatch({ skillRef: '' }) }],
   });
   return (
-    <Field label="引用技能" hint="从技能库选择子技能，按唯一 id 绑定；徽标为来源">
+    <Field label="引用技能" hint="从技能库选择子技能，按唯一 id 绑定；按分类分组，行尾徽标为官方/社区与来源">
       <div className="flex flex-col gap-1.5">
         <Input
           value={query}
@@ -383,19 +395,28 @@ function SubskillField({
   );
 }
 
-/** 技能选项行：名称（重名带 ·id 后 6 位消歧）+ 版本 + 三来源徽标（§9.10 口径）。 */
+/**
+ * 技能选项行：名称（重名带 ·id 后 6 位消歧）+ 行尾小徽标（官方/社区 受众词 +
+ * 非默认来源注记）+ 版本。分类由组头承载，不再逐行展示。
+ */
 function SkillRefOption({ skill, duplicateName }: { skill: Skill; duplicateName: boolean }) {
   const origin = SKILL_ORIGIN_META[skill.source];
-  const OriginIcon = origin.icon;
+  const annotation = [
+    audienceTagOf(skill.tags),
+    skill.source === 'default' ? undefined : origin.label,
+  ]
+    .filter(Boolean)
+    .join('·');
   return (
     <span className="flex min-w-0 flex-1 items-center gap-1.5">
       <span className="truncate" title={skill.name}>
         {duplicateName ? `${skill.name} ·${skill.id.slice(-6)}` : skill.name}
       </span>
-      <span className={cn('inline-flex shrink-0 items-center gap-1 rounded-badge px-1.5 py-px text-badge', origin.className)} title={`来源：${origin.label}`}>
-        <OriginIcon className="size-3" />
-        {origin.label}
-      </span>
+      {annotation ? (
+        <Badge tone="neutral" className="max-w-[120px] shrink-0">
+          {annotation}
+        </Badge>
+      ) : null}
       <span className="ml-auto shrink-0 tabular-nums text-aux text-text-tertiary">{skill.current_version}</span>
     </span>
   );

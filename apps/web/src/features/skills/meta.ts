@@ -64,6 +64,23 @@ export const SKILL_ORIGIN_OPTIONS = (Object.keys(SKILL_ORIGIN_META) as SkillOrig
   label: SKILL_ORIGIN_META[origin].label,
 }));
 
+/**
+ * 技能 tags 里的「受众词」：内置技能（千问迁移种子）的 tags 形如
+ * `['官方'|'社区', ...分类词]`（见 apps/api/scripts/gen-builtin-seeds.mjs），
+ * 分类不加 schema 列，由 tags 去掉这两个词之后的分类词承载。
+ */
+export const CATEGORY_TAG_EXCLUDES = ['官方', '社区'] as const;
+
+/** 从 tags 提取分类词（剔除 官方/社区 受众词）。 */
+export function categoryTagsOf(tags: readonly string[] | undefined): string[] {
+  return (tags ?? []).filter((tag) => !(CATEGORY_TAG_EXCLUDES as readonly string[]).includes(tag));
+}
+
+/** 从 tags 提取受众词（官方/社区），没有则 undefined。 */
+export function audienceTagOf(tags: readonly string[] | undefined): string | undefined {
+  return (tags ?? []).find((tag) => (CATEGORY_TAG_EXCLUDES as readonly string[]).includes(tag));
+}
+
 /** 块类型元数据（1.md 8.3 的 PRD 15 类；图标用 lucide，不引 emoji）。 */
 export const BLOCK_KIND_META: Record<
   SkillBlockKind,
