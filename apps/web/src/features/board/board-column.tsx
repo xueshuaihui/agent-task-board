@@ -10,6 +10,7 @@ import { statusStyle, type StatusStyle } from '@/lib/status-style';
 import { cn } from '@/lib/cn';
 import { Button, CardSkeleton, StatusDot, Tooltip } from '@/components/ui';
 import { DraggableCard } from './board-card';
+import { boardCardLayoutId, flyRole } from './fly-motion';
 import type { CardActions } from './card-actions';
 import type { RunOverlay } from './use-run-overlay';
 import {
@@ -90,7 +91,10 @@ export function BoardColumnView({
             <TokenGrouping tasks={column.tasks} />
           ) : null}
 
-          <div
+          {/* §5.2：列内容器纵向滚动是换列飞行的测量错位来源（回落规则 2），挂 motion 的
+              layoutScroll 让投影在滚动后重测位置。 */}
+          <motion.div
+            layoutScroll
             className={cn(
               'atb-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 pb-2',
               forbidden && 'cursor-not-allowed',
@@ -105,30 +109,63 @@ export function BoardColumnView({
               animate="show"
             >
               <AnimatePresence>
-                {column.tasks.map((card, index) => (
-                  <motion.div
-                    key={card.id}
-                    variants={itemVariants}
-                    // 显式 initial/animate + custom 索引延迟：数据晚到的卡（WS 推送、
-                    // 拖拽回列）不依赖父容器 stagger 编排，否则会卡在 hidden 态不可见。
-                    initial={reduce ? false : 'hidden'}
-                    animate={reduce ? undefined : 'show'}
-                    custom={index}
-                    exit={reduce ? undefined : { opacity: 0, y: 8, transition: { duration: 0.14, ease: 'easeOut' } }}
-                  >
-                    <DraggableCard
-                      card={card}
-                      defs={defs}
-                      actions={actions}
-                      overlay={overlayOf(card.id)}
-                      onDraggingChange={onDraggingChange}
-                    />
-                  </motion.div>
-                ))}
+                {column.tasks.map((card, index) => {
+                  // §5.2 方案 A 的触发面只有「用户发起的换列」（见 fly-motion.ts 头注）：
+                  // source = 仍停在来源列的飞行源（挂 layoutId、撤 exit，等快照到达瞬时让位）；
+                  // target = 快照落地后目标列里的新挂载点（挂 layoutId、不播入场淡入，位置由飞行承担）。
+                  // null = 其余一切场合（含 WS 换列、规则 3/4/5 命中），逐字节等于现状（方案 B）。
+                  const role = flyRole(card.id, card.status, reduce === true);
+                  if (role === 'target') {
+                    return (
+                      <motion.div
+                        key={card.id}
+                        layoutId={boardCardLayoutId(card.id)}
+                        initial={false}
+                        transition={springs.gentle}
+                      >
+                        <DraggableCard
+                          card={card}
+                          defs={defs}
+                          actions={actions}
+                          overlay={overlayOf(card.id)}
+                          onDraggingChange={onDraggingChange}
+                        />
+                      </motion.div>
+                    );
+                  }
+                  return (
+                    <motion.div
+                      key={card.id}
+                      variants={itemVariants}
+                      // 显式 initial/animate + custom 索引延迟：数据晚到的卡（WS 推送、
+                      // 拖拽回列）不依赖父容器 stagger 编排，否则会卡在 hidden 态不可见。
+                      initial={reduce ? false : 'hidden'}
+                      animate={reduce ? undefined : 'show'}
+                      custom={index}
+                      layoutId={role === 'source' ? boardCardLayoutId(card.id) : undefined}
+                      transition={role === 'source' ? springs.gentle : undefined}
+                      // source 撤 exit：旧列必须与新列挂载同帧瞬时卸载，飞行体才能接管；
+                      // 若让它播 140ms 淡出就与飞出的卡构成同 id 双画面（§5.2 禁止）。
+                      exit={
+                        role === 'source' || reduce
+                          ? undefined
+                          : { opacity: 0, y: 8, transition: { duration: 0.14, ease: 'easeOut' } }
+                      }
+                    >
+                      <DraggableCard
+                        card={card}
+                        defs={defs}
+                        actions={actions}
+                        overlay={overlayOf(card.id)}
+                        onDraggingChange={onDraggingChange}
+                      />
+                    </motion.div>
+                  );
+                })}
               </AnimatePresence>
             </motion.div>
             {!loading && column.tasks.length === 0 ? <ColumnEmpty column={column} actions={actions} /> : null}
-          </div>
+          </motion.div>
 
           <ColumnFooter column={column} actions={actions} />
         </>

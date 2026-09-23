@@ -18,6 +18,7 @@ import { useShellStore } from '@/app/store/shell';
 import { Button, Dialog, useToast } from '@/components/ui';
 import { useGroupMutations, useGroups } from '@/features/groups';
 import type { CardActions } from './card-actions';
+import { FLY_DROP_SUPPRESS_MS, suppressFly } from './fly-motion';
 import type { BoardMutations } from './mutations';
 import { SwimlaneView } from './grouping/Swimlane';
 import { ArchivedGroupsSection } from './grouping/ArchivedGroupsSection';
@@ -200,7 +201,12 @@ export function GroupedBoard({ tasks, defs, actions, mutations, overlayOf }: Gro
         setLaneOrder(primary, arrayMove(keys, from, to));
         return;
       }
-      if (id.startsWith('task:')) cross.onDragEnd(event);
+      if (id.startsWith('task:')) {
+        // §5.2 规则 5：泳道模式拖拽源同样写抑制名单（落位动画唯一语言，且防确认弹窗
+        // 后的 `actions.move` 在 1.5s 标记寿命内切回六列视图时误触发飞行）。
+        suppressFly(id.slice('task:'.length), FLY_DROP_SUPPRESS_MS);
+        cross.onDragEnd(event);
+      }
     },
     [clearDrag, cross, lanes, primary, setLaneOrder],
   );

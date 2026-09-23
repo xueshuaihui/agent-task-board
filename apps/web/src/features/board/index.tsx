@@ -12,6 +12,7 @@ import {
 } from '@dnd-kit/core';
 import { useShallow } from 'zustand/react/shallow';
 import { CloudOff, Plus, RotateCcw } from 'lucide-react';
+import { LayoutGroup, motion } from 'motion/react';
 import type { BoardColumn, TaskCard, TaskStatus } from '@/api/types';
 import { errorMessage, useFieldDefs } from '@/api';
 import { navigate } from '@/app/router';
@@ -22,6 +23,7 @@ import { useBoardWithGroups, useGroups } from '@/features/groups';
 import { BoardColumnView } from './board-column';
 import type { CardActions } from './card-actions';
 import { DeleteDialog, StopDialog } from './dialogs';
+import { FLY_BATCH_LIMIT, FLY_BATCH_SUPPRESS_MS, FLY_DROP_SUPPRESS_MS, markPendingMove, suppressFly } from './fly-motion';
 import { GroupedBoard } from './grouped-board';
 import { dropStates, dropVerdict } from './matrix';
 import { COLUMN_ORDER, isDefaultBoardView } from './model';
@@ -61,6 +63,24 @@ export function BoardPage() {
   const { overlayOf } = useRunOverlay();
 
   const columns = useMemo(() => mergeColumns(board.data?.columns), [board.data?.columns]);
+  /**
+   * §5.2 回落规则 4：一轮数据重算里换列 ≥4 张（批量流转/导入/WS 重连全量刷）一律瞬时。
+   * 对每份快照做 card→status 差分，命中即把本轮移动卡全部写进抑制名单——父组件先渲染，
+   * 子列在同一次提交里读到的就是抑制后的判定；换列只来自快照重取（无本地乐观更新），
+   * 所以「一次重算」与「一次 `columns` 变化」一一对应，差分放在 memo 里即是渲染帧粒度。
+   */
+  const prevCardStatus = useRef(new Map<string, string>());
+  useMemo(() => {
+    const next = new Map<string, string>();
+    for (const column of columns) for (const card of column.tasks) next.set(card.id, card.status);
+    const movers: string[] = [];
+    for (const [id, status] of prevCardStatus.current) {
+      const now = next.get(id);
+      if (now !== undefined && now !== status) movers.push(id);
+    }
+    if (movers.length >= FLY_BATCH_LIMIT) for (const id of movers) suppressFly(id, FLY_BATCH_SUPPRESS_MS);
+    prevCardStatus.current = next;
+  }, [columns]);
   const cards = useMemo(() => {
     const map = new Map<string, TaskCard>();
     for (const column of columns) for (const card of column.tasks) map.set(card.id, card);
@@ -167,6 +187,10 @@ export function BoardPage() {
     (event: DragEndEvent) => {
       const id = String(event.active.id);
       const to = columnStatusOf(event.over ? String(event.over.id) : null);
+      // §5.2 回落规则 5：刚释放的拖拽源。dropAnimation（160ms）此刻已在播，
+      // 写抑制名单让 `actions.move` 里的飞行标记（markPendingMove）直接跳过——
+      // 拖拽换位一律以落位动画为唯一语言，快照落地后按方案 B（旧列淡出 + 新列淡入）演化。
+      suppressFly(id, FLY_DROP_SUPPRESS_MS);
       clearDrag();
       if (!to) return; // 落在列外（工具栏、列间距）＝取消
       const card = cards.get(id);
@@ -247,22 +271,26 @@ export function BoardPage() {
           onDragEnd={onDragEnd}
           onDragCancel={clearDrag}
         >
-          <ColumnRow>
-            {columns.map((column) => (
-              <BoardColumnView
-                key={column.status}
-                column={column}
-                defs={defs}
-                actions={actions}
-                overlayOf={overlayOf}
-                defaultView={defaultView}
-                dropState={dropMap ? dropMap[column.status] : null}
-                isOver={overColumn === columnDropId(column.status)}
-                loading={false}
-                onDraggingChange={ignoreDragging}
-              />
-            ))}
-          </ColumnRow>
+          {/* §5.2：LayoutGroup 圈定 layoutId 共享作用域——六列同组才有跨列飞行，
+              浮层/抽屉/泳道里的同名元素不会被卷进来。 */}
+          <LayoutGroup>
+            <ColumnRow>
+              {columns.map((column) => (
+                <BoardColumnView
+                  key={column.status}
+                  column={column}
+                  defs={defs}
+                  actions={actions}
+                  overlayOf={overlayOf}
+                  defaultView={defaultView}
+                  dropState={dropMap ? dropMap[column.status] : null}
+                  isOver={overColumn === columnDropId(column.status)}
+                  loading={false}
+                  onDraggingChange={ignoreDragging}
+                />
+              ))}
+            </ColumnRow>
+          </LayoutGroup>
 
           {/* 3.3 + 1.6：拖起来的是卡片克隆体（旋转 2deg + `shadow-card-drag`），原位置留虚线占位。 */}
           <DragOverlay dropAnimation={{ duration: 160, easing: 'cubic-bezier(0.2, 0, 0, 1)' }}>
@@ -332,6 +360,10 @@ function useCardActions(
       move: (card, to) => {
         const verdict = dropVerdict(card.status, to);
         if (verdict.kind === 'direct') {
+          // §5.2 方案 A：用户发起的 ✅ 换列在此登记 pending-move（拖拽释放路径已被规则 5
+          // 抑制）。旧列在快照回来前的每次渲染据此撤掉 exit、预挂 layoutId，
+          // 数据落地同帧瞬时让位 → 新列挂载即飞行；服务端确认后标记过期，不再重放（§5.1）。
+          markPendingMove(card.id, card.status, to);
           run().move.mutate({ id: card.id, to });
           return;
         }
@@ -352,10 +384,15 @@ function useCardActions(
 function ColumnRow({ children }: { children: ReactNode }) {
   // 3.1：纵向滚动在每列内部（列头 44px 固定）；B7 起列宽弹性等分，
   // `overflow-x-auto` 只在窗口窄到放不下全部列的最小宽+间距时兜底横滚。
+  // §5.2 回落规则 2：滚动祖先是换列飞行的测量错位来源，`layoutScroll` 让 motion
+  // 的投影在滚动后重测坐标（列内纵向滚动容器的同一 prop 在 board-column.tsx）。
   return (
-    <div className="atb-scroll flex min-h-0 flex-1 items-stretch gap-4 overflow-x-auto pb-2 pt-3">
+    <motion.div
+      layoutScroll
+      className="atb-scroll flex min-h-0 flex-1 items-stretch gap-4 overflow-x-auto pb-2 pt-3"
+    >
       {children}
-    </div>
+    </motion.div>
   );
 }
 
