@@ -119,7 +119,7 @@ fn main() {
       Ok(())
     })
     .build(tauri::generate_context!())
-    .expect("构建 Agent Task Board 主进程失败：检查 apps/desktop/src-tauri/tauri.conf.json 与 apps/web/dist");
+    .expect("构建 Jarvis Workbench 主进程失败：检查 apps/desktop/src-tauri/tauri.conf.json 与 apps/web/dist");
 
   app.run(move |app_handle, event| match event {
     // 2.1：关闭按钮 = 隐藏到托盘，窗口不销毁，sidecar 继续服务 Agent。

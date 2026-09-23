@@ -10,7 +10,7 @@ use crate::state;
 
 /// 原型 2.1 的窗口规格：1440×900 起、960×600 止、原生标题栏、标题固定。
 pub const LABEL: &str = "main";
-pub const TITLE: &str = "Agent Task Board";
+pub const TITLE: &str = "Jarvis Workbench";
 pub const DEFAULT_WIDTH: f64 = 1440.0;
 pub const DEFAULT_HEIGHT: f64 = 900.0;
 pub const MIN_WIDTH: f64 = 960.0;

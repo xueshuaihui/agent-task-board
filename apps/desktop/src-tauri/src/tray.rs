@@ -37,7 +37,7 @@ fn status_text(app: &AppHandle) -> String {
 fn tooltip(app: &AppHandle) -> String {
   let state_line = status_text(app);
   let plain = state_line.trim_start_matches('●').trim();
-  format!("Agent Task Board · {plain}")
+  format!("Jarvis Workbench · {plain}")
 }
 
 fn tray_image(error: bool) -> Option<Image<'static>> {
@@ -53,7 +53,7 @@ fn tray_image(error: bool) -> Option<Image<'static>> {
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
   let shared = state::shared(app);
   // 头两项按原型是不可点的状态行（enabled = false）。
-  let header = MenuItem::with_id(app, item::HEADER, "Agent Task Board", false, None::<&str>)?;
+  let header = MenuItem::with_id(app, item::HEADER, "Jarvis Workbench", false, None::<&str>)?;
   let status = MenuItem::with_id(app, item::STATUS, status_text(app), false, None::<&str>)?;
   let open_board = MenuItem::with_id(app, item::OPEN_BOARD, "打开看板", true, None::<&str>)?;
   let copy_mcp = MenuItem::with_id(app, item::COPY_MCP, "复制 MCP 地址", true, None::<&str>)?;
