@@ -199,7 +199,9 @@ pub fn refresh(app: &AppHandle) {
   if let Some(tray) = app.tray_by_id(TRAY_ID) {
     if let Some(image) = tray_image(!up) {
       // 正常态用 macOS template 图（随菜单栏深浅自动配色），错误态保留红色。
-      let _ = tray.set_icon_with_as_template(Some(image), !up);
+      // as_template 跟的是「这张图要不要自动配色」：正常态为 true；写反会让服务正常时
+      // 固定用黑色源图，深色菜单栏/全屏下图标看不见。
+      let _ = tray.set_icon_with_as_template(Some(image), up);
     }
     let _ = tray.set_tooltip(Some(tooltip(app)));
   }
