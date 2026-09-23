@@ -74,9 +74,11 @@ beforeEach(async () => {
   logger.warn.mockClear();
 });
 
-/** 造任务 + 一条 Run：产物行的两个外键都指向它。 */
+/** 造任务 + 一条 Run：产物行的两个外键都指向它。B8s 后上传只认当前 run，任务要挂上 currentRunId。 */
 async function seedRun(taskId = 'T-1', runId = 'R-1'): Promise<{ taskId: string; runId: string }> {
-  await prisma.task.create({ data: { id: taskId, title: `${taskId} 标题`, status: 'READY' } });
+  await prisma.task.create({
+    data: { id: taskId, title: `${taskId} 标题`, status: 'RUNNING', currentRunId: runId },
+  });
   await prisma.taskRun.create({
     data: { id: runId, taskId, runNumber: 1, status: 'RUNNING', triggerType: 'agent_poll' },
   });
@@ -216,6 +218,22 @@ describe('上传（POST /artifacts，Agent 凭证）', () => {
     );
     expect(error.code).toBe('NOT_FOUND');
     expect(error.status).toBe(404);
+    expect(existsSync(absolute)).toBe(false);
+    expect(await prisma.artifact.count()).toBe(0);
+  });
+
+  it('B8s：非当前执行的 run_id 上传 → 409 TASK_NOT_RUNNING，字节不落盘（回收后重领不再静默挂旧 run）', async () => {
+    const { taskId, runId } = await seedRun('T-1', 'R-1');
+    // 模拟租约回收后重领：旧 run 置 ABANDONED（同任务至多一条 RUNNING），currentRunId 指向新 run。
+    await prisma.taskRun.update({ where: { id: runId }, data: { status: 'ABANDONED' } });
+    await prisma.taskRun.create({
+      data: { id: 'R-2', taskId, runNumber: 2, status: 'RUNNING', triggerType: 'agent_poll' },
+    });
+    await prisma.task.update({ where: { id: taskId }, data: { currentRunId: 'R-2' } });
+    const { file, absolute } = stagedFile(Buffer.from('x'), 'late.txt');
+    const error = await thrown(() => artifacts.upload({ task_id: taskId, run_id: runId }, file));
+    expect(error.code).toBe('TASK_NOT_RUNNING');
+    expect(error.status).toBe(409);
     expect(existsSync(absolute)).toBe(false);
     expect(await prisma.artifact.count()).toBe(0);
   });

@@ -107,7 +107,7 @@ export class WritebackService {
       };
     }
 
-    await this.assertUploadedArtifacts(verdict.run.id, input.artifacts);
+    await this.assertUploadedArtifacts(verdict.task.id, input.artifacts);
     const agent = agentOf(auth);
     const now = nowSql();
     const orphaned = verdict.kind === 'orphan';
@@ -412,9 +412,14 @@ export class WritebackService {
   /**
    * 20.6：除 `link` 外的产物必须先经 `POST /api/v1/artifacts` 落盘，`complete_task` 只引用其 uri。
    * 先校验再写，避免任务已经转 REVIEW 才发现产物不合法。
+   * B8s（beta.6）：按**任务**而不是按 run 查已上传行——租约回收后重领的 agent 引用的
+   * 可能是旧 run 已落盘的 uri（uri 本身含 run 段，不会跨任务串），拒了就没有补救路径。
    */
-  private async assertUploadedArtifacts(runId: string, artifacts: CompleteInput['artifacts']) {
-    const uploaded = await this.prisma.artifact.findMany({ where: { runId }, select: { uri: true } });
+  private async assertUploadedArtifacts(taskId: string, artifacts: CompleteInput['artifacts']) {
+    const uploaded = await this.prisma.artifact.findMany({
+      where: { taskId },
+      select: { uri: true },
+    });
     const known = new Set(uploaded.map((row) => row.uri));
     const missing = artifacts
       .filter((item) => item.type !== 'link' && !known.has(item.uri))
@@ -460,7 +465,8 @@ export class WritebackService {
         continue;
       }
       if (!item.name) continue;
-      const row = await tx.artifact.findFirst({ where: { runId: verdict.run.id, uri: item.uri } });
+      // B8s：与 assertUploadedArtifacts 同口径按任务查——引用的 uri 可能挂在旧 run 行上。
+      const row = await tx.artifact.findFirst({ where: { taskId: verdict.task.id, uri: item.uri } });
       if (!row) continue;
       const metadata = parseJsonObject(row.metadata);
       if (metadata.name === item.name) continue;

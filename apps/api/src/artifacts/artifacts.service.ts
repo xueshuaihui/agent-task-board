@@ -99,6 +99,21 @@ export class ArtifactsService {
       this.discard(file.path);
       throw new ApiException('NOT_FOUND', `执行记录 ${runId} 不存在或不属于任务 ${taskId}`);
     }
+    // B8s（beta.6）：只接受「任务当前执行」的上传。产物按 run 严格分区，而审核/展示
+    // 锚定当前 run——租约回收或驳回重跑后 agent 仍拿旧 run_id 上传，会静默挂到旧 run
+    // 造成「明明有产物、审核看不到」。拒了逼 agent 在新 run 重传。
+    const task = await this.prisma.task.findUnique({
+      where: { id: taskId },
+      select: { currentRunId: true },
+    });
+    if (task?.currentRunId !== runId) {
+      this.discard(file.path);
+      throw new ApiException(
+        'TASK_NOT_RUNNING',
+        `run_id ${runId} 不是任务 ${taskId} 的当前执行，产物不能上传；请重新领取任务并用新的 run_id 上传`,
+        [{ path: 'run_id', code: 'not_current_run', message: `current_run_id=${task?.currentRunId ?? 'null'}` }],
+      );
+    }
 
     const maxBytes = (await this.settings.get('artifact_max_mb')) * 1024 * 1024;
     if (file.size > maxBytes) {
