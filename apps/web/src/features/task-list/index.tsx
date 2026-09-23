@@ -376,34 +376,36 @@ export function TaskListPage() {
           <>
             <Table>
               <THead>
-                <TH className="w-[36px]">
-                  <Checkbox
-                    aria-label="全选当前页"
-                    checked={allPageSelected}
-                    indeterminate={!allPageSelected && onPageSelected.length > 0}
-                    onChange={togglePage}
-                  />
-                </TH>
-                <TH className="w-[90px]" sortField="id" sort={sort} onSort={onSort}>
-                  ID
-                </TH>
-                <TH className="min-w-[240px]">标题</TH>
-                <TH className="w-[88px]">类型</TH>
-                <TH className="w-[64px]" sortField="priority" sort={sort} onSort={onSort}>
-                  优先级
-                </TH>
-                <TH className="w-[96px]" sortField="status" sort={sort} onSort={onSort}>
-                  状态
-                </TH>
-                <TH className="w-[160px]">标签</TH>
-                <TH className="w-[104px]">Agent</TH>
-                <TH className="w-[72px]">时长</TH>
-                <TH className="w-[104px]" sortField="updated_at" sort={sort} onSort={onSort}>
-                  更新时间
-                </TH>
-                <TH className="w-[44px]">
-                  <span className="sr-only">操作</span>
-                </TH>
+                <TR>
+                  <TH className="w-[36px]">
+                    <Checkbox
+                      aria-label="全选当前页"
+                      checked={allPageSelected}
+                      indeterminate={!allPageSelected && onPageSelected.length > 0}
+                      onChange={togglePage}
+                    />
+                  </TH>
+                  <TH className="w-[90px]" sortField="id" sort={sort} onSort={onSort}>
+                    ID
+                  </TH>
+                  <TH className="min-w-[240px]">标题</TH>
+                  <TH className="w-[88px]">类型</TH>
+                  <TH className="w-[64px]" sortField="priority" sort={sort} onSort={onSort}>
+                    优先级
+                  </TH>
+                  <TH className="w-[96px]" sortField="status" sort={sort} onSort={onSort}>
+                    状态
+                  </TH>
+                  <TH className="w-[160px]">标签</TH>
+                  <TH className="w-[104px]">Agent</TH>
+                  <TH className="w-[72px]">时长</TH>
+                  <TH className="w-[104px]" sortField="updated_at" sort={sort} onSort={onSort}>
+                    更新时间
+                  </TH>
+                  <TH className="w-[44px]">
+                    <span className="sr-only">操作</span>
+                  </TH>
+                </TR>
               </THead>
               <TBody>
                 {sections

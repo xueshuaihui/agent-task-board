@@ -433,8 +433,10 @@ function ResultDialog({
         {shown.failures.length > 0 ? (
           <Table>
             <THead>
-              <TH className="w-[90px]">任务</TH>
-              <TH>跳过原因</TH>
+              <TR>
+                <TH className="w-[90px]">任务</TH>
+                <TH>跳过原因</TH>
+              </TR>
             </THead>
             <TBody>
               {shown.failures.map((failure) => (
