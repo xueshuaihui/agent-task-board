@@ -59,12 +59,20 @@ export function neighbourColumn(from: string, step: 1 | -1): TaskStatus | null {
  * （B7 起为弹性等分，不再是 280px 定档），因为默认视图里的空列是「这一类确实没活」的信息，
  * 视图预设/筛选下的空列只是噪声。
  */
-export function isDefaultBoardView(filters: Pick<FilterState, 'view' | 'priority' | 'type' | 'tags' | 'customFields'>): boolean {
+export function isDefaultBoardView(
+  filters: Pick<
+    FilterState,
+    'view' | 'priority' | 'type' | 'tags' | 'groups' | 'requirements' | 'agents' | 'customFields'
+  >,
+): boolean {
   return (
     filters.view === 'all' &&
     filters.priority.length === 0 &&
     filters.type.length === 0 &&
     filters.tags.length === 0 &&
+    filters.groups.length === 0 &&
+    filters.requirements.length === 0 &&
+    filters.agents.length === 0 &&
     Object.keys(filters.customFields).length === 0
   );
 }
@@ -74,10 +82,19 @@ export function isDefaultBoardView(filters: Pick<FilterState, 'view' | 'priority
  * 基座的 `activeFilterCount` 还包含状态/关键词/归档三组（只有列表页用），直接拿过来会虚报。
  */
 export function boardFilterCount(
-  filters: Pick<FilterState, 'priority' | 'type' | 'tags' | 'customFields'>,
+  filters: Pick<
+    FilterState,
+    'priority' | 'type' | 'tags' | 'groups' | 'requirements' | 'agents' | 'customFields'
+  >,
 ): number {
   return (
-    filters.priority.length + filters.type.length + filters.tags.length + Object.keys(filters.customFields).length
+    filters.priority.length +
+    filters.type.length +
+    filters.tags.length +
+    filters.groups.length +
+    filters.requirements.length +
+    filters.agents.length +
+    Object.keys(filters.customFields).length
   );
 }
 

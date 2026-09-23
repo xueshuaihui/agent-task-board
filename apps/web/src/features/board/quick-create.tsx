@@ -2,7 +2,7 @@ import { useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'r
 import type { TaskCreateInput, TaskStatus, TemplatePreset } from '@/api/types';
 import { errorMessage, fieldErrorsOf, isApiError, useFieldDefs, useSettings } from '@/api';
 import { useActiveGroups } from '@/features/groups';
-import { useGroupingStore } from './grouping/useGroupingState';
+import { useFilterStore } from '@/app/store/filters';
 import { priorityText, STATUS_LABEL } from '@/lib/labels';
 import { clearFieldError } from '@/lib/forms';
 import { useToast } from '@/components/ui';
@@ -91,7 +91,7 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
   // 0919 五章：创建时选归属分组。默认值取切换器「恰好只选了一个分组」的场景，
   // 其他情况留空（未分配）——分组是弱约束，不该在快速新建里替用户做主。
   const groups = useActiveGroups();
-  const switcherGroupIds = useGroupingStore((state) => state.groupIds);
+  const switcherGroupIds = useFilterStore((state) => state.groups);
   const [groupId, setGroupId] = useState(
     switcherGroupIds.length === 1 ? switcherGroupIds[0] : '',
   );

@@ -1,6 +1,6 @@
 import { useQuery, type UseQueryOptions } from '@tanstack/react-query';
 import { qk, useApiMutation } from '@/api';
-import { useGroupingStore } from '@/features/board/grouping/useGroupingState';
+import { useFilterStore } from '@/app/store/filters';
 import { groupsApi } from './groupsApi';
 import type {
   Group,
@@ -91,7 +91,7 @@ export function useGroupMutations() {
  * 不该继续留着这个分组——否则看板会一直只显示一个已不存在（或已归档）分组下的任务。
  */
 function dropFromScope(id: string): void {
-  const { groupIds, update } = useGroupingStore.getState();
-  if (!groupIds.includes(id)) return;
-  update({ groupIds: groupIds.filter((value) => value !== id) });
+  const { groups, setDimension } = useFilterStore.getState();
+  if (!groups.includes(id)) return;
+  setDimension('groups', groups.filter((value) => value !== id));
 }

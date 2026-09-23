@@ -9,30 +9,30 @@ import type {
   TaskListItem,
   TaskListQuery,
 } from '@/api/types';
-import { useGroupingStore } from '@/features/board/grouping/useGroupingState';
+import { useFilterStore } from '@/app/store/filters';
 
 /**
  * 7.8 / 4.5「多分组切换」的数据层接缝。
  *
  * B15-①：`GET /board` 的 `groups` 已是多值（维内 OR），看板不再按分组扇出合并。
- * `GET /tasks` 的 `group_id` 仍是单值契约——列表页多选分组继续走
- * 「每分组一请求 + 前端按列/按页合并」，N = 已选分组数（本地单用户可忽略）。
- * 单选与全选（未选 = 全部）不多花一个 RTT。
+ * B15-②b：分组作用域并入统一过滤 store（`useFilterStore.groups`），旧的
+ * `useGroupingStore/groupIds` 随之下线。`GET /tasks` 的 `group_id` 仍是单值契约——
+ * 列表页多选分组继续走「每分组一请求 + 前端按列/按页合并」，N = 已选分组数
+ * （本地单用户可忽略）。单选与全选（未选 = 全部）不多花一个 RTT。
  */
 
 type Options<TData> = Pick<UseQueryOptions<TData, Error, TData>, 'enabled' | 'placeholderData'>;
 
-/** 分组 store 里的分组多选（7.8：空数组 = 全部分组）。 */
+/** 统一过滤 store 里的分组多选（7.8：空数组 = 全部分组；`none` = 未归属）。 */
 export function useSelectedGroupIds(): string[] {
-  return useGroupingStore((state) => state.groupIds);
+  return useFilterStore((state) => state.groups);
 }
 
-/** 看板数据源：选中分组直接进 `groups` 参数，单请求。 */
+/** 看板数据源：`groups` 已由 `toBoardQuery` 从统一过滤 store 带出，这里就是单请求直传。 */
 export function useBoardWithGroups(params: BoardQuery, options?: Options<BoardResponse>) {
-  const groupIds = useSelectedGroupIds();
   return useQuery({
-    queryKey: qk.board(groupIds.length ? { ...params, groups: groupIds } : params),
-    queryFn: () => api.board.get(groupIds.length ? { ...params, groups: groupIds } : params),
+    queryKey: qk.board(params),
+    queryFn: () => api.board.get(params),
     enabled: options?.enabled,
     placeholderData: options?.placeholderData,
   });

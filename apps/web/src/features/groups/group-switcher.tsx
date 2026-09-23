@@ -1,17 +1,16 @@
 import { Check, FolderPlus, Settings2 } from 'lucide-react';
 import { navigate } from '@/app/router';
+import { useFilterStore } from '@/app/store/filters';
 import { Menu, MenuCaret, type MenuProps } from '@/components/ui';
 import { cn } from '@/lib/cn';
-import { useGroupingStore } from '@/features/board/grouping/useGroupingState';
 import { useActiveGroups, useGroups } from './queries';
 import { GroupGlyph } from './group-glyph';
 
 /**
  * 7.8 / 4.5 分组切换器：`分组: [全部分组 ▾]`，多选。
  *
- * 状态真值是分组 store 的 `groupIds`（空数组 = 全部分组），驱动看板/列表的
- * 服务端 `group_id` 过滤（useGroupScoped / useBoardWithGroups）。B13 泳道下线后
- * 这里不再联动主分组维度；分组维度的选择与值过滤在过滤侧栏。
+ * B15-②b：真值并入统一过滤 store 的 `groups`（空数组 = 全部分组），看板/列表的
+ * 分组过滤与其余维度共用一份状态。工具栏入口本身在 B15-③ 随筛选弹层上线后下线。
  * 归档分组不出现在候选里（5.1）。
  *
  * Menu 是单选语义的控件（selectedId 画一个对勾），多选在这里用「对勾图标」表达勾选态，
@@ -19,13 +18,13 @@ import { GroupGlyph } from './group-glyph';
  */
 export function GroupSwitcher() {
   const groups = useActiveGroups();
-  const groupIds = useGroupingStore((state) => state.groupIds);
-  const update = useGroupingStore((state) => state.update);
+  const groupIds = useFilterStore((state) => state.groups);
+  const setDimension = useFilterStore((state) => state.setDimension);
 
   const items = groups.data?.items ?? [];
   const allSelected = groupIds.length === 0;
 
-  const setSelection = (next: string[]) => update({ groupIds: next });
+  const setSelection = (next: string[]) => setDimension('groups', next);
 
   const toggle = (id: string) => {
     setSelection(

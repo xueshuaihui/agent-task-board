@@ -9,7 +9,6 @@ import { Badge, Button, Checkbox, Input, Menu, MenuCaret, RadioGroup } from '@/c
 import type { MenuItem } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { useActiveGroups } from '@/features/groups';
-import { useGroupingStore } from '@/features/board/grouping/useGroupingState';
 import { PHASE_ONE_FIELD_TYPES, PRIORITY_LABEL, STATUS_LABEL, labelOf } from '@/lib/labels';
 
 /**
@@ -472,8 +471,8 @@ export function ActiveFilterSummary() {
  * 从看板带着「只看某个分组」跳进列表时，这里不说清楚作用域，用户看到「共 0 条」会以为任务被删了。
  */
 export function ActiveGroupScope() {
-  const groupIds = useGroupingStore((state) => state.groupIds);
-  const update = useGroupingStore((state) => state.update);
+  const groupIds = useFilterStore((state) => state.groups);
+  const setDimension = useFilterStore((state) => state.setDimension);
   const groups = useActiveGroups();
   if (groupIds.length === 0) return null;
 
@@ -489,7 +488,7 @@ export function ActiveGroupScope() {
         type="button"
         title="点击恢复全部分组"
         className="inline-flex items-center gap-1 rounded-tag border border-primary bg-primary-light px-1.5 py-px text-badge text-primary hover:text-primary-hover"
-        onClick={() => update({ groupIds: [] })}
+        onClick={() => setDimension('groups', [])}
       >
         分组：{label}
         <X className="size-3" aria-hidden />

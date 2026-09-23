@@ -3,8 +3,7 @@ import { motion, useReducedMotion } from 'motion/react';
 import { Archive, ArchiveRestore, FolderPlus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { errorMessage } from '@/api/errors';
 import { navigate } from '@/app/router';
-import { useBoardFilterStore } from '@/features/board/grouping/useBoardFilterStore';
-import { useGroupingStore } from '@/features/board/grouping/useGroupingState';
+import { useFilterStore } from '@/app/store/filters';
 import { transitions } from '@/lib/motion';
 import { formatDateTime } from '@/lib/time';
 import { Badge, Button, EmptyState, IconButton, Menu, Skeleton } from '@/components/ui';
@@ -145,12 +144,11 @@ function GroupCard({
   const archived = group.status !== 'ACTIVE';
   /** v0.0.4 W1-D1 §5.2/§5.4：预置「默认」分组带标识、无删除（与归档）入口。 */
   const isDefault = group.is_default === 1;
-  const update = useGroupingStore((state) => state.update);
+  const setDimension = useFilterStore((state) => state.setDimension);
 
-  // 5.1「打开」：把看板切成只看这个分组，落到看板就是过滤侧栏选中该分组的状态。
+  // 5.1「打开」：把看板切成只看这个分组——B15-②b 起写统一过滤 store 的 groups 维。
   const open = () => {
-    update({ groupIds: [group.id] });
-    useBoardFilterStore.getState().selectSlotValues('slotA', 'group', [group.id]);
+    setDimension('groups', [group.id]);
     navigate('board');
   };
 
