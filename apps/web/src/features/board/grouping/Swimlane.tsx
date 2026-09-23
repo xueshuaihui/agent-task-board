@@ -98,7 +98,7 @@ export function SwimlaneView({  lane,
   columnHeaderExtra,
 }: SwimlaneViewProps) {
   return (
-    <section className="overflow-hidden rounded-[10px] border border-border bg-bg-surface">
+    <section className="shrink-0 overflow-hidden rounded-[10px] border border-border bg-bg-surface">
       <SwimlaneHead
         lane={lane}
         collapsed={collapsed}
