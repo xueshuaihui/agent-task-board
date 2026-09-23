@@ -104,6 +104,35 @@ describe('B15-② 偏好迁移 → v2 扁平', () => {
     mergeGroupingPrefs(prefs, { projectIds: ['p-1'] });
     expect(prefs.groups).toEqual(['p-1']);
   });
+
+  it('服务端 board.filter 缺失、grouping 在：水合**合并进**本地迁移值，不整份顶掉本地维度', async () => {
+    const localStorage = makeLocalStorage({
+      [BOARD_FILTER_LOCAL_KEY]: JSON.stringify({
+        slotA: { dim: 'group', values: ['g-1'] },
+        slotB: { dim: 'priority', values: ['p1'] },
+      }),
+    });
+    vi.resetModules();
+    vi.stubGlobal('window', { localStorage });
+    vi.doMock('@/api', () => ({
+      api: {
+        prefs: {
+          get: async (key: string) =>
+            key === 'board.grouping' ? { value: { groupIds: ['g-2'] } } : { value: null },
+          put: async () => undefined,
+        },
+      },
+    }));
+    await import('../filter-prefs');
+    const { useFilterStore } = await import('@/app/store/filters');
+    await vi.waitFor(() => {
+      expect(useFilterStore.getState().groups).toEqual(['g-1', 'g-2']);
+    });
+    expect(useFilterStore.getState().priority).toEqual([1]);
+    const written = JSON.parse(localStorage.store.get(BOARD_FILTER_LOCAL_KEY) ?? '{}') as BoardFilterPrefs;
+    expect(written.priority).toEqual([1]);
+    expect(written.groups).toEqual(['g-1', 'g-2']);
+  });
 });
 
 describe('B15-② URL 查询串 ←→ 过滤态', () => {

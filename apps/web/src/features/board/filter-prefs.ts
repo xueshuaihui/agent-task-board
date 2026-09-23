@@ -279,7 +279,9 @@ export function hydrateServerBoardFilterPrefs(): void {
         prefs = isV1Slots(value) ? migrateV1Slots(value) : normalizeBoardFilterPrefs(value);
         if (isV1Slots(value)) mergeGroupingPrefs(prefs, grouping.value);
       } else if (grouping.value && typeof grouping.value === 'object') {
-        prefs = { ...DEFAULT_BOARD_FILTER_PREFS, customFields: {} };
+        // 服务端 board.filter 缺失：grouping 并进**当前本地值**（可能刚做过 v1 槽迁移），
+        // 不能从默认值重建——否则本地独有维度（如 slotB 的优先级）会被整份顶掉。
+        prefs = boardSliceOf(useFilterStore.getState());
         mergeGroupingPrefs(prefs, grouping.value);
       }
       if (!prefs) return;
