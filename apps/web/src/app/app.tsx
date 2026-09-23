@@ -63,7 +63,10 @@ function useUiThemeSync(): void {
 export function AppShell() {
   const route = useRoute();
   const Page = PAGES[route.name];
-  return <WorkspaceShell page={Page} routeKey={route.key} />;
+  // key 只认 path 不认 search：`#/settings?tab=x` 这类同页换参走页面内响应
+  //（设置 Tab 派生渲染、列表页 filtersFromSearch 的 useEffect），不该触发整页
+  // exit+rise（≈380ms 空白）与全部查询重取。
+  return <WorkspaceShell page={Page} routeKey={route.path} />;
 }
 
 function WorkspaceShell({

@@ -5,8 +5,9 @@ import { transitions } from '@/lib/motion';
 /**
  * 页面过渡（docs/motion-spec.md §1-L3 / §5.3）：入场淡入 + 上移 6px，240ms ease-emphasis
  * （transitions.rise）；退场纯淡出 140ms（transitions.exit）。宿主 AppShell 里用
- * `<AnimatePresence mode="wait">` 包住并给 `key={route.key}`，路由切换时旧页退场、
- * 新页播放入场。总时长 ≈380ms（140+240），>400ms 视为 bug。
+ * `<AnimatePresence mode="wait">` 包住并给 `key={route.path}`（不含 search：同页换查询串
+ * 不应整页重挂，见 app.tsx），路由切换时旧页退场、新页播放入场。总时长 ≈380ms（140+240），
+ * >400ms 视为 bug。
  *
  * ⚠️ exit 严禁加位移/缩放：这层挂着 h-full（见下），退场期任何 transform/高度相关
  * 动画都会干扰 h-full 链（e4ae306 教训），只允许纯 opacity。

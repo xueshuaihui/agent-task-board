@@ -12,6 +12,7 @@ import {
   useToast,
 } from '@/components/ui';
 import { errorMessage } from '@/api';
+import { useRouteSearchParams } from '@/app/router';
 import { itemVariants, listVariants } from '@/lib/motion';
 import { blocksToMarkdown } from './markdown';
 import { skillsApi } from './api';
@@ -49,9 +50,10 @@ export function SkillLibraryPage() {
   /** 分类多选（OR 语义）：不选即全部，选项由当前列表 tags 聚合而来。 */
   const [categories, setCategories] = useState<string[]>([]);
 
-  /* `?edit=` 挂编辑器；其余查询参数留给后续（如 tag 深链）。 */
-  const search = typeof window !== 'undefined' ? window.location.hash.split('?')[1] ?? '' : '';
-  const editingId = new URLSearchParams(search).get('edit');
+  /* `?edit=` 挂编辑器；其余查询参数留给后续（如 tag 深链）。必须走响应式订阅：
+   * PageTransition 的 key 已收敛为 path（B10），同页换查询串不再重挂本组件。 */
+  const routeSearch = useRouteSearchParams();
+  const editingId = routeSearch.get('edit');
 
   const query: SkillQuery = useMemo(
     () => ({
