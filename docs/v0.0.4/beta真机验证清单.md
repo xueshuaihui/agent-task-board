@@ -1,16 +1,13 @@
 # v0.0.4-beta.5 真机验证清单（#14 销账）
 
-对象 Release：<https://github.com/xueshuaihui/agent-task-board/releases/tag/v0.0.4-beta.5>（prerelease，tag → 本清单回填 commit，SHA 待 CI 后补；内容 = fix/beta5-bug-batch 10 commit（B1 包名切换/B1b 界面旧名/B2 进度条占位/B2b Agent 状态 chip/B3 技能分类/B4 列内滚动/B5 分组复位/B6 MCP 词表/#46 wake mode 修复/B7 列宽弹性 + 主题文案）+ feat/motion-system-v1 16 commit（动效系统 v1.2 全量落地）；含 beta.4 全量修复链）。本分支 CI「创建 Release」job 正常应自动汇集产物（beta.4 时因账单问题手动，若复现按 §0 手动下载口径）。
-本清单覆盖矩阵「#14 销账清单」四项：条款 1、4、68 首启、§20.3-8；§5 为 beta.4 唤醒词功能项；§6 为 beta.5 新增批（动效 + 六 bug + B7）。§1–§4 全过即 #14 关单、宣布进入预发布。
+对象 Release：<https://github.com/xueshuaihui/agent-task-board/releases/tag/v0.0.4-beta.5>（prerelease，tag → `497f55f`；内容 = fix/beta5-bug-batch 10 commit（B1 包名切换/B1b 界面旧名/B2 进度条占位/B2b Agent 状态 chip/B3 技能分类/B4 列内滚动/B5 分组复位/B6 MCP 词表/#46 wake mode 修复/B7 列宽弹性 + 主题文案）+ feat/motion-system-v1 16 commit（动效系统 v1.2 全量落地）+ 本清单回填；含 beta.4 全量修复链。CI run 35830546545 三 job 全绿，Release 由 CI 自动汇集双架构产物）。本清单覆盖矩阵「#14 销账清单」四项：条款 1、4、68 首启、§20.3-8；§5 为 beta.4 唤醒词功能项；§6 为 beta.5 新增批（动效 + 六 bug + B7）。§1–§4 全过即 #14 关单、宣布进入预发布。
 
 ## 0. 下载与完整性（前置）
 
-> beta.5 的 dmg 文件名不变（包内版本恒 0.1.0），SHA-256 以 v0.0.4-beta.5 Release 的 `SHA256SUMS.txt` 为准（下方 beta.4 值仅存档）。
-
 - [ ] 按本机架构下载对应 dmg：Apple Silicon → `Jarvis.Workbench_0.1.0_arm64.dmg`；Intel → `Jarvis.Workbench_0.1.0_x64.dmg`
 - [ ] 校验 SHA-256 与 Release 内 `SHA256SUMS.txt` 一致（注意 SUMS 内以空格名登记，比对以哈希为准）：
-  - arm64：`2a392f9d7ad06b1ff00be3c313360dbc2ef2a3101ed3de47a42336dda9809c41`
-  - x64：`215999d680e9c93e83f41fdd5e294ffdb9bff384e6789f7d74bb9416cc82b791`
+  - arm64：`9ff90ea9aa5696bf0b51a3542018f20507d48ba58b028b08fb8aff5a1c69faff`
+  - x64：`9747efd88131bacd838968d2e6d8fa8e71fc1e8797513d7382d1615d28c09c4f`
   - 命令：`shasum -a 256 "Jarvis.Workbench_0.1.0_<arch>.dmg"`
 - [ ] （建议，非门禁）挂载 dmg 前对旧库手动再拷一份保险副本：`cp ~/.agent-board/atb.db /tmp/atb.db.insure-$(date +%F)`
 
