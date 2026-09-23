@@ -15,7 +15,10 @@
 > §5.2 回落规则 5 扩展到「刚释放的拖拽源（同帧）」。
 > 落地注记（§9 P0/P1 实现后回填，未升版本号）：§1-L2 曲线列口径澄清（exit 位移类走 exit/drawerOut 档）；
 > §4.6 补 sonner 机制豁免（height 收拢/stack 缩放保留内置值）与退场两个边缘态偏差记录；
-> §5.2 补触发面注记（飞行限用户发起 direct 换列，WS 重取换列设回落规则 6；泳道整体不参与；scale 1.02 划掉）。
+> §5.2 补触发面注记（飞行限用户发起 direct 换列，WS 重取换列设回落规则 6；泳道整体不参与；scale 1.02 划掉）；
+> 浮层退场可播的前提是**消费者侧受控 open**：components/ui 挂 AnimatePresence 只解决一半，
+> features 侧 `if (!target) return null` 式条件卸载会让 open 永远没有 true→false 过渡帧（退场被整段跳过）。
+> 统一套路=ref 保留末次非空目标 + `open={Boolean(target)}` + 重开以 session key 重挂复位（19 个消费者已收口）。
 
 ---
 
