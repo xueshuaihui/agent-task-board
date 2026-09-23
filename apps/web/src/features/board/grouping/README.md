@@ -1,30 +1,32 @@
-# 看板分组（B13：分组即过滤）
+# 看板分组 / 过滤（B13 → B15 收口后的目录口径）
 
-PRD 第七章的分组在前端的最终形态：**分组不再是泳道视图，而是过滤条件**。看板永远渲染经典六列；
-左侧「分组侧栏」提供两个过滤槽，命中的卡片才显示。旧泳道路径（GroupedBoard/Swimlane/GroupSelector/
-useCrossGroupDrag）已随 B13-③ 整体删除。
+PRD 第七章的分组在前端的最终形态：**分组只是过滤的一个维度**。看板永远渲染经典六列；
+过滤条件全部走服务端（`GET /board?groups=…&requirements=…&agents=…`），不再有客户端槽模型。
+历史三轮下线：B13-③ 删泳道视图（GroupedBoard/Swimlane/GroupSelector/useCrossGroupDrag）；
+B15-② 删 `useGroupingState`/`useBoardFilterStore`/`filter-model`（三份真值并入 `useFilterStore`）；
+B15-③ 删 `GroupFilterSidebar`/`GroupSwitcher`（入口统一为工具栏「筛选」弹层 + 结果区 chip 汇总条）。
 
-## 文件职责
+## 现在各文件的职责
 
 | 文件 | 职责 |
 |---|---|
-| `filter-model.ts` | 纯函数状态机：`FilterSlot`（`{dim, values[]}`）× 两槽（slotA/slotB）、`taskMatchesSlot`（槽内多值 OR）、`taskMatchesFilter`（槽间交集 AND）、`hasActiveFilter`、`toggleSlotValue`、`slotStats`（侧栏徽标计数：total/审核中/执行中，未归属垫底）。`'status'` 维不可作过滤（列即状态）。 |
-| `useBoardFilterStore.ts` | Zustand store：两槽偏好 + 全部动作（`setSlotDim`/`toggleValue`/`selectSlotValues`/`clearSlot`/`reset`）。持久化 localStorage `atb.board.filter` + 服务端 prefs `board.filter`（hydrate 竞态防护见文件内注释）。**B13-② 迁移**：本地无新值时读旧 `atb.board.grouping`（primary/secondary/laneFilter）翻译成槽并回写。 |
-| `GroupFilterSidebar.tsx` | 过滤入口。≥`win-lg` 内联 w-56 面板；窄窗收成 w-9 竖轨（rail）+ 点击开 Drawer。每槽一段：维度 Select（排除另一槽占用维）+ 值行按钮（aria-pressed）+ 徽标计数 + 清除。 |
-| `useGroupingState.ts` | 瘦身后的旧 store：只剩 `groupIds`（4.5 分组多选作用域，走服务端 `group_id` 过滤），供 GroupSwitcher/分组页/取数层消费。旧形状（primary/laneFilter 等）已被 filter store 接管，normalize 只兼容取值。 |
-| `dimensions.ts` | 分组维度定义（group / requirement / type / priority / agent / tag / status）+ `GroupableTask`（TaskCard + group/requirement 归属字段的**接缝类型**）+ `toGroupable()` 翻译。 |
+| `grouping/dimensions.ts` | 分组维度定义（group / requirement / type / priority / agent / tag / status）+ `GroupableTask`（TaskCard + group/requirement 归属字段的**接缝类型**）+ `toGroupable()` 翻译 + `UNASSIGNED_KEY` 等词表。消费方只剩 `filter-prefs.ts`（迁移值翻译）与任务列表分节。 |
+| `board/filter-prefs.ts` | 过滤偏好的持久化与迁移（纯模块，不碰 router）：v2 扁平形状读写 localStorage `atb.board.filter` + 服务端 prefs `board.filter`（双写、hydrate 竞态防护）；一次性迁移 v1 槽形状（slotA/slotB）与旧 `board.grouping`（groupIds/primary/laneFilter），服务端已是 v2 时不再合并 grouping（防已清空作用域复活）。 |
+| `board/filter-url-sync.ts` | 过滤态 ↔ `#/board?…` 双向同步：挂载/跳转时 URL 优先，store 变更经 `replaceState` 回写、不产生历史条目。`custom_fields` 不进 URL。 |
+| `board/filter/options.ts` | 筛选弹层/chip 条共用的六维词表（`FILTER_DIMENSIONS`）、从看板快照派生候选的 `deriveFilterOptions`（requirements/agents 无服务端词表接口）、整维回写 `setFilterDimension`。 |
+| `board/filter/FilterMenu.tsx` | 工具栏唯一过滤入口：「筛选」按钮 + Popover，六维 ChipGroup，维内 OR、维间 AND。 |
+| `board/filter/FilterChipsBar.tsx` | 结果区上方的已激活条件汇总条：一条条件一枚可删 chip。 |
 
 ## 消费方接线
 
-- **看板**（`features/board/index.tsx`）：六列快照拉平 → `toGroupable` → `taskMatchesFilter` 得 `visibleIds`，
-  列渲染/总数/流程图共用同一过滤态；分组名/色经 `useGroups()` 缓存富化（`toGroupable` 的 `group_name` 兜底是裸 id）。
-  整页空态只在「无过滤且无卡」时替换六列。
-- **任务列表**（`features/task-list/index.tsx`）：分节维度读 `slotA.dim`（与侧栏共用一份偏好），
-  group 维节标题同样查分组缓存富化真名。
-- **分组页**（`features/groups/groups-page.tsx`）：「查看任务」= 写 `groupIds` 作用域 + `selectSlotValues('slotA','group',[id])` 再跳看板。
-- **流程图视图**：与经典列共用 `visibleIds` 过滤态。
+- **看板**（`features/board/index.tsx`）：`toBoardQuery(filters)` 直接产出六列请求参数，页面不再做
+  可见性判；`graphTasks`（快照拉平）同时喂依赖图、筛选弹层候选与 chip 条。整页空态只在
+  「默认视图（无任何过滤）且无卡」时替换六列。
+- **任务列表**（`features/task-list/index.tsx`）：分节维度是本页显示偏好，存 `atb.tasks.groupBy`
+  （`group-pref.ts`），入口为筛选行的「分组方式」菜单；group 维节标题查分组缓存富化真名。
+- **分组页**（`features/groups/groups-page.tsx`）：「查看任务」= `setDimension('groups',[id])` 再跳看板。
 
 ## 接缝汇总
 
 - `GroupableTask` 的 group/requirement 展示字段：等后端卡片 DTO 直接带上后可删 `toGroupable`。
-- 偏好持久化：`readBoardFilterPrefs`/`writeBoardFilterPrefs` 已切 `GET/PUT /api/v1/prefs/:key`（key=`board.filter`）。
+- 需求/Agent 候选从当前看板快照派生：过滤生效后候选随可见卡收缩，已选值由 chip 条兜底可见可删。

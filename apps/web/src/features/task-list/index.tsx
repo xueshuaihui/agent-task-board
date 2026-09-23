@@ -37,10 +37,14 @@ import {
   THead,
   TR,
 } from '@/components/ui';
-import type { MenuItem } from '@/components/ui';
+import type { MenuItem, MenuProps } from '@/components/ui';
 import { directTransitions } from '@/features/board/matrix';
-import { GROUP_DIMENSIONS, toGroupable } from '@/features/board/grouping/dimensions';
-import { useBoardFilterStore } from '@/features/board/grouping/useBoardFilterStore';
+import {
+  GROUPABLE_KEYS,
+  GROUP_DIMENSIONS,
+  toGroupable,
+  type GroupDimensionKey,
+} from '@/features/board/grouping/dimensions';
 import { statusLabel } from '@/lib/labels';
 import { cn } from '@/lib/cn';
 import {
@@ -62,6 +66,7 @@ import { BatchBar } from './batch-bar';
 import { CreateTaskMenu } from './create-menu';
 import { archiveErrorText } from './reason';
 import { PAGE_SIZES, readPageSize, rememberPageSize } from './page-pref';
+import { readGroupBy, rememberGroupBy } from './group-pref';
 
 /**
  * 任务列表页 `#/tasks`（PRD 6.1 第 8 条 / 原型 3.8）：全应用**唯一**的表格实现，
@@ -154,10 +159,14 @@ export function TaskListPage() {
   const rows = useMemo(() => list.data?.items ?? [], [list.data]);
   const total = list.data?.total ?? 0;
 
-  /* ----------------------------------------------- 分组分节（复用看板 grouping） */
+  /* ----------------------------------------------- 分组分节（本页自己的显示偏好） */
 
-  // 分组分节维度与看板过滤侧栏共用一份偏好（slotA）；「不分组」时退回平铺表格。
-  const listPrimary = useBoardFilterStore((state) => state.slotA.dim);
+  // B15-③：分节维度存在 `atb.tasks.groupBy`（`group-pref.ts`）；「不分组」时退回平铺表格。
+  const [listPrimary, setListPrimary] = useState<GroupDimensionKey>(readGroupBy);
+  const changeGroupBy = useCallback((key: GroupDimensionKey) => {
+    setListPrimary(key);
+    rememberGroupBy(key);
+  }, []);
   // toGroupable 的 group_name 兜底是裸 group_id；节标题要显示真名，和看板一样查分组缓存。
   const groups = useGroups();
   const groupById = useMemo(
@@ -313,6 +322,7 @@ export function TaskListPage() {
             />
           </div>
           <FilterChips panelOpen={panelOpen} onTogglePanel={() => setPanelOpen((value) => !value)} />
+          <GroupByMenu value={listPrimary} onChange={changeGroupBy} />
           <Checkbox
             label="包含已归档"
             checked={filters.archived === 'all'}
@@ -693,5 +703,59 @@ function hasListFilters(filters: {
     Object.keys(filters.customFields).length > 0 ||
     filters.keyword.trim().length > 0 ||
     filters.archived !== 'false'
+  );
+}
+
+/* ------------------------------------------------------------ 分节维度菜单 */
+
+/**
+ * B15-③：列表页「分组方式」——分节维度的唯一入口（看板筛选弹层管过滤，这里管显示）。
+ * 候选沿用 grouping 的七维 + 不分组；选中值存 `atb.tasks.groupBy`，刷新后仍在。
+ */
+function GroupByMenu({
+  value,
+  onChange,
+}: {
+  value: GroupDimensionKey;
+  onChange: (key: GroupDimensionKey) => void;
+}) {
+  const groups: MenuProps['groups'] = [
+    {
+      label: '分节维度',
+      items: [
+        { id: 'none', label: '不分组', onSelect: () => onChange('none') },
+        ...GROUPABLE_KEYS.map((key) => ({
+          id: key as string,
+          label: `${GROUP_DIMENSIONS[key].icon} ${GROUP_DIMENSIONS[key].label}`,
+          onSelect: () => onChange(key),
+        })),
+      ],
+    },
+  ];
+  return (
+    <Menu
+      width={170}
+      groups={groups}
+      selectedId={value}
+      trigger={({ open, toggle }) => (
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          className={cn(
+            'inline-flex h-7 shrink-0 items-center gap-1 rounded-control border px-2 text-body transition-colors duration-140 ease-settle',
+            value === 'none'
+              ? 'border-border text-text-secondary hover:bg-bg-muted hover:text-text-primary'
+              : 'border-primary bg-primary-light text-primary',
+          )}
+        >
+          分组方式{value === 'none' ? '' : `：${GROUP_DIMENSIONS[value].label}`}
+          <ChevronDown
+            className={cn('size-3.5 transition-transform duration-140 ease-settle', open && 'rotate-180')}
+            aria-hidden
+          />
+        </button>
+      )}
+    />
   );
 }

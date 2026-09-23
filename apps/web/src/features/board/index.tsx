@@ -10,7 +10,6 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
-import { useShallow } from 'zustand/react/shallow';
 import { CloudOff, Plus, RotateCcw } from 'lucide-react';
 import { LayoutGroup, motion } from 'motion/react';
 import type { BoardColumn, TaskCard, TaskStatus } from '@/api/types';
@@ -19,14 +18,11 @@ import { navigate } from '@/app/router';
 import { toBoardQuery, useFilterStore } from '@/app/store/filters';
 import { useShellStore, type ReviewPrefill } from '@/app/store/shell';
 import { Button, EmptyState, useToast, type ToastApi } from '@/components/ui';
-import { useBoardWithGroups, useGroups } from '@/features/groups';
+import { useBoardWithGroups } from '@/features/groups';
 import { BoardColumnView } from './board-column';
 import type { CardActions } from './card-actions';
 import { DeleteDialog, StopDialog } from './dialogs';
 import { FLY_BATCH_LIMIT, FLY_BATCH_SUPPRESS_MS, FLY_DROP_SUPPRESS_MS, markPendingMove, suppressFly } from './fly-motion';
-import { GroupFilterSidebar } from './grouping/GroupFilterSidebar';
-import { hasActiveFilter, taskMatchesFilter } from './grouping/filter-model';
-import { useBoardFilterStore } from './grouping/useBoardFilterStore';
 import { dropStates, dropVerdict } from './matrix';
 import { COLUMN_ORDER, isDefaultBoardView } from './model';
 import { useBoardMutations, type BoardMutations } from './mutations';
@@ -37,7 +33,7 @@ import { useBoardFilterUrlSync } from './filter-url-sync';
 import { useViewPrefsStore } from './flow/view-prefs';
 import { useDependencyEdges } from '../dependency-graph/useDependencyGraph';
 import { BoardToolbar } from './toolbar';
-import { toGroupable } from './grouping/dimensions';
+import { FilterChipsBar } from './filter/FilterChipsBar';
 import { BoardCardView } from './task-card-view';
 import { useRunOverlay } from './use-run-overlay';
 
@@ -59,7 +55,7 @@ export function BoardPage() {
   const params = useMemo(() => toBoardQuery(filters), [filters]);
   const defaultView = useMemo(() => isDefaultBoardView(filters), [filters]);
 
-  // 7.8：分组多选 → 每个选中分组一次 `group_id` 服务端过滤请求、按六列合并（useGroupScoped）。
+  // B15：分组与其余过滤维度同走 `toBoardQuery` 的服务端参数，单一一份 `/board` 请求。
   const board = useBoardWithGroups(params);
   const fieldDefs = useFieldDefs();
   const defs = useMemo(() => fieldDefs.data?.items ?? [], [fieldDefs.data?.items]);
@@ -68,32 +64,7 @@ export function BoardPage() {
 
   const columns = useMemo(() => mergeColumns(board.data?.columns), [board.data?.columns]);
 
-  /* --------------------------------------------- B13 分组即过滤（侧栏过滤态） */
-
-  const filterPrefs = useBoardFilterStore(
-    useShallow((state) => ({ slotA: state.slotA, slotB: state.slotB })),
-  );
-  /**
-   * 可见性在原始卡片上判：匹配只读 group_id/parent/tags/type/priority/agent_name/status，
-   * 与下方 groupableTasks 的展示富化（分组名/需求摘要）互不影响。
-   */
-  const visibleIds = useMemo(() => {
-    const set = new Set<string>();
-    for (const column of columns) {
-      for (const card of column.tasks) {
-        if (taskMatchesFilter(toGroupable(card), filterPrefs)) set.add(card.id);
-      }
-    }
-    return set;
-  }, [columns, filterPrefs]);
-  const viewColumns = useMemo(
-    () =>
-      columns.map((column) => {
-        const tasks = column.tasks.filter((card) => visibleIds.has(card.id));
-        return tasks.length === column.tasks.length ? column : { ...column, tasks, count: tasks.length };
-      }),
-    [columns, visibleIds],
-  );
+  /* --------------------------------------------- §5.2 回落规则 4：批量流转抑制 */
 
   /**
    * §5.2 回落规则 4：一轮数据重算里换列 ≥4 张（批量流转/导入/WS 重连全量刷）一律瞬时。
@@ -115,12 +86,12 @@ export function BoardPage() {
   }, [columns]);
   const cards = useMemo(() => {
     const map = new Map<string, TaskCard>();
-    for (const column of viewColumns) for (const card of column.tasks) map.set(card.id, card);
+    for (const column of columns) for (const card of column.tasks) map.set(card.id, card);
     return map;
-  }, [viewColumns]);
-  const total = viewColumns.reduce((sum, column) => sum + column.tasks.length, 0);
-  /** 2.md 8.1：依赖图入口的数据 = 当前看板可见任务（六列拉平，与过滤侧栏同源）。 */
-  const graphTasks = useMemo(() => viewColumns.flatMap((column) => column.tasks), [viewColumns]);
+  }, [columns]);
+  const total = columns.reduce((sum, column) => sum + column.tasks.length, 0);
+  /** B15-③：过滤全部走服务端（`toBoardQuery`），这里的拉平快照供依赖图与筛选弹层派生候选。 */
+  const graphTasks = useMemo(() => columns.flatMap((column) => column.tasks), [columns]);
 
   /* -------------------------------------------- v0.0.4 W5 流程图第三视图（§6.4.1） */
 
@@ -128,27 +99,6 @@ export function BoardPage() {
   const displayMode = useViewPrefsStore((state) => state.mode);
   // 依赖边只在流程图打开时才逐任务拉取；与详情抽屉「依赖」Tab 共享缓存。
   const dependencyEdges = useDependencyEdges(graphTasks, displayMode === 'flow');
-
-  /* ------------------------------------------------ 分组维度的展示富化 */
-
-  /** 六列快照拉平 + 接缝字段补齐（group / requirement 摘要）；分组名/色来自分组缓存。 */
-  const groups = useGroups();
-  const groupById = useMemo(
-    () => new Map((groups.data?.items ?? []).map((group) => [group.id, group])),
-    [groups.data?.items],
-  );
-  // 过滤侧栏的徽标统计输入（B13）；4.5 多分组过滤已由服务端完成（useBoardWithGroups）。
-  const groupableTasks = useMemo(
-    () =>
-      columns
-        .flatMap((column) => column.tasks)
-        .map(toGroupable)
-        .map((task) => {
-          const group = task.group_id ? groupById.get(task.group_id) : undefined;
-          return group ? { ...task, group_name: group.name, group_color: group.color } : task;
-        }),
-    [columns, groupById],
-  );
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overColumn, setOverColumn] = useState<string | null>(null);
@@ -202,11 +152,11 @@ export function BoardPage() {
         onCreate={(template) => setQuick({ target: 'BACKLOG', preset: template?.preset })}
         graphTasks={graphTasks}
       />
+      {/* B15-③：已激活条件汇总条（Linear 式），空条件时不占位。 */}
+      <FilterChipsBar cards={graphTasks} />
 
-      <div className="flex min-h-0 flex-1">
-        <GroupFilterSidebar tasks={groupableTasks} />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {board.isError ? (
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {board.isError ? (
             <EmptyState
               className="mt-6"
               icon={<CloudOff className="size-7" aria-hidden />}
@@ -236,7 +186,7 @@ export function BoardPage() {
               ))}
             </ColumnRow>
           ) : displayMode === 'flow' ? (
-            // §6.4.1 第三视图：整页画布替换六列区，工具栏与筛选、分组切换器共享不动。
+            // §6.4.1 第三视图：整页画布替换六列区，工具栏与筛选共用同一份服务端过滤后的快照。
             <FlowBoardView
               tasks={graphTasks}
               edges={dependencyEdges.edges}
@@ -244,7 +194,7 @@ export function BoardPage() {
               mutations={mutations}
               onRequestDelete={setDeleteTarget}
             />
-          ) : total === 0 && defaultView && !hasActiveFilter(filterPrefs) ? (
+          ) : total === 0 && defaultView ? (
             // 3.6：只有「整张看板空」才替掉六列；筛选后的空态由折叠列 + 工具栏那句文案表达。
             <BoardEmpty onCreate={() => setQuick({ target: 'BACKLOG' })} />
           ) : (
@@ -260,7 +210,7 @@ export function BoardPage() {
                   浮层/抽屉里的同名元素不会被卷进来。 */}
               <LayoutGroup>
                 <ColumnRow>
-                  {viewColumns.map((column) => (
+                  {columns.map((column) => (
                     <BoardColumnView
                       key={column.status}
                       column={column}
@@ -291,7 +241,6 @@ export function BoardPage() {
               </DragOverlay>
             </DndContext>
           )}
-        </div>
       </div>
 
       <QuickCreateDialog state={quick} mutations={mutations} onClose={closeQuick} />

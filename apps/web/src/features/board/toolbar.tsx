@@ -1,40 +1,38 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Check, ClipboardList, Kanban, List, Network, Plus, Settings2, X } from 'lucide-react';
+import { ClipboardList, Kanban, List, Network, Plus, Settings2, X } from 'lucide-react';
 import type { BoardView, TaskCard, Template } from '@/api/types';
-import { api, qk, useSettings, useTags } from '@/api';
+import { api, qk } from '@/api';
 import { navigate } from '@/app/router';
 import { useFilterStore } from '@/app/store/filters';
-import { priorityText } from '@/lib/labels';
 import { cn } from '@/lib/cn';
-import { Button, Menu, MenuCaret, Tooltip, type MenuItem, type MenuProps } from '@/components/ui';
-import { GroupSwitcher } from '@/features/groups';
+import { Button, Menu, MenuCaret, Tooltip, type MenuProps } from '@/components/ui';
 import { boardFilterCount, VIEW_ORDER } from './model';
 import { useViewPrefsStore } from './flow/view-prefs';
+import { FilterMenu } from './filter/FilterMenu';
 
 /**
  * 3.4 工具栏：48px 高、左右 24px（沿用 `main` 的 padding），底边 1px。
  * 每段都不参与收缩，装不下时整行换行成两行——最小窗口 960px 下也不能互相压字。
  *
- * 两处刻意的「没有」：
- * - 没有「看板／列表」切换（3.4 末段：列表是独立的「任务」页，不是看板的另一种显示）；
- * - 没有「状态」chip（六列本身就是状态，再放一个多选会和列头互相矛盾）。
- *
- * 3.5 的筛选面板在 `components/` 里还没有共用实现，而看板没有筛选就等于
- * `toBoardQuery` 的四个参数全废，所以这里就地实现 chip 版（优先级／标签／类型 +
- * 依赖状态），读写的是与任务列表页同一份 `useFilterStore`（20.7 的 query key 也仍由
- * `toBoardQuery` 产出）。自定义字段组按 3.5 末行留到阶段二。
+ * B15-③ 的取舍（Linear 式统一过滤）：
+ * - 过滤入口只有一个「筛选」弹层（`filter/FilterMenu`），分组/需求/类型/优先级/Agent/
+ *   标签六维在同一面板加规则；旧的 GroupSwitcher 与三枚 chip、「更多」下拉全部下线
+ *   （「更多」和视图段本来就是同一参数的两种写法）；
+ * - 已激活条件由结果区上方的 `filter/FilterChipsBar` 逐条可删地呈现；
+ * - 没有「状态」chip（六列本身就是状态，再放一个多选会和列头互相矛盾）；
+ * - 没有「看板／列表」切换（3.4 末段：列表是独立的「任务」页，不是看板的另一种显示）。
  *
  * 本文件另外导出 `CreateMenu`：3.8 任务列表页头部的那个下拉与这里是同一份规格，
- * 由 `features/task-list/create-menu.tsx` 直接复用（工具栏的视图段与筛选 chip 列表页不适用，
+ * 由 `features/task-list/create-menu.tsx` 直接复用（工具栏的视图段与筛选入口列表页不适用，
  * 所以复用只到下拉这一层）。
  */
 export interface BoardToolbarProps {
   /** 打开快速新建；带 `template` 时用它预填（3.4 的模板下拉）。 */
   onCreate: (template?: Template) => void;
   /**
-   * 2.md 8.1 全局依赖图入口：当前看板拉平的任务集合（普通模式都是六列快照，
-   * 由看板页传入）。传了才渲染「依赖图」按钮；列表页复用本组件不传则不出现。
+   * 2.md 8.1 全局依赖图入口 + B15 筛选值词表：当前看板拉平的任务集合
+   * （由看板页传入）。传了才渲染「筛选」与三视图段；列表页复用本组件不传则不出现。
    */
   graphTasks?: readonly TaskCard[];
 }
@@ -50,17 +48,11 @@ export function BoardToolbar({ onCreate, graphTasks }: BoardToolbarProps) {
 
   return (
     <div className="flex min-h-12 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border">
-      {/* 7.8 / 4.5：分组切换器放看板工具栏最左，多选结果驱动看板请求的服务端 group_id 过滤。 */}
-      <GroupSwitcher />
-      <span aria-hidden className="h-5 w-px shrink-0 bg-border" />
-
       <ViewSegmented value={view} onChange={setView} />
 
+      {graphTasks ? <FilterMenu cards={graphTasks} /> : null}
+
       <div className="flex shrink-0 items-center gap-2">
-        <PriorityChip />
-        <TagChip />
-        <TypeChip />
-        <DependencyChip />
         {count > 0 ? (
           // 3.4「视图生效时的列表现」：空列折叠与这句文案同时出现，防止误读成"看板挂了"。
           <span className="flex min-w-0 items-center gap-1 whitespace-nowrap text-aux text-text-secondary">
@@ -168,119 +160,6 @@ function DisplaySegmented() {
       })}
     </div>
   );
-}
-
-/* ----------------------------------------------------------- 筛选 chip */
-
-type ChipKey = 'priority' | 'type' | 'tags';
-
-function useChipItems<T extends string | number>(
-  key: ChipKey,
-  options: readonly { value: T; label: string }[],
-): { items: MenuItem[]; selected: number } {
-  const raw = useFilterStore((state) => state[key]) as readonly (string | number)[];
-  const toggleNumber = useFilterStore((state) => state.toggleNumber);
-  const toggleString = useFilterStore((state) => state.toggleString);
-  const items: MenuItem[] = options.map((option) => ({
-    id: String(option.value),
-    label: option.label,
-    icon: raw.includes(option.value) ? <Check className="size-3.5 text-primary" /> : undefined,
-    onSelect: () => {
-      if (key === 'priority' && typeof option.value === 'number') toggleNumber('priority', option.value);
-      if (key === 'type' && typeof option.value === 'string') toggleString('type', option.value);
-      if (key === 'tags' && typeof option.value === 'string') toggleString('tags', option.value);
-    },
-  }));
-  return { items, selected: raw.length };
-}
-
-interface ChipProps {
-  label: string;
-  selected: number;
-  groups: MenuProps['groups'];
-  selectedId?: string;
-  width?: number;
-}
-
-function Chip({ label, selected, groups, selectedId, width = 180 }: ChipProps) {
-  return (
-    <Menu
-      width={width}
-      groups={groups}
-      selectedId={selectedId}
-      trigger={({ open, toggle }) => (
-        <button
-          type="button"
-          onClick={toggle}
-          aria-expanded={open}
-          className={cn(
-            'inline-flex h-7 shrink-0 items-center gap-1 rounded-control border px-2 text-body transition-colors duration-140 ease-settle',
-            selected > 0
-              ? 'border-primary bg-primary-light text-primary'
-              : 'border-border text-text-secondary hover:bg-bg-muted hover:text-text-primary',
-          )}
-        >
-          {label}
-          {selected > 0 ? (
-            <span className="rounded-badge bg-primary px-1 text-badge text-text-inverse">{selected}</span>
-          ) : null}
-          <MenuCaret open={open} />
-        </button>
-      )}
-    />
-  );
-}
-
-function PriorityChip() {
-  const options = useMemo(() => [0, 1, 2, 3].map((value) => ({ value, label: priorityText(value) })), []);
-  const { items, selected } = useChipItems('priority', options);
-  return <Chip label="优先级" selected={selected} groups={items} />;
-}
-
-function TagChip() {
-  const tags = useTags();
-  // 词表来自 20.7 `/tags`（含历史值），超过 30 个时靠菜单自身的滚动。
-  const options = useMemo(
-    () => (tags.data?.tags ?? []).slice(0, 30).map((tag) => ({ value: tag, label: tag })),
-    [tags.data?.tags],
-  );
-  const { items, selected } = useChipItems('tags', options);
-  return (
-    <Chip
-      label="标签"
-      selected={selected}
-      groups={options.length === 0 ? [{ id: 'no-tag', label: '暂无标签', disabled: true }] : items}
-      width={200}
-    />
-  );
-}
-
-function TypeChip() {
-  const settings = useSettings();
-  const options = useMemo(
-    () => (settings.data?.task_types ?? []).map((type) => ({ value: type, label: type })),
-    [settings.data?.task_types],
-  );
-  const { items, selected } = useChipItems('type', options);
-  return <Chip label="类型" selected={selected} groups={items} />;
-}
-
-/** 3.5「依赖状态」组：与 `view` 是同一参数的两种写法，所以这里只改 view，不多发一份。 */
-function DependencyChip() {
-  const view = useFilterStore((state) => state.view);
-  const setView = useFilterStore((state) => state.setView);
-  const groups: MenuProps['groups'] = [
-    {
-      label: '依赖状态',
-      items: [
-        { id: 'all', label: '全部', onSelect: () => setView('all') },
-        { id: 'claimable', label: '仅可领取', hint: '同步视图', onSelect: () => setView('claimable') },
-        { id: 'blocked', label: '仅已阻塞', hint: '同步视图', onSelect: () => setView('blocked') },
-      ],
-    },
-  ];
-  const selected = view === 'claimable' || view === 'blocked' ? 1 : 0;
-  return <Chip label="更多" selected={selected} groups={groups} selectedId={view} width={180} />;
 }
 
 /* ---------------------------------------------------------- 新建入口 */
