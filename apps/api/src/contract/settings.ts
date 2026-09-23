@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DEFAULT_TASK_TYPES, LOG_LINES_MAX } from './enums';
+import { AGENT_CONFIRMATION_MODES, DEFAULT_TASK_TYPES, LOG_LINES_MAX } from './enums';
 
 /**
  * 20.9 settings 键总表：类型、区间、默认值与「热生效」标记的单一来源。
@@ -37,7 +37,7 @@ export const SETTINGS_SPECS = {
   // v0.0.4 W8 §8.2/§8.8「设置 / Agent 创建任务」：创建模式（参数 > 此设置 > 默认轻确认）
   // 与轻确认卡片超时秒数（30s 是 PRD 口径；下限放宽只为测试演练超时路径）。
   agent_creation_mode: {
-    schema: z.enum(['direct', 'light', 'silent']),
+    schema: z.enum(AGENT_CONFIRMATION_MODES),
     default: 'light',
     hot: true,
   },

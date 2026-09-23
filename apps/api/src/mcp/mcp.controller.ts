@@ -53,6 +53,7 @@ export class McpController {
       policy: this.policy,
       breakdown: this.breakdown,
       creation: this.creation,
+      settings: this.settings,
     };
     // 每请求一个 server：Token 上下文（tokenId / capabilities）是请求级的，复用会串能力集合。
     // 唤醒模式同样每请求现读：mcp_wake_mode 在 20.9 标了 hot，SettingsService 有进程内缓存，

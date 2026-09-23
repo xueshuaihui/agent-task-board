@@ -197,12 +197,28 @@ export const skillImportMarkdownSchema = z.object({
 export type SkillImportMarkdownInput = z.infer<typeof skillImportMarkdownSchema>;
 
 export const skillListQuerySchema = z.object({
-  keyword: z.string().trim().max(100).optional(),
-  type: z.enum(SKILL_TYPES).optional(),
-  status: z.enum(SKILL_STATUSES).optional(),
-  tag: z.string().trim().max(30).optional(),
+  keyword: z
+    .string()
+    .trim()
+    .max(100)
+    .optional()
+    .describe('关键字（≤100 字符），命中技能名称与描述的模糊过滤；不填=不过滤'),
+  type: z
+    .enum(SKILL_TYPES)
+    .optional()
+    .describe(`按技能类型过滤，取值：${SKILL_TYPES.join('/')}（8.1 词表，与迁移 CHECK 同源）；不填=全部`),
+  status: z
+    .enum(SKILL_STATUSES)
+    .optional()
+    .describe(`按技能状态过滤，取值：${SKILL_STATUSES.join('/')}（草稿/已发布/已归档）；不填=全部`),
+  tag: z.string().trim().max(30).optional().describe('按标签精确过滤（≤30 字符，全等匹配）；不填=不过滤'),
   /** W2 §16.2：按三来源筛选。 */
-  source: z.enum(SKILL_ORIGINS).optional(),
+  source: z
+    .enum(SKILL_ORIGINS)
+    .optional()
+    .describe(
+      `按来源过滤，取值：${SKILL_ORIGINS.map((origin) => `${origin}=${origin === 'default' ? '内置默认' : origin === 'custom' ? '用户自定义' : '三方导入'}`).join('、')}；不填=全部`,
+    ),
 });
 export type SkillListQuery = z.infer<typeof skillListQuerySchema>;
 

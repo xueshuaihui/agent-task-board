@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ApiException } from '../contract/errors';
-import { DEFAULT_GROUP_ID } from '../contract/enums';
+import { DEFAULT_GROUP_ID, type AgentConfirmationMode } from '../contract/enums';
 import { newId, nextTaskId } from '../contract/ids';
 import type { CreateTaskToolInput, CreateTasksBatchInput } from '../contract/agent-schemas';
 import type { CreationDecisionInput, CreationRequestCreateInput } from './creation.dto';
@@ -27,8 +27,8 @@ import { SkillsService } from '../skills/skills.service';
  * 服务重启即卡片消失，符合「30 秒浮层」的生命周期定位。
  */
 
-/** §8.2 三模式的对外词表（confirmation_mode 参数 / tasks.confirmation_mode 列同词表）。 */
-export type CreationMode = 'direct' | 'light' | 'silent';
+/** §8.2 三模式的对外词表（confirmation_mode 参数 / tasks.confirmation_mode 列同词表）：以 contract/enums 常量为唯一来源。 */
+export type CreationMode = AgentConfirmationMode;
 
 /** task_creation_logs.user_action 开放词表（0013 注释：created/edit/cancel/timeout 系）。 */
 export type CreationUserAction = 'created' | 'edited' | 'cancelled' | 'timeout';

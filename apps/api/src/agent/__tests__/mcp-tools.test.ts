@@ -42,6 +42,7 @@ const W6_TOOL_NAMES = [
   'get_review_feedback',
   'get_skill',
   'get_task',
+  'get_vocabulary',
   'heartbeat',
   'list_ready_tasks',
   'list_skills',
@@ -64,6 +65,7 @@ beforeAll(async () => {
     policy: h.policy,
     breakdown: h.breakdown,
     creation: h.creation,
+    settings: h.settings,
   });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
@@ -201,7 +203,7 @@ describe('MCP 工具面', () => {
   });
 
   it('工具表与服务层一一对应：MCP 不复制业务逻辑', () => {
-    expect(buildAgentTools({ claims: h.claims, leases: h.leases, writeback: h.writeback, query: h.query, skills: h.skills, policy: h.policy, breakdown: h.breakdown, creation: h.creation }).map((tool) => tool.name).sort()).toEqual(
+    expect(buildAgentTools({ claims: h.claims, leases: h.leases, writeback: h.writeback, query: h.query, skills: h.skills, policy: h.policy, breakdown: h.breakdown, creation: h.creation, settings: h.settings }).map((tool) => tool.name).sort()).toEqual(
       W6_TOOL_NAMES,
     );
   });
@@ -335,6 +337,7 @@ describe('MCP 工具面', () => {
     policy: h.policy,
     breakdown: h.breakdown,
     creation: h.creation,
+    settings: h.settings,
   });
   const ui: RequestAuth = { kind: 'ui' };
 

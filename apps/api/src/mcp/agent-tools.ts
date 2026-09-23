@@ -51,17 +51,31 @@ import type { McpPolicyService } from '../agent/mcp-policy.service';
 import type { WritebackService } from '../agent/writeback.service';
 import type { BreakdownService } from '../breakdown/breakdown.service';
 import type { CreationService } from '../creation/creation.service';
-import {
-  skillListQuerySchema,
-  type SkillListQuery,
-} from '../skills/skills.dto';
+import type { SettingsService } from '../infra/settings.service';
+import { buildVocabulary } from '../contract/vocabulary';
+import { skillListQuerySchema, type SkillListQuery } from '../skills/skills.dto';
 import type { SkillsService } from '../skills/skills.service';
 
 /** v0.0.4 W6 §16.1 的技能工具入参：list 沿用 UI 侧的过滤形状；search 关键字必填；get 只要 id。 */
-const getSkillSchema = z.object({ skill_id: z.string().trim().min(1).max(64) });
-const searchSkillsSchema = skillListQuerySchema.extend({
-  keyword: z.string().trim().min(1).max(100),
+const getSkillSchema = z.object({
+  skill_id: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .describe('技能 ID（skl_ 前缀），来自 list_skills/search_skills 的结果；不能按名称直接查（名称查询用 search_skills）'),
 });
+const searchSkillsSchema = skillListQuerySchema.extend({
+  keyword: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .describe('搜索关键字（1-100 字符），必填：命中技能名称与描述，无关键字不要调本工具'),
+});
+
+/** B6 词表工具：无入参——一次调用返回服务端当前全部词表口径，agent 不再试错猜值。 */
+const getVocabularySchema = z.object({});
 
 export interface AgentToolContext {
   claims: ClaimService;
@@ -76,6 +90,8 @@ export interface AgentToolContext {
   breakdown: BreakdownService;
   /** v0.0.4 W8 §8.7：board.create_task 的会话创建闭环落点（三模式 + 轻确认决策闭环/状态轮询）。 */
   creation: CreationService;
+  /** B6 词表工具：get_vocabulary 需要读设置现值（task_types / agent_creation_mode），与校验同源。 */
+  settings: SettingsService;
 }
 
 export interface AgentTool {
@@ -189,6 +205,22 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
       run: async (args, auth) => {
         agentOf(auth);
         return ctx.skills.list(args as SkillListQuery);
+      },
+    },
+    // ------------------------------------------- B6 词表只读工具：一次拿全口径，杜绝试错造测试数据
+    {
+      name: 'get_vocabulary',
+      description:
+        '获取服务端当前全部词表口径（只读、无入参）：任务类型默认与生效词表（含自定义）、优先级 0-3 各级含义、' +
+        'confirmation_mode 三模式语义与缺省、任务状态机状态集与允许流转、capability 命名空间规则、' +
+        '技能类型/状态/来源、产物类型、日志级别。写 board.create_task / claim 类入参前先调用本工具拿取值，不要试错',
+      input: getVocabularySchema,
+      run: async (args, auth) => {
+        agentOf(auth);
+        return buildVocabulary({
+          taskTypes: await ctx.settings.get('task_types'),
+          agentCreationMode: await ctx.settings.get('agent_creation_mode'),
+        });
       },
     },
     {
@@ -313,19 +345,141 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
  * 入参校验复用 contract/agent-schemas.ts。SDK 的 zod 兼容层负责把 input 转成
  * `tools/list` 的 JSON Schema，这里再 parse 一次，是为了非 HTTP 入口（测试、脚本）
  * 也拿得到同一份 `VALIDATION_FAILED` 结构。
+ *
+ * B6 报错回显：422 不只是裸 schema 报错——每条 issue 额外带
+ *  1. `hint`：从 zod issue 自身数据推出的可接受值/区间（枚举列出全部取值、
+ *     数值/字符串/数组给出 min-max 边界、invalid_type 给出期望类型）；
+ *  2. 字段级 `.describe()` 文案（按 issue.path 回到 schema 上取），让 agent
+ *     不查文档就知道这个字段该怎么填，从源头消灭试错式测试数据。
  */
 export function parseToolInput(schema: z.ZodTypeAny, args: unknown): unknown {
   const parsed = schema.safeParse(args ?? {});
   if (!parsed.success) {
-    throw new ApiException(
-      'VALIDATION_FAILED',
-      '入参校验失败',
-      parsed.error.issues.map((issue) => ({
-        path: issue.path.map(String).join('.') || '(root)',
+    const details = parsed.error.issues.map((issue) => {
+      const path = issue.path.map(String).join('.') || '(root)';
+      const hints = [expectedFromIssue(issue), findFieldDescription(schema, issue.path)].filter(
+        Boolean,
+      ) as string[];
+      return {
+        path,
         code: issue.code,
         message: issue.message,
-      })),
+        ...(hints.length > 0 ? { hint: hints.join('；') } : {}),
+      };
+    });
+    throw new ApiException(
+      'VALIDATION_FAILED',
+      `入参校验失败：${details
+        .map((item) => `${item.path}: ${item.message}${item.hint ? `（${item.hint}）` : ''}`)
+        .join('；')}`,
+      details,
     );
   }
   return parsed.data;
+}
+
+/** 从 zod 4 issue 的结构化数据里榨出「可接受值」提示；榨不出就返回 undefined 不编造。 */
+function expectedFromIssue(issue: z.ZodIssue): string | undefined {
+  // zod 4 各 issue 分支的附加字段（values/minimum/expected…）只在这里集中收窄一次。
+  const data = issue as unknown as Record<string, unknown>;
+  switch (issue.code) {
+    case 'invalid_value':
+      return Array.isArray(data.values)
+        ? `可接受值：${data.values.map((value) => JSON.stringify(value)).join(' | ')}`
+        : undefined;
+    case 'invalid_type':
+      return `期望类型 ${String(data.expected ?? '未知')}，实际收到 ${String(data.received ?? '未知')}`;
+    case 'too_small':
+      return `${originLabel(data.origin)}${data.inclusive === false ? '大于' : '至少'} ${String(data.minimum)}（当前 ${String(data.received ?? data.value ?? '缺失')}）`;
+    case 'too_big':
+      return `${originLabel(data.origin)}${data.inclusive === false ? '小于' : '至多'} ${String(data.maximum)}（当前 ${String(data.received ?? data.value ?? '缺失')}）`;
+    case 'invalid_format':
+      return data.pattern
+        ? `需匹配格式 ${String(data.format ?? '')} ${String(data.pattern)}`.trim()
+        : data.format
+          ? `需匹配格式：${String(data.format)}`
+          : undefined;
+    case 'unrecognized_keys':
+      return Array.isArray(data.keys)
+        ? `未知字段：${data.keys.join('、')}；只接受 schema 声明的字段`
+        : undefined;
+    default:
+      return undefined;
+  }
+}
+
+function originLabel(origin: unknown): string {
+  if (origin === 'string') return '字符串长度需';
+  if (origin === 'number' || origin === 'int') return '数值需';
+  if (origin === 'array') return '数组长度需';
+  return '取值需';
+}
+
+/** zod 4 的内部结构只做只读探测（不改校验行为），统一松散形状。 */
+interface LooseNode {
+  _zod?: { def?: { type?: string; innerType?: LooseNode } };
+  description?: unknown;
+  shape?: unknown;
+  element?: LooseNode;
+  unwrap?: (() => LooseNode) | undefined;
+}
+
+/** optional/nullable/default/catch 等包装层：取描述前先剥到底。 */
+const WRAPPER_KINDS = new Set([
+  'optional',
+  'nullable',
+  'default',
+  'catch',
+  'prefault',
+  'nonoptional',
+  'readonly',
+  'branded',
+]);
+
+function unwrapNode(node: LooseNode): LooseNode {
+  let current = node;
+  for (let guard = 0; guard < 12 && current; guard += 1) {
+    const kind = current._zod?.def?.type;
+    if (!kind || !WRAPPER_KINDS.has(kind)) break;
+    current = current.unwrap ? current.unwrap() : (current._zod?.def?.innerType as LooseNode);
+  }
+  return current;
+}
+
+/** `.describe()` 可能挂在包装层上（optional 之后）也可能挂在内层（optional 之前）：自上而下取第一个。 */
+function descriptionOf(node: LooseNode | undefined): string | undefined {
+  let current = node;
+  for (let guard = 0; guard < 12 && current; guard += 1) {
+    if (typeof current.description === 'string' && current.description) return current.description;
+    const kind = current._zod?.def?.type;
+    if (!kind || !WRAPPER_KINDS.has(kind)) return undefined;
+    current = current.unwrap ? current.unwrap() : (current._zod?.def?.innerType as LooseNode);
+  }
+  return undefined;
+}
+
+/** 沿 issue.path 回到 schema 上取该字段的 `.describe()` 文案；路径穿不进（union 等）返回 undefined。 */
+function findFieldDescription(schema: z.ZodTypeAny, path: z.ZodIssue['path']): string | undefined {
+  let node = unwrapNode(schema as unknown as LooseNode);
+  for (const segment of path) {
+    if (!node) return undefined;
+    if (typeof segment === 'number' && node._zod?.def?.type === 'array') {
+      const element = node.element as LooseNode;
+      const desc = descriptionOf(element);
+      if (desc) return desc;
+      node = unwrapNode(element);
+      continue;
+    }
+    const shapeValue =
+      typeof node.shape === 'function' ? (node.shape as () => unknown)() : node.shape;
+    if (typeof segment !== 'string' || typeof shapeValue !== 'object' || shapeValue === null) {
+      return undefined;
+    }
+    const child = (shapeValue as Record<string, LooseNode | undefined>)[segment];
+    if (!child) return undefined;
+    const desc = descriptionOf(child);
+    node = unwrapNode(child);
+    if (desc) return desc;
+  }
+  return undefined;
 }

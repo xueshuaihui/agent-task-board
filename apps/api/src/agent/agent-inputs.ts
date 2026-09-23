@@ -45,7 +45,9 @@ export type {
 } from '../contract/agent-schemas';
 
 /** 12 章：`get_task` 是只读工具，不需要三元组（三元组只在写回侧强制）。 */
-export const getTaskSchema = z.object({ task_id: idLike });
+export const getTaskSchema = z.object({
+  task_id: idLike.describe('任务 ID（如 T-1024 或 task_ 前缀主键）；只读查询不需要 run_id/lease_id'),
+});
 export type GetTaskInput = z.infer<typeof getTaskSchema>;
 
 /** REST 的 `GET /tasks/{id}/review-feedback`：task_id 来自路径，查询串只剩 limit。 */

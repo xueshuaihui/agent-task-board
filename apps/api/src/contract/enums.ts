@@ -198,6 +198,15 @@ export const BREAKDOWN_STATUS_LABEL: Record<BreakdownSessionStatus, string> = {
 
 export const DEFAULT_TASK_TYPES = ['需求', '缺陷', '子任务', '巡检', '重构'] as const;
 
+/**
+ * v0.0.4 W8 §8.2 会话创建确认模式三值（词表唯一来源）：
+ * direct=直接创建并记账 / light=轻确认（缺省，等用户在确认页决策）/ silent=静默创建并记账。
+ * `board.create_task` 的 confirmation_mode 入参与 settings.agent_creation_mode 都从这里收，
+ * 迁移 0013 的 tasks.confirmation_mode CHECK 与之同值。
+ */
+export const AGENT_CONFIRMATION_MODES = ['direct', 'light', 'silent'] as const;
+export type AgentConfirmationMode = (typeof AGENT_CONFIRMATION_MODES)[number];
+
 /** 20.7：board 的 view 预设，取值见 6.2 第 5 条。 */
 export const BOARD_VIEWS = ['all', 'review', 'failed', 'claimable', 'blocked'] as const;
 export type BoardView = (typeof BOARD_VIEWS)[number];

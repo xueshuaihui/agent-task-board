@@ -68,6 +68,7 @@ const CHAPTER_12_TOOLS = [
   'get_review_feedback',
   'get_skill',
   'get_task',
+  'get_vocabulary',
   'heartbeat',
   'list_ready_tasks',
   'list_skills',
