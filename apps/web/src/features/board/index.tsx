@@ -115,7 +115,7 @@ export function BoardPage() {
     return map;
   }, [viewColumns]);
   const total = viewColumns.reduce((sum, column) => sum + column.tasks.length, 0);
-  /** 2.md 8.1：依赖图入口的数据 = 当前看板可见任务（六列拉平，泳道模式同源）。 */
+  /** 2.md 8.1：依赖图入口的数据 = 当前看板可见任务（六列拉平，与过滤侧栏同源）。 */
   const graphTasks = useMemo(() => viewColumns.flatMap((column) => column.tasks), [viewColumns]);
 
   /* -------------------------------------------- v0.0.4 W5 流程图第三视图（§6.4.1） */
@@ -232,7 +232,7 @@ export function BoardPage() {
               ))}
             </ColumnRow>
           ) : displayMode === 'flow' ? (
-            // §6.4.1 第三视图：整页画布替换列/泳道区，工具栏与筛选、分组切换器共享不动。
+            // §6.4.1 第三视图：整页画布替换六列区，工具栏与筛选、分组切换器共享不动。
             <FlowBoardView
               tasks={graphTasks}
               edges={dependencyEdges.edges}
@@ -253,7 +253,7 @@ export function BoardPage() {
               onDragCancel={clearDrag}
             >
               {/* §5.2：LayoutGroup 圈定 layoutId 共享作用域——六列同组才有跨列飞行，
-                  浮层/抽屉/泳道里的同名元素不会被卷进来。 */}
+                  浮层/抽屉里的同名元素不会被卷进来。 */}
               <LayoutGroup>
                 <ColumnRow>
                   {viewColumns.map((column) => (

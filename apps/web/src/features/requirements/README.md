@@ -39,7 +39,7 @@
    // onClick:
    openDependencyGraph(board.data?.columns.flatMap((column) => column.tasks) ?? []);
    ```
-4. **需求泳道「查看需求」（6.4）**：泳道头按钮 `onClick={() => openRequirement(requirement.id)}`。
+4. **拆解结果「查看需求」（6.4）**：`features/breakdown` 结果条按钮 `onClick={() => openRequirement(parentTaskId)}`（原需求泳道头入口已随 B13 泳道下线移除）。
 
 ## 数据契约
 

@@ -50,7 +50,7 @@ export function BoardToolbar({ onCreate, graphTasks }: BoardToolbarProps) {
 
   return (
     <div className="flex min-h-12 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border">
-      {/* 7.8 / 4.5：分组切换器放看板工具栏最左，多选结果驱动看板请求过滤与「按分组」主分组。 */}
+      {/* 7.8 / 4.5：分组切换器放看板工具栏最左，多选结果驱动看板请求的服务端 group_id 过滤。 */}
       <GroupSwitcher />
       <span aria-hidden className="h-5 w-px shrink-0 bg-border" />
 

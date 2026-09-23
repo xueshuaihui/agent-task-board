@@ -21,7 +21,7 @@ import { useRequirementDrawerStore } from './requirement-store';
  * `useRequirementDrawerStore.getState().openRequirement(id)`：
  * - 任务详情概览里的「需求」父摘要行（7.2 面包屑）；
  * - 看板/列表卡片的需求角标（4.8，`requirement-badge.tsx`）；
- * - 需求泳道「查看需求」按钮（6.4）。
+ * - 拆解完成后结果条上的「查看需求」（B13 泳道下线后原泳道头入口移除，其余入口不变）。
  *
  * Tab：子任务（2.md 6.2）/ 依赖图（6.3，复用 features/dependency-graph 的 Dialog 能力）/
  * 活动（评论，复用任务详情的 CommentsTab）。概览内容（描述、进度、基本信息）压在头部与
