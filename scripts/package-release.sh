@@ -3,8 +3,9 @@
 # Jarvis Workbench 一键打包脚本（macOS）
 #
 # 把 README「路径 C」+《docs/发布手册.md》的构建→冒烟→校验和全流程串成一条命令：
-#   质量门禁 → 构建 api/web → 装配 sidecar → tauri build(.app) → codesign ad-hoc 签名/验签
-#   → hdiutil(.dmg) → 产物冒烟（ATB_READY + REST 401 + dmg 完整性/挂载验签）→ SHA-256 校验和
+#   质量门禁 → 构建 api/web → 装配 sidecar → tauri build(.app) → bundle 元数据校验（identifier/productName）
+#   → codesign ad-hoc 签名/验签 → hdiutil(.dmg) → 产物冒烟（ATB_READY + REST 401 + dmg 完整性/挂载验签）
+#   → SHA-256 校验和
 #
 # 用法：
 #   bash scripts/package-release.sh                 # 全流程（含门禁与冒烟）
@@ -130,6 +131,28 @@ if [ -d "$APP_PATH" ]; then
 else
   fail "tauri build 后未找到 ${APP_PATH}（退出码 ${TAURI_EXIT}）"
 fi
+
+# ---------------------------------------------------------------- 第 4.2 步：bundle 元数据硬校验（防「改了产品名没改包名」复发）
+# 产品曾长期只改 productName 而留着旧 identifier（beta.4 及以前为 dev.agenttaskboard.desktop），
+# 这里把 plist 与 tauri.conf.json 对齐成门禁：两者不一致即停，别让旧包名的产物进入签名/发布环节。
+step "第 4.2 步 · bundle 元数据校验（identifier / productName 对齐 tauri.conf.json）"
+PLIST="$APP_PATH/Contents/Info.plist"
+[ -f "$PLIST" ] || fail "缺少 Info.plist：${PLIST}"
+CONF_IDENT="$(node -p "require('./${TAURI_DIR}/tauri.conf.json').identifier")"
+CONF_PRODUCT="$(node -p "require('./${TAURI_DIR}/tauri.conf.json').productName")"
+BUNDLE_IDENT="$(plutil -extract CFBundleIdentifier raw "$PLIST")" \
+  || fail "读取 CFBundleIdentifier 失败（plutil）：${PLIST}"
+[ "$BUNDLE_IDENT" = "$CONF_IDENT" ] \
+  || fail "bundle identifier 与 tauri.conf.json 不一致：plist=${BUNDLE_IDENT} conf=${CONF_IDENT}"
+ok "CFBundleIdentifier = ${BUNDLE_IDENT}"
+BUNDLE_NAME="$(plutil -extract CFBundleName raw "$PLIST")" \
+  || fail "读取 CFBundleName 失败（plutil）：${PLIST}"
+[ "$BUNDLE_NAME" = "$CONF_PRODUCT" ] \
+  || fail "CFBundleName 与 productName 不一致：plist=${BUNDLE_NAME} conf=${CONF_PRODUCT}"
+ok "CFBundleName = ${BUNDLE_NAME}"
+# 可执行文件名取自 Cargo 包名（atb-desktop），属仓库内部标识，不影响 Finder 显示名，此处只记录不判定。
+BUNDLE_EXEC="$(plutil -extract CFBundleExecutable raw "$PLIST" 2>/dev/null || echo '—')"
+ok "CFBundleExecutable = ${BUNDLE_EXEC}（Contents/MacOS 内文件名，随 Cargo 包名）"
 
 # ---------------------------------------------------------------- 第 4.5 步：codesign ad-hoc 签名 + 验签硬门禁
 # 无 Apple Developer 证书的降级方案：`--sign -` 即 ad-hoc 签名，满足 Apple Silicon「二进制至少
@@ -275,7 +298,15 @@ fi
 step "第 7 步 · SHA-256 校验和"
 SHA_FILE="$BUNDLE_DIR/SHA256SUMS.txt"
 if [ "$SKIP_DMG" -eq 1 ]; then
-  shasum -a 256 "$APP_PATH" > "$SHA_FILE"
+  # .app 是目录，`shasum -a 256` 直接吃它会报 "Is a directory" 并以非零退出（set -e 下整条链
+  # 在最后一幕断掉，签好的包反而拿不到校验和）。--skip-dmg 只用于本机自检：先 ditto 成 zip
+  # （保留权限/符号链接，与「压缩 .app 分发」的口径一致）再取校验和。
+  ZIP_PATH="$BUNDLE_DIR/Jarvis Workbench_${VERSION}_${ARCH_SUFFIX}.zip"
+  rm -f "$ZIP_PATH"
+  ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH" \
+    || fail "打包 zip 失败（校验和环节）：${ZIP_PATH}"
+  shasum -a 256 "$ZIP_PATH" > "$SHA_FILE"
+  ok "--skip-dmg：校验和取自 .app 的 zip 封装"
 else
   shasum -a 256 "$DMG_PATH" > "$SHA_FILE"
 fi
@@ -284,7 +315,11 @@ ok "校验和已写入 $SHA_FILE"
 
 step "打包完成（v${VERSION}）"
 echo "  .app : $APP_PATH"
-[ "$SKIP_DMG" -eq 1 ] || echo "  .dmg : $DMG_PATH"
+if [ "$SKIP_DMG" -eq 1 ]; then
+  echo "  .zip : $ZIP_PATH"
+else
+  echo "  .dmg : $DMG_PATH"
+fi
 echo "  校验和: $SHA_FILE"
 echo ""
 echo "发布到 GitHub Releases：见 README「发布到 GitHub Releases 速查」或 docs/发布手册.md §4"

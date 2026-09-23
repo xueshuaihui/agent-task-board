@@ -89,7 +89,7 @@ Agent 永远不能替你把关；所有产出物（diff / 文件 / 链接）经�
 
 ### 数据在哪
 
-全部本地：SQLite（`~/.agent-board/`）+ 产物文件，仅监听 `127.0.0.1`，无远端依赖；备份 / 导入导出在「设置」内操作。
+全部本地：SQLite（`~/.jarvis-workbench/`，v0.0.4 W1b 起；旧名 `~/.agent-board/`）+ 产物文件，仅监听 `127.0.0.1`，无远端依赖；备份 / 导入导出在「设置」内操作。
 
 ---
 
@@ -188,7 +188,7 @@ npm run dev:api
 npm run dev:web
 ```
 
-> 开发模式与打包后的 .app 共用同一份数据目录（`~/.agent-board/`）。
+> 开发模式与打包后的 .app 共用同一份数据目录（`~/.jarvis-workbench/`，v0.0.4 W1b 起）。
 
 ---
 
@@ -418,7 +418,7 @@ npx tauri build --target aarch64-apple-darwin
 
 ## 数据持久化
 
-- 任务、产出物、设置、字段定义等数据统一由 `@atb/api` 通过 **Prisma 6 + SQLite** 管理，数据库文件保存在本机用户目录（`~/.agent-board/`）。
+- 任务、产出物、设置、字段定义等数据统一由 `@atb/api` 通过 **Prisma 6 + SQLite** 管理，数据库文件保存在本机用户目录（`~/.jarvis-workbench/jarvis.db`，v0.0.4 W1b 起；旧名 `~/.agent-board/` 在升级首启一次性搬迁）。
 - 数据库模式与迁移入口为 `apps/api/scripts/db.mjs`（根脚本 `npm run prisma` 调用）。
 - 打包 .app 与开发模式共用同一数据目录；既有库（开发期建的）首次被打包 app 打开时会自动对齐迁移水位。
 - 产出物（artifacts）支持签名资源（`signed-resource.middleware.ts`）与 diff 比对，确保 Agent 写入内容经人工审核后可见。
