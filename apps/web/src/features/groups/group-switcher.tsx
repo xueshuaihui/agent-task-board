@@ -2,7 +2,7 @@ import { Check, FolderPlus, Settings2 } from 'lucide-react';
 import { navigate } from '@/app/router';
 import { Menu, MenuCaret, type MenuProps } from '@/components/ui';
 import { cn } from '@/lib/cn';
-import { useGroupingStore } from '@/features/board/grouping/useGroupingState';
+import { DEFAULT_GROUPING_PREFS, useGroupingStore } from '@/features/board/grouping/useGroupingState';
 import { useActiveGroups, useGroups } from './queries';
 import { GroupGlyph } from './group-glyph';
 
@@ -25,6 +25,13 @@ export function GroupSwitcher() {
   const allSelected = groupIds.length === 0;
 
   const setSelection = (next: string[]) => {
+    // 「全部分组」＝回到默认六列：清空 groupIds 之外还要把主分组复位到「状态」、清掉泳道筛选，
+    // 否则从分组页「查看任务」强制进来的泳道态（primary:'group' + 隐藏的 laneFilter）会卡住，
+    // 用户点「全部分组」后仍停在泳道视图——即「回不到全量」。走既有 update 持久化通道复位。
+    if (next.length === 0) {
+      update({ groupIds: [], primary: DEFAULT_GROUPING_PREFS.primary, laneFilter: [] });
+      return;
+    }
     // 4.5：选中 >1 分组自动按分组为主分组；回到 ≤1 时不改用户的原选择。
     update({ groupIds: next, ...(next.length > 1 ? { primary: 'group' } : {}) });
   };

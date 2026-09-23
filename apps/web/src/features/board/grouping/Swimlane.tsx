@@ -68,14 +68,19 @@ function DroppableColumn({
     <div
       ref={droppable.setNodeRef}
       className={cn(
-        'flex w-[280px] shrink-0 flex-col rounded-lg bg-bg-app',
+        // 与经典列同构的高度约束：列容器封顶（视口比例，列头固定不缩），卡片区
+        // `min-h-0 flex-1 overflow-y-auto` 独立出滚动条——卡多时列内滚，不把整条泳道
+        // 撑到几百卡高；列本身仍是 dnd-kit 的 droppable 节点，落点矩形随之封顶（更稳）。
+        'flex max-h-[60vh] w-[280px] shrink-0 flex-col rounded-lg bg-bg-app',
         droppable.isOver && 'bg-bg-muted',
       )}
       data-lane={laneKey}
       data-status={column.status}
     >
       <LaneColumnHead column={column} extra={extra} />
-      <div className="flex flex-1 flex-col gap-2 px-2 pb-2">{children}</div>
+      {/* 滚动层保持为「直接包含卡片的元素」：dnd-kit 对该嵌套滚动容器按默认 resizeObserver
+          测量、拖到列边缘可自动滚，落点测量不依赖外层整页滚动。 */}
+      <div className="atb-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">{children}</div>
     </div>
   );
 }

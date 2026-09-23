@@ -155,7 +155,18 @@ export function readGroupingPrefs(): GroupingPrefs {
   }
 }
 
+/** 模块级幂等标记：hydrate 只在首次建 store 时跑一次。 */
+let prefsHydrated = false;
+
+/**
+ * 本地用户操作（经 `writeGroupingPrefs`）的最近时间戳。初值 0：store 初值从 localStorage
+ * 直接读，不算用户操作、不更新它。用于给 hydrate 回填做「本地操作优先」的竞态防护。
+ */
+let lastLocalWriteAt = 0;
+
 export function writeGroupingPrefs(prefs: GroupingPrefs): void {
+  // 记一次「本地用户操作时间戳」：hydrate 回填据此判断是否已被本地新操作超越（见下）。
+  lastLocalWriteAt = Date.now();
   // localStorage 永远先写：服务端 PUT 失败（离线 / 5xx）时回落本地，偏好不丢。
   try {
     window.localStorage.setItem(GROUPING_PREFS_KEY, JSON.stringify(prefs));
@@ -167,9 +178,6 @@ export function writeGroupingPrefs(prefs: GroupingPrefs): void {
   });
 }
 
-/** 模块级幂等标记：hydrate 只在首次建 store 时跑一次。 */
-let prefsHydrated = false;
-
 /**
  * 服务端 → 本地的一次性水合：GET /prefs/board.grouping，命中且合法时覆盖 store。
  * 失败（未登录 / 网络 / 404）保持 localStorage 的初值，不影响正确性。
@@ -177,9 +185,14 @@ let prefsHydrated = false;
 export function hydrateGroupingPrefs(): void {
   if (prefsHydrated || typeof window === 'undefined') return;
   prefsHydrated = true;
+  const startedAt = Date.now();
   void api.prefs
     .get(GROUPING_PREFS_SERVER_KEY)
     .then((result) => {
+      // 竞态防护：GET 在途期间用户可能已经改过偏好（典型场景——进泳道视图后点「全部分组」
+      // 复位）。服务端这份是「发起前」的旧值，无条件 setState 会把用户刚做的复位覆盖回去，
+      // 表现为「点了全部分组还是回不到全量」。本地写时间戳晚于本次请求发起就跳过回填。
+      if (lastLocalWriteAt > startedAt) return;
       if (!result.value || typeof result.value !== 'object') return;
       const parsed = result.value as Partial<GroupingPrefs>;
       const prefs: GroupingPrefs = {

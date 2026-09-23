@@ -227,11 +227,16 @@ function ColumnEmpty({ column, actions }: { column: BoardColumn; actions: CardAc
   );
 }
 
-/** 3.1 列底：DONE/REVIEW 常驻「查看全部 →」，需求池/待执行常驻快速新建。 */
+/**
+ * 3.1 列底：DONE/REVIEW 常驻「查看全部 →」，需求池/待执行常驻快速新建。
+ * `has_more`（超出 `board_column_limit` 被服务端截断）时改为每列常驻一行超限出口：
+ * 「还有 N 条未显示 · 查看全部 →」——N = 真实计数 − 已渲染卡片数，点击仍走 seeAll 跳转。
+ */
 function ColumnFooter({ column, actions }: { column: BoardColumn; actions: CardActions }) {
   const creatable = column.status === 'BACKLOG' || column.status === 'READY';
   const seeAll = showsSeeAll(column);
   if (!creatable && !seeAll) return null;
+  const hidden = column.has_more ? Math.max(0, column.count - column.tasks.length) : 0;
   return (
     <footer className="flex shrink-0 items-center justify-between gap-2 px-4 pb-1 pt-2">
       {creatable ? (
@@ -247,14 +252,17 @@ function ColumnFooter({ column, actions }: { column: BoardColumn; actions: CardA
         <span />
       )}
       {seeAll ? (
-        <button
-          type="button"
-          onClick={() => navigate('tasks', taskListSearch({ status: column.status }))}
-          className="inline-flex shrink-0 items-center gap-0.5 text-aux text-primary hover:text-primary-hover"
-        >
-          查看全部
-          <ChevronRight className="size-3.5" />
-        </button>
+        <span className="inline-flex min-w-0 shrink-0 items-center gap-1 text-aux">
+          {hidden > 0 ? <span className="text-text-tertiary">还有 {hidden} 条未显示</span> : null}
+          <button
+            type="button"
+            onClick={() => navigate('tasks', taskListSearch({ status: column.status }))}
+            className="inline-flex shrink-0 items-center gap-0.5 text-aux text-primary hover:text-primary-hover"
+          >
+            查看全部
+            <ChevronRight className="size-3.5" />
+          </button>
+        </span>
       ) : null}
     </footer>
   );
