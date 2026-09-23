@@ -70,7 +70,7 @@ export function GeneralTab() {
       <SettingSection>
         <SettingRow
           label="界面主题"
-          hint="深色一套色板阶段一未定义（原型 v1.1 只给浅色），选「深色」会存下值但界面仍是浅色。"
+          hint="深浅两套色板均已就绪；「跟随系统」按系统 prefers-color-scheme 实时切换。"
         >
           <div className="flex h-8 items-center">
             <RadioGroup
