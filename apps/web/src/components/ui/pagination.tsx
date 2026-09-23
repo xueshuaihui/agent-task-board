@@ -107,7 +107,7 @@ function PageArrow({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex size-7 items-center justify-center rounded-control text-text-secondary transition-colors duration-140 ease-settle hover:bg-bg-muted hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-secondary"
+      className="inline-flex size-7 items-center justify-center rounded-control text-text-secondary transition-colors duration-140 ease-settle hover:bg-bg-muted hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-text-secondary"
     >
       {children}
     </button>

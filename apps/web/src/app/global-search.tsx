@@ -113,7 +113,7 @@ export function GlobalSearch() {
         aria-label="全局搜索任务"
         placeholder="搜索任务…"
         className={cn(
-          'h-9 w-full rounded-control border border-border bg-bg-surface pl-8 pr-14 text-body text-text-primary',
+          'h-9 w-full rounded-control border border-border bg-bg-surface pl-8 pr-14 text-body text-text-primary transition-colors duration-140 ease-settle',
           'placeholder:text-text-tertiary focus:border-primary focus:outline-none',
         )}
         value={value}

@@ -136,7 +136,7 @@ export function BoardToolbar({ onCreate, grouping, graphTasks }: BoardToolbarPro
                 disabled={!grouping.grouped || grouping.laneKeys.length === 0}
                 onClick={() => grouping.onToggleAll(true)}
                 aria-label="全部折叠"
-                className="rounded-control p-1.5 text-text-secondary hover:bg-bg-muted hover:text-text-primary disabled:opacity-40"
+                className="rounded-control p-1.5 text-text-secondary hover:bg-bg-muted hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <ChevronsDownUp className="size-4" aria-hidden />
               </button>
@@ -145,7 +145,7 @@ export function BoardToolbar({ onCreate, grouping, graphTasks }: BoardToolbarPro
                 disabled={!grouping.grouped || grouping.laneKeys.length === 0}
                 onClick={() => grouping.onToggleAll(false)}
                 aria-label="全部展开"
-                className="rounded-control p-1.5 text-text-secondary hover:bg-bg-muted hover:text-text-primary disabled:opacity-40"
+                className="rounded-control p-1.5 text-text-secondary hover:bg-bg-muted hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <ChevronsUpDown className="size-4" aria-hidden />
               </button>

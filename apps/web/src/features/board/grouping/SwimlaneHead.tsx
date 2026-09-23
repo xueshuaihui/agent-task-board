@@ -100,7 +100,7 @@ export function SwimlaneHead({
             type="button"
             onClick={onToggleCollapse}
             disabled={!options.collapsible}
-            className="rounded p-0.5 text-text-secondary hover:bg-bg-raised disabled:opacity-40"
+            className="rounded p-0.5 text-text-secondary hover:bg-bg-raised disabled:cursor-not-allowed disabled:opacity-50"
             aria-label={collapsed ? '展开泳道' : '折叠泳道'}
           >
             {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
