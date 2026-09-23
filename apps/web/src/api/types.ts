@@ -575,7 +575,7 @@ export interface Settings {
   agent_creation_mode: 'direct' | 'light' | 'silent';
   /** §8.8 轻确认卡片超时秒数（20.9 区间 1–300，缺省 30）。 */
   light_confirm_timeout_seconds: number;
-  /** #46 唤醒词工作模式，随 MCP initialize 的 instructions 下发（hot：改后下一次连接生效）。 */
+  /** #46 唤醒词工作模式，经 initialize 的 instructions 与每次工具响应的模式行下发（hot：改后下一次工具调用即生效）。 */
   mcp_wake_mode: McpWakeMode;
 }
 export type SettingsKey = keyof Settings;

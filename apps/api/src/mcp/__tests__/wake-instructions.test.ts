@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '../../contract/settings';
-import { buildMcpInstructions, MCP_WAKE_EXIT, MCP_WAKE_WORD } from '../../mcp/mcp.server';
+import { buildMcpInstructions, MCP_WAKE_EXIT, MCP_WAKE_WORD, wakeModeNotice } from '../../mcp/mcp.server';
 
 /**
  * #46 唤醒词口径的纯函数用例：两种模式只差「一轮即退」与「保持到退出指令」那一句，
@@ -8,7 +8,7 @@ import { buildMcpInstructions, MCP_WAKE_EXIT, MCP_WAKE_WORD } from '../../mcp/mc
  * 走真 HTTP 的 initialize 覆盖在 `__tests__/mcp-http-flow.test.ts`，这里不重复建库。
  */
 
-const COMMON = [MCP_WAKE_WORD, 'Jarvis Workbench', '不要反问', '设置 → Token'];
+const COMMON = [MCP_WAKE_WORD, 'Jarvis Workbench', '不要反问', '设置 → MCP 设置'];
 
 describe('MCP instructions 的贾维斯唤醒口径', () => {
   it('两种模式共有的口径都在，且缺省模式与 20.9 一致', () => {
@@ -41,5 +41,21 @@ describe('MCP instructions 的贾维斯唤醒口径', () => {
     for (const mode of ['single', 'continuous'] as const) {
       expect(buildMcpInstructions(mode).length).toBeLessThan(1000);
     }
+  });
+});
+
+describe('wakeModeNotice 的模式随行文案', () => {
+  it('single：含「单次」与一轮即退口径，不含连续措辞', () => {
+    const text = wakeModeNotice('single');
+    expect(text).toContain(`【${MCP_WAKE_WORD}】当前会话模式：单次`);
+    expect(text).toContain('本轮唤醒对应的操作完成后即退出工作模式');
+    expect(text).not.toContain('连续');
+  });
+
+  it('continuous：含「连续」与退出指令措辞，不含单次口径', () => {
+    const text = wakeModeNotice('continuous');
+    expect(text).toContain(`【${MCP_WAKE_WORD}】当前会话模式：连续`);
+    expect(text).toContain(MCP_WAKE_EXIT);
+    expect(text).not.toContain('单次');
   });
 });

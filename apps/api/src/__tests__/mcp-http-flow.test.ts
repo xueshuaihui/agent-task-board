@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -736,6 +737,45 @@ describe('贾维斯唤醒模式的热生效（#46）', () => {
 
     // 还原缺省：本文件的其余用例与后续文件共用这套约定，不留副作用。
     expect((await ui.patch(`${API}/settings`, { mcp_wake_mode: 'single' })).status).toBe(200);
+  });
+
+  it('切模式后 tools/call 响应附带的独立模式块即时跟随（无状态通道，不经重连）', async () => {
+    // 客户端只在连接时 initialize 一次，此后不再重读 instructions——模式的实时权威
+    // 只能随行在每个工具响应里。list_ready_tasks 只读零副作用，适合做载体。
+    const noticeOf = (result: ToolResult) =>
+      result.content.filter((block) => block.text.includes('当前会话模式'));
+
+    expect((await ui.patch(`${API}/settings`, { mcp_wake_mode: 'continuous' })).status).toBe(200);
+    const continuous = unwrap(await callTool(agent.token, 'list_ready_tasks', {}), '连续模式随行块');
+    // 首块仍是可 JSON 解析的纯载荷（unwrap 已验两条通道同形），模式必须是第二个独立块。
+    expect(continuous.result.content).toHaveLength(2);
+    expect(noticeOf(continuous.result)).toHaveLength(1);
+    expect(continuous.result.content[1]).toMatchObject({ type: 'text' });
+    expect(continuous.result.content[1]!.text).toContain('【贾维斯】当前会话模式：连续');
+    expect(continuous.result.content[1]!.text).toContain(MCP_WAKE_EXIT);
+
+    // 出错结果同样随行（走服务层的 ApiException，不是 SDK 校验拦截）：isError 分支的
+    // 首块仍是 13 章错误 JSON，模式块独立追加。
+    const failed = unwrapToolError(
+      await callTool(agent.token, 'update_progress', {
+        task_id: 'T-wake-gone',
+        run_id: 'R-wake-gone',
+        lease_id: randomUUID(),
+        progress: 50,
+      }),
+      '连续模式·错误结果',
+    );
+    expect(failed.result.content).toHaveLength(2);
+    expect(failed.structured.code).toBe('TASK_GONE');
+    expect(JSON.parse(failed.result.content[0]!.text)).toHaveProperty('error.code', 'TASK_GONE');
+    expect(failed.result.content[1]!.text).toContain('【贾维斯】当前会话模式：连续');
+
+    expect((await ui.patch(`${API}/settings`, { mcp_wake_mode: 'single' })).status).toBe(200);
+    const single = unwrap(await callTool(agent.token, 'list_ready_tasks', {}), '单次模式随行块');
+    // 同一个请求形状：改回 single 后下一响应即换成单次措辞。
+    expect(single.result.content).toHaveLength(2);
+    expect(single.result.content[1]!.text).toContain('【贾维斯】当前会话模式：单次');
+    expect(single.result.content[1]!.text).not.toContain('连续');
   });
 });
 

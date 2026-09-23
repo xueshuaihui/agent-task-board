@@ -33,8 +33,8 @@ import { CAPABILITY_NAMESPACES, CAPABILITY_RE, TOKEN_NAME_RE } from '../utils';
  * 所以生成对话框分两段——表单段与「已生成」段，第二段关掉即销毁，界面上不留任何
  * 可以再读一次的入口；列表也没有「查看」列，这不是保守设计而是接口能力的上限。
  *
- * #46「贾维斯唤醒模式」区块同样落在本 Tab：它改的是 MCP 侧的行为（initialize 下发的
- * 唤醒口径），与 Token 是同一件事的两半——配好接入，再决定唤醒后保持多久。
+ * #46「MCP 设置」分组同样落在本 Tab：它改的是 MCP 侧的行为（唤醒口径与随每次
+ * 工具调用下发的模式行），与 Token 是同一件事的两半——配好接入，再决定唤醒后保持多久。
  */
 
 const COLS = 'grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_128px_96px_84px_64px]';
@@ -244,13 +244,13 @@ export function TokensTab() {
       </SettingSection>
 
       <SettingSection
-        title="贾维斯唤醒模式"
+        title="MCP 设置"
         description="对已接入本 MCP 的 Agent 说「贾维斯，创建一个任务：明天发布」，它就直接用看板工具完成请求，不反问是否使用工具。"
       >
         <SettingRow
           label="工作模式"
           width="fluid"
-          hint="连续模式下唤醒后一直保持，说「退出贾维斯」才退出；与唤醒无关的普通对话不会触发看板工具。口径随 MCP 连接的 initialize 下发，改动需在 MCP 客户端重连或新开会话后生效。"
+          hint="连续模式下唤醒后一直保持，说「退出贾维斯」才退出；与唤醒无关的普通对话不会触发看板工具。每次工具调用返回都会附带最新的「【贾维斯】当前会话模式」行，切换后下一次工具调用即生效，无需重连 MCP 客户端。"
         >
           <RadioGroup
             layout="column"

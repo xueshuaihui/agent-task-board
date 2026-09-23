@@ -35,8 +35,21 @@ export function buildMcpInstructions(mode: McpWakeMode): string {
     `唤醒词：「${MCP_WAKE_WORD}」。用户消息以它开头或明确呼唤它（如「${MCP_WAKE_WORD}，创建一个任务：明天发布」）时，进入 Jarvis Workbench 工作模式：直接用本服务的工具完成该请求，不要反问是否使用工具。`,
     exitRule,
     '与唤醒无关的普通对话，不要主动调用本服务的工具。',
-    '模式可在应用「设置 → Token」的「贾维斯唤醒模式」中更改；改动在下一次连接（initialize）生效。',
+    `模式在应用「设置 → MCP 设置」中更改，改动自下一次工具响应起即时生效、无需客户端重连；以每次工具返回附带的「【${MCP_WAKE_WORD}】当前会话模式」行为准。`,
   ].join('\n');
+}
+
+/**
+ * #46：模式的「实时权威」——随每个工具调用响应附带的独立 text 块。
+ *
+ * WHY：客户端只在连接时 initialize 一次，此后不再重读 instructions，设置页切的模式
+ * 经 instructions 永远到不了 agent；而服务端是无状态 transport（每请求新建 server），
+ * tools/call 响应是唯一天然实时的通道。措辞与 buildMcpInstructions 的 exitRule 同口径。
+ */
+export function wakeModeNotice(mode: McpWakeMode): string {
+  return mode === 'continuous'
+    ? `【${MCP_WAKE_WORD}】当前会话模式：连续——把后续请求继续当作看板操作处理，直到收到「${MCP_WAKE_EXIT}」或同义退出指令。`
+    : `【${MCP_WAKE_WORD}】当前会话模式：单次——本轮唤醒对应的操作完成后即退出工作模式，不含唤醒词的请求按普通对话处理。`;
 }
 
 /**
@@ -60,7 +73,17 @@ export function createAgentMcpServer(
     server.registerTool(
       tool.name,
       { description: tool.description, inputSchema: tool.input.shape },
-      async (args: unknown) => toCallToolResult(() => tool.run(parseToolInput(tool.input, args), auth)),
+      async (args: unknown) => {
+        const result = await toCallToolResult(() =>
+          tool.run(parseToolInput(tool.input, args), auth),
+        );
+        // 模式块必须独立追加、不并进首块：不少客户端会对 content[0]/structuredContent
+        // 做 JSON 解析，混入散文就砸了载荷通道（成功与 isError 结果同理）。
+        return {
+          ...result,
+          content: [...result.content, { type: 'text' as const, text: wakeModeNotice(wakeMode) }],
+        };
+      },
     );
   }
   return server;
