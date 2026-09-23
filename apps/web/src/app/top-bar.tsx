@@ -5,6 +5,7 @@ import type { Settings } from '@/api/types';
 import { badgeText } from '@/app/store/unread';
 import { useShellStore } from '@/app/store/shell';
 import { IconButton } from '@/components/ui';
+import { AgentStatusChip } from '@/app/agent-status-chip';
 import { GlobalSearch } from '@/app/global-search';
 import { useUnreadCount } from '@/ws';
 import { springs } from '@/lib/motion';
@@ -29,7 +30,8 @@ function nextTheme(current: UiTheme): UiTheme {
 
 /**
  * v0.0.4 W9 13.1：顶部工具栏（不是导航——导航已移入左侧 Sidebar）。
- * 承载全局搜索（2.4，⌘K）+ 主题三态切换 + 通知铃铛（角标 + 打开通知中心）。
+ * 承载全局搜索（2.4，⌘K）+ 主题三态切换 + 通知铃铛（角标 + 打开通知中心）
+ * + Agent 活跃状态 chip（B2b：执行中数量与最近活动，无内容时整条隐藏）。
  *
  * 页面级工具栏（看板/技能/设置各自的视图切换、筛选、操作）由各页面自己渲染
  * （`features/board/toolbar.tsx` 等），这条全局栏只放跨页复用件。
@@ -71,6 +73,8 @@ export function TopBar() {
       <div className="flex min-w-0 flex-1 items-center">
         <GlobalSearch />
       </div>
+
+      <AgentStatusChip />
 
       <div className="flex shrink-0 items-center gap-1">
         <IconButton
