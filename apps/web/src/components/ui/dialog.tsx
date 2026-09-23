@@ -20,8 +20,9 @@ export interface DialogProps {
 }
 
 /**
- * DESIGN.md §2：Radix Dialog + AnimatePresence。遮罩 bg-black/45 + 轻模糊（深色 /60）；
- * 面板出入 = 缩放 0.96→1 + 上移 8px + 淡入，ease-emphasis 200ms（transitions.overlay）。
+ * DESIGN.md §2 / motion-spec §1-L2：Radix Dialog + AnimatePresence。遮罩 bg-black/45 + 轻模糊（深色 /60）；
+ * 面板入场 = 缩放 0.96→1 + 上移 8px + 淡入 200ms ease-emphasis（transitions.overlay），
+ * 退场 = 同轨迹反向 140ms（transitions.exit）；遮罩淡入随面板、淡出 140ms。
  * Esc / 点击遮罩 / X 关闭、焦点圈定与滚动锁定全部由 Radix 提供。
  * prefers-reduced-motion 时只做淡入淡出。
  */
@@ -42,7 +43,8 @@ export function Dialog({
     : {
         initial: { opacity: 0, scale: 0.96, y: 8 },
         animate: { opacity: 1, scale: 1, y: 0 },
-        exit: { opacity: 0, scale: 0.97, y: 4 },
+        // 退场同轨迹反向但更快：140ms（transitions.exit），盖过组件级 overlay 档
+        exit: { opacity: 0, scale: 0.97, y: 4, transition: transitions.exit },
       };
 
   return (
@@ -59,7 +61,8 @@ export function Dialog({
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+                // 遮罩淡入随面板（overlay 200ms）、淡出 140ms（§4.4）
+                exit={{ opacity: 0, transition: transitions.exit }}
                 transition={transitions.overlay}
                 className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px] dark:bg-black/60"
               />

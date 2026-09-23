@@ -18,8 +18,9 @@ export interface DrawerProps {
 }
 
 /**
- * DESIGN.md §2：Radix Dialog 当右侧 sheet 用。从右滑入 x 100%→0，ease-emphasis 260ms
- * （transitions.drawer）；遮罩淡入；圆角只落在左侧两角（rounded-l-drawer 16px）；
+ * DESIGN.md §2 / motion-spec §1-L2：Radix Dialog 当右侧 sheet 用。入场从右滑入 x 100%→0，
+ * ease-emphasis 260ms（transitions.drawer）；退场反向 180ms（transitions.drawerOut）；
+ * 遮罩淡入随面板、淡出 140ms；圆角只落在左侧两角（rounded-l-drawer 16px）；
  * 宽度档 11.2：基础 480 / win-lg 560 / win-xl 640。Esc / 遮罩 / X 关闭与滚动锁定由 Radix 提供。
  * prefers-reduced-motion 时只做淡入淡出。
  */
@@ -39,7 +40,8 @@ export function Drawer({
     : {
         initial: { opacity: 0, x: '100%' },
         animate: { opacity: 1, x: 0 },
-        exit: { opacity: 0, x: '100%' },
+        // 退场必须比入场快（§1-L2）：180ms（transitions.drawerOut），盖过组件级 drawer 档
+        exit: { opacity: 0, x: '100%', transition: transitions.drawerOut },
       };
 
   return (
@@ -56,7 +58,8 @@ export function Drawer({
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+                // 遮罩淡入随面板（overlay 200ms）、淡出 140ms（§4.4）
+                exit={{ opacity: 0, transition: transitions.exit }}
                 transition={transitions.overlay}
                 className="fixed inset-0 z-40 bg-black/45 backdrop-blur-[2px] dark:bg-black/60"
               />

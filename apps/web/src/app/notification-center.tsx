@@ -93,7 +93,8 @@ export function NotificationCenter() {
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+                // 遮罩淡入随面板（overlay 200ms）、淡出 140ms（§4.4）
+                exit={{ opacity: 0, transition: transitions.exit }}
                 transition={transitions.overlay}
                 className="fixed inset-y-0 right-0 z-40 bg-black/45 backdrop-blur-[2px] dark:bg-black/60"
                 style={{ left: 'var(--atb-nav-w, 0px)' }}
@@ -113,7 +114,8 @@ export function NotificationCenter() {
                   : {
                       initial: { opacity: 0, x: '-100%' },
                       animate: { opacity: 1, x: 0 },
-                      exit: { opacity: 0, x: '-100%' },
+                      // 退场比入场快（§1-L2）：180ms drawerOut，盖过组件级 drawer 档
+                      exit: { opacity: 0, x: '-100%', transition: transitions.drawerOut },
                     })}
                 transition={transitions.drawer}
                 className="fixed top-0 z-40 flex h-full w-[360px] max-w-[calc(100vw-var(--atb-nav-w,0px))] flex-col border-r border-border bg-bg-surface outline-none"

@@ -46,8 +46,9 @@ function isGroup(entry: MenuItem | MenuGroup): entry is MenuGroup {
 const noopToggle = (): void => {};
 
 /**
- * 下拉菜单（DESIGN.md §2）：Radix DropdownMenu 提供焦点圈、方向键、Esc、
- * overflow 裁剪规避（Portal + 定位），motion 负责出入——缩放 0.97→1 + 淡入 140ms。
+ * 下拉菜单（DESIGN.md §2 / motion-spec §1-L2）：Radix DropdownMenu 提供焦点圈、方向键、Esc、
+ * overflow 裁剪规避（Portal + 定位），motion 负责出入——入场缩放 0.97→1 + 淡入 140ms，
+ * 退场纯淡出 100ms（transitions.menu）。
  */
 export const Menu = forwardRef<HTMLSpanElement, MenuProps>(function Menu(
   { trigger, groups, selectedId, align = 'start', width = 220, className },
@@ -64,7 +65,8 @@ export const Menu = forwardRef<HTMLSpanElement, MenuProps>(function Menu(
     : {
         initial: { opacity: 0, scale: 0.97 },
         animate: { opacity: 1, scale: 1 },
-        exit: { opacity: 0, scale: 0.97 },
+        // §1-L2：Menu 退场 = 100ms 纯淡出（去 scale），menu 档盖过组件级 fade 档
+        exit: { opacity: 0, transition: transitions.menu },
       };
 
   return (
