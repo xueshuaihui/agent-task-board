@@ -3,6 +3,7 @@ import { motion, useReducedMotion } from 'motion/react';
 import { Archive, ArchiveRestore, FolderPlus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { errorMessage } from '@/api/errors';
 import { navigate } from '@/app/router';
+import { useBoardFilterStore } from '@/features/board/grouping/useBoardFilterStore';
 import { useGroupingStore } from '@/features/board/grouping/useGroupingState';
 import { transitions } from '@/lib/motion';
 import { formatDateTime } from '@/lib/time';
@@ -146,9 +147,10 @@ function GroupCard({
   const isDefault = group.is_default === 1;
   const update = useGroupingStore((state) => state.update);
 
-  // 5.1「打开」：把看板切成只看这个分组并按分组泳道，落到看板就是它自己的泳道视图。
+  // 5.1「打开」：把看板切成只看这个分组，落到看板就是过滤侧栏选中该分组的状态。
   const open = () => {
-    update({ groupIds: [group.id], primary: 'group' });
+    update({ groupIds: [group.id] });
+    useBoardFilterStore.getState().selectSlotValues('slotA', 'group', [group.id]);
     navigate('board');
   };
 

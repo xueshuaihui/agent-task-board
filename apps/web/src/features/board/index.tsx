@@ -24,7 +24,6 @@ import { BoardColumnView } from './board-column';
 import type { CardActions } from './card-actions';
 import { DeleteDialog, StopDialog } from './dialogs';
 import { FLY_BATCH_LIMIT, FLY_BATCH_SUPPRESS_MS, FLY_DROP_SUPPRESS_MS, markPendingMove, suppressFly } from './fly-motion';
-import { GroupedBoard } from './grouped-board';
 import { GroupFilterSidebar } from './grouping/GroupFilterSidebar';
 import { hasActiveFilter, taskMatchesFilter } from './grouping/filter-model';
 import { useBoardFilterStore } from './grouping/useBoardFilterStore';
@@ -37,8 +36,6 @@ import { useViewPrefsStore } from './flow/view-prefs';
 import { useDependencyEdges } from '../dependency-graph/useDependencyGraph';
 import { BoardToolbar } from './toolbar';
 import { toGroupable } from './grouping/dimensions';
-import { applyLaneOrder, buildSwimlanes, filterLanes } from './grouping/grouping';
-import { useGroupingStore } from './grouping/useGroupingState';
 import { BoardCardView } from './task-card-view';
 import { useRunOverlay } from './use-run-overlay';
 
@@ -128,23 +125,7 @@ export function BoardPage() {
   // 依赖边只在流程图打开时才逐任务拉取；与详情抽屉「依赖」Tab 共享缓存。
   const dependencyEdges = useDependencyEdges(graphTasks, displayMode === 'flow');
 
-  /* ------------------------------------------------------ 分组（泳道）接线 */
-
-  // 分组偏好整体订阅（useShallow 按字段浅比较）；默认 primary='status' → 经典六列形态。
-  const grouping = useGroupingStore(
-    useShallow((state) => ({
-      primary: state.primary,
-      secondary: state.secondary,
-      options: state.options,
-      laneOrder: state.laneOrder,
-      laneFilter: state.laneFilter,
-      groupIds: state.groupIds,
-      laneSort: state.laneSort,
-    })),
-  );
-  const collapseAll = useGroupingStore((state) => state.collapseAll);
-  /** 主分组不是「状态」时走泳道视图；「状态」维度即现有单维看板，不重复包一层泳道。 */
-  const grouped = grouping.primary !== 'status';
+  /* ------------------------------------------------ 分组维度的展示富化 */
 
   /** 六列快照拉平 + 接缝字段补齐（group / requirement 摘要）；分组名/色来自分组缓存。 */
   const groups = useGroups();
@@ -152,6 +133,7 @@ export function BoardPage() {
     () => new Map((groups.data?.items ?? []).map((group) => [group.id, group])),
     [groups.data?.items],
   );
+  // 过滤侧栏的徽标统计输入（B13）；4.5 多分组过滤已由服务端完成（useBoardWithGroups）。
   const groupableTasks = useMemo(
     () =>
       columns
@@ -163,32 +145,6 @@ export function BoardPage() {
         }),
     [columns, groupById],
   );
-  // 4.5 多分组过滤已由服务端完成（useBoardWithGroups），这里不再前端截一遍。
-
-  /** 侧栏过滤后的泳道输入（B13）：泳道视图与工具栏 laneKeys 同源。 */
-  const filteredGroupable = useMemo(
-    () => groupableTasks.filter((task) => taskMatchesFilter(task, filterPrefs)),
-    [groupableTasks, filterPrefs],
-  );
-
-  /** 泳道结构与 GroupedBoard 内部同一套纯函数；这里算一份供工具栏拿 laneKeys。 */
-  const groupedLanes = useMemo(() => {
-    if (!grouped) return [];
-    const sorted = [...filteredGroupable];
-    if (grouping.laneSort === 'priority') sorted.sort((a, b) => a.priority - b.priority);
-    else if (grouping.laneSort === 'updated_at')
-      sorted.sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''));
-    let built = buildSwimlanes({
-      tasks: sorted,
-      primary: grouping.primary,
-      secondary: grouping.secondary,
-      showEmptyLanes: grouping.options.showEmptyLanes,
-    });
-    if (grouping.options.rememberOrder)
-      built = applyLaneOrder(built, grouping.laneOrder[grouping.primary] ?? []);
-    return filterLanes(built, grouping.laneFilter);
-  }, [grouped, filteredGroupable, grouping]);
-  const laneKeys = useMemo(() => groupedLanes.map((lane) => lane.key), [groupedLanes]);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overColumn, setOverColumn] = useState<string | null>(null);
@@ -240,12 +196,6 @@ export function BoardPage() {
     <div className="flex h-full min-h-0 flex-col">
       <BoardToolbar
         onCreate={(template) => setQuick({ target: 'BACKLOG', preset: template?.preset })}
-        grouping={{
-          primary: grouping.primary,
-          grouped,
-          laneKeys,
-          onToggleAll: (collapsed) => collapseAll(grouping.primary, laneKeys, collapsed),
-        }}
         graphTasks={graphTasks}
       />
 
@@ -293,15 +243,6 @@ export function BoardPage() {
           ) : total === 0 && defaultView && !hasActiveFilter(filterPrefs) ? (
             // 3.6：只有「整张看板空」才替掉六列；筛选后的空态由折叠列 + 工具栏那句文案表达。
             <BoardEmpty onCreate={() => setQuick({ target: 'BACKLOG' })} />
-          ) : grouped ? (
-            // 7.3/7.4 泳道视图：主分组≠「状态」时走 GroupedBoard（含跨分组拖拽确认）。
-            <GroupedBoard
-              tasks={filteredGroupable}
-              defs={defs}
-              actions={actions}
-              mutations={mutations}
-              overlayOf={overlayOf}
-            />
           ) : (
             <DndContext
               sensors={sensors}

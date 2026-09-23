@@ -2,16 +2,17 @@ import { Check, FolderPlus, Settings2 } from 'lucide-react';
 import { navigate } from '@/app/router';
 import { Menu, MenuCaret, type MenuProps } from '@/components/ui';
 import { cn } from '@/lib/cn';
-import { DEFAULT_GROUPING_PREFS, useGroupingStore } from '@/features/board/grouping/useGroupingState';
+import { useGroupingStore } from '@/features/board/grouping/useGroupingState';
 import { useActiveGroups, useGroups } from './queries';
 import { GroupGlyph } from './group-glyph';
 
 /**
  * 7.8 / 4.5 分组切换器：`分组: [全部分组 ▾]`，多选。
  *
- * 状态真值是分组 store 的 `groupIds`（空数组 = 全部分组），选中 >1 时联动把主分组
- * 切成「分组」（原型 4.5「选中多个分组时，看板自动按分组泳道」）——联动走 store 的
- * `update`，让偏好持久化（localStorage）在同一个入口落盘。归档分组不出现在候选里（5.1）。
+ * 状态真值是分组 store 的 `groupIds`（空数组 = 全部分组），驱动看板/列表的
+ * 服务端 `group_id` 过滤（useGroupScoped / useBoardWithGroups）。B13 泳道下线后
+ * 这里不再联动主分组维度；分组维度的选择与值过滤在过滤侧栏。
+ * 归档分组不出现在候选里（5.1）。
  *
  * Menu 是单选语义的控件（selectedId 画一个对勾），多选在这里用「对勾图标」表达勾选态，
  * 与 7.8 的 ☑ 原型对齐；MenuCaret/触发按钮样式沿用工具栏 chip 的规格。
@@ -24,17 +25,7 @@ export function GroupSwitcher() {
   const items = groups.data?.items ?? [];
   const allSelected = groupIds.length === 0;
 
-  const setSelection = (next: string[]) => {
-    // 「全部分组」＝回到默认六列：清空 groupIds 之外还要把主分组复位到「状态」、清掉泳道筛选，
-    // 否则从分组页「查看任务」强制进来的泳道态（primary:'group' + 隐藏的 laneFilter）会卡住，
-    // 用户点「全部分组」后仍停在泳道视图——即「回不到全量」。走既有 update 持久化通道复位。
-    if (next.length === 0) {
-      update({ groupIds: [], primary: DEFAULT_GROUPING_PREFS.primary, laneFilter: [] });
-      return;
-    }
-    // 4.5：选中 >1 分组自动按分组为主分组；回到 ≤1 时不改用户的原选择。
-    update({ groupIds: next, ...(next.length > 1 ? { primary: 'group' } : {}) });
-  };
+  const setSelection = (next: string[]) => update({ groupIds: next });
 
   const toggle = (id: string) => {
     setSelection(

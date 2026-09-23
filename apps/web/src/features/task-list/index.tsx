@@ -14,7 +14,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import { api, errorMessage, qk, useApiMutation } from '@/api';
-import { useTaskListWithGroups } from '@/features/groups';
+import { useGroups, useTaskListWithGroups } from '@/features/groups';
 import type { ListSortField, TaskListItem, TaskStatus } from '@/api/types';
 import { BOARD_COLUMN_ORDER } from '@/api/types';
 import { navigate, useRouteSearchParams } from '@/app/router';
@@ -40,7 +40,7 @@ import {
 import type { MenuItem } from '@/components/ui';
 import { directTransitions } from '@/features/board/matrix';
 import { GROUP_DIMENSIONS, toGroupable } from '@/features/board/grouping/dimensions';
-import { useGroupingStore } from '@/features/board/grouping/useGroupingState';
+import { useBoardFilterStore } from '@/features/board/grouping/useBoardFilterStore';
 import { statusLabel } from '@/lib/labels';
 import { cn } from '@/lib/cn';
 import {
@@ -156,8 +156,14 @@ export function TaskListPage() {
 
   /* ----------------------------------------------- 分组分节（复用看板 grouping） */
 
-  // 主分组维度与看板共用一份偏好（useGroupingStore）；「不分组」时退回平铺表格。
-  const listPrimary = useGroupingStore((state) => state.primary);
+  // 分组分节维度与看板过滤侧栏共用一份偏好（slotA）；「不分组」时退回平铺表格。
+  const listPrimary = useBoardFilterStore((state) => state.slotA.dim);
+  // toGroupable 的 group_name 兜底是裸 group_id；节标题要显示真名，和看板一样查分组缓存。
+  const groups = useGroups();
+  const groupById = useMemo(
+    () => new Map((groups.data?.items ?? []).map((group) => [group.id, group])),
+    [groups.data?.items],
+  );
   const sections = useMemo(() => {
     if (listPrimary === 'none') return null;
     const dim = GROUP_DIMENSIONS[listPrimary];
@@ -167,14 +173,20 @@ export function TaskListPage() {
       for (const value of dim.getValues(toGroupable(row))) {
         let section = map.get(value.key);
         if (!section) {
-          section = { key: value.key, label: value.label, icon: dim.icon, rows: [] };
+          const group = dim.key === 'group' ? groupById.get(value.key) : undefined;
+          section = {
+            key: value.key,
+            label: group ? group.name : value.label,
+            icon: dim.icon,
+            rows: [],
+          };
           map.set(value.key, section);
         }
         section.rows.push(row);
       }
     }
     return [...map.values()];
-  }, [rows, listPrimary]);
+  }, [rows, listPrimary, groupById]);
   const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<string>>(new Set());
   const toggleSection = useCallback((key: string) => {
     setCollapsedSections((current) => {

@@ -1,18 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  Check,
-  ChevronsDownUp,
-  ChevronsUpDown,
-  ClipboardList,
-  Kanban,
-  Layers,
-  List,
-  Network,
-  Plus,
-  Settings2,
-  X,
-} from 'lucide-react';
+import { Check, ClipboardList, Kanban, List, Network, Plus, Settings2, X } from 'lucide-react';
 import type { BoardView, TaskCard, Template } from '@/api/types';
 import { api, qk, useSettings, useTags } from '@/api';
 import { navigate } from '@/app/router';
@@ -22,9 +10,6 @@ import { cn } from '@/lib/cn';
 import { Button, Menu, MenuCaret, Tooltip, type MenuItem, type MenuProps } from '@/components/ui';
 import { GroupSwitcher } from '@/features/groups';
 import { boardFilterCount, VIEW_ORDER } from './model';
-import { GroupSelector } from './grouping/GroupSelector';
-import { GROUP_DIMENSIONS, type GroupDimensionKey } from './grouping/dimensions';
-import { useGroupingStore } from './grouping/useGroupingState';
 import { useViewPrefsStore } from './flow/view-prefs';
 
 /**
@@ -47,27 +32,14 @@ import { useViewPrefsStore } from './flow/view-prefs';
 export interface BoardToolbarProps {
   /** 打开快速新建；带 `template` 时用它预填（3.4 的模板下拉）。 */
   onCreate: (template?: Template) => void;
-  /** 7.7 分组接线：有值才渲染「分组 / 全部折叠展开」段（看板页传，列表页不传）。 */
-  grouping?: {
-    primary: GroupDimensionKey;
-    /** 主分组 ≠ 状态（泳道视图生效）。 */
-    grouped: boolean;
-    /** 当前可见泳道 key（折叠/展开用）。 */
-    laneKeys: readonly string[];
-    onToggleAll: (collapsed: boolean) => void;
-  };
   /**
-   * 2.md 8.1 全局依赖图入口：当前看板拉平的任务集合（普通/泳道模式都是六列快照，
+   * 2.md 8.1 全局依赖图入口：当前看板拉平的任务集合（普通模式都是六列快照，
    * 由看板页传入）。传了才渲染「依赖图」按钮；列表页复用本组件不传则不出现。
    */
   graphTasks?: readonly TaskCard[];
 }
 
-export function BoardToolbar({ onCreate, grouping, graphTasks }: BoardToolbarProps) {
-  const [groupingOpen, setGroupingOpen] = useState(false);
-  // 「分组」按钮上的当前主分组名：分组选择器草稿态，应用前不落盘，这里只读展示。
-  const primary = useGroupingStore((state) => state.primary);
-  const primaryLabel = primary === 'none' ? '不分组' : GROUP_DIMENSIONS[primary].label;
+export function BoardToolbar({ onCreate, graphTasks }: BoardToolbarProps) {
   const view = useFilterStore((state) => state.view);
   const setView = useFilterStore((state) => state.setView);
   const reset = useFilterStore((state) => state.reset);
@@ -111,57 +83,12 @@ export function BoardToolbar({ onCreate, grouping, graphTasks }: BoardToolbarPro
       {/* 窄窗口（最小 960px）下整行换行，靠这段把右侧动作推到行尾。 */}
       <span aria-hidden className="min-w-0 flex-1" />
 
-      {grouping ? (
-        <div className="flex shrink-0 items-center gap-2">
-          <Tooltip content="主分组维度、次分组与分组选项（7.7）">
-            <button
-              type="button"
-              onClick={() => setGroupingOpen(true)}
-              aria-haspopup="dialog"
-              className={cn(
-                'inline-flex h-7 shrink-0 items-center gap-1 rounded-control border px-2 text-body transition-colors duration-140 ease-settle',
-                grouping.grouped
-                  ? 'border-primary bg-primary-light text-primary'
-                  : 'border-border text-text-secondary hover:bg-bg-muted hover:text-text-primary',
-              )}
-            >
-              <Layers className="size-3.5" aria-hidden />
-              分组：{primaryLabel}
-            </button>
-          </Tooltip>
-          <Tooltip content="折叠/展开当前所有泳道">
-            <span className="inline-flex shrink-0 items-center gap-0.5">
-              <button
-                type="button"
-                disabled={!grouping.grouped || grouping.laneKeys.length === 0}
-                onClick={() => grouping.onToggleAll(true)}
-                aria-label="全部折叠"
-                className="rounded-control p-1.5 text-text-secondary hover:bg-bg-muted hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <ChevronsDownUp className="size-4" aria-hidden />
-              </button>
-              <button
-                type="button"
-                disabled={!grouping.grouped || grouping.laneKeys.length === 0}
-                onClick={() => grouping.onToggleAll(false)}
-                aria-label="全部展开"
-                className="rounded-control p-1.5 text-text-secondary hover:bg-bg-muted hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <ChevronsUpDown className="size-4" aria-hidden />
-              </button>
-            </span>
-          </Tooltip>
-        </div>
-      ) : null}
-
       {/* 0919 4.11 + v0.0.4 W5 §6.4.1：看板/列表/流程图三视图切换。
           列表是独立路由（点击即跳转），看板/流程图是本页显示模式（记忆到用户偏好 prefs `board.view`）；
           旧的「列表视图」「依赖图」两个按钮由这一段取代（需求抽屉里的依赖图弹窗入口不动）。 */}
       {graphTasks ? <DisplaySegmented /> : null}
 
       <CreateMenu onCreate={onCreate} />
-
-      {grouping ? <GroupSelector open={groupingOpen} onClose={() => setGroupingOpen(false)} /> : null}
     </div>
   );
 }

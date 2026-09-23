@@ -45,10 +45,51 @@ function normalize(partial: Partial<BoardFilterPrefs> | null | undefined): Board
 export function readBoardFilterPrefs(): BoardFilterPrefs {
   try {
     const raw = window.localStorage.getItem(BOARD_FILTER_PREFS_KEY);
-    if (!raw) return DEFAULT_BOARD_FILTER_PREFS;
+    if (!raw) {
+      // B13-② 一次性迁移：旧泳道偏好（primary/secondary/laneFilter）翻译成过滤槽。
+      const migrated = migrateFromGroupingPrefs();
+      if (migrated) {
+        try {
+          window.localStorage.setItem(BOARD_FILTER_PREFS_KEY, JSON.stringify(migrated));
+        } catch {
+          // 回写失败不致命：本次会话按迁移值运行。
+        }
+        return migrated;
+      }
+      return DEFAULT_BOARD_FILTER_PREFS;
+    }
     return normalize(JSON.parse(raw) as Partial<BoardFilterPrefs>);
   } catch {
     return DEFAULT_BOARD_FILTER_PREFS;
+  }
+}
+
+/** 旧泳道偏好键（useGroupingState）；status/none 主分组＝本来就是经典视图，不迁移。 */
+const GROUPING_LOCAL_KEY = 'atb.board.grouping';
+
+function migrateFromGroupingPrefs(): BoardFilterPrefs | null {
+  try {
+    const raw = window.localStorage.getItem(GROUPING_LOCAL_KEY);
+    if (!raw) return null;
+    const legacy = JSON.parse(raw) as { primary?: unknown; secondary?: unknown; laneFilter?: unknown };
+    const primary = legacy.primary;
+    if (!isFilterableDim(primary) || primary === 'none' || primary === 'status') return null;
+    const secondary = legacy.secondary;
+    const values = Array.isArray(legacy.laneFilter)
+      ? legacy.laneFilter.filter((v): v is string => typeof v === 'string')
+      : [];
+    return normalize({
+      slotA: { dim: primary, values },
+      slotB: {
+        dim:
+          isFilterableDim(secondary) && secondary !== 'none' && secondary !== 'status' && secondary !== primary
+            ? secondary
+            : 'none',
+        values: [],
+      },
+    });
+  } catch {
+    return null;
   }
 }
 
@@ -94,6 +135,8 @@ export interface BoardFilterState extends BoardFilterPrefs {
   setSlotDim: (slot: FilterSlotId, dim: GroupDimensionKey) => void;
   toggleValue: (slot: FilterSlotId, key: string) => void;
   clearSlot: (slot: FilterSlotId) => void;
+  /** 程序化整槽设值（分组页「打开」直达某分组的过滤态）。 */
+  selectSlotValues: (slot: FilterSlotId, dim: GroupDimensionKey, values: readonly string[]) => void;
   reset: () => void;
 }
 
@@ -118,6 +161,12 @@ export const useBoardFilterStore = create<BoardFilterState>((set) => ({
   clearSlot: (slot) =>
     set((state) => {
       const next = normalize({ ...state, [slot]: { ...state[slot], values: [] } });
+      persist(next);
+      return next;
+    }),
+  selectSlotValues: (slot, dim, values) =>
+    set((state) => {
+      const next = normalize({ ...state, [slot]: { dim, values: [...values] } });
       persist(next);
       return next;
     }),
