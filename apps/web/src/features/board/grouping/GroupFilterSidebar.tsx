@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { SlidersHorizontal } from 'lucide-react';
+import { PanelLeftClose, SlidersHorizontal } from 'lucide-react';
 import { Drawer, Select } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { GROUP_DIMENSIONS, type GroupDimensionKey, type GroupableTask } from './dimensions';
@@ -13,23 +13,65 @@ import {
 } from './filter-model';
 import { useBoardFilterStore } from './useBoardFilterStore';
 
+/** 折叠偏好键：只影响本侧栏占不占位，不进过滤偏好（board.filter）本体。 */
+const RAIL_COLLAPSED_KEY = 'atb.board.filter.collapsed';
+/** globals.css `--breakpoint-win-lg`，JS 侧唯一需要断点数值的地方。 */
+const WIN_LG_QUERY = '(min-width: 1200px)';
+
+function readRailCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(RAIL_COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * B13 分组过滤侧栏：两个维度槽（A/B）各自「维度选择 + 值多选」，
  * 徽标行给出 总数 / 执行中 / 待审核，点选即过滤、再点取消。
- * ≥win-lg 内联在列区左侧；窄窗收成竖轨，点开抽屉。
+ * ≥win-lg 默认内联在列区左侧、可手动折叠；窄窗或折叠后收成竖轨：
+ * ≥win-lg 点竖轨展开侧栏，窄窗点竖轨开抽屉。
  */
 export function GroupFilterSidebar({ tasks }: { tasks: readonly GroupableTask[] }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(readRailCollapsed);
+  const [wide, setWide] = useState(() => window.matchMedia(WIN_LG_QUERY).matches);
   const active = useBoardFilterStore(
     useShallow((state) => hasActiveFilter({ slotA: state.slotA, slotB: state.slotB })),
   );
+
+  useEffect(() => {
+    const mq = window.matchMedia(WIN_LG_QUERY);
+    const onChange = (event: MediaQueryListEvent) => setWide(event.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  const toggleCollapsed = (next: boolean): void => {
+    setCollapsed(next);
+    try {
+      window.localStorage.setItem(RAIL_COLLAPSED_KEY, next ? '1' : '0');
+    } catch {
+      // 写失败仅丢偏好，不提示。
+    }
+  };
+
+  const onRailClick = (): void => {
+    // 窄窗竖轨点击开抽屉；≥win-lg（侧栏被手动折叠）点击展开侧栏。
+    if (wide) {
+      toggleCollapsed(false);
+    } else {
+      setDrawerOpen(true);
+    }
+  };
+
   return (
     <>
-      <div className="flex w-9 shrink-0 flex-col items-center border-r border-border pt-2 win-lg:hidden">
+      <div className={cn('flex w-9 shrink-0 flex-col items-center border-r border-border pt-2', !collapsed && 'win-lg:hidden')}>
         <button
           type="button"
-          aria-label="打开分组过滤"
-          onClick={() => setDrawerOpen(true)}
+          aria-label={collapsed && wide ? '展开分组侧栏' : '打开分组过滤'}
+          onClick={onRailClick}
           className="relative rounded-control p-1.5 text-text-secondary hover:bg-bg-muted hover:text-text-primary"
         >
           <SlidersHorizontal className="size-4" aria-hidden />
@@ -38,7 +80,22 @@ export function GroupFilterSidebar({ tasks }: { tasks: readonly GroupableTask[] 
           ) : null}
         </button>
       </div>
-      <aside className="atb-scroll hidden w-56 shrink-0 flex-col overflow-y-auto border-r border-border px-3 pb-3 pt-3 win-lg:flex">
+      <aside
+        className={cn(
+          'atb-scroll hidden w-56 shrink-0 flex-col overflow-y-auto border-r border-border px-3 pb-3 pt-2',
+          !collapsed && 'win-lg:flex',
+        )}
+      >
+        <div className="mb-1 flex items-center justify-end">
+          <button
+            type="button"
+            aria-label="折叠分组侧栏"
+            onClick={() => toggleCollapsed(true)}
+            className="rounded-control p-1.5 text-text-secondary hover:bg-bg-muted hover:text-text-primary"
+          >
+            <PanelLeftClose className="size-4" aria-hidden />
+          </button>
+        </div>
         <FilterPanel tasks={tasks} />
       </aside>
       <Drawer
