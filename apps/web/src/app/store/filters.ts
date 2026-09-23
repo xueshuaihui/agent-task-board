@@ -16,6 +16,10 @@ export interface FilterState {
   priority: number[];
   type: string[];
   tags: string[];
+  /** B15：看板统一过滤维度（服务端多值参数，维内 OR；`none` = 该维未设置）。 */
+  groups: string[];
+  requirements: string[];
+  agents: string[];
   /** 键为字段 key（^[a-z][a-z0-9_]{1,31}$），值为候选项数组。 */
   customFields: Record<string, string[]>;
   /** 仅列表页使用。 */
@@ -27,9 +31,25 @@ export interface FilterState {
   setKeyword: (keyword: string) => void;
   setArchived: (archived: ArchivedFilter) => void;
   toggleNumber: (key: 'priority', value: number) => void;
-  toggleString: (key: 'type' | 'tags' | 'status', value: string) => void;
+  toggleString: (
+    key: 'type' | 'tags' | 'status' | 'groups' | 'requirements' | 'agents',
+    value: string,
+  ) => void;
+  /** 程序化批量设值（URL 水合、筛选弹层整维设置、分组页直达）；数组空 = 该维不过滤。 */
+  setDimension: (key: 'groups' | 'requirements' | 'agents', values: string[]) => void;
   setCustomField: (fieldKey: string, values: string[]) => void;
-  clearGroup: (key: 'priority' | 'type' | 'tags' | 'status' | 'customFields' | 'keyword') => void;
+  clearGroup: (
+    key:
+      | 'priority'
+      | 'type'
+      | 'tags'
+      | 'status'
+      | 'customFields'
+      | 'keyword'
+      | 'groups'
+      | 'requirements'
+      | 'agents',
+  ) => void;
   reset: () => void;
 }
 
@@ -38,6 +58,9 @@ const EMPTY = {
   priority: [] as number[],
   type: [] as string[],
   tags: [] as string[],
+  groups: [] as string[],
+  requirements: [] as string[],
+  agents: [] as string[],
   customFields: {} as Record<string, string[]>,
   status: [] as TaskStatus[],
   keyword: '',
@@ -60,6 +83,7 @@ export const useFilterStore = create<FilterState>((set) => ({
         ? { status: toggleIn(state.status, value as TaskStatus) }
         : { [key]: toggleIn(state[key], value) },
     ),
+  setDimension: (key, values) => set({ [key]: [...values] } as Pick<FilterState, typeof key>),
   setCustomField: (fieldKey, values) =>
     set((state) => {
       const next = { ...state.customFields };
@@ -86,6 +110,9 @@ export function toBoardQuery(state: FilterState): BoardQuery {
   if (state.priority.length) query.priority = state.priority;
   if (state.type.length) query.type = state.type;
   if (state.tags.length) query.tags = state.tags;
+  if (state.groups.length) query.groups = state.groups;
+  if (state.requirements.length) query.requirements = state.requirements;
+  if (state.agents.length) query.agents = state.agents;
   if (Object.keys(state.customFields).length) {
     query.custom_fields = { ...state.customFields };
   }
@@ -121,6 +148,9 @@ export function activeFilterCount(state: FilterState): number {
     state.priority.length +
     state.type.length +
     state.tags.length +
+    state.groups.length +
+    state.requirements.length +
+    state.agents.length +
     state.status.length +
     Object.keys(state.customFields).length +
     (state.keyword.trim() ? 1 : 0) +
@@ -133,7 +163,21 @@ export function activeFilterCount(state: FilterState): number {
 /** 从 hash 的查询串水合筛选（跳入列表页时用）；无相关参数时返回 null，调用方就别 reset。 */
 export function filtersFromSearch(
   search: URLSearchParams,
-): Partial<Pick<FilterState, 'view' | 'priority' | 'type' | 'tags' | 'status' | 'keyword' | 'archived'>> | null {
+): Partial<
+  Pick<
+    FilterState,
+    | 'view'
+    | 'priority'
+    | 'type'
+    | 'tags'
+    | 'groups'
+    | 'requirements'
+    | 'agents'
+    | 'status'
+    | 'keyword'
+    | 'archived'
+  >
+> | null {
   const patch: Partial<FilterState> = {};
   const view = search.get('view');
   if (isBoardView(view)) patch.view = view;
@@ -152,6 +196,12 @@ export function filtersFromSearch(
   if (type.length) patch.type = type;
   const tags = listFrom(search, 'tags');
   if (tags.length) patch.tags = tags;
+  const groups = listFrom(search, 'groups');
+  if (groups.length) patch.groups = groups;
+  const requirements = listFrom(search, 'requirements');
+  if (requirements.length) patch.requirements = requirements;
+  const agents = listFrom(search, 'agents');
+  if (agents.length) patch.agents = agents;
   const keyword = search.get('keyword');
   if (keyword) patch.keyword = keyword;
   const archived = search.get('archived');
@@ -185,6 +235,28 @@ export function taskListSearch(input: {
   if (input.archived && input.archived !== 'false') search.set('archived', input.archived);
   if (input.keyword) search.set('keyword', input.keyword);
   if (input.view) search.set('view', input.view);
+  const encoded = search.toString();
+  return encoded ? `?${encoded}` : '';
+}
+
+/**
+ * B15：看板过滤态 → `#/board` 的查询串（可分享、可书签）。只序列化服务端过滤维度；
+ * custom_fields 不进 URL（其 key 自由、值含逗号/空格，编解码收益低、坑多）。
+ */
+export function boardFilterSearch(
+  state: Pick<
+    FilterState,
+    'view' | 'priority' | 'type' | 'tags' | 'groups' | 'requirements' | 'agents'
+  >,
+): string {
+  const search = new URLSearchParams();
+  if (state.view !== 'all') search.set('view', state.view);
+  if (state.priority.length) search.set('priority', state.priority.join(','));
+  if (state.type.length) search.set('type', state.type.join(','));
+  if (state.tags.length) search.set('tags', state.tags.join(','));
+  if (state.groups.length) search.set('groups', state.groups.join(','));
+  if (state.requirements.length) search.set('requirements', state.requirements.join(','));
+  if (state.agents.length) search.set('agents', state.agents.join(','));
   const encoded = search.toString();
   return encoded ? `?${encoded}` : '';
 }
