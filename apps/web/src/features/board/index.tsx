@@ -25,6 +25,9 @@ import type { CardActions } from './card-actions';
 import { DeleteDialog, StopDialog } from './dialogs';
 import { FLY_BATCH_LIMIT, FLY_BATCH_SUPPRESS_MS, FLY_DROP_SUPPRESS_MS, markPendingMove, suppressFly } from './fly-motion';
 import { GroupedBoard } from './grouped-board';
+import { GroupFilterSidebar } from './grouping/GroupFilterSidebar';
+import { hasActiveFilter, taskMatchesFilter } from './grouping/filter-model';
+import { useBoardFilterStore } from './grouping/useBoardFilterStore';
 import { dropStates, dropVerdict } from './matrix';
 import { COLUMN_ORDER, isDefaultBoardView } from './model';
 import { useBoardMutations, type BoardMutations } from './mutations';
@@ -63,6 +66,34 @@ export function BoardPage() {
   const { overlayOf } = useRunOverlay();
 
   const columns = useMemo(() => mergeColumns(board.data?.columns), [board.data?.columns]);
+
+  /* --------------------------------------------- B13 分组即过滤（侧栏过滤态） */
+
+  const filterPrefs = useBoardFilterStore(
+    useShallow((state) => ({ slotA: state.slotA, slotB: state.slotB })),
+  );
+  /**
+   * 可见性在原始卡片上判：匹配只读 group_id/parent/tags/type/priority/agent_name/status，
+   * 与下方 groupableTasks 的展示富化（分组名/需求摘要）互不影响。
+   */
+  const visibleIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const column of columns) {
+      for (const card of column.tasks) {
+        if (taskMatchesFilter(toGroupable(card), filterPrefs)) set.add(card.id);
+      }
+    }
+    return set;
+  }, [columns, filterPrefs]);
+  const viewColumns = useMemo(
+    () =>
+      columns.map((column) => {
+        const tasks = column.tasks.filter((card) => visibleIds.has(card.id));
+        return tasks.length === column.tasks.length ? column : { ...column, tasks, count: tasks.length };
+      }),
+    [columns, visibleIds],
+  );
+
   /**
    * §5.2 回落规则 4：一轮数据重算里换列 ≥4 张（批量流转/导入/WS 重连全量刷）一律瞬时。
    * 对每份快照做 card→status 差分，命中即把本轮移动卡全部写进抑制名单——父组件先渲染，
@@ -83,12 +114,12 @@ export function BoardPage() {
   }, [columns]);
   const cards = useMemo(() => {
     const map = new Map<string, TaskCard>();
-    for (const column of columns) for (const card of column.tasks) map.set(card.id, card);
+    for (const column of viewColumns) for (const card of column.tasks) map.set(card.id, card);
     return map;
-  }, [columns]);
-  const total = columns.reduce((sum, column) => sum + column.tasks.length, 0);
+  }, [viewColumns]);
+  const total = viewColumns.reduce((sum, column) => sum + column.tasks.length, 0);
   /** 2.md 8.1：依赖图入口的数据 = 当前看板可见任务（六列拉平，泳道模式同源）。 */
-  const graphTasks = useMemo(() => columns.flatMap((column) => column.tasks), [columns]);
+  const graphTasks = useMemo(() => viewColumns.flatMap((column) => column.tasks), [viewColumns]);
 
   /* -------------------------------------------- v0.0.4 W5 流程图第三视图（§6.4.1） */
 
@@ -134,10 +165,16 @@ export function BoardPage() {
   );
   // 4.5 多分组过滤已由服务端完成（useBoardWithGroups），这里不再前端截一遍。
 
+  /** 侧栏过滤后的泳道输入（B13）：泳道视图与工具栏 laneKeys 同源。 */
+  const filteredGroupable = useMemo(
+    () => groupableTasks.filter((task) => taskMatchesFilter(task, filterPrefs)),
+    [groupableTasks, filterPrefs],
+  );
+
   /** 泳道结构与 GroupedBoard 内部同一套纯函数；这里算一份供工具栏拿 laneKeys。 */
   const groupedLanes = useMemo(() => {
     if (!grouped) return [];
-    const sorted = [...groupableTasks];
+    const sorted = [...filteredGroupable];
     if (grouping.laneSort === 'priority') sorted.sort((a, b) => a.priority - b.priority);
     else if (grouping.laneSort === 'updated_at')
       sorted.sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''));
@@ -150,7 +187,7 @@ export function BoardPage() {
     if (grouping.options.rememberOrder)
       built = applyLaneOrder(built, grouping.laneOrder[grouping.primary] ?? []);
     return filterLanes(built, grouping.laneFilter);
-  }, [grouped, groupableTasks, grouping]);
+  }, [grouped, filteredGroupable, grouping]);
   const laneKeys = useMemo(() => groupedLanes.map((lane) => lane.key), [groupedLanes]);
 
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -212,100 +249,105 @@ export function BoardPage() {
         graphTasks={graphTasks}
       />
 
-      {board.isError ? (
-        <EmptyState
-          className="mt-6"
-          icon={<CloudOff className="size-7" aria-hidden />}
-          title="看板读取失败"
-          description={errorMessage(board.error)}
-          action={
-            <Button variant="primary" icon={<RotateCcw className="size-4" />} onClick={() => void board.refetch()}>
-              重试
-            </Button>
-          }
-        />
-      ) : board.isPending ? (
-        <ColumnRow>
-          {COLUMN_ORDER.map((status) => (
-            <BoardColumnView
-              key={status}
-              column={emptyColumn(status)}
-              defs={defs}
-              actions={actions}
-              overlayOf={overlayOf}
-              defaultView
-              dropState={null}
-              isOver={false}
-              loading
-              onDraggingChange={ignoreDragging}
+      <div className="flex min-h-0 flex-1">
+        <GroupFilterSidebar tasks={groupableTasks} />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {board.isError ? (
+            <EmptyState
+              className="mt-6"
+              icon={<CloudOff className="size-7" aria-hidden />}
+              title="看板读取失败"
+              description={errorMessage(board.error)}
+              action={
+                <Button variant="primary" icon={<RotateCcw className="size-4" />} onClick={() => void board.refetch()}>
+                  重试
+                </Button>
+              }
             />
-          ))}
-        </ColumnRow>
-      ) : displayMode === 'flow' ? (
-        // §6.4.1 第三视图：整页画布替换列/泳道区，工具栏与筛选、分组切换器共享不动。
-        <FlowBoardView
-          tasks={graphTasks}
-          edges={dependencyEdges.edges}
-          edgesLoading={dependencyEdges.loading}
-          mutations={mutations}
-          onRequestDelete={setDeleteTarget}
-        />
-      ) : total === 0 && defaultView ? (
-        // 3.6：只有「整张看板空」才替掉六列；筛选后的空态由折叠列 + 工具栏那句文案表达。
-        <BoardEmpty onCreate={() => setQuick({ target: 'BACKLOG' })} />
-      ) : grouped ? (
-        // 7.3/7.4 泳道视图：主分组≠「状态」时走 GroupedBoard（含跨分组拖拽确认）。
-        <GroupedBoard
-          tasks={groupableTasks}
-          defs={defs}
-          actions={actions}
-          mutations={mutations}
-          overlayOf={overlayOf}
-        />
-      ) : (
-        <DndContext
-          sensors={sensors}
-          measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
-          onDragStart={onDragStart}
-          onDragOver={onDragOver}
-          onDragEnd={onDragEnd}
-          onDragCancel={clearDrag}
-        >
-          {/* §5.2：LayoutGroup 圈定 layoutId 共享作用域——六列同组才有跨列飞行，
-              浮层/抽屉/泳道里的同名元素不会被卷进来。 */}
-          <LayoutGroup>
+          ) : board.isPending ? (
             <ColumnRow>
-              {columns.map((column) => (
+              {COLUMN_ORDER.map((status) => (
                 <BoardColumnView
-                  key={column.status}
-                  column={column}
+                  key={status}
+                  column={emptyColumn(status)}
                   defs={defs}
                   actions={actions}
                   overlayOf={overlayOf}
-                  defaultView={defaultView}
-                  dropState={dropMap ? dropMap[column.status] : null}
-                  isOver={overColumn === columnDropId(column.status)}
-                  loading={false}
+                  defaultView
+                  dropState={null}
+                  isOver={false}
+                  loading
                   onDraggingChange={ignoreDragging}
                 />
               ))}
             </ColumnRow>
-          </LayoutGroup>
-
-          {/* 3.3 + 1.6：拖起来的是卡片克隆体（旋转 2deg + `shadow-card-drag`），原位置留虚线占位。 */}
-          <DragOverlay dropAnimation={{ duration: 160, easing: 'cubic-bezier(0.2, 0, 0, 1)' }}>
-            {activeCard ? (
-              <BoardCardView
-                card={activeCard}
-                defs={defs}
-                overlay={overlayOf(activeCard.id)}
-                actions={actions}
-                asOverlay
-              />
-            ) : null}
-          </DragOverlay>
-        </DndContext>
-      )}
+          ) : displayMode === 'flow' ? (
+            // §6.4.1 第三视图：整页画布替换列/泳道区，工具栏与筛选、分组切换器共享不动。
+            <FlowBoardView
+              tasks={graphTasks}
+              edges={dependencyEdges.edges}
+              edgesLoading={dependencyEdges.loading}
+              mutations={mutations}
+              onRequestDelete={setDeleteTarget}
+            />
+          ) : total === 0 && defaultView && !hasActiveFilter(filterPrefs) ? (
+            // 3.6：只有「整张看板空」才替掉六列；筛选后的空态由折叠列 + 工具栏那句文案表达。
+            <BoardEmpty onCreate={() => setQuick({ target: 'BACKLOG' })} />
+          ) : grouped ? (
+            // 7.3/7.4 泳道视图：主分组≠「状态」时走 GroupedBoard（含跨分组拖拽确认）。
+            <GroupedBoard
+              tasks={filteredGroupable}
+              defs={defs}
+              actions={actions}
+              mutations={mutations}
+              overlayOf={overlayOf}
+            />
+          ) : (
+            <DndContext
+              sensors={sensors}
+              measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+              onDragStart={onDragStart}
+              onDragOver={onDragOver}
+              onDragEnd={onDragEnd}
+              onDragCancel={clearDrag}
+            >
+              {/* §5.2：LayoutGroup 圈定 layoutId 共享作用域——六列同组才有跨列飞行，
+                  浮层/抽屉/泳道里的同名元素不会被卷进来。 */}
+              <LayoutGroup>
+                <ColumnRow>
+                  {viewColumns.map((column) => (
+                    <BoardColumnView
+                      key={column.status}
+                      column={column}
+                      defs={defs}
+                      actions={actions}
+                      overlayOf={overlayOf}
+                      defaultView={defaultView}
+                      dropState={dropMap ? dropMap[column.status] : null}
+                      isOver={overColumn === columnDropId(column.status)}
+                      loading={false}
+                      onDraggingChange={ignoreDragging}
+                    />
+                  ))}
+                </ColumnRow>
+              </LayoutGroup>
+    
+              {/* 3.3 + 1.6：拖起来的是卡片克隆体（旋转 2deg + `shadow-card-drag`），原位置留虚线占位。 */}
+              <DragOverlay dropAnimation={{ duration: 160, easing: 'cubic-bezier(0.2, 0, 0, 1)' }}>
+                {activeCard ? (
+                  <BoardCardView
+                    card={activeCard}
+                    defs={defs}
+                    overlay={overlayOf(activeCard.id)}
+                    actions={actions}
+                    asOverlay
+                  />
+                ) : null}
+              </DragOverlay>
+            </DndContext>
+          )}
+        </div>
+      </div>
 
       <QuickCreateDialog state={quick} mutations={mutations} onClose={closeQuick} />
       <StopDialog card={stopTarget} mutations={mutations} onClose={() => setStopTarget(null)} />
