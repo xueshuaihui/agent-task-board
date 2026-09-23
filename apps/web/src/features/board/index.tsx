@@ -32,6 +32,8 @@ import { COLUMN_ORDER, isDefaultBoardView } from './model';
 import { useBoardMutations, type BoardMutations } from './mutations';
 import { QuickCreateDialog, type QuickCreateTarget } from './quick-create';
 import { FlowBoardView } from './flow/FlowBoardView';
+import './filter-prefs';
+import { useBoardFilterUrlSync } from './filter-url-sync';
 import { useViewPrefsStore } from './flow/view-prefs';
 import { useDependencyEdges } from '../dependency-graph/useDependencyGraph';
 import { BoardToolbar } from './toolbar';
@@ -49,6 +51,8 @@ import { useRunOverlay } from './use-run-overlay';
  */
 export function BoardPage() {
   const toast = useToast();
+  // B15-②c：过滤态 ↔ #/board?... 双向同步（URL 优先于设备偏好，之后 store 回写 URL）。
+  useBoardFilterUrlSync();
   // 整份筛选状态进依赖：`toBoardQuery` 每次调用都新建对象，不 memo 就等于每次渲染
   // 换一次 query key（每帧重取 `/board`）。
   const filters = useFilterStore();
