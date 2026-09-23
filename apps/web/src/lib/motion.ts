@@ -1,7 +1,7 @@
 /**
  * motion（framer-motion 继任者）共享常量 —— docs/motion-spec.md §3.2。
  * 弹簧用于布局/弹出类动画，transitions 用于淡入/位移类入场。
- * 数值与 globals.css 1.6 节注释一一对应，改两处要同步。
+ * 数值权威见 docs/motion-spec.md §3（本文件为其 JS 侧唯一落点）。
  */
 import type { Transition, Variants } from 'motion/react';
 

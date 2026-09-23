@@ -3,7 +3,7 @@ import { cn } from '@/lib/cn';
 
 export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
-  /** 1.4：卡片默认 `shadow-card`，悬停 `shadow-card-hover`（1.6 的 120ms ease-out）。 */
+  /** 1.4：卡片默认 `shadow-card`，悬停 `shadow-card-hover`（motion-spec §1-L1：140ms ease-settle）。 */
   hoverable?: boolean;
 }
 

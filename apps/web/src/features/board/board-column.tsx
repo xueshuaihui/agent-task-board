@@ -122,6 +122,9 @@ export function BoardColumnView({
                         layoutId={boardCardLayoutId(card.id)}
                         initial={false}
                         transition={springs.gentle}
+                        // exit 兜底：TTL 内该卡又从目标列离开且未拿到新一轮 source 标记时
+                        // （快照把它移去第三列）按方案 B 常规淡出，不能瞬时消失。
+                        exit={{ opacity: 0, y: 8, transition: { duration: 0.14, ease: 'easeOut' } }}
                       >
                         <DraggableCard
                           card={card}

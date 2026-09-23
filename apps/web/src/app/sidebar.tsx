@@ -33,7 +33,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'z-30 flex shrink-0 flex-col border-r border-border bg-bg-surface transition-[width] duration-200 ease-out',
+        'z-30 flex shrink-0 flex-col border-r border-border bg-bg-surface transition-[width] duration-200 ease-settle',
         collapsed ? 'w-16' : 'w-[200px]',
       )}
     >

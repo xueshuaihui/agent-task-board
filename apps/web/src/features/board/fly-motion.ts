@@ -12,7 +12,9 @@ import type { TaskStatus } from '@/api/types';
  * layoutId 会造成旧列淡出残影与飞行双动画并存——正是 §5.2 禁止的鬼影），
  * 按回落规则天然退化为方案 B（旧列 exit 140ms + 新列单项淡入，即现有 itemVariants 路径）。
  *
- * 五条回落规则的落点：
+ * 六条回落规则的落点：
+ * - 规则 6（WS/重取驱动的换列）：即上方「无先手窗口」段——实现上等价于「不登记标记」，
+ *   与 motion-spec §5.2 触发面注记同口径；
  * - 规则 1（目标列未渲染）：经典六列视图里换列后目标列必然非空、`columnCollapsed` 判不折叠；
  *   泳道视图整体不参与飞行（折叠泳道 display 即卸载，全部走方案 B）；
  * - 规则 2（跨滚动容器）：`layoutScroll` 挂在横向滚动行与列内纵向滚动容器上尽力修正，
@@ -79,8 +81,18 @@ function isSuppressed(taskId: string, now: number): boolean {
 export function markPendingMove(taskId: string, from: string, to: TaskStatus): void {
   if (!FLY_ENABLED || from === to) return;
   const now = Date.now();
+  sweepExpired(now);
   if (isSuppressed(taskId, now)) return;
   moveMarks.set(taskId, { from, to, until: now + MARK_TTL_MS });
+}
+
+/**
+ * 全量清过期条目：两张表只被「还在盘面上的卡」惰性读取（isSuppressed/flyRole），
+ * 被删除/归档的卡留下的条目永远等不到那次惰性清理，在用户动作入口顺手全量扫一次。
+ */
+function sweepExpired(now: number): void {
+  for (const [id, mark] of moveMarks) if (now >= mark.until) moveMarks.delete(id);
+  for (const [id, until] of suppressFlyUntil) if (now >= until) suppressFlyUntil.delete(id);
 }
 
 /** 写入/延长抑制窗口（规则 4、5 共用）。后写覆盖更晚的过期时间。 */

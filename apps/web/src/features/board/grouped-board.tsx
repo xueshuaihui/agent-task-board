@@ -202,8 +202,9 @@ export function GroupedBoard({ tasks, defs, actions, mutations, overlayOf }: Gro
         return;
       }
       if (id.startsWith('task:')) {
-        // §5.2 规则 5：泳道模式拖拽源同样写抑制名单（落位动画唯一语言，且防确认弹窗
-        // 后的 `actions.move` 在 1.5s 标记寿命内切回六列视图时误触发飞行）。
+        // §5.2 规则 5：泳道模式拖拽源同样写抑制名单，覆盖与经典视图完全相同的
+        // dropAnimation 同帧窗口（210ms），block-move 确认弹窗后的 `actions.move`
+        // 不在抑制期内——那是拖拽早已落定的独立用户确认，按 direct 路径参与飞行。
         suppressFly(id.slice('task:'.length), FLY_DROP_SUPPRESS_MS);
         cross.onDragEnd(event);
       }
