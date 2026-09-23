@@ -40,6 +40,21 @@ export function reviewTargetRun(
   );
 }
 
+/**
+ * 6.10.1 的产物分区口径：`artifacts.run_id NOT NULL`，产物只挂在被审核的那次 Run 上。
+ * 但「驳回重跑 / 租约回收后重领」会让产物留在上一个 Run（复现见 beta.6 B8）：审核表单
+ * 若只读目标 Run 的 artifacts 就显示 0，用户感知「明明有产物、审核里却没有」。
+ * 展示层回退：目标 Run 无产物时取该任务最近一次有产物的 Run（items 已按 startedAt desc），
+ * 由调用方标注归属。纯展示，不改写路径与审核提交口径。
+ */
+export function artifactsSourceRun(
+  runs: readonly TaskRun[] | undefined,
+  target: TaskRun | null,
+): TaskRun | null {
+  if (!target || target.artifacts.length > 0) return target;
+  return runs?.find((run) => run.artifacts.length > 0) ?? target;
+}
+
 /** 6.5 第 5 条：`review_reuse_last_opinion` 预填的是「该任务上一次审核的三字段」。 */
 export function lastReview(reviews: readonly Review[] | undefined): Review | null {
   return reviews && reviews.length > 0 ? (reviews[0] ?? null) : null;

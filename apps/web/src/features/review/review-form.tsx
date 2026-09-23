@@ -65,7 +65,7 @@ import {
   type ReviewDraft,
 } from './drafts';
 import { notifyReviewSubmitted } from './queue';
-import { lastReview, reviewHistory, reviewTargetRun, useTaskReviews, useTaskRuns } from './queries';
+import { artifactsSourceRun, lastReview, reviewHistory, reviewTargetRun, useTaskReviews, useTaskRuns } from './queries';
 
 /**
  * 6.5 / 8.4 审核表单。原型 5.3：与审核页右栏是「同一组件、两处外壳」——
@@ -288,7 +288,9 @@ function ReviewFormBody({
 
   // 6.10.3 的上限走同一个设置项（20.9），与详情抽屉一致，审核表单不自立第二口径。
   const maxMb = settings.data?.artifact_max_mb ?? 20;
-  const artifacts = run?.artifacts ?? [];
+  // B8：目标 Run 无产物时回退到最近一次有产物的 Run，展示层标注归属，不空屏。
+  const artifactRun = artifactsSourceRun(runs.data?.items, run);
+  const artifacts = artifactRun?.artifacts ?? [];
   // 原型 5.3：`diff` 类单独成块内嵌预览，其余进「其他产物」行（下载 / 浏览器打开 / 预览）。
   const diffArtifacts = artifacts.filter((item) => item.type === 'diff');
   const otherArtifacts = artifacts.filter((item) => item.type !== 'diff');
@@ -440,6 +442,12 @@ function ReviewFormBody({
         </Card>
 
         {/* 原型 5.3 上半区：diff 内嵌预览 + 其他产物的动作按钮，都复用抽屉那套已建好的预览器。 */}
+        {artifactRun && run && artifactRun.id !== run.id ? (
+          <p className="-mt-2 text-aux text-text-tertiary">
+            本次执行没有回传产物；以下为该任务最近一次有产物的执行（第
+            {artifactRun.run_number ?? '?'} 次 · <Mono>{artifactRun.id}</Mono>）。
+          </p>
+        ) : null}
         {diffArtifacts.length > 0 ? (
           <Section title="diff 预览">
             <div className="flex flex-col gap-2">
