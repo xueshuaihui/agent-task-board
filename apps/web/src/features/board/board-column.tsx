@@ -24,7 +24,7 @@ export interface BoardColumnViewProps {
   defs: readonly FieldDef[];
   actions: CardActions;
   overlayOf: (id: string) => RunOverlay;
-  /** 3.1：默认视图下的空列仍占 280px。 */
+  /** 3.1：默认视图下的空列仍占一列宽（弹性等分，最小 180px）。 */
   defaultView: boolean;
   /** 拖拽开始时按卡片状态算出的该列落点态；空闲时为 null（PRD 7.2 首条）。 */
   dropState: Verdict | null;
@@ -35,7 +35,8 @@ export interface BoardColumnViewProps {
 
 /**
  * 3.1/3.2 一列：44px 列头固定 + 列内纵向滚动 + 列底常驻入口。
- * 列宽三档（11.1）：≥1440 与 <1200 用 280px，1200–1440 用 240px；折叠 40px 竖条。
+ * 列宽（B7 改版）：`flex-1 basis-0` 等分铺满容器、最小 180px 兜底，窗口变窄放不下时
+ * 由 `ColumnRow` 的 `overflow-x-auto` 横向滚动；折叠态仍是 40px 竖条定宽不参与弹性。
  */
 export function BoardColumnView({
   column,
@@ -64,8 +65,8 @@ export function BoardColumnView({
       ref={setNodeRef}
       aria-label={statusLabel(column.status)}
       className={cn(
-        'relative flex h-full min-h-0 shrink-0 flex-col rounded-card transition-[width] duration-200 ease-settle',
-        collapsed ? 'w-column-collapsed' : 'w-column win-lg:w-column-narrow win-xl:w-column',
+        'relative flex h-full min-h-0 flex-col rounded-card transition-[width] duration-200 ease-settle',
+        collapsed ? 'w-column-collapsed shrink-0' : 'min-w-[180px] flex-1',
         dropActive ? 'border-2 border-dashed' : 'border-2 border-transparent',
         dropActive && forbidden && 'border-solid border-status-failed bg-status-failed-soft',
         dropActive && highlighted && 'border-primary bg-primary-light',

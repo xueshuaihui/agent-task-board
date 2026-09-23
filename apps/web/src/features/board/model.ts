@@ -55,8 +55,9 @@ export function neighbourColumn(from: string, step: 1 | -1): TaskStatus | null {
 
 /**
  * 3.1 折叠规则：列内无可渲染卡片 → 40px 竖条。
- * 唯一例外在默认视图（`view=all` 且无筛选）：除「异常/失败」外的五列即使为空也保持 280px 占位，
- * 因为默认视图里的空列是「这一类确实没活」的信息，视图预设/筛选下的空列只是噪声。
+ * 唯一例外在默认视图（`view=all` 且无筛选）：除「异常/失败」外的五列即使为空也保持占一列宽
+ * （B7 起为弹性等分，不再是 280px 定档），因为默认视图里的空列是「这一类确实没活」的信息，
+ * 视图预设/筛选下的空列只是噪声。
  */
 export function isDefaultBoardView(filters: Pick<FilterState, 'view' | 'priority' | 'type' | 'tags' | 'customFields'>): boolean {
   return (

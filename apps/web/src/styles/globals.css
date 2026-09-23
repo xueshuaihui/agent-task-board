@@ -118,8 +118,8 @@
   --shadow-node: 0 1px 3px rgb(20 22 34 / 0.08);
 
   /* —— 1.5 尺寸档 —— */
-  --container-column: 280px;
-  --container-column-narrow: 240px;
+  /* B7：看板列宽改弹性等分（flex-1 + min-w-[180px]），旧 280/240 定档 token 无消费者已删；
+     折叠竖条仍定宽参与布局，保留。 */
   --container-column-collapsed: 40px;
   --container-card: 248px;
   --container-drawer: 640px;

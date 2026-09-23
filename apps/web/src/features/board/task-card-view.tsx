@@ -35,8 +35,8 @@ import type { CardActions } from './card-actions';
 import { useLeaseTick, type RunOverlay } from './use-run-overlay';
 
 /**
- * 3.3 卡片：248px 宽（= 列宽 280px − 左右 16px 内边距，所以这里写 `w-full`，
- * 11.1 的 240px 窄列档自动跟着变 208px）、圆角 8px、12px 内边距、左侧 3px 状态条、
+ * 3.3 卡片：宽度 `w-full` 跟随列宽（B7 起列宽 flex 等分、最小 180px，卡片最小约 148px，
+ * 行内文本靠 truncate/flex-wrap 兜底）、圆角 8px、12px 内边距、左侧 3px 状态条、
  * 最小高 96px。六个状态共用同一副骨架，只在右上角徽标与底行上分叉。
  */
 
@@ -116,7 +116,7 @@ export const BoardCardView = memo(function BoardCardView({
       <span aria-hidden className={cn('absolute left-0 top-0 h-full w-[3px] rounded-l-card', style.bar)} />
 
       <header className="flex items-center gap-1">
-        <span className="font-mono text-code text-text-tertiary">{card.id}</span>
+        <span className="min-w-0 truncate font-mono text-code text-text-tertiary">{card.id}</span>
         <span className="min-w-0 flex-1" />
         {status === 'RUNNING' ? <LeaseBadge card={card} overlay={overlay} /> : null}
         {status === 'REVIEW' ? <Bell className="size-3.5 shrink-0 text-status-review" aria-label="待审核" /> : null}

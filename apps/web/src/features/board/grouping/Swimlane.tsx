@@ -71,7 +71,9 @@ function DroppableColumn({
         // 与经典列同构的高度约束：列容器封顶（视口比例，列头固定不缩），卡片区
         // `min-h-0 flex-1 overflow-y-auto` 独立出滚动条——卡多时列内滚，不把整条泳道
         // 撑到几百卡高；列本身仍是 dnd-kit 的 droppable 节点，落点矩形随之封顶（更稳）。
-        'flex max-h-[60vh] w-[280px] shrink-0 flex-col rounded-lg bg-bg-app',
+        // B7：列宽与经典列同步动态化——行内等分铺满（flex-1 basis-0），最小 180px，
+        // 分组多/窗口窄放不下时由行容器 `overflow-x-auto` 横向滚动兜底。
+        'flex max-h-[60vh] min-w-[180px] flex-1 flex-col rounded-lg bg-bg-app',
         droppable.isOver && 'bg-bg-muted',
       )}
       data-lane={laneKey}

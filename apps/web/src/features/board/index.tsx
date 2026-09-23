@@ -350,7 +350,8 @@ function useCardActions(
 /* --------------------------------------------------------------- 布局件 */
 
 function ColumnRow({ children }: { children: ReactNode }) {
-  // 3.1：整行横向滚动、列宽不压缩；纵向滚动在每列内部（列头 44px 固定）。
+  // 3.1：纵向滚动在每列内部（列头 44px 固定）；B7 起列宽弹性等分，
+  // `overflow-x-auto` 只在窗口窄到放不下全部列的最小宽+间距时兜底横滚。
   return (
     <div className="atb-scroll flex min-h-0 flex-1 items-stretch gap-4 overflow-x-auto pb-2 pt-3">
       {children}
