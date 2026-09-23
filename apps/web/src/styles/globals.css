@@ -437,3 +437,34 @@
   border: 1px solid var(--color-primary);
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
+
+/* ============== Toast 动效收口（motion-spec §4.6 / §9-P1-9） ==============
+ * sonner v2 的 toast 出入场是纯状态驱动 CSS（li 上 data-mounted/data-removed
+ * 切 --y + opacity，内置 400ms 默认缓动、-100% 离屏位移）。若在卡片根上自写
+ * keyframes 会和 li 的 transform 位移双写打架，故改为用比 sonner 内置规则更高
+ * 特异度的选择器覆盖状态规则（不引入 keyframes）：
+ *   入场 = y -8px→0 + 淡入 200ms ease-emphasis；退场 = 纯淡出 140ms。
+ * 停留时长（2.4/4/6s）与顶部居中位置现状不变。
+ * reduced-motion：以下均为普通 transition 声明，被本文件全局
+ * prefers-reduced-motion 的 transition-duration 0.01ms !important 兜住。 */
+[data-sonner-toaster] [data-sonner-toast][data-mounted='false'] {
+  --y: translateY(-8px);
+}
+[data-sonner-toaster] [data-sonner-toast] {
+  transition:
+    transform 200ms var(--ease-emphasis),
+    opacity 200ms var(--ease-emphasis),
+    height 400ms,
+    box-shadow 200ms;
+}
+/* 拖拽跟随必须瞬时：恢复 sonner 原 `transition: none` 意图（被上一条压过） */
+[data-sonner-toaster] [data-sonner-toast][data-swiping='true'] {
+  transition: none;
+}
+/* 退场：最前侧 toast 不再飞出屏幕（--y 归 0 保持原位），只淡出 140ms */
+[data-sonner-toaster]
+  [data-sonner-toast][data-removed='true'][data-front='true'][data-swipe-out='false']:not([data-expanded='true']) {
+  --y: translateY(0);
+  opacity: 0;
+  transition: opacity 140ms ease-out;
+}
