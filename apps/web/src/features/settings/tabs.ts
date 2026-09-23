@@ -12,6 +12,7 @@ export const SETTINGS_TAB_IDS = [
   'general',
   'view',
   'tokens',
+  'mcp',
   'fields',
   'templates',
   'data',
@@ -31,6 +32,8 @@ export const SETTINGS_TABS: readonly SettingsTabMeta[] = [
   { id: 'general', label: '通用' },
   { id: 'view', label: '视图' },
   { id: 'tokens', label: 'Token' },
+  // beta.6 B9：MCP 设置（#46 唤醒模式）从 Token Tab 里拆出来独立成项，紧跟其来源分组。
+  { id: 'mcp', label: 'MCP' },
   { id: 'fields', label: '字段定义' },
   { id: 'templates', label: '模板' },
   { id: 'data', label: '数据' },

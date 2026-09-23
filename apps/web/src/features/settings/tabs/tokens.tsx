@@ -1,10 +1,8 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronUp, Copy, Plus } from 'lucide-react';
 import { apiBase, errorMessage, fieldErrorsOf, isApiError } from '@/api';
-import { Button, Dialog, Input, RadioGroup, Tooltip } from '@/components/ui';
-import type { AgentToken, IssuedToken, McpWakeMode } from '@/api/types';
-import { MCP_WAKE_MODES } from '@/api/types';
-import { MCP_WAKE_MODE_LABEL } from '@/lib/labels';
+import { Button, Dialog, Input, Tooltip } from '@/components/ui';
+import type { AgentToken, IssuedToken } from '@/api/types';
 import { formatDateTime, formatRelative } from '@/lib/time';
 import { ChipEditor } from '../components/chip-editor';
 import { ConfirmDialog } from '../components/confirm-dialog';
@@ -20,7 +18,6 @@ import {
   splitTokens,
   useIssueToken,
   useRevokeToken,
-  useSettingsWriter,
   useTokens,
 } from '../queries';
 import { useCopy } from '../use-copy';
@@ -33,8 +30,8 @@ import { CAPABILITY_NAMESPACES, CAPABILITY_RE, TOKEN_NAME_RE } from '../utils';
  * 所以生成对话框分两段——表单段与「已生成」段，第二段关掉即销毁，界面上不留任何
  * 可以再读一次的入口；列表也没有「查看」列，这不是保守设计而是接口能力的上限。
  *
- * #46「MCP 设置」分组同样落在本 Tab：它改的是 MCP 侧的行为（唤醒口径与随每次
- * 工具调用下发的模式行），与 Token 是同一件事的两半——配好接入，再决定唤醒后保持多久。
+ * #46「MCP 设置」在 beta.6 B9 拆成了独立的 MCP Tab（`tabs/mcp.tsx`）：
+ * 它改的是 MCP 侧的长期行为，与「一次性明文凭证」不是一件事。
  */
 
 const COLS = 'grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_128px_96px_84px_64px]';
@@ -64,28 +61,11 @@ const CLIENTS: readonly { id: ClientKind; label: string }[] = [
   { id: 'cursor', label: 'Cursor' },
 ];
 
-/**
- * #46 两档控件的副标题（短标签在 `lib/labels.ts`，此处只补一句「会怎样」）。
- * 措辞与服务端 `buildMcpInstructions` 下发给 MCP 客户端的口径一致，别两处各说一套。
- */
-const WAKE_MODE_DESCRIPTION: Record<McpWakeMode, string> = {
-  single: '唤醒一轮，操作完成即退出工作模式',
-  continuous: '保持工作模式，直到说「退出贾维斯」',
-};
-
-const WAKE_MODE_OPTIONS = MCP_WAKE_MODES.map((mode) => ({
-  value: mode,
-  label: MCP_WAKE_MODE_LABEL[mode],
-  description: WAKE_MODE_DESCRIPTION[mode],
-}));
-
 export function TokensTab() {
   const tokens = useTokens();
   const copy = useCopy();
   const issue = useIssueToken();
   const revoke = useRevokeToken();
-  // #46：本 Tab 唯一的设置项（唤醒模式）走与其他 Tab 相同的即时写入通道。
-  const wake = useSettingsWriter();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [name, setName] = useState('');
@@ -241,25 +221,6 @@ export function TokensTab() {
         <p className="mt-1 text-aux text-text-tertiary">
           已吊销项保留展示、不提供重新启用（Run 归属要看得懂）；要恢复接入就新建一个 Token。
         </p>
-      </SettingSection>
-
-      <SettingSection
-        title="MCP 设置"
-        description="对已接入本 MCP 的 Agent 说「贾维斯，创建一个任务：明天发布」，它就直接用看板工具完成请求，不反问是否使用工具。"
-      >
-        <SettingRow
-          label="工作模式"
-          width="fluid"
-          hint="连续模式下唤醒后一直保持，说「退出贾维斯」才退出；与唤醒无关的普通对话不会触发看板工具。每次工具调用返回都会附带最新的「【贾维斯】当前会话模式」行，切换后下一次工具调用即生效，无需重连 MCP 客户端。"
-        >
-          <RadioGroup
-            layout="column"
-            value={wake.settings?.mcp_wake_mode ?? 'single'}
-            options={WAKE_MODE_OPTIONS}
-            onChange={(value) => wake.set('mcp_wake_mode', value as McpWakeMode)}
-          />
-        </SettingRow>
-        {wake.errorText ? <FormError>{wake.errorText}</FormError> : null}
       </SettingSection>
 
       <ConfirmDialog

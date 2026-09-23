@@ -7,6 +7,7 @@ import type { SettingsTabId } from './tabs';
 import { GeneralTab } from './tabs/general';
 import { ViewTab } from './tabs/view';
 import { TokensTab } from './tabs/tokens';
+import { McpTab } from './tabs/mcp';
 import { FieldsTab } from './tabs/fields';
 import { TemplatesTab } from './tabs/templates';
 import { DataTab } from './tabs/data';
@@ -30,6 +31,7 @@ const PANELS: Record<SettingsTabId, ComponentType> = {
   general: GeneralTab,
   view: ViewTab,
   tokens: TokensTab,
+  mcp: McpTab,
   fields: FieldsTab,
   templates: TemplatesTab,
   data: DataTab,
