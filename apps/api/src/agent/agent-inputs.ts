@@ -18,6 +18,7 @@ import {
   progressSchema,
   reportMcpCallSchema,
   reviewFeedbackQuerySchema,
+  updateSkillSchema,
   updateTaskSchema,
   waitForResumeSchema,
 } from '../contract/agent-schemas';
@@ -43,6 +44,7 @@ export type {
   CreateTaskToolInput,
   CreateTasksBatchInput,
   CreationRequestRefInput,
+  UpdateSkillInput,
   UpdateTaskInput,
 } from '../contract/agent-schemas';
 
@@ -74,6 +76,7 @@ export {
   progressSchema,
   reportMcpCallSchema,
   reviewFeedbackQuerySchema,
+  updateSkillSchema,
   updateTaskSchema,
   waitForResumeSchema,
 };

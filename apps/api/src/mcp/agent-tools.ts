@@ -22,6 +22,7 @@ import {
   progressSchema,
   reportMcpCallSchema,
   reviewFeedbackQuerySchema,
+  updateSkillSchema,
   updateTaskSchema,
   waitForResumeSchema,
   type AppendLogInput,
@@ -43,9 +44,11 @@ import {
   type ProgressInput,
   type ReportMcpCallInput,
   type ReviewFeedbackInput,
+  type UpdateSkillInput,
   type UpdateTaskInput,
   type WaitResumeInput,
 } from '../agent/agent-inputs';
+import { skillPatchFromUpdateInput } from '../contract/agent-schemas';
 import type { AgentQueryService } from '../agent/agent-query.service';
 import type { ClaimService } from '../agent/claim.service';
 import type { LeaseService } from '../agent/lease.service';
@@ -111,7 +114,9 @@ export interface AgentTool {
  * + v0.0.4 W8 §8.7 的 board.create_task（直建/静默两模式核心落库；light 决策闭环与
  * board.wait_for_confirmation、get_creation_status 归下一切片）
  * + v0.0.4 §16.1 的 update_task（全字段 PATCH：RUNNING 需持当前租约、BACKLOG/READY 免租约、
- * 其余状态拒并在错误里回显该走的链路；字段校验复用 TasksService 那一份，不写第二套）。
+ * 其余状态拒并在错误里回显该走的链路；字段校验复用 TasksService 那一份，不写第二套）
+ * + v0.0.4 §16.1 的 update_skill（技能全字段 PATCH：字段与守卫复用 SkillsService.patch 那一份，
+ * status/mcp_dependencies 不在可写面，默认技能 SKILL_READONLY，同样不写第二套）。
  * 业务逻辑全在 Agent 服务层，这里只做「工具名 → 服务方法」的映射，
  * 因此 REST 与 MCP 共用同一套校验与错误语义（13 章错误码只有一份实现）。
  */
@@ -224,6 +229,25 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
       run: async (args, auth) => {
         agentOf(auth);
         return ctx.skills.list(args as SkillListQuery);
+      },
+    },
+    // ------------------------------------------- v0.0.4 §16.1：Agent 侧的技能编辑（守卫与字段校验全在 SkillsService.patch，这里只做映射）
+    {
+      name: 'update_skill',
+      description:
+        '全字段 PATCH 编辑技能（§16.1）：name/description/category/tags/content/test_cases 都可改，只改你提交了的字段，' +
+        '与 UI 的 PATCH 面同一份校验与守卫（SkillsService.patch：分类越表拒并回显全量词表、子技能自引用/成环拒 SKILL_REF_SELF/SKILL_REF_CYCLE）。' +
+        '内置默认技能（source=default，随应用包更新）不可编辑，回 SKILL_READONLY。' +
+        'content / tags / test_cases 都是**整体覆盖**：改正文先 get_skill 拿当前 { blocks, entryBlockId }，改完整份回提，只给片段会清空其余块。' +
+        '发布/归档不在 agent 面：本工具没有 status（UI 的发布要先 POST /skills/:id/versions 出自增 semver 的快照，' +
+        'agent 面没有版本快照工具，只改状态会让 current_version 与 content 脱节），需要发布请由人在 UI 走版本快照；' +
+        'mcp_dependencies 同样不可写（与 UI 的 PATCH 面一致，它只在创建与版本创建里出现）。' +
+        '分类取值不确定先调 get_vocabulary（含 skill_categories 全量词表）',
+      input: updateSkillSchema,
+      run: async (args, auth) => {
+        agentOf(auth);
+        const input = args as UpdateSkillInput;
+        return ctx.skills.patch(input.skill_id, skillPatchFromUpdateInput(input));
       },
     },
     // ------------------------------------------- B6 词表只读工具：一次拿全口径，杜绝试错造测试数据
@@ -370,19 +394,31 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
  *     数值/字符串/数组给出 min-max 边界、invalid_type 给出期望类型）；
  *  2. 字段级 `.describe()` 文案（按 issue.path 回到 schema 上取），让 agent
  *     不查文档就知道这个字段该怎么填，从源头消灭试错式测试数据。
+ *
+ * §16.1 `update_skill` 补的第 3 件：`received`——zod 的 `invalid_value` issue 只带
+ * 可接受值、**不带收到的值**（实测：`{code,values,path,message}` 四键），光看词表 agent
+ * 不知道自己填成了什么。这里按 issue.path 从原始入参把它一起回显。
+ * 本函数是 **agent 入口这一层**的回显：REST `PATCH /skills/:id` 的 422 只有裸 zod 形状
+ * （`message: 'Invalid option: expected one of …'`），那份形状 UI 的控件回填在用，不许改，
+ * 所以词表全量 + 当前值的补法只加在这里（`skillCategorySchema` 与 UI 报错都不动）。
  */
 export function parseToolInput(schema: z.ZodTypeAny, args: unknown): unknown {
   const parsed = schema.safeParse(args ?? {});
   if (!parsed.success) {
+    const source = args ?? {};
     const details = parsed.error.issues.map((issue) => {
       const path = issue.path.map(String).join('.') || '(root)';
-      const hints = [expectedFromIssue(issue), findFieldDescription(schema, issue.path)].filter(
-        Boolean,
-      ) as string[];
+      // 根级 issue（refine / unrecognized_keys）没有可指的字段，不回填整个入参。
+      const received = issue.path.length > 0 ? readAtPath(source, issue.path) : undefined;
+      const hints = [
+        expectedFromIssue(issue, received),
+        findFieldDescription(schema, issue.path),
+      ].filter(Boolean) as string[];
       return {
         path,
         code: issue.code,
         message: issue.message,
+        ...(received === undefined ? {} : { received: previewValue(received) }),
         ...(hints.length > 0 ? { hint: hints.join('；') } : {}),
       };
     });
@@ -397,14 +433,39 @@ export function parseToolInput(schema: z.ZodTypeAny, args: unknown): unknown {
   return parsed.data;
 }
 
+/** 按 issue.path 回到原始入参里取实际收到的值；穿不进（union/越界）返回 undefined 不编造。 */
+function readAtPath(source: unknown, path: readonly PropertyKey[]): unknown {
+  let current: unknown = source;
+  for (const segment of path) {
+    if (typeof current !== 'object' || current === null) return undefined;
+    current = (current as Record<PropertyKey, unknown>)[segment];
+    if (current === undefined) return undefined;
+  }
+  return current;
+}
+
+/** 回显用的值预览：字符串直出、其余 JSON 化，统一截到 200 字符（content 可能是整份块模型）。 */
+function previewValue(value: unknown): string {
+  if (typeof value === 'string') return value.length > 200 ? `${value.slice(0, 200)}…` : value;
+  let text: string;
+  try {
+    text = JSON.stringify(value) ?? String(value);
+  } catch {
+    text = String(value);
+  }
+  return text.length > 200 ? `${text.slice(0, 200)}…` : text;
+}
+
 /** 从 zod 4 issue 的结构化数据里榨出「可接受值」提示；榨不出就返回 undefined 不编造。 */
-function expectedFromIssue(issue: z.ZodIssue): string | undefined {
+function expectedFromIssue(issue: z.ZodIssue, received?: unknown): string | undefined {
   // zod 4 各 issue 分支的附加字段（values/minimum/expected…）只在这里集中收窄一次。
   const data = issue as unknown as Record<string, unknown>;
   switch (issue.code) {
     case 'invalid_value':
       return Array.isArray(data.values)
-        ? `可接受值：${data.values.map((value) => JSON.stringify(value)).join(' | ')}`
+        ? `可接受值：${data.values.map((value) => JSON.stringify(value)).join(' | ')}${
+            received === undefined ? '' : `；当前收到 ${JSON.stringify(received)}`
+          }`
         : undefined;
     case 'invalid_type':
       return `期望类型 ${String(data.expected ?? '未知')}，实际收到 ${String(data.received ?? '未知')}`;

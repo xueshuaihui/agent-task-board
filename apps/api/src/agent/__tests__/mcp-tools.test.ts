@@ -21,7 +21,8 @@ let client: Client;
  * + W7 的 board.* 拆解五工具 + W8-a2 的创建闭环三工具
  * （board.create_task / get_creation_status / wait_for_confirmation，§8.7 r3）
  * + W8-a3 的 board.create_tasks_batch（§8.7 批量轻量版）
- * + B6 的 get_vocabulary（词表只读）+ §16.1 的 update_task（全字段 PATCH，守卫三支））。
+ * + B6 的 get_vocabulary（词表只读）+ §16.1 的 update_task / update_skill（全字段 PATCH：
+ * 任务侧守卫三支、技能侧复用 SkillsService.patch 的只读与引用环守卫）。
  * 顺序不敏感但一条都不能多、不能少。
  */
 const W6_TOOL_NAMES = [
@@ -50,6 +51,7 @@ const W6_TOOL_NAMES = [
   'report_mcp_call',
   'search_skills',
   'update_progress',
+  'update_skill',
   'update_task',
   'wait_for_resume',
 ];

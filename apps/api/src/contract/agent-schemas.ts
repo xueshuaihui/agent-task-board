@@ -7,6 +7,7 @@ import {
   TAGS_MAX_PER_TASK,
 } from './enums';
 import { capabilitySchema, idLike, taskPatchSchema, type TaskPatchInput } from './schemas';
+import { skillPatchSchema, type SkillPatchInput } from '../skills/skills.dto';
 import {
   ARTIFACT_TYPE_DESC,
   CAPABILITIES_ARRAY_DESC,
@@ -15,6 +16,7 @@ import {
   LOG_LEVELS,
   PRIORITY_FIELD_DESC,
   PRIORITY_LEVELS_TEXT,
+  SKILL_CATEGORY_DESC,
   TASK_TYPE_FILTER_DESC,
 } from './vocabulary';
 
@@ -255,6 +257,73 @@ export const reviewFeedbackQuerySchema = z.object({
 
 /** v0.0.4 W6 §16.1 技能工具与策略工具里的技能 ID（`skl_` + uuidv7，最长 40，不放 idLike 的 24）。 */
 export const skillIdParam = z.string().trim().min(1).max(64);
+
+/**
+ * v0.0.4 §16.1 `update_skill`：技能全字段 PATCH 的 Agent 面（与 `update_task` 同一个形状）。
+ *
+ * 可写字段**逐字取 REST 的 `skillPatchSchema.shape`**（同一批 zod 实例，不抄第二套校验；
+ * 只读守卫、分类越表、子技能引用环这些规则全部留在 `SkillsService.patch` 那一处实现里，
+ * UI 与 Agent 共用）。`.describe()` 只是给 tools/list 下发口径用的包装（zod 返回新实例，
+ * 不污染 UI 侧那份）。
+ *
+ * 两处**明确不可写**，理由不同：
+ *  - `status`：UI 的「发布」是两步——`POST /skills/:id/versions`（服务端自增 semver 并置
+ *    current_version）**加上** `PATCH {status:'PUBLISHED'}`（`apps/web/src/features/skills/hooks.ts:102`）。
+ *    agent 面没有版本快照工具，只给 `status` 就等于允许把**没有快照**的内容标成已发布，
+ *    `current_version` 与 content 从此脱节。所以本工具不收 `status`：发布/归档不在 agent 面，
+ *    需要发布由人在 UI 走版本快照。越权传 `status` 的通道语义与 `update_task` 同一口径——
+ *    MCP 协议层（SDK 按 inputSchema 先 `z.object(shape)` 校验）会把未声明键**剥掉**，
+ *    只提交越权键时命中下面的 refine（报「没有需要更新的字段」）；脱离 HTTP 的直接调用
+ *    （脚本/诊断走 `callAgentTool`）才由 `.strict()` 报 422 `unrecognized_keys`。
+ *  - `mcp_dependencies`：REST 的 `skillPatchSchema` 里也没有它（只在 create 与版本创建里出现），
+ *    UI 同样改不了；本工具与 UI 的 PATCH 面保持一致，不另开口子。
+ */
+const skillPatchField = <K extends keyof typeof skillPatchSchema.shape>(key: K, desc: string) =>
+  skillPatchSchema.shape[key].describe(desc);
+
+/**
+ * 可写字段名单：从 REST 的 shape 派生后**减去 `status`**，不手抄第二份，避免与 UI 的 patch 面漂移
+ * （漂移的两种方向都不许发生：UI 有的字段 agent 少收、UI 没有的字段 agent 多收）。
+ */
+export const SKILL_PATCH_FIELDS = (
+  Object.keys(skillPatchSchema.shape) as (keyof SkillPatchInput & string)[]
+).filter((field) => field !== 'status');
+
+export const updateSkillSchema = z
+  .object({
+    skill_id: skillIdParam.describe(
+      '要编辑的技能 ID（skl_ 前缀），来自 list_skills/get_skill/search_skills；内置默认技能（source=default，随应用包更新的那批）不可编辑，回 SKILL_READONLY',
+    ),
+    name: skillPatchField('name', '技能名称（1-100 字符，首尾空白自动去掉）；允许与其它技能重名，改名不查重'),
+    description: skillPatchField('description', '技能描述（≤2000 字符）；只改提交了的字段，未提交的保持原样'),
+    category: skillPatchField('category', SKILL_CATEGORY_DESC),
+    tags: skillPatchField(
+      'tags',
+      '自由标签数组（≤20 个、单个 1-30 字符）；**整体覆盖**现有标签，不是追加。标签与分类互不推导',
+    ),
+    content: skillPatchField(
+      'content',
+      '技能正文，结构化块模型 `{ blocks, entryBlockId }`（块类型见 get_vocabulary 的 skill.types）。本字段是**整体覆盖**：请先 `get_skill` 拿当前 content，在其上改要动的块后整份回提，只给片段会把其余块清空。块里的 `subskill` 块用 `skillRef` 引用其它技能：引用自身回 SKILL_REF_SELF、经其它技能成环回 SKILL_REF_CYCLE（details.chain 给出环路径）',
+    ),
+    test_cases: skillPatchField(
+      'test_cases',
+      '测试用例数组（≤50 条），元素 `{ id, name, input?, expected? }`；**整体覆盖**，不是追加。发布时随版本快照，本接口只写当前草稿',
+    ),
+  })
+  .strict()
+  .refine((value) => SKILL_PATCH_FIELDS.some((field) => value[field] !== undefined), {
+    message: '没有需要更新的字段：至少提交一个可写字段（name / description / category / tags / content / test_cases）',
+  });
+export type UpdateSkillInput = z.infer<typeof updateSkillSchema>;
+
+/** 从 `update_skill` 入参里挑出可写的那部分，交给 SkillsService 的同一份 patch 写入逻辑。 */
+export function skillPatchFromUpdateInput(input: UpdateSkillInput): SkillPatchInput {
+  const patch: Record<string, unknown> = {};
+  for (const field of SKILL_PATCH_FIELDS) {
+    if (input[field] !== undefined) patch[field] = input[field];
+  }
+  return patch as SkillPatchInput;
+}
 
 /**
  * §12.4/§12.6 `check_mcp_policy`：Agent 调第三方 MCP 前请求本地策略裁决。

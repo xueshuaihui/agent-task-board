@@ -4,6 +4,7 @@ import { DEFAULT_TASK_TYPES } from '../../contract/enums';
 import { createTaskSchema } from '../../contract/agent-schemas';
 import { buildVocabulary } from '../../contract/vocabulary';
 import { parseToolInput } from '../../mcp/agent-tools';
+import { SKILL_CATEGORIES } from '../../skills/skill-categories';
 import { callAgentTool } from '../../mcp/mcp.server';
 import { createAgentHarness, type AgentHarness } from '../../agent/__tests__/temp-db';
 import { ApiException } from '../../contract/errors';
@@ -57,6 +58,11 @@ describe('get_vocabulary：一次调用拿全服务端词表', () => {
     expect(result.capability.format).toBe('namespace:value');
     expect(result.capability.pattern).toBe('^[a-z][a-z0-9_-]*:[^\\s]+$');
     expect(result.skill.types).toContain('workflow');
+    // §16.1 `update_skill` 的 category 词表也在场：agent 一次调用拿到「可写面 + 可接受值」全口径。
+    expect(result.skill_categories.values).toEqual([...SKILL_CATEGORIES]);
+    expect(result.skill_categories.values).toHaveLength(12);
+    expect(result.skill_categories.uncategorized).toBe('');
+    expect(result.skill_categories.note).toContain('可选：');
   });
 
   it('词表与服务端设置同源：改 task_types 后 current 跟随、default 仍是预置五类', async () => {
