@@ -27,7 +27,7 @@ export interface BuiltinSkillRaw {
    * 生成器里的显式补正表，因此分片内 category 必然 ∈ 12 词表（内置技能不允许未分类）。
    */
   category: SkillCategory;
-  /** 纯自由标签：已洗掉作废的 官方/社区 与一切词表分类词（分类语义只留 category 一列），多数条目为空数组。 */
+  /** 自由标签：已洗掉作废的 官方/社区 与被 category 取走的那个词（口径同 0015 洗 tags 段），其余原序保留。 */
   tags: string[];
   markdown: string;
 }
