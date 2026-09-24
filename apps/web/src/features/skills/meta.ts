@@ -18,7 +18,7 @@ import {
   Wrench,
   Zap,
 } from 'lucide-react';
-import type { OnError, ParallelMerge, SkillBlock, SkillBlockKind, SkillCategory, SkillCategoryOrNone, SkillContent, SkillOrigin, SkillStatus, SkillType } from './types';
+import type { OnError, ParallelMerge, SkillBlock, SkillBlockKind, SkillCategory, SkillCategoryOrNone, SkillContent, SkillOrigin, SkillStatus, SkillType, TopCategory } from './types';
 
 /**
  * 技能类型的展示元数据（2.md 10.1/10.2、1.md 8.2）。图标用 lucide 线性图标，
@@ -65,13 +65,14 @@ export const SKILL_ORIGIN_OPTIONS = (Object.keys(SKILL_ORIGIN_META) as SkillOrig
 }));
 
 /**
- * 技能分类受控词表（PRD §9.2，C-4 读侧收口）：分类是 skills.category 真列
- * （api 0015 迁移加列，CHECK 现行真值源在 0017——0925 拍板删「开学季」），
- * 前端直读 skill.category，分类筛选选项恒等于本词表 + 未分类，
- * 不再由 tags 减法推导。单一事实源在 apps/api/src/skills/skill-categories.ts，
- * 本数组必须与其逐字等值、顺序一致——改词表必须两边同步
+ * 技能分类受控词表（PRD §9.2，C-4 读侧收口 + 0925 两级树化）：分类是 skills.category
+ * 真列（api 0015 迁移加列，CHECK 现行真值源在 0018——两级树：7 个一级 / 16 个合法叶子 + ''），
+ * 前端直读 skill.category，分类筛选选项恒等于本词表 + 未分类，不再由 tags 减法推导。
+ * 单一事实源在 apps/api/src/skills/skill-categories.ts，本数组必须与其逐字等值、顺序一致，
+ * 且恒为**叶子**集（纯分组一级词不在其中）——改词表必须两边同步
  * （守护测试 __tests__/skill-categories.test.ts 从 api 源文件抽取比对，防漂移）。
- * 历史「官方/社区」受众词已作废（出处由 source_type 三来源承载），tags 是纯自由标签。
+ * 历史「官方/社区」受众词与作废词「开学季」「质量保障」均已删出词表（出处由 source_type
+ * 三来源承载；作废词由 RETIRED_CATEGORY_TERMS 接续「禁止回流」口径），tags 是纯自由标签。
  */
 export const SKILL_CATEGORIES: readonly SkillCategory[] = [
   '教育学习',
@@ -84,8 +85,68 @@ export const SKILL_CATEGORIES: readonly SkillCategory[] = [
   '数据分析',
   '开发编程',
   '资讯研究',
-  '质量保障',
+  '需求与规划',
+  '开发与实现',
+  '质量与安全',
+  '代码清理',
+  '运维与协作',
+  '测试自动化',
 ];
+
+/**
+ * 两级分类树镜像（0925 拍板，权威 = api SKILL_CATEGORY_TREE，守护测试逐字比对结构与顺序）：
+ * 编码开发/办公实用/研究分析是**纯分组一级**——只是分组，不是合法 category 值（提交即 422）；
+ * 教育学习/内容创作/方案写作/投资理财 children 为空，一级词本身兼叶子（暂不设二级）。
+ * 本数组是唯一结构源，下面的 parentOf/leavesOf 等工具与筛选栏两级呈现都从它派生。
+ */
+export const SKILL_CATEGORY_TREE: readonly { value: TopCategory; children: readonly SkillCategory[] }[] = [
+  {
+    value: '编码开发',
+    children: [
+      '需求与规划',
+      '开发与实现',
+      '质量与安全',
+      '代码清理',
+      '运维与协作',
+      '测试自动化',
+      // 过渡二级（0925 Q1-A 拍板保留）：千问 5 条存量零迁移；后续批再细分。
+      '开发编程',
+    ],
+  },
+  { value: '教育学习', children: [] },
+  { value: '内容创作', children: [] },
+  { value: '方案写作', children: [] },
+  { value: '投资理财', children: [] },
+  { value: '办公实用', children: ['Office办公', '实用工具'] },
+  { value: '研究分析', children: ['数据分析', '资讯研究', '推荐'] },
+];
+
+/** 一级词全集（7 个，含三个纯分组一级）：由树派生，与 api SKILL_TOP_CATEGORIES 同源同序。 */
+export const SKILL_TOP_CATEGORIES: readonly TopCategory[] = SKILL_CATEGORY_TREE.map(
+  (top) => top.value,
+);
+
+/**
+ * 六个产研阶段词（「编码开发」下的二级叶子）。**双角色特例（0925 用户拍板）**：既是
+ * category 叶子值，又合法保留在 coding 内置的 tags 里作产研阶段标签——卡片「分类徽标 +
+ * 同名标签」两行呈现是拍板接受的观感代价（skill-card 不去重、不特判）。
+ * 镜像与 api STAGE_CATEGORY_TERMS 逐字比对（守护测试）。
+ */
+export const STAGE_CATEGORY_TERMS: readonly SkillCategory[] = [
+  '需求与规划',
+  '开发与实现',
+  '质量与安全',
+  '代码清理',
+  '运维与协作',
+  '测试自动化',
+];
+
+/**
+ * 已作废的历史词表词（镜像与 api RETIRED_CATEGORY_TERMS 逐字比对）：不再是分类取值，
+ * 导入/归一逻辑一律把它们落 ''（Q5-D：不做 compat），也禁止以自由标签身份回流。
+ * - 「开学季」：0925 拍板四删词；- 「质量保障」：0925 树化作废（用户行旧值由 0018 直映射）。
+ */
+export const RETIRED_CATEGORY_TERMS: readonly string[] = ['开学季', '质量保障'];
 
 /** 「未分类」= category 列默认值 ''（0015 DEFAULT ''），筛选匹配用。 */
 export const UNCATEGORIZED_CATEGORY = '' as const;
@@ -93,13 +154,52 @@ export const UNCATEGORIZED_CATEGORY = '' as const;
 /** 未分类的展示文案（筛选 chip / 子技能分组组头），未分类恒排最后。 */
 export const UNCATEGORIZED_LABEL = '未分类';
 
+/** 是否词表内的分类叶子（''=未分类不算；纯分组一级词返回 false；与 api isLeafCategory 同口径）。 */
+export function isLeafCategory(value: string): value is SkillCategory {
+  return (SKILL_CATEGORIES as readonly string[]).includes(value);
+}
+
+/** 是否一级词（含三个纯分组一级与四个一级兼叶子；与 api isTopCategory 同口径）。 */
+export function isTopCategory(value: string): value is TopCategory {
+  return (SKILL_TOP_CATEGORIES as readonly string[]).includes(value);
+}
+
 /**
- * 分类单选/多选的可选项（C-5 写侧）：11 词 + 未分类共 12 项，按词表顺序，
- * 「未分类」恒排最后。value 即 category 列合法值（'' = 未分类）。
+ * 叶子 → 所属一级（口径与 api parentOfCategory 的文档注释一致）：一级兼叶子的返回自身；
+ * 纯分组一级词与词表外值（含 ''）返回 null——注：api 实现传入纯分组一级时会回显该词
+ * 自身，但其注释口径是 null，且两侧调用方都只喂 category 列合法值（叶子或 ''），
+ * 合法输入面上两版逐字同果；web 版按注释口径把纯分组一级显式落 null，防误用。
+ * 筛选栏两级收拢与搜索拼接文案都用这个函数，不要在调用方再抄一份映射。
+ */
+export function parentOfCategory(leaf: string): TopCategory | null {
+  const top = SKILL_CATEGORY_TREE.find((item) => item.value === leaf);
+  if (top) return top.children.length === 0 ? top.value : null;
+  const group = SKILL_CATEGORY_TREE.find((item) =>
+    (item.children as readonly string[]).includes(leaf),
+  );
+  return group ? group.value : null;
+}
+
+/** 一级的子树叶集：纯分组一级返回其 children；一级兼叶子返回自身（计数收拢用）。 */
+export function leavesOfTopCategory(top: TopCategory): readonly SkillCategory[] {
+  const entry = SKILL_CATEGORY_TREE.find((item) => item.value === top);
+  if (!entry) return [];
+  // children 为空的一级本身即叶子（守护测试锁「一级兼叶子 ⇔ children 为空」），cast 安全。
+  return entry.children.length > 0 ? entry.children : [entry.value as SkillCategory];
+}
+
+/**
+ * 分类单选/多选的可选项（C-5 写侧 + 0925 两级收口 Q5）：由树派生，只有**叶子**可提交，
+ * 纯分组一级（编码开发/办公实用/研究分析）不进取值集，只作为 group 分组标题呈现
+ * （RadioGroup 遇组切换渲染一行组头）；一级兼叶子的词无组头直出。「未分类」恒排最后。
  * 创建向导与编辑器共用，避免两处各拼一份。
  */
-export const SKILL_CATEGORY_OPTIONS: readonly { value: SkillCategoryOrNone; label: string }[] = [
-  ...SKILL_CATEGORIES.map((value) => ({ value, label: value })),
+export const SKILL_CATEGORY_OPTIONS: readonly { value: SkillCategoryOrNone; label: string; group?: string }[] = [
+  ...SKILL_CATEGORY_TREE.flatMap<{ value: SkillCategoryOrNone; label: string; group?: string }>((top) =>
+    top.children.length > 0
+      ? top.children.map((leaf) => ({ value: leaf as SkillCategoryOrNone, label: leaf, group: top.value }))
+      : [{ value: top.value as SkillCategoryOrNone, label: top.value }],
+  ),
   { value: UNCATEGORIZED_CATEGORY, label: UNCATEGORIZED_LABEL },
 ];
 
@@ -490,7 +590,9 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     type: 'workflow',
     description: '对一次 diff 做多维审查并输出结构化评审意见',
     tags: ['review', 'quality'],
-    category: '质量保障',
+    // 0925 树化：旧值「质量保障」作废，按内容（逐行审查）归「编码开发/质量与安全」，
+    // 与 api 内置 code-review 样例（default-skills.ts）同值。
+    category: '质量与安全',
     content: seedBlocks([
       {
         kind: 'input',
@@ -534,7 +636,8 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     type: 'flow',
     description: '从报错信息出发定位根因，带条件分支与重试',
     tags: ['debug'],
-    category: '质量保障',
+    // 0925 树化：缺陷分析按内容归「编码开发/质量与安全」（与 coding 源 codexqa-defect-analyzer 同桶）。
+    category: '质量与安全',
     content: seedBlocks([
       {
         kind: 'input',
@@ -683,7 +786,8 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     type: 'script',
     description: '对目标服务的核心接口跑一轮确定性冒烟脚本',
     tags: ['testing'],
-    category: '质量保障',
+    // 0925 树化：旧值「质量保障」作废；本模板正文是确定性测试脚本，按内容归「编码开发/测试自动化」。
+    category: '测试自动化',
     content: seedBlocks([
       {
         kind: 'input',

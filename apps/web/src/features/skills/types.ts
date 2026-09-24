@@ -24,9 +24,12 @@ export type SkillStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
 export type SkillOrigin = 'default' | 'custom' | 'imported';
 
 /**
- * 技能分类受控词表（PRD §9.2 两字段模型，C-4 读侧收口）：skills.category 是真列
- * （api 0015 迁移加列，CHECK 现行真值源在 0017——0925 拍板删「开学季」，12 → 11 项），
- * 取值只能是下面 11 词之一或 ''（未分类，列默认值）。
+ * 技能分类受控词表（PRD §9.2 两字段模型，C-4 读侧收口 + 0925 两级树化）：skills.category
+ * 是真列（api 0015 迁移加列，CHECK 现行真值源在 0018——0925 树化收为两级：7 个一级 /
+ * 16 个合法叶子 + ''，11 → 16 词、删「质量保障」增六个产研阶段词），
+ * 取值只能是下面 16 个**叶子**词之一或 ''（未分类，列默认值）。
+ * 编码开发/办公实用/研究分析是**纯分组一级**（只服务两级呈现，不是合法取值，提交即 422）；
+ * 教育学习/内容创作/方案写作/投资理财一级兼叶子。
  * 单一事实源在 apps/api/src/skills/skill-categories.ts，此处为其类型化镜像，
  * 改词表必须两边同步（守护测试 __tests__/skill-categories.test.ts 逐字比对）。
  */
@@ -41,7 +44,25 @@ export type SkillCategory =
   | '数据分析'
   | '开发编程'
   | '资讯研究'
-  | '质量保障';
+  | '需求与规划'
+  | '开发与实现'
+  | '质量与安全'
+  | '代码清理'
+  | '运维与协作'
+  | '测试自动化';
+
+/**
+ * 一级词全集（7 个，含三个纯分组一级）：不是 category 取值，只服务筛选栏/文案两级呈现。
+ * 与 api SKILL_CATEGORY_TREE 顶级集合同源（守护测试逐字比对）。
+ */
+export type TopCategory =
+  | '编码开发'
+  | '教育学习'
+  | '内容创作'
+  | '方案写作'
+  | '投资理财'
+  | '办公实用'
+  | '研究分析';
 
 /** category 列的完整合法值：词表内分类，或 ''（未分类）。 */
 export type SkillCategoryOrNone = SkillCategory | '';
@@ -160,7 +181,7 @@ export interface Skill {
   description: string;
   tags: string[];
   /**
-   * 分类（PRD §9.2）：直读 api 真列，11 词表内或 ''（未分类）。
+   * 分类（PRD §9.2）：直读 api 真列，16 叶子词表内或 ''（未分类）。
    * tags 是纯自由标签，与分类无关（旧「tags 减法凑分类」口径已废）。
    */
   category: SkillCategoryOrNone;

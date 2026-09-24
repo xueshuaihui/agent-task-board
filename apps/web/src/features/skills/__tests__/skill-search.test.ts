@@ -32,7 +32,7 @@ const FIXTURES: Skill[] = [
     id: 'skl_builtin_code-review',
     name: '代码评审 Code Review',
     type: 'prompt',
-    category: '质量保障',
+    category: '质量与安全',
     tags: ['code', 'review', '规范'],
     description: '按规范逐行评审代码质量',
   }),

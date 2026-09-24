@@ -16,7 +16,7 @@ import type { Skill, SkillCategoryOrNone, SkillType } from './types';
 /**
  * 新建技能向导（两步，2.md 10.3 打磨版）：
  * ① 名称 + 类型 + 起步方式（空白 / 从模板起步，列出 8 个内置模板摘要）；
- * ② 可选的描述与标签 + 分类单选（11 词表 + 未分类，PRD §9.2 真字段）。
+ * ② 可选的描述与标签 + 分类单选（两级词表 16 叶 + 未分类，PRD §9.2 真字段）。
  * 第一步默认聚焦名称，Enter 前进；第二步 Enter 提交。
  * 创建成功即 v0.1.0 草稿，onCreated 由页面接进编辑器（?edit= 链路）。
  */
@@ -220,7 +220,7 @@ export function CreateSkillDialog({
             </Field>
             <Field
               label="分类"
-              hint="单选，11 类 + 未分类（PRD §9.2 系统词表）；模板起步已预填，可改"
+              hint="单选，两级词表 16 叶 + 未分类（PRD §9.2 系统词表；纯分组一级只作组头、不可提交）；模板起步已预填，可改"
             >
               <RadioGroup
                 value={category}

@@ -36,7 +36,7 @@ function skill(overrides: Partial<Skill> & Pick<Skill, 'id' | 'name'>): Skill {
 }
 
 const ITEMS: Skill[] = [
-  skill({ id: 'skl_code1111', name: '代码评审', type: 'workflow', category: '质量保障' }),
+  skill({ id: 'skl_code1111', name: '代码评审', type: 'workflow', category: '质量与安全' }),
   skill({ id: 'skl_zhouaa01', name: '周报', category: '方案写作', description: '本周汇总' }),
   skill({ id: 'skl_zhouaa02', name: '周报', category: '', description: '上周汇总' }),
   skill({ id: 'skl_office01', name: '表格汇总', type: 'steps', category: 'Office办公' }),
@@ -75,7 +75,7 @@ describe('pickerRowPlan 消歧后缀与展示字段', () => {
   it('类型行只展示中文标签，绝不把「workflow 工作流」拼接串原样铺出', () => {
     const row = pickerRowPlan({ skill: ITEMS[0], score: 0, matches: [] }, NO_DUP);
     expect(row.typeSegments.map((s) => s.text).join('')).toBe('工作流');
-    expect(row.categorySegments.map((s) => s.text).join('')).toBe('质量保障');
+    expect(row.categorySegments.map((s) => s.text).join('')).toBe('质量与安全');
   });
 
   it('未分类行的分类展示为「未分类」文案', () => {
