@@ -50,7 +50,7 @@ function literalFromGenerator(decl: string): unknown {
   // 生成器里是多行字面量且带尾逗号：先换引号、再去尾逗号，才能喂给 JSON.parse。
   return JSON.parse(hit[1].replace(/'/g, '"').replace(/,(\s*[\]}])/g, '$1'));
 }
-/** 上游 catalog 无分类词、由生成器 CATEGORY_FIXES 显式补正的条目。 */
+/** 生成器 CATEGORY_FIXES 补正表：缺分类词型 + 0925 拍板一的「0015 首词盲取错值」纠偏型。 */
 function categoryFixes(): Record<string, string> {
   return literalFromGenerator('CATEGORY_FIXES') as Record<string, string>;
 }
@@ -182,23 +182,24 @@ describe('千问迁移内置种子（#41）', () => {
     for (const seed of DEFAULT_SKILL_SEEDS) {
       expect(isSkillCategory(seed.category), `${seed.id} category 非法：${JSON.stringify(seed.category)}`).toBe(true);
     }
-    // 分布锁：0015 回填 + seed 收口后库内应有的分类分布（多一条/少一条都会红，防误改词表映射）。
+    // 分布锁：0015 回填 + seed 收口 + 0925 拍板一 CATEGORY_FIXES 纠偏后库内应有的分类
+    // 分布（多一条/少一条都会红，防误改词表映射与补正表）。开学季=0 是预期终态：两条
+    // 占位词误取（code-mentor/deep-research）已改判内容词，词表值本身仍合法（用户可选手选）。
     const dist = DEFAULT_SKILL_SEEDS.reduce<Record<string, number>>((acc, seed) => {
       acc[seed.category] = (acc[seed.category] ?? 0) + 1;
       return acc;
     }, {});
     expect(dist).toEqual({
-      教育学习: 25,
+      教育学习: 23,
+      投资理财: 13,
       方案写作: 12,
       内容创作: 12,
-      投资理财: 12,
+      Office办公: 9,
       实用工具: 8,
-      推荐: 8,
-      Office办公: 5,
-      数据分析: 5,
-      开发编程: 3,
-      开学季: 2,
-      资讯研究: 1,
+      数据分析: 6,
+      开发编程: 5,
+      资讯研究: 4,
+      推荐: 1,
       质量保障: 1,
     });
     // tags 快照（口径 = 0925 拍板收紧后的 0016 洗数段：受众词与一切词表词都不留）：
@@ -215,11 +216,12 @@ describe('千问迁移内置种子（#41）', () => {
       review: 1,
       quality: 1,
     });
-    // 定点防线（0925 拍板的靶子）：code-mentor 的 catalog tags 是 [开学季, 开发编程]，
-    // category 取走「开学季」后，「开发编程」也**不得**留在 tags 里——它曾在真机卡片上
-    // 与分类徽标同字重现，造成「两套分类标准」观感。谁再把 freeTagsOf 退回「留第二分类词」，这条就红。
+    // 定点防线（0925 两项拍板的靶子）：code-mentor 的 catalog tags 是 [开学季, 开发编程]——
+    // 拍板一：占位词「开学季」不再被首词规则取走，category 纠偏为内容词「开发编程」；
+    // 拍板收紧口径：「开发编程」也**不得**留在 tags 里（它曾在真机卡片上与分类徽标同字重现，
+    // 造成「两套分类标准」观感）。谁把 freeTagsOf 退回旧口径、或删掉 code-mentor 这条补正，本条即红。
     const codeMentor = DEFAULT_SKILL_SEEDS.find((seed) => seed.name === 'code-mentor');
-    expect(codeMentor?.category).toBe('开学季');
+    expect(codeMentor?.category).toBe('开发编程');
     expect(codeMentor?.tags).toEqual([]);
     // 逐条守护：seed 的 tags 里出现任何词表词即 fail（0016 口径的服务端等价物，
     // 防生成器/helper 两侧哪天飘回旧口径）。
@@ -251,10 +253,12 @@ describe('千问迁移内置种子（#41）', () => {
       // 其余原序保留——口径与 0016 洗数段一致，见 freeTagsOf 注释（0925 拍板收紧）。
       expect(raw.tags, `${raw.slug} 自由标签与 helper 口径不一致`).toEqual(freeTagsOf(original));
     }
-    // 补正表是「上游数据缺陷」的唯一豁免口：条目必须真的缺分类词。
+    // 补正表是「上游数据缺陷 / 0015 首词盲取错值」的唯一豁免口：条目必须真的缺词、
+    // 或补正确实改变了首词规则的结果（与生成器防呆同逻辑）——上游修好数据后及时清理。
     for (const [slug, fixed] of Object.entries(fixes)) {
       expect(isSkillCategory(fixed), `${slug} 补正成了词表外分类`).toBe(true);
-      expect(categoryFromTags(Object.keys(bySlug.get(slug)?.tags || {})), `${slug} 已不需要补正，清理 CATEGORY_FIXES`).toBe('');
+      const computed = categoryFromTags(Object.keys(bySlug.get(slug)?.tags || {}));
+      expect(fixed, `${slug} 的补正是 no-op（首词规则已算出 ${JSON.stringify(computed)}），清理 CATEGORY_FIXES`).not.toBe(computed);
     }
   });
 });

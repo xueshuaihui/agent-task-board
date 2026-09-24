@@ -15,7 +15,9 @@
  * 表达），改为产出单值 category + 自由 tags。category 的取词口径与 0015 迁移回填一致
  * （tags 中首个「非受众词且在词表内」的词）；tags 的洗法按 0925 拍板收紧后的 0016 口径——
  * 受众词与一切词表词都不留，其余原序保留（内置洗后大量条目 tags 为空数组，是预期终态），
- * 权威口径见 src/skills/skill-categories.ts。
+ * 权威口径见 src/skills/skill-categories.ts。0925 拍板一另起 CATEGORY_FIXES 纠偏段：
+ * 12 条内置的 category 因 0015「首词盲取」取到季节/运营占位词（开学季/推荐）或误取的
+ * 教育学习，经补正表改判内容词（例外：proactive-paper-recommendation 的「推荐」是真语义）。
  */
 import { readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -44,12 +46,34 @@ const SKILL_CATEGORIES = [
 const AUDIENCE_TAGS = ['官方', '社区'];
 
 /**
- * 上游 catalog 无分类词条目的显式补正表（人工判定，不改 catalog）。
+ * 上游 catalog 的 category 纠偏/补正表（人工判定，不改 catalog）。
  * docs/v0.0.4/skills-data/qwen-skills-catalog.json 是千问原始导出（带上游 skillId），
- * 绝对不许改；缺分类词属于上游数据缺陷，补正只能留在这里这一层。
- * skill-creator 归「实用工具」（技能创建向导，上游 tags 为空 {}）。
+ * 绝对不许改；缺分类词属于上游数据缺陷、首词盲取也会取错，补正只能留在这里这一层。
+ * 两类条目：
+ * ① 「缺分类词」型（C-2 / 0024）：skill-creator 上游 tags 为空 {}，categoryFromTags 算不出，
+ *    人工归「实用工具」（技能创建向导）。
+ * ② 「0015 首词盲取存量错值」型（0925 拍板一）：季节/运营占位词（开学季、推荐）与内容词
+ *    同现时，category 应取内容词，而「tags 首个词表词」的回填规则取走了占位词；下列 11 条
+ *    为逐条人工判定。唯一例外 proactive-paper-recommendation（论文推荐引擎，「推荐」就是
+ *    其真语义内容词，教育学习是占位误取）。
+ *    其余 30 条多词技能与 3 条两可（financial-analysis-18steps / tailored-resume-generator /
+ *    interview-prep）维持现状、不进本表。
  */
-const CATEGORY_FIXES = { 'skill-creator': '实用工具' };
+const CATEGORY_FIXES = {
+  'skill-creator': '实用工具',
+  'code-mentor': '开发编程',
+  'deep-research': '资讯研究',
+  'excel': 'Office办公',
+  'pptx': 'Office办公',
+  'guizang-ppt-skill': 'Office办公',
+  'doc-image-scan': 'Office办公',
+  'html-gen': '开发编程',
+  'daily-news-briefing': '资讯研究',
+  'pic-report': '资讯研究',
+  'self-finance-report': '投资理财',
+  'research-data-analysis-visualization': '数据分析',
+  'proactive-paper-recommendation': '推荐',
+};
 
 /** 与 skill-categories.ts 的 categoryFromTags 同口径（= 0015 回填 SQL 的判定）。 */
 function categoryFromTags(tags) {
@@ -104,12 +128,16 @@ const rows = slugs.map((slug) => {
   const tags = freeTagsOf(rawTags);
   return { slug, nameCn: item.nameCn, description: desc.slice(0, 500), category, tags, markdown };
 });
-// 补正表防呆：条目必须存在、且必须真的缺分类词（上游哪天补上了就清理掉这条，别让它静默覆盖）。
+// 补正表防呆：条目必须存在（已收编）、且必须是「有效纠偏」——补正值 ≠ categoryFromTags
+// 首词规则算出的值。两类都适用：缺词型算出 ''、补上词表词才算有效；0925 纠偏型算出
+// 占位词/误取值、改成真语义词才算有效。上游哪天修好了 tags 使首词规则直接算出正确值，
+// 这条补正就成了 no-op——报错提示清理，绝不静默覆盖（也防手滑填成与首词相同的废条目）。
 for (const slug of Object.keys(CATEGORY_FIXES)) {
   const row = rows.find((item) => item.slug === slug);
   if (!row) throw new Error(`CATEGORY_FIXES 多余条目（未收编）：${slug}`);
-  if (categoryFromTags(Object.keys(bySlug.get(slug).tags || {}).filter(Boolean)) !== '') {
-    throw new Error(`CATEGORY_FIXES 已多余：${slug} 的 catalog 已带分类词，删掉这条补正`);
+  const computed = categoryFromTags(Object.keys(bySlug.get(slug).tags || {}).filter(Boolean));
+  if (CATEGORY_FIXES[slug] === computed) {
+    throw new Error(`CATEGORY_FIXES 已多余：${slug} 首词规则已直接算出 ${JSON.stringify(computed)}，删掉这条补正`);
   }
 }
 
