@@ -66,14 +66,14 @@ export const SKILL_ORIGIN_OPTIONS = (Object.keys(SKILL_ORIGIN_META) as SkillOrig
 
 /**
  * 技能分类受控词表（PRD §9.2，C-4 读侧收口）：分类是 skills.category 真列
- * （api 0015 迁移），前端直读 skill.category，分类筛选选项恒等于本词表 + 未分类，
+ * （api 0015 迁移加列，CHECK 现行真值源在 0017——0925 拍板删「开学季」），
+ * 前端直读 skill.category，分类筛选选项恒等于本词表 + 未分类，
  * 不再由 tags 减法推导。单一事实源在 apps/api/src/skills/skill-categories.ts，
  * 本数组必须与其逐字等值、顺序一致——改词表必须两边同步
  * （守护测试 __tests__/skill-categories.test.ts 从 api 源文件抽取比对，防漂移）。
  * 历史「官方/社区」受众词已作废（出处由 source_type 三来源承载），tags 是纯自由标签。
  */
 export const SKILL_CATEGORIES: readonly SkillCategory[] = [
-  '开学季',
   '教育学习',
   '投资理财',
   '方案写作',
@@ -94,7 +94,7 @@ export const UNCATEGORIZED_CATEGORY = '' as const;
 export const UNCATEGORIZED_LABEL = '未分类';
 
 /**
- * 分类单选/多选的可选项（C-5 写侧）：12 词 + 未分类共 13 项，按词表顺序，
+ * 分类单选/多选的可选项（C-5 写侧）：11 词 + 未分类共 12 项，按词表顺序，
  * 「未分类」恒排最后。value 即 category 列合法值（'' = 未分类）。
  * 创建向导与编辑器共用，避免两处各拼一份。
  */

@@ -298,7 +298,7 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
                     onChange={(event) => applyMeta({ tagsText: event.target.value })}
                   />
                 </Field>
-                <Field label="分类" hint="单选，12 类 + 未分类（PRD §9.2 系统词表）">
+                <Field label="分类" hint="单选，11 类 + 未分类（PRD §9.2 系统词表）">
                   <RadioGroup
                     value={meta.category}
                     options={SKILL_CATEGORY_OPTIONS}

@@ -258,7 +258,9 @@ describe('categoryDisplay 分类展示同源（C-6b① 守护）', () => {
       id: 'skl_boge01',
       name: 'boge-kaoyan-writing-coach',
       category: '教育学习',
-      tags: ['开学季', '考研'],
+      // tags 里放现行词表词（0925 拍板四已删「开学季」，改用仍在表内的「推荐」）：
+      // 它是被服务端 freeTagsOf 剔洗的残留词场景，展示面不许从 tags 长出第二个分类。
+      tags: ['推荐', '考研'],
     });
     expect(categoryDisplay(target)).toBe('教育学习');
     const uncategorized = skill({ id: 'skl_tag01', name: 'tag-only', category: '', tags: ['教育学习'] });

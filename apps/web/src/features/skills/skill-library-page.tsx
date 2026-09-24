@@ -46,7 +46,7 @@ export function SkillLibraryPage() {
   const [keywordInput, setKeywordInput] = useState('');
   const [status, setStatus] = useState<SkillStatus | ''>('');
   const [source, setSource] = useState<SkillOrigin | ''>('');
-  /** 分类多选（OR 语义）：不选即全部；选项恒为静态词表 12 项 + 未分类，直读 item.category。 */
+  /** 分类多选（OR 语义）：不选即全部；选项恒为静态词表 11 项 + 未分类，直读 item.category。 */
   const [categories, setCategories] = useState<string[]>([]);
 
   /* `?edit=` 挂编辑器；其余查询参数留给后续（如 tag 深链）。必须走响应式订阅：
@@ -64,7 +64,7 @@ export function SkillLibraryPage() {
   );
   const skills = useSkills(query);
   /* 分类筛选（前端侧，用户裁定不给 /skills 加 category= 查询参数）：分类 = skills.category
-   * 真列直读（PRD §9.2），选项恒等于 12 词表 + 未分类共 13 项、按词表顺序渲染，
+   * 真列直读（PRD §9.2），选项恒等于 11 词表 + 未分类共 12 项、按词表顺序渲染，
    * 不随当前列表 tags 漂移（PRD §19.13 第 82 条）；计数为 0 的项置灰禁用但不消失，
    * 已选中的项即使计数归零也保留可点（允许取消）。与状态/来源正交。 */
   const categoryOptions = useMemo(() => {
@@ -319,7 +319,7 @@ export function SkillLibraryPage() {
         />
       </div>
 
-      {/* 分类：静态词表 13 项（12 词 + 未分类）的多选按钮组（OR 语义，不选即全部），
+      {/* 分类：静态词表 12 项（11 词 + 未分类）的多选按钮组（OR 语义，不选即全部），
           恒常渲染、直读 item.category，只在前端过滤。 */}
       <ChipGroup
         label="分类"

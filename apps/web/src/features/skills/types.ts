@@ -25,12 +25,12 @@ export type SkillOrigin = 'default' | 'custom' | 'imported';
 
 /**
  * 技能分类受控词表（PRD §9.2 两字段模型，C-4 读侧收口）：skills.category 是真列
- * （api 0015 迁移），取值只能是下面 12 词之一或 ''（未分类，列默认值）。
+ * （api 0015 迁移加列，CHECK 现行真值源在 0017——0925 拍板删「开学季」，12 → 11 项），
+ * 取值只能是下面 11 词之一或 ''（未分类，列默认值）。
  * 单一事实源在 apps/api/src/skills/skill-categories.ts，此处为其类型化镜像，
  * 改词表必须两边同步（守护测试 __tests__/skill-categories.test.ts 逐字比对）。
  */
 export type SkillCategory =
-  | '开学季'
   | '教育学习'
   | '投资理财'
   | '方案写作'
@@ -160,7 +160,7 @@ export interface Skill {
   description: string;
   tags: string[];
   /**
-   * 分类（PRD §9.2）：直读 api 真列，12 词表内或 ''（未分类）。
+   * 分类（PRD §9.2）：直读 api 真列，11 词表内或 ''（未分类）。
    * tags 是纯自由标签，与分类无关（旧「tags 减法凑分类」口径已废）。
    */
   category: SkillCategoryOrNone;
