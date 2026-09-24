@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import { Network } from 'lucide-react';
-import { useActiveGroups } from '@/features/groups';
 import { useTaskOverview } from '@/features/task-detail/queries';
 import { SubtasksSection } from '@/features/task-detail/subtasks';
 import { CommentsTab } from '@/features/task-detail/tabs/comments';
@@ -97,10 +96,6 @@ function RequirementDrawerBody({
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<RequirementTab>('subtasks');
-  const groups = useActiveGroups();
-  const group = detail.group_id
-    ? (groups.data?.items ?? []).find((item) => item.id === detail.group_id)
-    : undefined;
 
   const title = (
     <div className="flex min-w-0 flex-col gap-0.5">
@@ -118,7 +113,7 @@ function RequirementDrawerBody({
       onClose={onClose}
       headerExtra={
         <>
-          <RequirementMetaRow detail={detail} groupName={group?.name ?? null} />
+          <RequirementMetaRow detail={detail} />
           <div className="mt-2 border-b border-border px-5 pb-0">
             <Tabs
               variant="underline"
@@ -168,14 +163,14 @@ function RequirementDrawerBody({
   );
 }
 
-/** 6.1 头部：需求徽标、优先级、聚合状态、分组、聚合进度条。 */
-function RequirementMetaRow({
-  detail,
-  groupName,
-}: {
-  detail: TaskDetail;
-  groupName: string | null;
-}) {
+/**
+ * 6.1 头部：需求徽标、优先级、聚合状态、聚合进度条。
+ *
+ * §19.14·86（v0.0.4 W2-b）：「分组」MetaCell 已删——看板可见面上 Group 概念整体
+ * 下线、需求即归属，「需求属于哪个分组」不再有展示价值（group_id 仍是数据真值，
+ * 只是不再作为 UI 归属入口）。
+ */
+function RequirementMetaRow({ detail }: { detail: TaskDetail }) {
   const priority = priorityStyle(detail.priority);
   const aggregate = detail.aggregate;
   const aggregateView = aggregate
@@ -202,11 +197,6 @@ function RequirementMetaRow({
         ) : (
           <span className="text-text-tertiary">暂无子任务</span>
         )}
-      </MetaCell>
-      <MetaCell label="分组">
-        <span className={cn('truncate', groupName ? 'text-text-primary' : 'text-text-tertiary')}>
-          {groupName ?? '未分配'}
-        </span>
       </MetaCell>
       {percent !== null ? (
         <MetaCell label="聚合进度" className="col-span-2">
