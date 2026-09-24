@@ -14,7 +14,8 @@ import { GROUP_LIMIT, type Group } from './types';
 
 /**
  * 分组列表页 `#/groups`（15.3 / 原型 5.1）：卡片网格——名称（色点 + 图标）、描述、
- * 创建时间、状态；操作是「打开」（把该分组的过滤写进看板分组偏好后跳看板）与 `⋯`
+ * 创建时间、状态；操作是「打开」（把该分组写进统一过滤 store 的 groups 维后跳
+ * **列表页**——§19.14 起看板不消费 groups，本入口归列表作用域）与 `⋯`
  * 菜单（编辑 / 归档或恢复 / 删除）。
  *
  * v0.0.4 W4 §5.6：卡片带上任务数与归档时刻（`GET /groups` 列表顺路返回
@@ -146,10 +147,14 @@ function GroupCard({
   const isDefault = group.is_default === 1;
   const setDimension = useFilterStore((state) => state.setDimension);
 
-  // 5.1「打开」：把看板切成只看这个分组——B15-②b 起写统一过滤 store 的 groups 维。
+  // 5.1「打开」：切到只看这个分组——B15-②b 起写统一过滤 store 的 groups 维。
+  // §19.14（v0.0.4 W2-b）修正 W1 遗留退化项：看板可见面已不消费 groups
+  // （toBoardQuery 恒剥离），跳看板等于丢筛选；改跳列表路由——列表作用域 chip
+  // 「分组：xxx」与 useTaskListWithGroups 仍消费该键，落地即生效（store 常驻，
+  // 空查询串的 filtersFromSearch 不会覆盖 groups）。归档分组本就无此入口。
   const open = () => {
     setDimension('groups', [group.id]);
-    navigate('board');
+    navigate('tasks');
   };
 
   return (

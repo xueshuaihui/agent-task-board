@@ -28,7 +28,13 @@ export function useSelectedGroupIds(): string[] {
   return useFilterStore((state) => state.groups);
 }
 
-/** 看板数据源：`groups` 已由 `toBoardQuery` 从统一过滤 store 带出，这里就是单请求直传。 */
+/**
+ * 看板数据源：`groups` 的 URL 读写与查询派发已整体归列表路由——
+ * `toBoardQuery` **恒不带出 groups**（§19.14：store 的 groups 键只服务列表作用域），
+ * 看板请求因此永不发 `groups=`。本包装对 `GET /board` 只是单请求直传的历史壳，
+ * 「WithGroups」之名是 B15 多分组扇出时代的遗留，保留以稳住调用点
+ * （features/board/index.tsx 在禁改面内）。
+ */
 export function useBoardWithGroups(params: BoardQuery, options?: Options<BoardResponse>) {
   return useQuery({
     queryKey: qk.board(params),
