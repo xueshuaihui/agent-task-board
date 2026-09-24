@@ -72,8 +72,8 @@ afterAll(async () => {
 
 // ---------------------------------------------------------------- 1. 迁移 0013 演练
 
-describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0017）', () => {
-  it('水位 0012 的库增量应用 0013~0017：只重放这五棒，新表与 tasks 来源列就位', () => {
+describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0019）', () => {
+  it('水位 0012 的库增量应用 0013~0019：只重放这七棒，新表与 tasks 来源列就位', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'atb-w8-mig-'));
     const previous = { data: process.env.ATB_DATA_DIR, mig: process.env.ATB_MIGRATIONS_DIR };
     try {
@@ -91,11 +91,19 @@ describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0017）', 
       const upTo12 = applyMigrations();
       expect(upTo12[upTo12.length - 1]).toBe(12);
 
-      // 0016/0017 演练数据：水位停在 0012 时先造两行混灌的历史技能——
+      // 0016/0017/0018/0019 演练数据：水位停在 0012 时先造几行混灌的历史技能——
       // ① s_legacy「受众词+分类词+自由标签」：0015 回填 category=实用工具 并洗掉被取走的词，
       //    0016 再把残留词表词洗干净，终值只剩自由标签、原序不变；
       // ② s_season 只带已作废占位词「开学季」：0015（定稿 12 词表）回填会取走它、0016 从
-      //    tags 洗掉，0017 的防御性洗数再把 category 落回 ''（未分类）——全量重放终值一致。
+      //    tags 洗掉，0017 的防御性洗数再把 category 落回 ''（未分类）——全量重放终值一致；
+      // ③ s_qa「质量保障+自由词」：0015 取走质量保障、0016 洗 tags，0018 拷贝前把旧值
+      //    直映射「质量与安全」（Q4：用户行与内置行一起洗）——终值 category=质量与安全、
+      //    tags 只剩自由词；它是用户行形状（非 skl_builtin_ id），0019 不碰它；
+      // ④/⑤ 两行内置 id 走 0019 回填链：skl_builtin_rc-tdd 的 tags 首词「开发编程」被 0015
+      //    取走（阶段词「开发与实现」当时不在词表、留在 tags），0019 把 category 改判
+      //    「开发与实现」——终值与 seed/分片一致，且 tags 里的阶段词原样活着（双角色豁免）；
+      //    skl_builtin_code-review 的 tags 两词都不在词表 → 0015 落 ''，0019 回填
+      //    「质量与安全」（§9.2 样例的作废旧值续位）。
       const staging = new DatabaseSync(path.join(dir, 'jarvis.db'));
       staging
         .prepare(`INSERT INTO skills (id, name, type, tags) VALUES ('s_legacy', 'legacy', 'prompt', '["官方","实用工具","推荐","我的标签"]')`)
@@ -103,18 +111,29 @@ describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0017）', 
       staging
         .prepare(`INSERT INTO skills (id, name, type, tags) VALUES ('s_season', 'season', 'prompt', '["开学季","考研"]')`)
         .run();
+      staging
+        .prepare(`INSERT INTO skills (id, name, type, tags) VALUES ('s_qa', 'qa', 'prompt', '["质量保障","运营自由词"]')`)
+        .run();
+      staging
+        .prepare(`INSERT INTO skills (id, name, type, tags) VALUES ('skl_builtin_rc-tdd', 'rc-tdd', 'prompt', '["开发编程","开发与实现"]')`)
+        .run();
+      staging
+        .prepare(`INSERT INTO skills (id, name, type, tags) VALUES ('skl_builtin_code-review', 'code-review', 'prompt', '["review","quality"]')`)
+        .run();
       staging.close();
 
       // 2) 切回全量迁移目录：应只增量应用 0013/0014（W8-a3 追加通知 kind 词表）、
-      //    0015（skills.category 收口，加列不重建）、0016（tags 存量洗数，纯洗数无 DDL）
-      //    与 0017（词表删「开学季」12→11，重建 skills 收敛 CHECK）。
+      //    0015（skills.category 收口，加列不重建）、0016（tags 存量洗数，纯洗数无 DDL）、
+      //    0017（词表删「开学季」12→11，重建 skills 收敛 CHECK）、
+      //    0018（0925 树化 11→16 叶子，先直映射「质量保障」再重建收敛 CHECK）
+      //    与 0019（内置 35 行逐 id 回填叶子终值）。
       delete process.env.ATB_MIGRATIONS_DIR;
       const applied = applyMigrations();
-      expect(applied).toEqual([13, 14, 15, 16, 17]); // 0001~0012 不重放
+      expect(applied).toEqual([13, 14, 15, 16, 17, 18, 19]); // 0001~0012 不重放
 
       const check = new DatabaseSync(path.join(dir, 'jarvis.db'), { readOnly: true });
       const version = check.prepare('PRAGMA user_version').get() as { user_version: number };
-      expect(version.user_version).toBe(17);
+      expect(version.user_version).toBe(19);
       const tables = check
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('agent_sessions','task_creation_logs')")
         .all() as { name: string }[];
@@ -134,11 +153,12 @@ describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0017）', 
       expect(() =>
         probe.prepare(`INSERT INTO notifications (id, kind, message) VALUES ('n_bad', 'sms', 'x')`).run(),
       ).toThrow();
-      // 0015：skills.category 以 ALTER ADD COLUMN 落地（不整表重建），列级 CHECK 生效——
-      // '' （未分类）与（当时的）词表内值放行，词表外值挡住。注意 0015 定稿词表是 12 项、
-      // 含「开学季」，fresh 重放里它此刻合法，随后由 0017 重建收敛为 11 项。
+      // 0015：skills.category 以 ALTER ADD COLUMN 落地（不整表重建）、0017/0018 两次重建
+      // 收敛列级 CHECK——'' （未分类）与现行 16 叶子放行，词表外值挡住。0015 定稿词表是
+      // 12 项（含「开学季」「质量保障」），fresh 重放里它先按旧口径回填，随后由 0017/0018
+      // 两次重建收敛为终态（16 叶子）。
       probe.prepare(`INSERT INTO skills (id, name, type) VALUES ('s_ok', 'ok', 'prompt')`).run();
-      probe.prepare(`INSERT INTO skills (id, name, type, category) VALUES ('s_cat', 'cat', 'prompt', '质量保障')`).run();
+      probe.prepare(`INSERT INTO skills (id, name, type, category) VALUES ('s_cat', 'cat', 'prompt', '开发与实现')`).run();
       expect(() =>
         probe.prepare(`INSERT INTO skills (id, name, type, category) VALUES ('s_bad', 'bad', 'prompt', '审核')`).run(),
       ).toThrow();
@@ -158,7 +178,7 @@ describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0017）', 
           tags: string;
         },
       ).toEqual({ category: '', tags: '["考研"]' });
-      // ② 新 CHECK 生效：11 词与 '' 放行，「开学季」这个已作废落点被挡；
+      // ② 新 CHECK 生效：词表内 11 词（0018 后仍是叶子）与 '' 放行，「开学季」这个已作废落点被挡；
       probe.prepare(`INSERT INTO skills (id, name, type, category) VALUES ('s_ok11', 'ok11', 'prompt', '教育学习')`).run();
       expect(() =>
         probe.prepare(`INSERT INTO skills (id, name, type, category) VALUES ('s_retired', 'retired', 'prompt', '开学季')`).run(),
@@ -175,6 +195,41 @@ describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0017）', 
       expect(
         skillIndexes.map((row) => row.name).filter((name) => !name.startsWith('sqlite_autoindex_')).sort(),
       ).toEqual(['idx_skills_category', 'idx_skills_status']);
+      // 0018：0925 树化（11→16 叶子、作废「质量保障」）第二次整表重建——
+      // ① 拷贝前直映射洗数（Q4：用户行与内置行一起洗，洗数先于拷贝同 0017 姿势）：
+      //    预置行 s_qa 的旧值「质量保障」落「质量与安全」，tags 保持 0016 洗后的自由词原样；
+      expect(
+        probe.prepare(`SELECT category, tags FROM skills WHERE id = 's_qa'`).get() as {
+          category: string;
+          tags: string;
+        },
+      ).toEqual({ category: '质量与安全', tags: '["运营自由词"]' });
+      // ② 新 CHECK 生效：'' + 16 叶子放行；作废词「质量保障」与纯分组一级词
+      //    （编码开发/办公实用/研究分析——有子级的词不可再是叶子值）一律被挡；
+      probe.prepare(`INSERT INTO skills (id, name, type, category) VALUES ('s_ok18', 'ok18', 'prompt', '质量与安全')`).run();
+      expect(() =>
+        probe.prepare(`INSERT INTO skills (id, name, type, category) VALUES ('s_retire_qa', 'retireqa', 'prompt', '质量保障')`).run(),
+      ).toThrow();
+      expect(() =>
+        probe.prepare(`INSERT INTO skills (id, name, type, category) VALUES ('s_group_top', 'grouptop', 'prompt', '编码开发')`).run(),
+      ).toThrow();
+      // ③ 重建同样保住 skill_versions 的 FK ON DELETE CASCADE（0017 之上再验一次当前形状）：
+      probe.prepare(`INSERT INTO skill_versions (id, skill_id, version) VALUES ('sv_cascade18', 's_ok18', 'v1')`).run();
+      probe.prepare(`DELETE FROM skills WHERE id = 's_ok18'`).run();
+      expect(probe.prepare(`SELECT COUNT(*) AS n FROM skill_versions WHERE skill_id = 's_ok18'`).get()).toEqual({ n: 0 });
+      // 0019：内置 35 行逐 id 回填叶子终值（终值 = seed upsert 终值，fresh/增量两路径收敛一致）——
+      // rc-tdd 按 coding 目录改判「开发与实现」，其 tags 阶段词从 0015 起一路没被洗过
+      // （当时不是词表词、0925 树化后是双角色豁免词，见 skill-categories.ts freeTagsOf 不变量）；
+      // code-review 样例的 0015 空落点回填「质量与安全」（作废旧值唯一续位）。
+      const backfilled = probe
+        .prepare(
+          `SELECT id, category, tags FROM skills WHERE id IN ('skl_builtin_code-review', 'skl_builtin_rc-tdd') ORDER BY id`,
+        )
+        .all() as { id: string; category: string; tags: string }[];
+      expect(backfilled).toEqual([
+        { id: 'skl_builtin_code-review', category: '质量与安全', tags: '["review","quality"]' },
+        { id: 'skl_builtin_rc-tdd', category: '开发与实现', tags: '["开发与实现"]' },
+      ]);
       probe.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });
