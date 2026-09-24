@@ -76,12 +76,12 @@
 
 ### 6.4 动效系统 v1.2（docs/motion-spec.md）
 
-- [ ] 微交互统一 140ms/ease-settle：按钮 hover/卡片 hover（-2px 抬升）无残留 120ms 快档
-- [ ] 浮层退场可播：Dialog/Drawer/菜单/通知中心关闭时有淡出收口动画（非闪断）；Esc 链正常
-- [ ] **450px 矮窗复测 Dialog**（cf8f4f9 三层高度链锚点项）：新建任务/审核表单 Dialog 在矮窗内不溢出、可滚动、按钮可达
-- [ ] 全局搜索 ⌘K 浮层开合 140/100ms、键盘链路（↑↓/Enter/Esc）行为不变
-- [ ] 列表首屏 stagger（技能库/需求子任务/依赖）约 40ms 间隔、上限 240ms；WS 刷新新项仅单项淡入
-- [ ] 系统设置切「深色/浅色/跟随系统」即时换肤无破版（深浅两套色板均已就绪）
+- [x] 微交互统一 140ms/ease-settle：按钮 hover/卡片 hover（-2px 抬升）无残留 120ms 快档（2026-09-24 R-B 实测：`duration-120` 全仓 **0 处**（原 20+ 处已并档，`duration-140` 87 处）；看板卡与按钮、chip 的 computed `transitionDuration=0.14s` + `cubic-bezier(0.2,0,0,1)`=settle，卡带 `hover:-translate-y-0.5`（-2px）。唯一 120ms 是 `tooltip.tsx` 的入 120/出 100，spec §1.L2 表明定该档、属豁免不是残留）
+- [x] 浮层退场可播：Dialog/Drawer/菜单/通知中心关闭时有淡出收口动画（非闪断）；Esc 链正常（R-B WAAPI 逐帧采样，时长与 spec §1.L2 表逐条对齐：抽屉 Esc 关闭 = 遮罩 DIV **140ms** + 面板 ASIDE **180ms**（带 translateX 位移）；通知中心关闭 = 遮罩+面板两条同退，opacity 0.97→0.80→0.63→0.47→0.11→0.00 约 210ms 收口、**退完才卸载**（200ms 后节点消失，之后 3s 无回闪）；搜索下拉 Esc 关闭 = **100ms** 纯淡出后 ~128ms 卸载。Esc 层级：下拉开着时 Esc 只关下拉、页面不留 overlay；抽屉→列表页逐层关正常）
+- [x] **450px 矮窗复测 Dialog**（cf8f4f9 三层高度链锚点项）：新建任务/审核表单 Dialog 在矮窗内不溢出、可滚动、按钮可达（R-B 用同源 iframe 造出 **956×446** 真视口：新建任务 Dialog `documentElement.scrollHeight - innerHeight = 0`（页级不溢出）、内容区 `.atb-scroll` scrollHeight 456 > clientHeight 289（**可滚**）、底部「取消/创建」bottom=406 ≤ 446（**可达**）；同尺寸下看板列容器列内滚兜住（需求池 clientHeight 186 / scrollHeight 1650，`body.scrollWidth-innerWidth=0` 不破版，即 R-A 留的「450 高下列内滚不退化成整页滚」红线复验过）。**审核表单未单独量**：与新建任务同 `ui/Dialog` 壳、同三层高度链，且演练队列当前无待审核任务可开该表单——beta 包复验时补一眼即可）
+- [x] 全局搜索 ⌘K 浮层开合 140/100ms、键盘链路（↑↓/Enter/Esc）行为不变（R-B 真机：⌘K + 输入即开，入场面板 140ms、8 条候选；↓ 使 active 从 T-1006 移到 T-1007；Enter 直接开该任务详情抽屉（ASIDE 淡入 0.56→1）；Esc 逐层关。下拉行自身在 0 延迟档瞬时到位，与面板 140ms 同档）
+- [x] 列表首屏 stagger（技能库/需求子任务/依赖）约 40ms 间隔、上限 240ms；WS 刷新新项仅单项淡入（R-B：技能库首屏逐帧采到 running 动画的 delay 集合恰为 **{0,40,80,120,160,200,240}**（40ms 档、240ms 封顶，长列表不拖尾）；WS 新建任务只让**那一张卡**动画（同屏 21 张卡里仅 1 个 ARTICLE 在跑），不重放 stagger。**偏差记档**：新卡入场淡入实现取 `itemVariants` 的 240ms，spec §168 写的是 200ms——差 40ms 属观感级，改码还是改规范待裁定）
+- [x] 系统设置切「深色/浅色/跟随系统」即时换肤无破版（R-B：三档连点两圈，body 底色 light `rgb(244,245,250)` ↔ dark `rgb(15,17,24)` 即时互切（200ms 色彩过渡，globals.css `--ease-settle`），每档 `documentElement.scrollWidth - innerWidth = 0` 无横向破版，验完已复原「跟随系统」。附带确认：卡片进度占位条 `atb-progress-indeterminate` 是 1200ms 无限循环动画，属 B2b 设计内、不是失控动画）
 
 ### 6.5 B6 MCP 词表（Agent 侧，可与 §5 合跑）
 
@@ -158,7 +158,7 @@
 | §6.1 B1 包名切换 | | |
 | §6.2 B2/B2b 状态可见性 | 过（2026-09-24 R-A · dev 演练环境，非打包 dmg） | 三项均按真实 claim/stop 造数验过：chip「执行中 N · 最近活动…」随 WS 实时 +1、无进度数据时占位条在、RUNNING=0 且 24h 无活动整条隐藏（含 2h 对照证明是规则生效非请求挂）。**发现并修 1 缺陷**：Agent 刚 claim 的瞬间「最近活动」退化成绝对时间，30s 后自愈——根因 `formatRelative` 把几秒级负 delta 当未来时间，`96f7fb7` 修（60s 时钟抖动容差 + 3 单测）。 |
 | §6.3 B3/B4/B5/B7 交互 | 过（R-A · dev） | 分类筛选平铺多选 OR（13 chip 计数与卡片数吻合）、列内竖滚 + 列底「还有 N 条」（把 `board_column_limit` 调到下限 10 造超限后还原）、列最小 180px 整行横滚兜底、960px 七列等分铺满不压字。分组过滤复位入口的验条文案已按实测更正（见 §7.3）。 |
-| §6.4 动效 v1.2 | | R-B 待跑。#23（forceMount Portal 里的 AnimatePresence 丢 ref）已在 `9777249` 修掉并已用 WAAPI 采样确认通知中心/抽屉退场仍可播；跑本节时把 tooltip/menu/popover 的退场与 layoutId 换列飞行补量到帧即可 |
+| §6.4 动效 v1.2 | 过（2026-09-24 R-B · dev 演练环境，非打包 dmg，六项全过） | 全部按 WAAPI 逐帧采样而非肉眼：微交互 computed `0.14s + cubic-bezier(0.2,0,0,1)`、`duration-120` 全仓归零（87 处 140）；抽屉退场 遮罩 140ms/面板 180ms、通知中心 0.97→0.00 约 210ms **退完才卸载**、搜索下拉 100ms，与 spec §1.L2 表逐条对齐；450px 矮窗（同源 iframe 956×446）新建任务 Dialog 页级零溢出 + `.atb-scroll` 456>289 可滚 + 按钮 bottom 406≤446 可达，同尺寸看板列内滚未退化成整页滚；⌘K 入场 140ms/↓ 改 active/Enter 开抽屉/Esc 逐层；技能库首屏 stagger delay 集合恰 {0,40,…,240}，WS 新卡只动那一张；三档换肤即时互切零横向破版、验完复原跟随系统。**待裁定 1 处偏差**：新卡入场时长实现取 `itemVariants` 240ms、spec §168 写 200ms。**未单独量**：审核表单 Dialog（与新建任务同壳同高度链，演练队列当时无待审核任务，beta 包复验补一眼）；tooltip/menu/popover 退场与 layoutId 换列飞行未逐帧分辨。 |
 | §6.5 B6 MCP 词表 | | |
 | §7.1 B8/B8s 审核产物 | | |
 | §7.2 B9/B10/B11 设置与托盘 | | |
