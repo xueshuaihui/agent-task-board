@@ -7,7 +7,6 @@ import {
   mergeGroupingPrefs,
   migrateV1Slots,
   normalizeBoardFilterPrefs,
-  type BoardFilterPrefs,
 } from '../filter-prefs';
 
 /**
@@ -51,23 +50,35 @@ afterAll(() => {
   vi.unstubAllGlobals();
 });
 
-describe('B15-② 偏好迁移 → v2 扁平', () => {
-  it('v1 槽形状 → 对应维数组，值词表翻译（__unassigned__→none、p2→2、tag:x→x），并回写 v2', async () => {
+describe('B15-② 偏好迁移 → v2 扁平（§19.14：groups 读取时丢弃、不回写）', () => {
+  it('v1 槽形状 → 对应维数组，值词表翻译（__unassigned__→none、tag:x→x），并回写 v2', async () => {
     const { read, localStorage } = await load({
       [BOARD_FILTER_LOCAL_KEY]: JSON.stringify({
-        slotA: { dim: 'group', values: ['g-1', '__unassigned__', 'g-1'] },
+        slotA: { dim: 'requirement', values: ['r-1', '__unassigned__', 'r-1'] },
         slotB: { dim: 'tag', values: ['tag:urgent', '__unassigned__'] },
       }),
     });
-    expect(read()).toMatchObject({ groups: ['g-1', 'none'], tags: ['urgent'] });
-    const written = JSON.parse(localStorage.store.get(BOARD_FILTER_LOCAL_KEY) ?? '{}') as Partial<
-      BoardFilterPrefs & { slotA?: unknown }
-    >;
-    expect(written.groups).toEqual(['g-1', 'none']);
+    expect(read()).toMatchObject({ requirements: ['r-1', 'none'], tags: ['urgent'] });
+    const written = JSON.parse(localStorage.store.get(BOARD_FILTER_LOCAL_KEY) ?? '{}') as Record<string, unknown>;
+    expect(written.requirements).toEqual(['r-1', 'none']);
+    expect(written).not.toHaveProperty('groups');
     expect(written.slotA).toBeUndefined();
   });
 
-  it('无新键、只有旧 grouping：groupIds + 泳道时代 primary/laneFilter 一并翻译', async () => {
+  it('v1 槽 dim==="group" 的历史值读取即丢弃，不进偏好、不回写', async () => {
+    const { read, localStorage } = await load({
+      [BOARD_FILTER_LOCAL_KEY]: JSON.stringify({
+        slotA: { dim: 'group', values: ['g-1', '__unassigned__'] },
+        slotB: { dim: 'tag', values: ['tag:urgent'] },
+      }),
+    });
+    expect(read()).toMatchObject({ tags: ['urgent'] });
+    expect(read()).not.toHaveProperty('groups');
+    const written = JSON.parse(localStorage.store.get(BOARD_FILTER_LOCAL_KEY) ?? '{}') as Record<string, unknown>;
+    expect(written).not.toHaveProperty('groups');
+  });
+
+  it('无新键、只有旧 grouping：只读迁移链保留（primary/laneFilter 照常翻译），groupIds 作用域值丢弃', async () => {
     const { read } = await load({
       [GROUPING_LOCAL_KEY]: JSON.stringify({
         groupIds: ['g-1', 42, 'g-1'],
@@ -75,7 +86,8 @@ describe('B15-② 偏好迁移 → v2 扁平', () => {
         laneFilter: ['p1', 'p3', 'bogus'],
       }),
     });
-    expect(read()).toMatchObject({ groups: ['g-1'], priority: [1, 3] });
+    expect(read()).toMatchObject({ priority: [1, 3] });
+    expect(read()).not.toHaveProperty('groups');
   });
 
   it('status/none 槽不参与迁移（列本身就是状态）', () => {
@@ -86,12 +98,13 @@ describe('B15-② 偏好迁移 → v2 扁平', () => {
     expect(prefs).toEqual(DEFAULT_BOARD_FILTER_PREFS);
   });
 
-  it('已是 v2 → 原样归一化，grouping 旧键不再合并（防止已清空的旧作用域复活）', async () => {
+  it('已是 v2 → 归一化（旧持久化 groups 值读取时丢弃），grouping 旧键不再合并（防已清空作用域复活）', async () => {
     const { read } = await load({
       [BOARD_FILTER_LOCAL_KEY]: JSON.stringify({ groups: ['g-9'], view: 'review' }),
       [GROUPING_LOCAL_KEY]: JSON.stringify({ groupIds: ['g-1'] }),
     });
-    expect(read()).toMatchObject({ groups: ['g-9'], view: 'review' });
+    expect(read()).toMatchObject({ view: 'review' });
+    expect(read()).not.toHaveProperty('groups');
   });
 
   it('坏 JSON / 全空 → 回落默认不抛错', async () => {
@@ -112,13 +125,20 @@ describe('B15-② 偏好迁移 → v2 扁平', () => {
     expect(prefs.customFields).toEqual({ stage: ['dev'] });
   });
 
-  it('mergeGroupingPrefs 兼容 W1 前的 projectIds 键', () => {
-    const prefs = { ...DEFAULT_BOARD_FILTER_PREFS, customFields: {} };
-    mergeGroupingPrefs(prefs, { projectIds: ['p-1'] });
-    expect(prefs.groups).toEqual(['p-1']);
+  it('normalize 丢弃历史 groups 键（§19.14：读取时剥离、切片里不再有这一位）', () => {
+    const prefs = normalizeBoardFilterPrefs({ groups: ['g-1', 'none'], tags: ['t'] });
+    expect(prefs).not.toHaveProperty('groups');
+    expect(prefs.tags).toEqual(['t']);
   });
 
-  it('服务端 board.filter 缺失、grouping 在：水合**合并进**本地迁移值，不整份顶掉本地维度', async () => {
+  it('mergeGroupingPrefs：groupIds/projectIds 值一律丢弃（只读迁移链保留）', () => {
+    const prefs = { ...DEFAULT_BOARD_FILTER_PREFS, customFields: {} };
+    mergeGroupingPrefs(prefs, { projectIds: ['p-1'] });
+    mergeGroupingPrefs(prefs, { groupIds: ['g-1'] });
+    expect(prefs).toEqual(DEFAULT_BOARD_FILTER_PREFS);
+  });
+
+  it('服务端 board.filter 缺失、grouping 在：水合合并进本地迁移值（本地独有维度不被顶掉），groups 两边都丢', async () => {
     const localStorage = makeLocalStorage({
       [BOARD_FILTER_LOCAL_KEY]: JSON.stringify({
         slotA: { dim: 'group', values: ['g-1'] },
@@ -139,12 +159,13 @@ describe('B15-② 偏好迁移 → v2 扁平', () => {
     await import('../filter-prefs');
     const { useFilterStore } = await import('@/app/store/filters');
     await vi.waitFor(() => {
-      expect(useFilterStore.getState().groups).toEqual(['g-1', 'g-2']);
+      expect(useFilterStore.getState().priority).toEqual([1]);
     });
-    expect(useFilterStore.getState().priority).toEqual([1]);
-    const written = JSON.parse(localStorage.store.get(BOARD_FILTER_LOCAL_KEY) ?? '{}') as BoardFilterPrefs;
+    // 看板侧不再把 groups 水合进 store（store 键保留给列表作用域，初值恒空）。
+    expect(useFilterStore.getState().groups).toEqual([]);
+    const written = JSON.parse(localStorage.store.get(BOARD_FILTER_LOCAL_KEY) ?? '{}') as Record<string, unknown>;
     expect(written.priority).toEqual([1]);
-    expect(written.groups).toEqual(['g-1', 'g-2']);
+    expect(written).not.toHaveProperty('groups');
   });
 });
 

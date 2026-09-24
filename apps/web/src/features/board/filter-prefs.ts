@@ -7,29 +7,38 @@ import { UNASSIGNED_KEY } from './grouping/dimensions';
  * B15-②：看板统一过滤的**持久化 + URL 同步**层。
  *
  * 真值只有一份——`useFilterStore`（app/store/filters.ts）；本模块负责把它在看板侧的
- * 子集（view/priority/type/tags/groups/requirements/agents/customFields）双写：
+ * 子集（view/priority/type/tags/requirements/agents/customFields）双写：
  * - **设备偏好**：localStorage `atb.board.filter` + 服务端 prefs `board.filter`（v2 扁平
  *   形状；读写与水合竞态防护沿用 B13/useGroupingState 的套路）；
  * - **URL**：看板页内经 `useBoardFilterUrlSync()` 双向同步 `#/board?...`
  *   （挂载/跳转时 URL 优先，之后 store 变更用 `replaceState` 回写、不产生历史条目）。
  *
+ * §19.14（2026-09-24 拍板）：groups 维从看板下线——**持久化切片不再包含 groups**，
+ * 历史偏好里的 groups 值与旧迁移链里的分组作用域一律「读取时丢弃、不回写」。
+ *
  * 一次性迁移（读到才转，转完按 v2 落盘）：
- * - v1 槽形状 `{ slotA, slotB }`（B13「分组即过滤」）→ 对应维度的数组；
- * - 旧 `board.grouping`（`groupIds` 作用域 + 泳道时代的 `primary/laneFilter`）→ groups/对应维度。
+ * - v1 槽形状 `{ slotA, slotB }`（B13「分组即过滤」）→ 对应维度的数组（`dim==='group'`
+ *   的历史槽值丢弃）；
+ * - 旧 `board.grouping`（只读迁移链保留）→ 泳道时代的 `primary/laneFilter` 仍翻进
+ *   对应维度；`groupIds/projectIds` 作用域值丢弃。
  */
 
 export const BOARD_FILTER_LOCAL_KEY = 'atb.board.filter';
 export const BOARD_FILTER_SERVER_KEY = 'board.filter';
-/** 旧分组作用域偏好（B13 前）；只作迁移输入，store 已随 B15-②b 下线。 */
+/**
+ * 旧分组作用域偏好（B13 前）；只作迁移输入，store 已随 B15-②b 下线。
+ * §19.14：链路保留（旧键仍被读取，laneFilter/primary 照常翻译），但其中的
+ * `groupIds/projectIds` 值读取时丢弃、不回写。
+ */
 export const GROUPING_LOCAL_KEY = 'atb.board.grouping';
 export const GROUPING_SERVER_KEY = 'board.grouping';
 
 /* ------------------------------------------------------------------ 形状 */
 
-/** v2 偏好 = 看板过滤子集（列表页专属的 status/keyword/archived 不持久化）。 */
+/** v2 偏好 = 看板过滤子集（列表页专属的 status/keyword/archived 不持久化；§19.14 起 groups 不持久化）。 */
 export type BoardFilterPrefs = Pick<
   FilterState,
-  'view' | 'priority' | 'type' | 'tags' | 'groups' | 'requirements' | 'agents' | 'customFields'
+  'view' | 'priority' | 'type' | 'tags' | 'requirements' | 'agents' | 'customFields'
 >;
 
 export const DEFAULT_BOARD_FILTER_PREFS: BoardFilterPrefs = {
@@ -37,7 +46,6 @@ export const DEFAULT_BOARD_FILTER_PREFS: BoardFilterPrefs = {
   priority: [],
   type: [],
   tags: [],
-  groups: [],
   requirements: [],
   agents: [],
   customFields: {},
@@ -79,7 +87,6 @@ export function normalizeBoardFilterPrefs(input: unknown): BoardFilterPrefs {
     priority: normalizePriority(raw.priority),
     type: uniq(strList(raw.type)),
     tags: uniq(strList(raw.tags)),
-    groups: uniq(strList(raw.groups)),
     requirements: uniq(strList(raw.requirements)),
     agents: uniq(strList(raw.agents)),
     customFields,
@@ -88,9 +95,11 @@ export function normalizeBoardFilterPrefs(input: unknown): BoardFilterPrefs {
 
 /* ------------------------------------------------------------ v1 迁移 */
 
-/** v1 槽的维度 → 过滤 store 的键；status/none 无对应（本来就是列/不过滤）。 */
+/**
+ * v1 槽的维度 → 过滤 store 的键；status/none 无对应（本来就是列/不过滤）。
+ * §19.14：`group` 维不再映射——历史 slot 里的分组值读取即丢弃。
+ */
 const SLOT_DIM_TO_KEY = {
-  group: 'groups',
   requirement: 'requirements',
   agent: 'agents',
   type: 'type',
@@ -98,7 +107,7 @@ const SLOT_DIM_TO_KEY = {
   priority: 'priority',
 } as const satisfies Record<string, keyof BoardFilterPrefs>;
 
-type StringListKey = 'groups' | 'requirements' | 'agents' | 'type' | 'tags';
+type StringListKey = 'requirements' | 'agents' | 'type' | 'tags';
 
 interface LegacySlot {
   dim?: unknown;
@@ -156,20 +165,16 @@ export function migrateV1Slots(value: object): BoardFilterPrefs {
 }
 
 /**
- * 旧 `board.grouping` → v2：`groupIds` 作用域并进 groups；泳道时代的
- * `primary + laneFilter` 按槽翻译（`secondary` 在 B13 语义里 values 恒空，忽略）。
+ * 旧 `board.grouping` → v2（只读迁移链，§19.14 收窄）：`groupIds/projectIds` 作用域
+ * 值读取时丢弃、不回写；泳道时代的 `primary + laneFilter` 仍按槽翻译
+ * （`secondary` 在 B13 语义里 values 恒空，忽略）。
  */
 export function mergeGroupingPrefs(target: BoardFilterPrefs, input: unknown): void {
   if (typeof input !== 'object' || input === null) return;
   const raw = input as {
-    groupIds?: unknown;
-    projectIds?: unknown;
     primary?: unknown;
     laneFilter?: unknown;
   };
-  const ids = Array.isArray(raw.groupIds) ? raw.groupIds : Array.isArray(raw.projectIds) ? raw.projectIds : [];
-  const list = strList(ids);
-  if (list.length) target.groups = uniq([...target.groups, ...list]);
   if (Array.isArray(raw.laneFilter)) {
     mergeSlotValues(target, raw.primary, strList(raw.laneFilter));
   }
@@ -191,7 +196,6 @@ const SLICE_KEYS = [
   'priority',
   'type',
   'tags',
-  'groups',
   'requirements',
   'agents',
   'customFields',
