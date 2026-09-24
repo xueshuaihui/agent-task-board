@@ -72,8 +72,8 @@ afterAll(async () => {
 
 // ---------------------------------------------------------------- 1. 迁移 0013 演练
 
-describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0015）', () => {
-  it('水位 0012 的库增量应用 0013/0014/0015：只重放这三棒，新表与 tasks 来源列就位', () => {
+describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0016）', () => {
+  it('水位 0012 的库增量应用 0013/0014/0015/0016：只重放这四棒，新表与 tasks 来源列就位', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'atb-w8-mig-'));
     const previous = { data: process.env.ATB_DATA_DIR, mig: process.env.ATB_MIGRATIONS_DIR };
     try {
@@ -91,15 +91,24 @@ describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0015）', 
       const upTo12 = applyMigrations();
       expect(upTo12[upTo12.length - 1]).toBe(12);
 
-      // 2) 切回全量迁移目录：应只增量应用 0013/0014（W8-a3 追加通知 kind 词表）
-      //    与 0015（skills.category 收口，加列不重建）。
+      // 0016 演练数据：水位停在 0012 时先造一行「受众词+分类词+自由标签」混灌的历史技能，
+      // 0015 回填 category=实用工具 并洗掉被取走的词，0016 再把残留词表词洗干净——
+      // 终值只剩自由标签，且原序不变。
+      const staging = new DatabaseSync(path.join(dir, 'jarvis.db'));
+      staging
+        .prepare(`INSERT INTO skills (id, name, type, tags) VALUES ('s_legacy', 'legacy', 'prompt', '["官方","实用工具","推荐","我的标签"]')`)
+        .run();
+      staging.close();
+
+      // 2) 切回全量迁移目录：应只增量应用 0013/0014（W8-a3 追加通知 kind 词表）、
+      //    0015（skills.category 收口，加列不重建）与 0016（tags 存量洗数，纯洗数无 DDL）。
       delete process.env.ATB_MIGRATIONS_DIR;
       const applied = applyMigrations();
-      expect(applied).toEqual([13, 14, 15]); // 0001~0012 不重放
+      expect(applied).toEqual([13, 14, 15, 16]); // 0001~0012 不重放
 
       const check = new DatabaseSync(path.join(dir, 'jarvis.db'), { readOnly: true });
       const version = check.prepare('PRAGMA user_version').get() as { user_version: number };
-      expect(version.user_version).toBe(15);
+      expect(version.user_version).toBe(16);
       const tables = check
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('agent_sessions','task_creation_logs')")
         .all() as { name: string }[];
@@ -126,6 +135,13 @@ describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0015）', 
       expect(() =>
         probe.prepare(`INSERT INTO skills (id, name, type, category) VALUES ('s_bad', 'bad', 'prompt', '审核')`).run(),
       ).toThrow();
+      // 0016：预置的历史行（受众词+两个词表词+自由标签混灌）——0015 回填取走「实用工具」后，
+      // 残留的第二词表词「推荐」与受众词「官方」也被本迁移洗干净，终值只剩自由标签、原序不变。
+      const legacy = probe
+        .prepare(`SELECT category, tags FROM skills WHERE id = 's_legacy'`)
+        .get() as { category: string; tags: string };
+      expect(legacy.category).toBe('实用工具');
+      expect(legacy.tags).toBe('["我的标签"]');
       probe.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });

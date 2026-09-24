@@ -20,9 +20,9 @@ import { skillContentSchema } from '../skills.dto';
  *
  * 锁六件事：
  * ① 93 条种子齐全、id 唯一且与 builtin-skills/*.md 清洗终稿同步（改了 md 不重跑
- *    gen-builtin-seeds.mjs 会红）；分类收口（C-2）后同一条还锁 seed 侧的 category/tags 口径：
- *    category ∈ 12 词表、tags 里无作废受众词、且不含该技能自己的 category 值（词表内的**第二**
- *    分类词按 0015 口径原样保留，它是卡片标签区与绑定技能搜索的命中面）；
+ *    gen-builtin-seeds.mjs 会红）；分类收口（C-2 + 0925 拍板收紧）后同一条还锁 seed 侧的
+ *    category/tags 口径：category ∈ 12 词表、tags 里既无作废受众词、也不含**任何**词表词
+ *    （0016 口径：标签是标签、分类是分类，洗后内置 tags 多为空数组是预期终态）；
  * ② markdown→blocks 解析/兜底双路径都产出可通过 skillContentSchema 的合法内容，
  *    兜底块全文无损；
  * ③ 17 条「依赖千问后端」档：降级不收 quark-drive，其余 16 条带降级说明行、
@@ -88,13 +88,13 @@ describe('千问迁移内置种子（#41）', () => {
     for (const seed of BUILTIN_SKILL_SEEDS) {
       expect(seed.id).toMatch(/^skl_builtin_[a-z0-9._-]+$/);
       expect(seed.description.length).toBeGreaterThan(0);
-      // 分类收口（C-2）：不再断言 tags 数量——catalog 的 tags 主要是「受众词 + 分类词」，
-      // 洗完剩多少取决于上游数据；这里只锁两条口径（条款 82 禁的是受众词，词表词进 tags 无害，
-      // 卡片标签区与绑定技能搜索的命中面都靠它）。
+      // 分类收口（C-2 + 0925 收紧）：不再断言 tags 数量——catalog 的 tags 主要是「受众词 +
+      // 分类词」，新口径下全部剔掉；这里锁两条硬口径：tags 无受众词、无任何词表词
+      // （词表词进 tags 会在卡片标签区呈现为第二套分类，0016 迁移按同口径洗存量）。
       expect(isSkillCategory(seed.category), `${seed.id} category 不在 12 词表：${seed.category}`).toBe(true);
       for (const tag of seed.tags) {
         expect(AUDIENCE_TAGS as readonly string[], `${seed.id} 残留受众词 ${tag}`).not.toContain(tag);
-        expect(tag, `${seed.id} 自由标签里混了自己的分类词 ${tag}`).not.toBe(seed.category);
+        expect(isSkillCategory(tag), `${seed.id} 自由标签里残留词表词 ${tag}`).toBe(false);
       }
       expect(seed.mcpDependencies).toEqual([]);
     }
@@ -165,7 +165,7 @@ describe('千问迁移内置种子（#41）', () => {
       const tags = JSON.parse(row.tags) as string[];
       for (const tag of tags) {
         expect(AUDIENCE_TAGS as readonly string[], `${row.id} 库内回灌受众词 ${tag}`).not.toContain(tag);
-        expect(tag, `${row.id} 库内 tags 混了自己的分类词 ${tag}`).not.toBe(row.category);
+        expect(isSkillCategory(tag), `${row.id} 库内 tags 残留词表词 ${tag}`).toBe(false);
       }
     }
     // PRD §9.2 规范样例：单值分类 + 自由标签两字段各归各位。
@@ -201,32 +201,33 @@ describe('千问迁移内置种子（#41）', () => {
       资讯研究: 1,
       质量保障: 1,
     });
-    // tags 快照（口径 = 0015 洗 tags 段：只洗受众词与被 category 取走的那个词）：
-    // 43 条有自由标签、元素合计 46、受众词 0 次。第二分类词（如 开学季）留在 tags 里是设计如此——
-    // 它是卡片标签区与「绑定技能模糊搜索」的命中面，收口只把它从**分类选项**里下线。
+    // tags 快照（口径 = 0925 拍板收紧后的 0016 洗数段：受众词与一切词表词都不留）：
+    // 93 条迁移内置洗后 tags 全为空数组（catalog 的 tags 本就是「受众词 + 分类词」），
+    // 唯一非空的是手写的 §9.2 规范样例 code-review（review/quality 是真自由标签）。
+    // 空数组是预期终态，不是 bug：卡片标签区空就空，分类展示与搜索命中面都走 category 列。
     const tagDist: Record<string, number> = {};
     for (const seed of DEFAULT_SKILL_SEEDS) {
       for (const tag of seed.tags) tagDist[tag] = (tagDist[tag] ?? 0) + 1;
     }
-    expect(Object.values(tagDist).reduce((a, b) => a + b, 0)).toBe(46);
-    expect(DEFAULT_SKILL_SEEDS.filter((seed) => seed.tags.length > 0).length).toBe(43);
+    expect(Object.values(tagDist).reduce((a, b) => a + b, 0)).toBe(2);
+    expect(DEFAULT_SKILL_SEEDS.filter((seed) => seed.tags.length > 0).length).toBe(1);
     expect(tagDist).toEqual({
-      开学季: 29,
-      Office办公: 4,
-      资讯研究: 3,
-      推荐: 3,
-      开发编程: 2,
-      投资理财: 2,
-      数据分析: 1,
       review: 1,
       quality: 1,
     });
-    // 定点防线（这次修正的靶子）：code-mentor 的 catalog tags 是 [开学季, 开发编程]，
-    // category 取走「开学季」后「开发编程」必须留在 tags 里，否则用户搜「开发编程」搜不到它。
-    // 谁再把 freeTagsOf 收紧成「洗掉一切词表词」，这条就红。
+    // 定点防线（0925 拍板的靶子）：code-mentor 的 catalog tags 是 [开学季, 开发编程]，
+    // category 取走「开学季」后，「开发编程」也**不得**留在 tags 里——它曾在真机卡片上
+    // 与分类徽标同字重现，造成「两套分类标准」观感。谁再把 freeTagsOf 退回「留第二分类词」，这条就红。
     const codeMentor = DEFAULT_SKILL_SEEDS.find((seed) => seed.name === 'code-mentor');
     expect(codeMentor?.category).toBe('开学季');
-    expect(codeMentor?.tags).toContain('开发编程');
+    expect(codeMentor?.tags).toEqual([]);
+    // 逐条守护：seed 的 tags 里出现任何词表词即 fail（0016 口径的服务端等价物，
+    // 防生成器/helper 两侧哪天飘回旧口径）。
+    for (const seed of DEFAULT_SKILL_SEEDS) {
+      for (const tag of seed.tags) {
+        expect(isSkillCategory(tag), `${seed.id} tags 残留词表词 ${tag}`).toBe(false);
+      }
+    }
   });
 
   it('⑥ 分片 ⇔ 千问原始 catalog ⇔ skill-categories.ts 三方同口径（生成器不得自造一套）', () => {
@@ -246,9 +247,9 @@ describe('千问迁移内置种子（#41）', () => {
       const expected = fixes[raw.slug] ?? categoryFromTags(original);
       expect(raw.category, `${raw.slug} 分类与 helper 口径不一致`).toBe(expected);
       if (!isSkillCategory(expected)) throw new Error(`${raw.slug} helper 口径算出词表外分类：${expected}`);
-      // 自由标签 = catalog 原始 tags 洗掉受众词与**被该条 category 取走的那一个词**，
-      // 其余原序保留（含第二分类词）——口径与 0015 洗 tags 段一致，见 freeTagsOf 注释。
-      expect(raw.tags, `${raw.slug} 自由标签与 helper 口径不一致`).toEqual(freeTagsOf(original, expected));
+      // 自由标签 = catalog 原始 tags 洗掉受众词与**一切词表词**（含第二个分类词），
+      // 其余原序保留——口径与 0016 洗数段一致，见 freeTagsOf 注释（0925 拍板收紧）。
+      expect(raw.tags, `${raw.slug} 自由标签与 helper 口径不一致`).toEqual(freeTagsOf(original));
     }
     // 补正表是「上游数据缺陷」的唯一豁免口：条目必须真的缺分类词。
     for (const [slug, fixed] of Object.entries(fixes)) {

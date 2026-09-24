@@ -6,7 +6,8 @@
  * 被前端 apps/web/src/features/skills/meta.ts 用「tags 减去 官方/社区」的减法当分类、tags 同时
  * 还是用户自由标签），结果任何自由标签都会自动长成一个分类选项。收口口径：
  * - 分类只有一套标准 = skills.category 单值列（0015 迁移），取值即下面的 12 项词表；
- * - tags 退回自由标签：分类选项不再由 tags 推导（前端读本词表），tags 里残留的同名词只是标签；
+ * - tags 退回纯自由标签：分类选项不再由 tags 推导（前端读本词表），且 tags 中不得再出现
+ *   任何词表词/受众词（0925 拍板收紧，0016 迁移洗存量，见 freeTagsOf 注释）；
  * - 「官方/社区」受众维度直接作废（不加 audience 列，出处由已有 source_type 三来源表达），
  *   所以 AUDIENCE_TAGS 里的词在写入侧与回填侧都要被剔除。
  *
@@ -75,27 +76,21 @@ export function categoryFromTags(tags: readonly string[]): SkillCategoryOrNone {
 }
 
 /**
- * 洗自由标签：**与 0015 洗 tags 段同口径**（`apps/api/prisma/migrations/0015_skill_category/migration.sql`
- * 的 `j.value NOT IN ('官方','社区') AND (category = '' OR j.value <> category)`）——
- * 只剔除两类词：作废的受众词，与被 `category` 取走的那一个分类词（同一语义不在两处冗余）。
- * **其余一律原序保留，包括词表内的第二个分类词。**
+ * 洗自由标签（**0925 拍板收紧后的新口径**，存量由 0016 迁移按同口径洗）：
+ * 「标签是标签，分类是分类」——tags 中不得出现任何 12 词表词，也不得出现受众词 官方/社区，
+ * 只剔这两类词，**其余原序保留**。内置种子洗后大量条目 tags 为空数组，这是预期终态。
  *
- * 为什么不顺手把词表词全洗掉（这里曾被收紧过一次，已退回）：
- * - 多出的词表词在 tags 里不会再长成分类选项（分类选项已改由本文件的静态词表提供，
- *   前端不再做「tags 减去受众词」的减法），留着无害；PRD §19.13 条款 82 禁的也只是受众词。
- * - 洗掉会让功能与体验回退：`apps/web/src/features/skills/skill-card.tsx` 渲染 `tags.slice(0, 3)`
- *   作为卡片标签区，内置 94 条会全空；后续「绑定技能模糊搜索」切片以 tags 为命中面，
- *   例：code-mentor 的 category 取走「开学季」后，「开发编程」必须是可搜到的剩余标签。
- * - 与迁移分叉等于让迁移那段洗数白写：seed 的 tags 每次启动整份覆盖内置行，两侧不一致时
- *   seed 会赢，终值只反映本函数口径。
+ * 旧口径（「只剔被 category 取走的那一个词、词表内第二个分类词留在 tags 无害」，见 85b0d44
+ * 回退说明）已被真机实测推翻：94 条内置里 43 条 tags 残留词表词、且这些 tags 仅此一词，
+ * 卡片同时显示分类徽标和一模一样的标签——同一技能呈现两套分类标准的观感。残留词表词经
+ * `apps/web/src/features/skills/skill-card.tsx` 的标签区（tags.slice(0, 3)）与
+ * skill-search 的 tags 命中面都会把它再呈现成「第二个分类」，留着并非无害。
+ * 绑定技能的模糊搜索不受影响：category 本身就是独立命中面（skill-search 的 category 字段）。
  *
- * `takenCategory` 传该技能最终落库的 category；未分类（空串）时不剔任何分类词，同 SQL。
+ * 与 0016 洗数段同口径（`apps/api/prisma/migrations/0016_skill_tags_purge/migration.sql`
+ * 的 `j.value NOT IN ('官方','社区', 12 词表)`）；0015 洗 tags 段的「只剔被取走的词」口径
+ * 已被 0016 覆盖，0015 文件定稿不改。
  */
-export function freeTagsOf(
-  tags: readonly string[],
-  takenCategory: SkillCategoryOrNone = UNCATEGORIZED,
-): string[] {
-  return tags.filter(
-    (tag) => !AUDIENCE_SET.has(tag) && (isUncategorized(takenCategory) || tag !== takenCategory),
-  );
+export function freeTagsOf(tags: readonly string[]): string[] {
+  return tags.filter((tag) => !AUDIENCE_SET.has(tag) && !CATEGORY_SET.has(tag));
 }

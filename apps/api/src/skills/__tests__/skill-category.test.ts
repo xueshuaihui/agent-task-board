@@ -8,7 +8,8 @@ import { API, uiSender } from '../../__tests__/helpers/seed';
  * - create/patch 入参 category 走 12 词表 + ''（未分类）校验，越表 422 VALIDATION_FAILED；
  * - patch 两态：不传=不改、传 ''=显式改未分类；
  * - 导入（.atskill / SKILL.md / .mdc 共用同一归一口径）：词表外值落 ''、不报错、
- *   且**不再折进 tags**（旧行为已作废）；tags 只按 0015 口径剔受众词与被取走的分类词；
+ *   且**不再折进 tags**（旧行为已作废）；tags 按 0016 口径（0925 拍板收紧）剔受众词与
+ *   一切词表词，其余原序保留；
  * - 导出（.atskill 与 SKILL.md frontmatter）取真实列值，导出→再导入 category 无损。
  * 注意：不给 GET /skills 加 category= 查询参数（用户裁定，筛选在前端本地做），
  * 本文件同时钉一条「传了也不当筛选」的既有形状，防后续棒顺手加。
@@ -128,14 +129,14 @@ describe('skills.category 读写面与导入导出（C-3）', () => {
 
   // ---------------------------------------------------------------- B. SKILL.md / .mdc / .atskill 导入导出
 
-  it('SKILL.md 导入：frontmatter category 直落列；被取走的词与受众词从 tags 剔除、自由标签原序保留', async () => {
+  it('导入路径洗 tags：受众词与一切词表词都不留（0016 口径），自由标签原序保留', async () => {
     const markdown = [
       '---',
       'name: 收口导入技能',
       'description: 分类直落列',
       'version: 1.0.0',
       'category: 质量保障',
-      'tags: [官方, 质量保障, review, quality]',
+      'tags: [官方, 质量保障, review, 开发编程, quality]',
       '---',
       '',
       '### 开场',
@@ -147,7 +148,8 @@ describe('skills.category 读写面与导入导出（C-3）', () => {
     const res = await ui.post(`${API}/skills/import-markdown`, { filename: 'SKILL.md', content: markdown });
     expect(res.status).toBe(201);
     expect(res.body.category).toBe('质量保障');
-    // 与 0015 洗 tags 同口径：受众词 官方 与被 category 取走的 质量保障 剔除，其余原序保留
+    // 0925 拍板新口径：受众词 官方、被 category 取走的 质量保障、以及词表内的第二个分类词
+    // 开发编程 全部剔除，只有真自由标签原序留下（tags 出现任何词表词即 fail）。
     expect(res.body.tags).toEqual(['review', 'quality']);
   });
 
@@ -231,12 +233,21 @@ describe('skills.category 读写面与导入导出（C-3）', () => {
     expect(reimported.status).toBe(201);
     expect(reimported.body.category).toBe('方案写作');
     expect(reimported.body.tags).toEqual(['标书']);
-    // 旧包（无 category 字段 / 越表 category + 受众词 tags）归一
+    // 旧包（无 category 字段 / 越表 category + 受众词与词表词混进 tags）归一：
+    // 0016 口径下即使 category 落 ''（未分类），词表词 数据分析 也照样从 tags 剔掉
+    // （旧口径「未分类不剔任何分类词」已随 0925 拍板作废）。
     const legacyForm = new FormData();
     legacyForm.append(
       'file',
       new Blob(
-        [JSON.stringify({ name: '旧包', type: 'flow', category: 'flow', tags: ['社区', '杂项'] })],
+        [
+          JSON.stringify({
+            name: '旧包',
+            type: 'flow',
+            category: 'flow',
+            tags: ['社区', '杂项', '数据分析'],
+          }),
+        ],
         { type: 'application/json' },
       ),
       'legacy.atskill',

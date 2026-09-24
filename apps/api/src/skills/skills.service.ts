@@ -185,7 +185,8 @@ export class SkillsService {
         status: 'DRAFT',
         description: input.description,
         // §9.2 两字段两语义：category 单值分类直落列（zod 词表校验/import 侧已归一），
-        // tags 是纯自由标签——写入侧不删词表词（只允许导入路径按 0015 口径剔受众词+取走词）。
+        // tags 是纯自由标签——create/patch 写入侧不洗（词表词进 tags 由 0016 存量洗数与
+        // 导入路径兜住，UI 手工造词表词标签不做服务端强删）。
         category: input.category,
         tags: JSON.stringify(input.tags),
         currentVersion: INITIAL_VERSION,
@@ -429,7 +430,7 @@ export class SkillsService {
     }
     const deps = (payload.mcp_dependencies ?? payload.mcpDependencies ?? []) as SkillMcpDependency[];
     // §9.2 导入归一（与 SKILL.md 路径同口径）：category 词表外落 ''（旧包无此字段即未分类）；
-    // tags 按 0015 洗数口径剔受众词与被 category 取走的词，其余原序保留。
+    // tags 按 0016 口径剔受众词与一切词表词（0925 拍板收紧），其余原序保留。
     const category = toSkillCategory(payload.category);
     const rawTags = Array.isArray(payload.tags) ? (payload.tags as string[]).map(String) : [];
     const data = {
@@ -437,7 +438,7 @@ export class SkillsService {
       type: payload.type as SkillType,
       description: typeof payload.description === 'string' ? payload.description : '',
       category,
-      tags: freeTagsOf(rawTags, category).filter((tag) => tag.length > 0 && tag.length <= 30),
+      tags: freeTagsOf(rawTags).filter((tag) => tag.length > 0 && tag.length <= 30),
       content: (payload.content ?? EMPTY_CONTENT) as SkillContent,
       // 8.6：测试用例随 .atskill 一起带走（旧文件没有该字段就是空）。
       test_cases: Array.isArray(payload.test_cases) ? (payload.test_cases as SkillTestCase[]) : [],
@@ -485,9 +486,9 @@ export class SkillsService {
     // §9.2 分类收口（0015）：frontmatter `category` 直落 skills.category 列，词表外值
     // （含旧导出包把 category 写成 workflow/flow 类型枚举值的文件）归未分类 ''、不报错。
     // 旧实现「category 没有对应列、折进标签」的行为连同 .mdc 共用路径一并作废——
-    // tags 退回纯自由标签，按 0015 洗数口径剔受众词与被 category 取走的词，其余原序保留。
+    // tags 退回纯自由标签，按 0016 口径剔受众词与一切词表词（0925 拍板收紧），其余原序保留。
     const category = toSkillCategory(fm?.category);
-    const tags = freeTagsOf(fm?.tags ?? [], category).filter((tag) => tag.length <= 30);
+    const tags = freeTagsOf(fm?.tags ?? []).filter((tag) => tag.length <= 30);
     const data: SkillCreateInput = {
       name: baseName,
       // 只有一个提示词块 → prompt 技能，否则按流程技能处理。

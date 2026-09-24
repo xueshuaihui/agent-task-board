@@ -13,8 +13,8 @@
  *
  * v0.0.4 分类收口（C-2）：不再折算「官方/社区」受众词（该维度已作废，出处由 source_type
  * 表达），改为产出单值 category + 自由 tags。category 的取词口径与 0015 迁移回填一致
- * （tags 中首个「非受众词且在词表内」的词）；tags 的洗法与 0015 洗 tags 段一致——只洗受众词
- * 与被 category 取走的那个词，其余原序保留（含第二分类词，卡片标签区与搜索命中面要用），
+ * （tags 中首个「非受众词且在词表内」的词）；tags 的洗法按 0925 拍板收紧后的 0016 口径——
+ * 受众词与一切词表词都不留，其余原序保留（内置洗后大量条目 tags 为空数组，是预期终态），
  * 权威口径见 src/skills/skill-categories.ts。
  */
 import { readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -61,14 +61,13 @@ function categoryFromTags(tags) {
 }
 
 /**
- * 与 skill-categories.ts 的 freeTagsOf 同口径（= 0015 洗 tags 段）：只洗受众词 + 被该条
- * category 取走的那个词；词表内的第二个分类词等其余标签原序保留——卡片标签区要显示它、
- * 绑定技能模糊搜索要拿 tags 当命中面（洗干净会让 94 条内置的标签区全空）。
+ * 与 skill-categories.ts 的 freeTagsOf 同口径（0925 拍板收紧 = 0016 洗数段）：受众词与
+ * 一切词表分类词都不留，其余原序保留。「标签是标签，分类是分类」——词表词留在 tags 里
+ * 会让卡片标签区（skill-card 的 tags.slice(0,3)）与搜索命中面把同一技能呈现成两套分类；
+ * 绑定技能搜索不受影响（category 是独立命中面）。内置洗后 tags 多为空数组，是预期终态。
  */
-function freeTagsOf(tags, takenCategory) {
-  return tags.filter(
-    (tag) => !AUDIENCE_TAGS.includes(tag) && (takenCategory === '' || tag !== takenCategory),
-  );
+function freeTagsOf(tags) {
+  return tags.filter((tag) => !AUDIENCE_TAGS.includes(tag) && !SKILL_CATEGORIES.includes(tag));
 }
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -102,7 +101,7 @@ const rows = slugs.map((slug) => {
   if (!SKILL_CATEGORIES.includes(category)) {
     throw new Error(`${slug} 未取到词表内分类（category=${JSON.stringify(category)}），补 CATEGORY_FIXES 或修 catalog`);
   }
-  const tags = freeTagsOf(rawTags, category);
+  const tags = freeTagsOf(rawTags);
   return { slug, nameCn: item.nameCn, description: desc.slice(0, 500), category, tags, markdown };
 });
 // 补正表防呆：条目必须存在、且必须真的缺分类词（上游哪天补上了就清理掉这条，别让它静默覆盖）。
