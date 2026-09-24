@@ -22,7 +22,10 @@ import type { TaskCard } from '@/api/types';
 import { STATUS_LABEL } from '@/lib/labels';
 import { cn } from '@/lib/cn';
 import { useShellStore } from '@/app/store/shell';
-import { useActiveGroups } from '@/features/groups/queries';
+import {
+  requirementMoveBody,
+  useRequirementOptions,
+} from '@/features/requirements/use-requirement-options';
 import { computeDependencyLayout, type GraphEdgeInput } from '@/features/dependency-graph/layout';
 import { useAddDependency, useRemoveDependency } from '@/features/dependency-graph/useDependencyGraph';
 import type { BoardMutations } from '@/features/board/mutations';
@@ -34,8 +37,8 @@ import { getFlowLayout, hydrateFlowLayout, useViewPrefsStore, writeFlowLayout, t
 /**
  * 流程图第三视图（v0.0.4 W5 §6.4.1：把依赖图升级为看板的第三种视图）。
  *
- * 数据源 = 看板当前可见任务（六列快照拉平，归档分组默认不在其中——§5.6
- * 「流程图默认隐藏」由服务端 buildFilters 同款口径继承）+ 逐任务依赖边
+ * 数据源 = 看板当前可见任务（六列快照拉平，归档归属下的任务默认不在其中——
+ * §19.14·85 既有服务端 buildFilters 口径，非回归）+ 逐任务依赖边
  * （`useDependencyEdges`，与依赖 Tab / 旧依赖图弹窗共享缓存）。
  *
  * 画布能力全部来自 @xyflow/react（§6.4.10「不自研画布基础能力」）：
@@ -232,7 +235,7 @@ function FlowCanvas({ tasks, edges, edgesLoading, mutations, onRequestDelete }: 
 
   const addDependency = useAddDependency();
   const removeDependency = useRemoveDependency();
-  const groups = useActiveGroups();
+  const requirementOptions = useRequirementOptions();
 
   /* 删除确认（§6.4.10 selectable/deletable 基础上的任务语义）：
    * 节点删除交给看板页既有 DeleteDialog（数据删除必须确认 + 有级联说明），
@@ -298,7 +301,7 @@ function FlowCanvas({ tasks, edges, edgesLoading, mutations, onRequestDelete }: 
     [openTask],
   );
 
-  /* 右键菜单（§6.4.8）：查看/编辑、移到其他分组、删除。 */
+  /* 右键菜单（§6.4.8）：查看/编辑、移到其他需求、删除。 */
   const [menu, setMenu] = useState<{ x: number; y: number; card: TaskCard } | null>(null);
   const [moveMenu, setMoveMenu] = useState(false);
   const onNodeContextMenu = useCallback(
@@ -406,7 +409,7 @@ function FlowCanvas({ tasks, edges, edgesLoading, mutations, onRequestDelete }: 
       <div className="relative min-h-0 flex-1 overflow-hidden rounded-card border border-border bg-bg-raised">
         {total > prefs.perfLargeLimit ? (
           <div className="absolute inset-x-0 top-0 z-10 bg-status-running-soft px-4 py-1 text-aux text-text-primary">
-            节点数 {total} 已超过性能档位上限（{prefs.perfLargeLimit}）：已开启虚拟化渲染，建议用分组切换器或筛选收窄范围。
+            节点数 {total} 已超过性能档位上限（{prefs.perfLargeLimit}）：已开启虚拟化渲染，建议用筛选收窄范围。
           </div>
         ) : null}
         <ReactFlow
@@ -526,7 +529,7 @@ function FlowCanvas({ tasks, edges, edgesLoading, mutations, onRequestDelete }: 
         ) : null}
       </div>
 
-      {/* 右键菜单（§6.4.8）：查看/编辑 · 移到其他分组 · 删除（复用看板确认对话框） */}
+      {/* 右键菜单（§6.4.8）：查看/编辑 · 移到其他需求 · 删除（复用看板确认对话框） */}
       {menu ? (
         <div
           className="fixed z-50 w-48 rounded-card border border-border bg-bg-surface py-1 shadow-card"
@@ -542,25 +545,36 @@ function FlowCanvas({ tasks, edges, edgesLoading, mutations, onRequestDelete }: 
             }}
           />
           <MenuItem
-            label={moveMenu ? '▾ 移到其他分组' : '▸ 移到其他分组'}
+            label={moveMenu ? '▾ 移到其他需求' : '▸ 移到其他需求'}
             onClick={() => setMoveMenu((value) => !value)}
           />
           {moveMenu ? (
             <div className="max-h-48 overflow-y-auto border-t border-border">
-              {(groups.data?.items ?? [])
-                .filter((group) => group.id !== menu.card.group_id)
-                .map((group) => (
+              {requirementOptions.data
+                .filter((option) => option.id !== menu.card.parent?.id)
+                .map((option) => (
                   <MenuItem
-                    key={group.id}
-                    label={`📁 ${group.name}`}
+                    key={option.id}
+                    label={`📌 ${option.title}`}
                     onClick={() => {
+                      // §19.14·86：一次 PATCH 原子写 parent_task_id + 回填该需求的 group_id。
                       mutations.patch.mutate(
-                        { id: menu.card.id, body: { group_id: group.id } },
+                        { id: menu.card.id, body: requirementMoveBody(option) },
                         { onSuccess: () => setMenu(null) },
                       );
                     }}
                   />
                 ))}
+              <MenuItem
+                label="未分配"
+                onClick={() => {
+                  // 脱离需求仅置空 parent_task_id，group_id 不发 PATCH（保持原组）。
+                  mutations.patch.mutate(
+                    { id: menu.card.id, body: requirementMoveBody(null) },
+                    { onSuccess: () => setMenu(null) },
+                  );
+                }}
+              />
             </div>
           ) : null}
           <MenuItem
