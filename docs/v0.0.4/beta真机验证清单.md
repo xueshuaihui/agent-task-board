@@ -4,8 +4,8 @@
 
 ## 0. 下载与完整性（前置）｜**只能打包 dmg**
 
-> **截至 2026-09-24（HEAD `c4aa019`，尚未切 beta.7）**：标题里的 beta.6 指被验内容基线；dev 可验面已全绿——§6.2/§6.3/§6.4/§6.5/§7.1/§7.2(前二)/§7.3/§7.4 逐条勾销，实测数字在正文、批次记录在矩阵「beta.6 之后：dev 演练真机轮」节，本轮查出并修掉的缺陷为 `96f7fb7`（相对时间退化）、`9777249`（forceMount Portal 丢 ref）、`c3fa31e`（MCP structuredContent 丢可接受值）、`e27d26e`（React Flow 水印恢复显示 + 「第 N 次」缺空格）。
-> **剩余未勾项全部依赖打包 dmg**：§0–§5、§6.1、§7.2-③ 托盘深色可见性、§9 的 beta 包复验腿（§9 各条 dev 走查证据在 C/D 批 commit 里）。tag 由用户另行拍板，推 tag = 触发 CI 出包。
+> **截至 2026-09-24（HEAD `3ae627f`，尚未切 beta.7）**：标题里的 beta.6 指被验内容基线；dev 可验面已全绿——§6.2/§6.3/§6.4/§6.5/§7.1/§7.2(前二)/§7.3/§7.4 逐条勾销，实测数字在正文、批次记录在矩阵「beta.6 之后：dev 演练真机轮」节，该轮查出并修掉的缺陷为 `96f7fb7`（相对时间退化）、`9777249`（forceMount Portal 丢 ref）、`c3fa31e`（MCP structuredContent 丢可接受值）、`e27d26e`（React Flow 水印恢复显示 + 「第 N 次」缺空格）。**其后又跑了用户报障的 G 批（见 §10）**：任务列表列宽跳变（`ac5b45a` + `8c1d550`，含中途查出的 1280 档横滚回归）、Agent 侧任务与技能的全字段编辑面（新增 MCP 工具 `update_task` `4dc8764`、`update_skill` `3ae627f`，工具总数 26→28）。
+> **剩余未勾项全部依赖打包 dmg**：§0–§5、§6.1、§7.2-③ 托盘深色可见性、§9 的 beta 包复验腿（§9 各条 dev 走查证据在 C/D 批 commit 里）、§10.1 的经典占位滚动条档与 §10.2/§10.3 的真实客户端实调。tag 由用户另行拍板，推 tag = 触发 CI 出包。
 
 - [ ] 按本机架构下载对应 dmg：Apple Silicon → `Jarvis.Workbench_0.1.0_arm64.dmg`；Intel → `Jarvis.Workbench_0.1.0_x64.dmg`
 - [ ] 校验 SHA-256 与 Release 内 `SHA256SUMS.txt` 一致（注意 SUMS 内以空格名登记，比对以哈希为准）：
@@ -154,6 +154,35 @@
 - [ ] **重名消歧后缀可分辨**：先用「复制现有技能」造一个副本（名称自动加「副本」、同名不同 `id`）→ 看任一选择器空查询分组态：原件与副本两行名称都完整、行尾 ` ·id后6位` 后缀**都完整可见**（后缀渲染在截断区之外，名称再长也不被省略号吞），两行一眼可分辨；悬停行显示全名 + 后缀（C-6c③，`ce43347`）
 - [ ] **复制弹窗打开即聚焦可打字**：技能库页 → 新建技能 ▾ → 复制现有技能：弹窗打开瞬间焦点已在搜索框（光标在闪），直接打字即过滤，无需先点输入框或按 Tab（C-6b 时原生 autoFocus 被 Dialog 抢焦、真机判否，C-6c 换挂载后显式 focus）；选中即收弹窗并创建名称带「副本」后缀的新草稿（C-6b③/C-6c④，`28041cb`/`ce43347`）
 
+## 10. 新增批：用户报障 G 批（任务列表列宽 + Agent 编辑面，2026-09-24 写回）
+
+用户当日报三条：①「任务列表选择筛选项后样式出问题、列宽发生变化」（补充口径：**有内容的列宽度变大，每一列都有内容时不会出现**）；②「agent 客户端修改编辑贾维斯任务的能力有残缺」；③「同样的编辑技能的能力也有欠缺」。②③拍板=**全字段通用 PATCH**；`update_task` 的写权限守卫拍板=**持租约可改 + 未认领可改**。
+
+### 10.1 G-1 任务列表列宽（`ac5b45a` + `8c1d550`）
+
+- [x] 根因定性：表根是 `w-full min-w-[960px]` + 默认 `table-layout:auto`、无 `<colgroup>`，th/td 上的宽度类在 auto 里只是首行「建议值」，每列最终宽度由**当前渲染出来的行内容**推导。三个同源放大器：过滤换掉可见行集、分组方式切换向 tbody 插 `colSpan` 分节行、chip 汇总条出现/消失改变纵向滚动条（±15px 被 auto 按比例摊到所有列——修复前实测 89.2 / 87.2 / 95.3 / 157.4 这类小数即摊薄证据）。工具栏与 chip 条本来就是 `flex-wrap`，不是挤压所致。
+- [x] 修法（修模不修症状）：`Table` 新增可选 `columns` prop → `table-layout:fixed` + `<colgroup>`，列宽唯一真值收敛到 `features/task-list/columns.ts`，表头由该模型 map 渲染（`<colgroup>` 与 `<th>` 永远同列同序）、td 宽度类全删、分节行 colSpan 读模型长度；批量结果弹窗表同口径收口；技能结构化编辑器**不改**（摘要列是 `hidden md:table-cell` 响应式列，`<md` 时该列整体不存在，colgroup 会与渲染列错位反而破版）；设置页全系本来就是显式 `grid-cols-[...]` 轨道，无需改。
+- [x] 真机复验（1280 / 1800 / 960 三档 × 四种渲染形态）：11 列在 20 行 / 1 行 / 0 行（EmptyState）/ 分组分节行（colSpan=11）下**逐列像素恒定** = [40, 80, 228, 72, 78, 96, 112, 112, 64, 96, 52]；11 个表头高度全部 44px（无折行）、表头内层文本 `scrollWidth ≤ clientWidth`（无截断）；20 行 × 11 格全扫描**零内容溢出到邻列**；1800 档定宽 10 列不动、标题列独吞 640px（弹性列只有标题一个）。
+- [x] 中途查出的回归已收：首版整表地板 1150 在 1280 档引入了**修复前不存在**的容器内横滚（本页水平外框恒 250px → 容器宽 = 视口 − 250 = 1030 < 1150；把同一容器回退模拟成旧 auto 布局实测 `tableW 1030 / scrollW 1030 / clientW 1030` 恰好塞得下）→ 地板收到 **1022**（定宽合计 802 + 标题保底 220），1280 档实测 `clientW 1030 / scrollW 1030` 零横滚、标题 228 与旧实渲 228.2 几乎逐像素一致；960 档守住已验收口径（`documentElement.scrollWidth 960 = innerWidth` 页面零横向溢出，横滚只在 `.atb-scroll` 容器内、表头吸顶与行 hover 指示条未退化）。
+- [ ] 待 beta 包复验：macOS **经典（占位）滚动条** 15px 会真的挤掉容器宽（dev 机是覆盖式滚动条，测不出这一挤），需在打包 dmg 里看 1280 档是否仍不横滚（地板 1022 距 1030 只有 8px 余量）。
+
+### 10.2 G-2 `update_task`（`4dc8764`，MCP 工具 26→27）
+
+- [x] 守卫三支：`RUNNING` 必须带该任务**当前**租约三元组（`leases.verify`，与 `update_progress` 同口径，过期/吊销/非当前持有者沿用既有 410/412 语义）；`BACKLOG`/`READY`（未认领）**免租约可改**（拆解/建单 Agent 修正自己产出的子任务）；`BLOCKED`/`REVIEW`/`DONE`/`FAILED` 拒 409 新码 `TASK_NOT_EDITABLE`，`details` 与 message **指名该走哪条链路**（BLOCKED 租约已清空只能人工转回 READY 重新认领 / REVIEW 走审核结论 / DONE 是终态请新建后续任务 / FAILED 重开再认领），B6「一次改对」口径。
+- [x] 字段面**逐字取 REST `taskPatchSchema.shape`**（13 个可写字段，同一批 zod 实例），字段级校验（type 词表 + 可接受值回显、priority 0-3、tags、skills 归属/版本、parent 层级 ≤2、group 存在、custom_fields 增量合并）与审计/事件只有 `TasksService.applyPatch` 一份实现，Agent 面走 `patchAsAgent` 窄入口。**REST 行为一字未动**：`PATCH /tasks/:id` 对 RUNNING 仍 `TASK_RUNNING`（既有 `state-machine.test.ts:205` + 本轮新增的 REST 红线用例双向锁住），审计 `actorType` 分 user/agent。
+- [x] 越权面：`status` / `assignee` / 租约列根本不在可写键里，状态机与执行权改不到（MCP 协议层按 inputSchema 先剥未声明键，非 HTTP 直连通道才由 `.strict()` 报 422）。
+- [ ] 待 beta 包/真机：Qoder 客户端里 27 个工具可见、`update_task` 实调一次（dev 只验到 `InMemoryTransport` 全链路 17 用例）。
+- 已记档的两个已知边界（不在本片修）：①`updateTask` 读状态与写入之间是毫秒级窗口，人在这几毫秒里强制停止则守卫判的是旧状态——与 REST `patch()` **同风险面**（现有实现本来也是读后写），要收严应在 `applyPatch` 内做 `updateMany where status=before.status` 乐观并发，那是独立一条改动；②`parseToolInput` 的 `received` 回显对**所有**工具生效，若将来某工具的枚举字段承载凭证/隐私值，会把原值带进错误体（当前 28 个工具入参不含 token 类字段，判断为可接受；收紧口径可对 `*_token`/`secret` 路径掩码）。
+
+### 10.3 G-3 `update_skill`（`3ae627f`，27→28）
+
+- [x] 可写面 = UI `skillPatchSchema` 除 `status` 外的全部（`name` / `description` / `category` / `tags` / `content` / `test_cases`）。**`status` 有意排除**，理由是模型一致性不是保守：UI 的「发布」是 `POST /skills/:id/versions`（服务端自增 semver 并设 current）**加上** `PATCH {status:'PUBLISHED'}` 两步（`apps/web/src/features/skills/hooks.ts:102`），而 agent 面没有版本快照工具，只给 status 会让没快照的 content 被标成已发布、`current_version` 与内容脱节；`mcp_dependencies` 与 UI 的 PATCH 面一致不可写（它只在创建与版本创建里出现）。
+- [x] 守卫与校验全复用 `SkillsService.patch` 那一份：内置默认技能（`source='default'`，随包更新的 94 条）→ `SKILL_READONLY`、改到 content 时子技能自引用/成环 → `SKILL_REF_SELF` / `SKILL_REF_CYCLE`（`details.chain` 给环路径）、分类越表 422。`skills.controller.ts` 的 `@AuthScope('ui')` **未动未摘**（agent 面走 MCP 工具→服务方法，与 HTTP scope 无关，与既有 `list_skills` 同口径）。
+- [x] 词表回显补在 **agent 入口这一层**（REST 的 422 只有裸 zod 三键 `Invalid option: expected one of …`，UI 控件回填在用，一字未改，新测试专门锁住它不含 `received`/`hint`）：`parseToolInput` 的 details 追加 `received`（zod `invalid_value` issue 实测不带受值），hint 拼「可接受值：…；当前收到 …」，`get_vocabulary` 新增 `skill_categories`（12 词 + `''`=未分类，与 `task_types` 同形状）。
+- [ ] 待 beta 包/真机：同上，客户端实调 `update_skill`（含「改正文必须先 `get_skill` 拿整份 content 再回提，`content`/`tags`/`test_cases` 都是整体覆盖」这条教义在真实客户端里是否被 agent 遵守）。
+
+**本片门禁**：api `npm run typecheck` 干净、`npm test` **63 files / 683 tests 全绿**（G-2 前基线 61/650 → G-2 +17 → G-3 +16，零删零 skip 零放宽期望）、`scripts/boot-smoke.sh` PASS ×2；web `npx tsc --noEmit` 干净、`npx vitest run` **13 files / 119 tests 全绿**、`npx vite build` 产物 CSS 内 `min-w-[1022px]` 在场且 `min-w-[1150px]` 已消失。
+
 ## 记录区（现象/截图/报错贴这里）
 
 | 项 | 结果（过/挂） | 现象备注 |
@@ -174,5 +203,8 @@
 | §7.4 B13/B14 与 dnd | 过（2026-09-24 R-E · dev，三腿全过） | ①`#/tasks` 全新加载 console 无 validateDOMNesting（thead/tr）；②导航折叠三态在 767px 真窗口全验（无偏好→自动收 64px、`pref='0'`→恒 200px 且刷新后仍在、`pref='1'`→64px、清偏好→回自动），按钮实际文案「折叠导航」已更正验条；③合成 Pointer 序列拖 T-1010 需求池→待执行→拖回，两列归属 1.2s 内互换、`GET /tasks` 回 `READY`/`BACKLOG`（落库）、全程 console 无新报错。**同轮发现并修掉 1 条挂账**：board/tasks 纯挂载各 3 条 forwardRef error（#23，`9777249`，根因=直写在 forceMount Portal 里的 AnimatePresence 无 forwardRef，退路是同 popover 形状；修后挂载归零、通知中心退场 WAAPI 采样 0.97→0.00 约 210ms 后卸载）。残留：layoutId 换列飞行动效只测到「拖拽期间有动画在跑」，未逐帧分辨 layoutId，归 §6.4（R-B）一并看 |
 | §9.1 技能分类一套标准 | | |
 | §9.2 技能选择器四处统一 | | |
+| §10.1 G-1 任务列表列宽 | 过（2026-09-24 · dev 真机浏览器，非打包 dmg） | 根因=auto 布局按可见行内容重算列宽（过滤/分节行/滚动条三放大器）。修模：`Table` 加 `columns`→`table-layout:fixed`+`<colgroup>`，列宽唯一真值 `task-list/columns.ts`。真机三档 × 四形态复验：11 列像素恒定 [40,80,228,72,78,96,112,112,64,96,52]、表头全 44px 无折行无截断、20 行×11 格零内容溢出邻列、1800 档标题独吞 640。**中途查出并收掉一条自己的回归**：首版地板 1150 让 1280 档出现修复前没有的容器内横滚（容器=视口−250=1030，旧 auto 实测恰好塞满 1030 不滚）→ 地板收到 1022，1280 实测 `scrollW==clientW==1030` 零横滚、960 档页面零横向溢出。待包：经典占位滚动条挤掉 15px 后 1280 是否仍不滚（余量仅 8px）。 |
+| §10.2 G-2 `update_task` | 协议层过（2026-09-24 · dev，InMemoryTransport 全链路 17 用例），客户端实调待包 | MCP 工具 26→27。守卫三支（拍板）：RUNNING 须持当前租约（与 `update_progress` 同 `leases.verify` 口径）、BACKLOG/READY 免租约、其余四状态拒 409 `TASK_NOT_EDITABLE` 且 details 指名该走的链路。字段面逐字取 `taskPatchSchema.shape`（13 可写字段），校验/审计只有 `TasksService.applyPatch` 一份；**REST `PATCH /tasks/:id` 的 RUNNING 即拒一字未动**（既有测试 + 新增红线用例双向锁住）；`status`/`assignee` 不在可写键内，改不到状态机与执行权。 |
+| §10.3 G-3 `update_skill` | 协议层过（同上，16 用例），客户端实调待包 | 27→28。可写面 = UI `skillPatchSchema` 除 `status` 外全部；`status` **有意排除**（UI 发布=`POST /versions` 快照 + `PATCH {status}` 两步，agent 面无快照工具，只改状态会让 `current_version` 与 content 脱节），`mcp_dependencies` 与 UI PATCH 面一致不可写。守卫全复用 `SkillsService.patch`（默认技能 `SKILL_READONLY`、子技能自引用/成环 `SKILL_REF_SELF`/`SKILL_REF_CYCLE`），`@AuthScope('ui')` 未摘。词表回显补在 agent 入口层：`parseToolInput` details 追加 `received`、hint 拼「可接受值 + 当前收到」，`get_vocabulary` 新增 `skill_categories`；REST 的裸 zod 422 形状 UI 在用、锁进测试未改。 |
 
 另记：**React Flow 归属水印**——流程图视图原先 `proOptions={{ hideAttribution: true }}`，控制台明确提示隐藏需订阅 Pro（本项目无订阅）。2026-09-24 拍板「恢复显示」，已随 `e27d26e` 改回 `hideAttribution: false`（与技能画布既有写法同风格），水印走 `globals.css` 既有的弱化配色（透明底 + `--color-text-tertiary`，深浅主题同一令牌），未加隐藏、未改色位。beta 包复验时确认深浅两套主题下不压内容即可。
