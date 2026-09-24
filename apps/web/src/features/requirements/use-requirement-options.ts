@@ -82,3 +82,16 @@ export function requirementMoveBody(
 ): Pick<TaskPatchInput, 'parent_task_id'> & Partial<Pick<TaskPatchInput, 'group_id'>> {
   return option ? { parent_task_id: option.id, group_id: option.group_id } : { parent_task_id: null };
 }
+
+/**
+ * 展示层反查（§19.14·84，W2-b 为 creation 确认卡补的纯派生）：`group_id` → 该组
+ * 需求标题。拆解流程每需求开一组，组内正常只有一张需求卡，取首个命中即可；
+ * 组内无需求（或需求所在组已归档被剔出候选）回 null，由调用方兜「未分配」文案。
+ */
+export function requirementTitleForGroup(
+  options: readonly RequirementOption[],
+  groupId: string | null | undefined,
+): string | null {
+  if (!groupId) return null;
+  return options.find((option) => option.group_id === groupId)?.title ?? null;
+}

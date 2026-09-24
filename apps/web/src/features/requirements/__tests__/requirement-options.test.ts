@@ -5,6 +5,7 @@ import {
   buildRequirementOptions,
   requirementCreateBody,
   requirementMoveBody,
+  requirementTitleForGroup,
   type RequirementOption,
 } from '../use-requirement-options';
 
@@ -95,5 +96,31 @@ describe('§19.14·86 归属字段构造：创建/移动两条写入路径', () 
     const body = requirementMoveBody(null);
     expect(body).toEqual({ parent_task_id: null });
     expect(body).not.toHaveProperty('group_id');
+  });
+});
+
+describe('requirementTitleForGroup：展示层 group_id→需求标题反查（W2-b 确认卡）', () => {
+  const options: RequirementOption[] = [
+    { id: 'r-1', title: '需求甲', group_id: 'g-1' },
+    { id: 'r-2', title: '无组需求', group_id: null },
+  ];
+
+  it('组内有需求返回其标题（同组多需求取首个，拆解口径一组一需求）', () => {
+    expect(requirementTitleForGroup(options, 'g-1')).toBe('需求甲');
+    expect(
+      requirementTitleForGroup(
+        [
+          { id: 'a', title: '首条', group_id: 'g' },
+          { id: 'b', title: '次条', group_id: 'g' },
+        ],
+        'g',
+      ),
+    ).toBe('首条');
+  });
+
+  it('组内无需求 / groupId 为空回 null——由调用方兜「未分配」文案', () => {
+    expect(requirementTitleForGroup(options, 'g-none')).toBeNull();
+    expect(requirementTitleForGroup(options, null)).toBeNull();
+    expect(requirementTitleForGroup(options, undefined)).toBeNull();
   });
 });

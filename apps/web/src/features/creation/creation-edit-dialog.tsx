@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useActiveGroups } from '@/features/groups';
+import { useRequirementOptions } from '@/features/requirements/use-requirement-options';
 import { Button, Dialog, Field, Input, Select, Textarea } from '@/components/ui';
 import { PRIORITY_LABEL } from '@/lib/labels';
 import type { CreationDecisionInput, CreationRequestView } from '@/api/types';
@@ -10,6 +10,12 @@ import type { CreationDecisionInput, CreationRequestView } from '@/api/types';
  * 刻意不做全字段表单（自定义字段/标签/技能一概不碰）——卡片是「不打断对话」的轻确认
  * （§8.1），编辑框越厚越不像轻确认；api 侧 `creationDecisionSchema.payload` 也只接受
  * 内容字段，请求身份（agent_name/session_id）改不了（§8.7 r3）。
+ *
+ * §19.14·84/86（v0.0.4 W2-b）：归属字段改「需求」口径——下拉候选 = 未归档需求、
+ * 行值显示该需求标题；**写入仍是该需求的 `group_id`**（零后端约束：
+ * `creation.dto.ts` 的 decision payload 字段面只有 group_id、没有父任务字段，
+ * 已核实于 apps/api/src/creation/creation.dto.ts——简报所指 contract 目录实际在
+ * creation 特性目录）。组内无需求的历史载荷补一条「未分配」回显项，不强行造父挂。
  */
 export interface CreationEditDialogProps {
   card: CreationRequestView | null;
@@ -25,7 +31,7 @@ export function CreationEditDialog({ card, onClose, onSubmit, submitting }: Crea
   if (card !== null) everOpenedRef.current = true;
   if (!everOpenedRef.current) return null;
 
-  const groups = useActiveGroups();
+  const requirements = useRequirementOptions();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('2');
@@ -40,10 +46,23 @@ export function CreationEditDialog({ card, onClose, onSubmit, submitting }: Crea
     setGroupId(card.group_id);
   }, [card]);
 
-  const groupOptions = useMemo(
-    () => (groups.data?.items ?? []).map((group) => ({ value: group.id, label: group.name })),
-    [groups.data],
-  );
+  // 下拉候选 = 未归档需求（value 仍写该需求的 group_id：payload 字段面没有父任务
+  // 字段，见文件头核实说明）。同组多需求时按组去重取首个（拆解口径一组一需求）；
+  // 当前载荷所在组无需求时补一条「未分配」回显项，保证打开即如实展示、未动不脏表单。
+  const requirementOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const options: { value: string; label: string }[] = [];
+    for (const option of requirements.data) {
+      if (!option.group_id || seen.has(option.group_id)) continue;
+      seen.add(option.group_id);
+      options.push({ value: option.group_id, label: option.title });
+    }
+    if (groupId && !seen.has(groupId)) {
+      // 组内无（可显示的）需求——回显「未分配」，不发 parent、也不强行造。
+      options.unshift({ value: groupId, label: '未分配' });
+    }
+    return options;
+  }, [requirements.data, groupId]);
   const priorityOptions = useMemo(
     () =>
       Object.entries(PRIORITY_LABEL).map(([value, label]) => ({
@@ -115,11 +134,11 @@ export function CreationEditDialog({ card, onClose, onSubmit, submitting }: Crea
               onChange={(event) => setPriority(event.target.value)}
             />
           </Field>
-          <Field label="分组" htmlFor="creation-edit-group">
+          <Field label="需求" htmlFor="creation-edit-requirement">
             <Select
-              id="creation-edit-group"
+              id="creation-edit-requirement"
               value={groupId}
-              options={groupOptions}
+              options={requirementOptions}
               placeholder="加载中…"
               onChange={(event) => setGroupId(event.target.value)}
             />

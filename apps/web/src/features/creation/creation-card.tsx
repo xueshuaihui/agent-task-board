@@ -4,7 +4,10 @@ import { AlertTriangle, ClipboardList, Undo2 } from 'lucide-react';
 import { api, errorMessage, isApiError } from '@/api';
 import type { CreationDecisionInput } from '@/api/types';
 import { useShellStore } from '@/app/store/shell';
-import { useActiveGroups } from '@/features/groups';
+import {
+  requirementTitleForGroup,
+  useRequirementOptions,
+} from '@/features/requirements/use-requirement-options';
 import { useSkills } from '@/features/skills/hooks';
 import { Badge, Button, IconButton, Progress, useToast } from '@/components/ui';
 import { cn } from '@/lib/cn';
@@ -20,8 +23,12 @@ import {
 
 /**
  * §8.4 轻确认卡片（右下角浮层里的单张）：
- * 「📋 创建任务？」 + 载荷摘要 + 分组/类型/优先级/技能 + 来自哪个 Agent +
+ * 「📋 创建任务？」 + 载荷摘要 + 需求/类型/优先级/技能 + 来自哪个 Agent +
  * [取消][编辑][创建] + 锚 `expires_at` 的倒计时条（§8.3 的 30 秒超时）。
+ *
+ * §19.14·84（v0.0.4 W2-b）：确认卡归看板可见面，归属行展示「需求」而非
+ * 「📁 组名」——值 = 该载荷所在分组唯一需求卡的标题（经候选反查），
+ * 组内无需求（或需求所在组已归档）回退「未分配」。
  *
  * 三条终态推进路径（api 侧终结不广播，PRD §16.3 明确不私加 resolved 事件）：
  * 1. decision 回包成功 → 用回包视图收口（created/cancelled）；
@@ -95,14 +102,13 @@ export function CreationCard({ card }: CreationCardProps) {
 
   // §8.6：created 之后的 5 秒撤销窗只在「本次会话里刚点出来」的卡片上给——
   // 断线重连补齐的历史 created 卡早过窗口，不给撤销入口。
-  const groupNames = useActiveGroups();
+  const requirements = useRequirementOptions();
   const skills = useSkills(undefined, { enabled: card.skills.length > 0 });
 
-  const groupName = useMemo(
-    () =>
-      (groupNames.data?.items ?? []).find((group) => group.id === card.group_id)?.name ??
-      card.group_id,
-    [groupNames.data, card.group_id],
+  // 归属展示 = 载荷所在分组唯一需求卡的标题；无需求回退「未分配」（§19.14·84）。
+  const requirementTitle = useMemo(
+    () => requirementTitleForGroup(requirements.data, card.group_id),
+    [requirements.data, card.group_id],
   );
   const skillNames = useMemo(() => {
     const items = skills.data?.items ?? [];
@@ -177,8 +183,8 @@ export function CreationCard({ card }: CreationCardProps) {
         ) : null}
 
         <div className="flex flex-wrap items-center gap-1.5 text-aux text-text-secondary">
-          <span className="min-w-0 max-w-full truncate" title={groupName}>
-            📁 {groupName}
+          <span className="min-w-0 max-w-full truncate" title={requirementTitle ?? '未分配'}>
+            {requirementTitle ? `📌 需求：${requirementTitle}` : '未分配'}
           </span>
           <Badge tone="outline">{card.type}</Badge>
           <Badge tone="outline">{priorityLabel(card.priority)}</Badge>
