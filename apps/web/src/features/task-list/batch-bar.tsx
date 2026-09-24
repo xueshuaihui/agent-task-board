@@ -431,10 +431,15 @@ function ResultDialog({
           {shown.failures.length > 0 ? '（逐条判定，不整体回滚）' : ''}
         </p>
         {shown.failures.length > 0 ? (
-          <Table>
+          <Table
+            columns={[
+              { key: 'task', width: 96 },
+              { key: 'reason', width: null },
+            ]}
+          >
             <THead>
               <TR>
-                <TH className="w-[90px]">任务</TH>
+                <TH>任务</TH>
                 <TH>跳过原因</TH>
               </TR>
             </THead>

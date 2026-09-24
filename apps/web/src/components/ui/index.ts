@@ -14,7 +14,18 @@ export { Tooltip, type TooltipProps } from './tooltip';
 export { Menu, MenuCaret, type MenuItem, type MenuGroup, type MenuProps } from './menu';
 export { Popover, type PopoverProps } from './popover';
 export { ToastProvider, useToast, type ToastApi, type ToastVariant } from './toast';
-export { Table, TBody, TD, TH, THead, TR, MonoCell } from './table';
+export {
+  Table,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+  MonoCell,
+  type TableProps,
+  type TableColumnDef,
+  type THProps,
+} from './table';
 export { Pagination, type PaginationProps } from './pagination';
 export { Skeleton, CardSkeleton } from './skeleton';
 export { EmptyState, type EmptyStateProps } from './empty-state';

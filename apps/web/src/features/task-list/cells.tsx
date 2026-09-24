@@ -7,8 +7,9 @@ import { priorityStyle, statusStyle } from '@/lib/status-style';
 import { formatDuration, formatDateTime, formatRelative, leaseRemaining } from '@/lib/time';
 
 /**
- * 3.8 表格的单元格：列宽按原型逐列给（ID 90 / 类型 88 / 优先级 64 / 状态 96 /
- * 标签 160 / Agent 104 / 时长 72 / 更新时间 104）。
+ * 3.8 表格的单元格：列宽的唯一真值在 `columns.ts`（`table-layout: fixed` + `<colgroup>`），
+ * 这里只负责「内容不反过来撑列」——可能超宽的单元格一律自带 truncate/换行兜底，
+ * 溢出只发生在格子内部，不推动列宽（定宽布局下不处理的裸文本会视觉溢出到邻列）。
  *
  * 审核页的待审核表格复用这一组单元格的语义（同一套色点 + 中文名的列，3.8 与 8.4 的
  * 表格在视觉上必须一致），所以 `features/review` 会从这里 import。
@@ -42,7 +43,8 @@ export function displayedDurationMs(row: TaskListItem, now: number): number | nu
 }
 
 export function IdCell({ id }: { id: string }) {
-  return <MonoCell>{id}</MonoCell>;
+  // 定宽列里等宽短号不可断行（`T-` + 数字无空格），给 truncate 防视觉溢出。
+  return <MonoCell className="block max-w-full truncate">{id}</MonoCell>;
 }
 
 /** 3.8：单行省略 + hover 全文；📌 置顶、🔒 有未满足前置。 */
@@ -110,7 +112,7 @@ export function StatusCell({ row, archivedShown, now }: { row: TaskListItem; arc
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       <StatusDot className={style.dot} />
-      <span className="text-text-primary">{row.status_label || statusLabel(row.status)}</span>
+      <span className="min-w-0 truncate text-text-primary">{row.status_label || statusLabel(row.status)}</span>
       {lease ? (
         <span
           className={
@@ -161,7 +163,8 @@ export function AgentCell({ row }: { row: TaskListItem }) {
 }
 
 export function DurationCell({ ms }: { ms: number | null }) {
-  return <span className="text-aux text-text-secondary tabular-nums">{formatDuration(ms)}</span>;
+  // `12h 34m` 形态在 72px 列里放得下；truncate 是防御异常长值时不换行撑高抖动。
+  return <span className="block max-w-full truncate text-aux text-text-secondary tabular-nums">{formatDuration(ms)}</span>;
 }
 
 /** 20.4：24 小时内相对时间，hover 绝对时间。 */

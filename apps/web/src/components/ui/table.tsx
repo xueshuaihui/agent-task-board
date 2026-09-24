@@ -3,22 +3,45 @@ import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import type { ListSortField } from '@/api/types';
 
-/**
- * 3.8 任务列表页是全应用**唯一**的表格实现（审核页与抽屉里的列表都用卡片/行块，不用这张表）。
- * 列宽由调用方按原型的表格逐列给（选择框 36 / ID 90 / 类型 88 / 优先级 64 / 状态 96 /
- * 标签 160 / Agent 104 / 时长 72 / 更新时间 104 / 操作 44）。
- *
- * 设计改版（DESIGN.md §4 任务列表）：表头吸顶（raised 底 + 底部 1px 分隔，
- * sticky 落在 th 上——WKWebView 不支持 thead 粘性定位）；行 hover primary-light 淡底
- * + 左侧 2px 主色指示条（inset box-shadow，不占布局）。颜色一律走 token。
- */
-export function Table({ className, children, ...rest }: HTMLAttributes<HTMLTableElement>) {
+// 设计改版（DESIGN.md §4 任务列表）：表头吸顶（raised 底 + 底部 1px 分隔，
+// sticky 落在 th 上——WKWebView 不支持 thead 粘性定位）；行 hover primary-light 淡底
+// + 左侧 2px 主色指示条（inset box-shadow，不占布局）。颜色一律走 token。
+// 列宽模型见下方 `TableProps.columns`。
+
+export interface TableColumnDef {
+  key: string;
+  /** 列宽（px，含 th/td 的 `px-3` 内衬）；`null` = 弹性列，吸收整表剩余宽度。 */
+  width: number | null;
+}
+
+export interface TableProps extends HTMLAttributes<HTMLTableElement> {
+  /**
+   * 传入后本表走 `table-layout: fixed` + `<colgroup>`：列宽只由这份模型决定，
+   * 与「当前渲染了哪些行 / 是否过滤 / 有无纵向滚动条」彻底解耦
+   * （auto 布局会按可见行内容重算每列，过滤一次列宽抖一次——3.8 的缺陷根因）。
+   * 至多一列 `width: null` 做弹性列，多余宽度全由它吸收。
+   */
+  columns?: readonly TableColumnDef[];
+}
+
+export function Table({ className, columns, children, ...rest }: TableProps) {
   return (
     <div className="atb-scroll w-full overflow-x-auto">
       <table
-        className={cn('w-full min-w-[960px] border-collapse text-body', className)}
+        className={cn(
+          'w-full min-w-[960px] border-collapse text-body',
+          columns && 'table-fixed',
+          className,
+        )}
         {...rest}
       >
+        {columns ? (
+          <colgroup>
+            {columns.map((column) => (
+              <col key={column.key} style={column.width ? { width: `${column.width}px` } : undefined} />
+            ))}
+          </colgroup>
+        ) : null}
         {children}
       </table>
     </div>

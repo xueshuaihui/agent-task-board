@@ -63,6 +63,7 @@ import {
 } from './cells';
 import { ActiveFilterSummary, ActiveGroupScope, FilterChips, FilterPanel } from './filter-panel';
 import { BatchBar } from './batch-bar';
+import { TASK_TABLE_COLUMNS, TASK_TABLE_MIN_WIDTH_CLASS } from './columns';
 import { CreateTaskMenu } from './create-menu';
 import { archiveErrorText } from './reason';
 import { PAGE_SIZES, readPageSize, rememberPageSize } from './page-pref';
@@ -384,37 +385,36 @@ export function TaskListPage() {
           />
         ) : (
           <>
-            <Table>
+            <Table columns={TASK_TABLE_COLUMNS} className={TASK_TABLE_MIN_WIDTH_CLASS}>
               <THead>
                 <TR>
-                  <TH className="w-[36px]">
-                    <Checkbox
-                      aria-label="全选当前页"
-                      checked={allPageSelected}
-                      indeterminate={!allPageSelected && onPageSelected.length > 0}
-                      onChange={togglePage}
-                    />
-                  </TH>
-                  <TH className="w-[90px]" sortField="id" sort={sort} onSort={onSort}>
-                    ID
-                  </TH>
-                  <TH className="min-w-[240px]">标题</TH>
-                  <TH className="w-[88px]">类型</TH>
-                  <TH className="w-[64px]" sortField="priority" sort={sort} onSort={onSort}>
-                    优先级
-                  </TH>
-                  <TH className="w-[96px]" sortField="status" sort={sort} onSort={onSort}>
-                    状态
-                  </TH>
-                  <TH className="w-[160px]">标签</TH>
-                  <TH className="w-[104px]">Agent</TH>
-                  <TH className="w-[72px]">时长</TH>
-                  <TH className="w-[104px]" sortField="updated_at" sort={sort} onSort={onSort}>
-                    更新时间
-                  </TH>
-                  <TH className="w-[44px]">
-                    <span className="sr-only">操作</span>
-                  </TH>
+                  {/* 表头从列宽模型渲染：`<colgroup>` 与 `<th>` 永远同列同序，
+                      列宽只读 `columns.ts` 一处真值（td 上不再挂宽度类）。 */}
+                  {TASK_TABLE_COLUMNS.map((column) =>
+                    column.key === 'select' ? (
+                      <TH key={column.key}>
+                        <Checkbox
+                          aria-label="全选当前页"
+                          checked={allPageSelected}
+                          indeterminate={!allPageSelected && onPageSelected.length > 0}
+                          onChange={togglePage}
+                        />
+                      </TH>
+                    ) : (
+                      <TH
+                        key={column.key}
+                        sortField={column.sortField}
+                        sort={sort}
+                        onSort={column.sortField ? onSort : undefined}
+                      >
+                        {column.key === 'actions' ? (
+                          <span className="sr-only">{column.label}</span>
+                        ) : (
+                          column.label
+                        )}
+                      </TH>
+                    ),
+                  )}
                 </TR>
               </THead>
               <TBody>
@@ -423,7 +423,7 @@ export function TaskListPage() {
                       const collapsed = collapsedSections.has(section.key);
                       const header = (
                         <TR key={`section:${section.key}`} className="bg-bg-raised">
-                          <TD colSpan={11} className="py-0">
+                          <TD colSpan={TASK_TABLE_COLUMNS.length} className="py-0">
                             <button
                               type="button"
                               onClick={() => toggleSection(section.key)}
@@ -499,6 +499,11 @@ export function TaskListPage() {
 
 /* -------------------------------------------------------------------- 行 */
 
+/**
+ * 行单元格不再挂宽度类：列宽的唯一真值是 `columns.ts` 的 `<colgroup>`
+ * （`table-layout: fixed` 下 th/td 上的宽度只是首行提示，会被 col 覆盖）。
+ * 会超宽的单元格内容一律自己 truncate（见 `cells.tsx`）。
+ */
 function TaskRow({
   row,
   now,
@@ -527,37 +532,37 @@ function TaskRow({
       onClick={() => useShellStore.getState().openTask(row.id)}
       data-testid="task-row"
     >
-      <TD className="w-[36px]" onClick={(event) => event.stopPropagation()}>
+      <TD onClick={(event) => event.stopPropagation()}>
         <Checkbox aria-label={`选择 ${row.id}`} checked={selected} onChange={onToggle} />
       </TD>
-      <TD className="w-[90px]">
+      <TD>
         <IdCell id={row.id} />
       </TD>
       <TD>
         <TitleCell row={row} />
       </TD>
-      <TD className="w-[88px]">
+      <TD>
         <TypeCell row={row} />
       </TD>
-      <TD className="w-[64px]">
+      <TD>
         <PriorityCell priority={row.priority} />
       </TD>
-      <TD className="w-[96px]">
+      <TD>
         <StatusCell row={row} archivedShown={onlyArchived} now={now} />
       </TD>
-      <TD className="w-[160px]">
+      <TD>
         <TagsCell tags={row.tags} />
       </TD>
-      <TD className="w-[104px]">
+      <TD>
         <AgentCell row={row} />
       </TD>
-      <TD className="w-[72px]">
+      <TD>
         <DurationCell ms={displayedDurationMs(row, now)} />
       </TD>
-      <TD className="w-[104px]">
+      <TD>
         <UpdatedCell value={row.updated_at} />
       </TD>
-      <TD className="w-[44px]" onClick={(event) => event.stopPropagation()}>
+      <TD onClick={(event) => event.stopPropagation()}>
         <RowMenu
           row={row}
           onlyArchived={onlyArchived}
