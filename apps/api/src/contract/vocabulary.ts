@@ -47,7 +47,7 @@ export const CREATE_TASK_TYPE_DESC =
   `默认词表：${DEFAULT_TASK_TYPES.join('/')}，自定义类型由设置项 task_types 扩充（建议先调 get_vocabulary 拿当前词表，不要试错）。` +
   `注意：「需求」不走 create_task 直建（应经 board.begin_breakdown 拆解流程，§8.8）。`;
 
-/** §9.2 技能分类的「可选：…」文案：12 项词表 + `''`（未分类），事实源只有一处。 */
+/** §9.2 技能分类的「可选：…」文案：11 项词表 + `''`（未分类），事实源只有一处。 */
 export const SKILL_CATEGORY_LIST_TEXT = SKILL_CATEGORIES.join('/');
 
 /**
@@ -153,7 +153,7 @@ export function buildVocabulary(input: VocabularyInput) {
     skill_categories: {
       values: [...SKILL_CATEGORIES],
       uncategorized: UNCATEGORIZED,
-      source: 'src/skills/skill-categories.ts（12 项受控词表，与 0015 迁移的 category CHECK 逐项一致）',
+      source: 'src/skills/skill-categories.ts（11 项受控词表，与 0017 迁移的 category CHECK 逐项一致）',
       note: SKILL_CATEGORY_DESC,
     },
     artifact_types: {

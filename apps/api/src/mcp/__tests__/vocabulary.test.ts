@@ -60,7 +60,7 @@ describe('get_vocabulary：一次调用拿全服务端词表', () => {
     expect(result.skill.types).toContain('workflow');
     // §16.1 `update_skill` 的 category 词表也在场：agent 一次调用拿到「可写面 + 可接受值」全口径。
     expect(result.skill_categories.values).toEqual([...SKILL_CATEGORIES]);
-    expect(result.skill_categories.values).toHaveLength(12);
+    expect(result.skill_categories.values).toHaveLength(11);
     expect(result.skill_categories.uncategorized).toBe('');
     expect(result.skill_categories.note).toContain('可选：');
   });

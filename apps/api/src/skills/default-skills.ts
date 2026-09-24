@@ -27,7 +27,7 @@ export interface DefaultSkillSeed {
   type: SkillType;
   description: string;
   /**
-   * 单值分类（skills.category，12 词受控词表）：内置技能随安装包发布就必须带分类，
+   * 单值分类（skills.category，11 词受控词表）：内置技能随安装包发布就必须带分类，
    * 不允许未分类（空串）——生成器与单测两侧都拦。词表来源见 skill-categories.ts。
    */
   category: SkillCategory;

@@ -5,7 +5,8 @@ import { API, uiSender } from '../../__tests__/helpers/seed';
 /**
  * v0.0.4 分类收口 C-3：skills.category 单值列接入 api 读写面与 SKILL.md 导入导出。
  * 口径（PRD §9.2 / §21.4，0015 迁移）：
- * - create/patch 入参 category 走 12 词表 + ''（未分类）校验，越表 422 VALIDATION_FAILED；
+ * - create/patch 入参 category 走 11 词表（0017 收敛，0925 拍板删「开学季」）+ ''（未分类）
+ *   校验，越表 422 VALIDATION_FAILED；
  * - patch 两态：不传=不改、传 ''=显式改未分类；
  * - 写入侧 tags 与导入侧同口径（0925 拍板二）：create/patch 整体落库前过 freeTagsOf，
  *   剔受众词与一切词表词，只洗 tags 不动 category 校验（422 面语义不变）；
@@ -85,6 +86,25 @@ describe('skills.category 读写面与导入导出（C-3）', () => {
     expect((await ui.get(`${API}/skills/${skill.id}`)).body.category).toBe('开发编程');
   });
 
+  // 0925 拍板（第四片）：「开学季」已从词表删除，从「词表词」降为「越表值」——
+  // create/patch 传它 → 422（与其余越表值同一路径语义）。
+  it('create/patch 传已作废的「开学季」→ 越表 422（0925 拍板：12 → 11 后它是越表值）', async () => {
+    const bad = await ui.post(`${API}/skills`, {
+      name: '已作废分类技能',
+      type: 'flow',
+      category: '开学季',
+      tags: [],
+      content: CONTENT,
+    });
+    expect(bad.status).toBe(422);
+    expect(bad.body.error.code).toBe('VALIDATION_FAILED');
+    const skill = await createSkill(ui, { category: '教育学习' });
+    const badPatch = await ui.patch(`${API}/skills/${skill.id}`, { category: '开学季' });
+    expect(badPatch.status).toBe(422);
+    expect(badPatch.body.error.code).toBe('VALIDATION_FAILED');
+    expect((await ui.get(`${API}/skills/${skill.id}`)).body.category).toBe('教育学习');
+  });
+
   it('patch 两态：不传 category=不改；传 ""=显式改未分类；传词表值=改分类', async () => {
     const skill = await createSkill(ui, { category: '教育学习' });
     const untouched = await ui.patch(`${API}/skills/${skill.id}`, { description: '只改描述' });
@@ -98,11 +118,13 @@ describe('skills.category 读写面与导入导出（C-3）', () => {
   it('写入侧洗 tags（0925 拍板二）：create/patch 剔词表词与受众词，真自由标签原序保留', async () => {
     const skill = await createSkill(ui, {
       category: '推荐',
-      tags: ['推荐', '开学季', '官方', '我的自由标签'],
+      // 剔除集合 = 受众词 ∪ 现行 11 词 ∪ 已作废历史词表词「开学季」（RETIRED_CATEGORY_TERMS）；
+      // 「开学季」用例保留——它被删出词表后若从 tags 洗漏，卡片会把它重新长成「伪分类」标签。
+      tags: ['推荐', '教育学习', '开学季', '官方', '我的自由标签'],
     });
     expect(skill.category).toBe('推荐');
-    // 旧口径「写入侧不删词表词」已作废：被 category 取走的 推荐、词表内的 开学季、
-    // 受众词 官方 全部剔除，只剩真自由标签。
+    // 旧口径「写入侧不删词表词」已作废：被 category 取走的 推荐、词表内的 教育学习、
+    // 已作废的 开学季、受众词 官方 全部剔除，只剩真自由标签。
     expect(skill.tags).toEqual(['我的自由标签']);
     const row = await t.prisma.skill.findUnique({ where: { id: skill.id } });
     expect(JSON.parse(row!.tags)).toEqual(['我的自由标签']);
@@ -191,6 +213,30 @@ describe('skills.category 读写面与导入导出（C-3）', () => {
     // 「category 折进标签」的旧路径已断：workflow 既不进 category 也不进 tags
     expect(res.body.tags).toEqual(['示例']);
     expect(res.body.tags).not.toContain('workflow');
+  });
+
+  it('导入归一：category=「开学季」（0925 拍板删词后是越表值）→ 落未分类 ""、不报错；tags 里的它也被作废词集合洗掉', async () => {
+    const markdown = [
+      '---',
+      'name: 已作废分类导入',
+      'description: 词表缩短后按越表归一',
+      'version: 1.0.0',
+      'category: 开学季',
+      'tags: [开学季, 教育学习, 自由一词]',
+      '---',
+      '',
+      '### 开场',
+      '',
+      '<!-- atb:prompt -->',
+      '',
+      '正文',
+    ].join('\n');
+    const res = await ui.post(`${API}/skills/import-markdown`, { filename: 'retired.md', content: markdown });
+    expect(res.status).toBe(201);
+    // 非 zod 入口的归一口径：越表落 ''（与 workflow 旧包同路径语义），不报错。
+    expect(res.body.category).toBe('');
+    // tags 剔除集合含已作废历史词表词：开学季（RETIRED）与词表词 教育学习 都不留。
+    expect(res.body.tags).toEqual(['自由一词']);
   });
 
   it('.mdc（Cursor 格式）导入共用同一 category 分支：词表值直落列', async () => {

@@ -18,18 +18,21 @@
  * 权威口径见 src/skills/skill-categories.ts。0925 拍板一另起 CATEGORY_FIXES 纠偏段：
  * 12 条内置的 category 因 0015「首词盲取」取到季节/运营占位词（开学季/推荐）或误取的
  * 教育学习，经补正表改判内容词（例外：proactive-paper-recommendation 的「推荐」是真语义）。
+ * 同日再拍板（第四片）：词表删「开学季」（0017 迁移收敛 CHECK，12 → 11 项）——code-mentor、
+ * deep-research 两条「开学季→X」补正因此变成首词规则即可算出的 no-op，按防呆口径删表；
+ * 「开学季」进 RETIRED_CATEGORY_TERMS 作废词集合，freeTagsOf 继续剔它（理由见该常量注释）。
  */
 import { readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * 12 项分类词表：**必须与 src/skills/skill-categories.ts 的 SKILL_CATEGORIES 逐项一致**。
- * 生成器是纯 .mjs（构建期跑，不经过 ts 编译），没法 import TS 常量，所以这里留一份字面量；
- * 一致性由 src/skills/__tests__/builtin-skills.test.ts 正则抽取本数组与 TS 侧比对锁住。
+ * 11 项分类词表（0925 拍板删「开学季」）：**必须与 src/skills/skill-categories.ts 的
+ * SKILL_CATEGORIES 逐项一致**。生成器是纯 .mjs（构建期跑，不经过 ts 编译），没法 import
+ * TS 常量，所以这里留一份字面量；一致性由 src/skills/__tests__/builtin-skills.test.ts
+ * 正则抽取本数组与 TS 侧比对锁住。
  */
 const SKILL_CATEGORIES = [
-  '开学季',
   '教育学习',
   '投资理财',
   '方案写作',
@@ -44,6 +47,13 @@ const SKILL_CATEGORIES = [
 ];
 /** 作废的受众词：出现在 catalog tags 里也不进 category、并且要从自由标签洗掉。 */
 const AUDIENCE_TAGS = ['官方', '社区'];
+/**
+ * 已作废的历史词表词：不再进 category，但**同样要从自由标签洗掉**——上游 catalog 有
+ * 31 条内置的 tags 带「开学季」，只按现行 11 词洗会让它以普通标签身份回流分片 tags（卡片
+ * 又长出同款「伪分类」标签，且分片内容级漂移）。与 skill-categories.ts 的
+ * RETIRED_CATEGORY_TERMS 逐项一致（比对锁在 builtin-skills.test.ts ⑥）。
+ */
+const RETIRED_CATEGORY_TERMS = ['开学季'];
 
 /**
  * 上游 catalog 的 category 纠偏/补正表（人工判定，不改 catalog）。
@@ -53,16 +63,17 @@ const AUDIENCE_TAGS = ['官方', '社区'];
  * ① 「缺分类词」型（C-2 / 0024）：skill-creator 上游 tags 为空 {}，categoryFromTags 算不出，
  *    人工归「实用工具」（技能创建向导）。
  * ② 「0015 首词盲取存量错值」型（0925 拍板一）：季节/运营占位词（开学季、推荐）与内容词
- *    同现时，category 应取内容词，而「tags 首个词表词」的回填规则取走了占位词；下列 11 条
- *    为逐条人工判定。唯一例外 proactive-paper-recommendation（论文推荐引擎，「推荐」就是
- *    其真语义内容词，教育学习是占位误取）。
- *    其余 30 条多词技能与 3 条两可（financial-analysis-18steps / tailored-resume-generator /
- *    interview-prep）维持现状、不进本表。
+ *    同现时，category 应取内容词，而「tags 首个词表词」的回填规则取走了占位词；唯一例外
+ *    proactive-paper-recommendation（论文推荐引擎，「推荐」就是其真语义内容词，教育学习是
+ *    占位误取）。其余 30 条多词技能与 3 条两可（financial-analysis-18steps /
+ *    tailored-resume-generator / interview-prep）维持现状、不进本表。
+ * 0925 第四片（词表删「开学季」）后本表 12 → 10 条：原「code-mentor 开学季→开发编程」「deep-research
+ * 开学季→资讯研究」两条已随词表缩短变成 no-op——「开学季」不再在词表内，首词规则会自然跳过它
+ * 直接算出内容词（补正值 = 首词结果，正是防呆要报错的形状），已删。原 10 条不变，「推荐」仍在
+ * 词表内，excel/pptx 等「推荐→X」纠偏与占位词无关，继续有效。
  */
 const CATEGORY_FIXES = {
   'skill-creator': '实用工具',
-  'code-mentor': '开发编程',
-  'deep-research': '资讯研究',
   'excel': 'Office办公',
   'pptx': 'Office办公',
   'guizang-ppt-skill': 'Office办公',
@@ -85,13 +96,19 @@ function categoryFromTags(tags) {
 }
 
 /**
- * 与 skill-categories.ts 的 freeTagsOf 同口径（0925 拍板收紧 = 0016 洗数段）：受众词与
- * 一切词表分类词都不留，其余原序保留。「标签是标签，分类是分类」——词表词留在 tags 里
- * 会让卡片标签区（skill-card 的 tags.slice(0,3)）与搜索命中面把同一技能呈现成两套分类；
- * 绑定技能搜索不受影响（category 是独立命中面）。内置洗后 tags 多为空数组，是预期终态。
+ * 与 skill-categories.ts 的 freeTagsOf 同口径（0925 拍板收紧 = 0016 洗数段）：受众词、
+ * 一切词表分类词与已作废历史词表词（开学季）都不留，其余原序保留。「标签是标签，分类是
+ * 分类」——词表词留在 tags 里会让卡片标签区（skill-card 的 tags.slice(0,3)）与搜索命中面
+ * 把同一技能呈现成两套分类；绑定技能搜索不受影响（category 是独立命中面）。内置洗后 tags
+ * 多为空数组，是预期终态。
  */
 function freeTagsOf(tags) {
-  return tags.filter((tag) => !AUDIENCE_TAGS.includes(tag) && !SKILL_CATEGORIES.includes(tag));
+  return tags.filter(
+    (tag) =>
+      !AUDIENCE_TAGS.includes(tag) &&
+      !SKILL_CATEGORIES.includes(tag) &&
+      !RETIRED_CATEGORY_TERMS.includes(tag),
+  );
 }
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));

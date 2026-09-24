@@ -8,6 +8,7 @@ import { DEFAULT_SKILL_SEEDS, ensureDefaultSkills } from '../default-skills';
 import { BUILTIN_SKILLS_RAW, BUILTIN_SKILL_SEEDS, convertBuiltinMarkdown } from '../builtin-skills';
 import {
   AUDIENCE_TAGS,
+  RETIRED_CATEGORY_TERMS,
   SKILL_CATEGORIES,
   categoryFromTags,
   freeTagsOf,
@@ -15,13 +16,19 @@ import {
 } from '../skill-categories';
 import { skillContentSchema } from '../skills.dto';
 
+/** tags 残留判定：现行词表词或已作废历史词表词（开学季）都不许出现在自由标签里。 */
+function isPurgedCategoryTerm(tag: string): boolean {
+  return isSkillCategory(tag) || (RETIRED_CATEGORY_TERMS as readonly string[]).includes(tag);
+}
+
 /**
  * v0.0.4 #41：千问工作台技能批量迁移的内置种子守护（映射表 §9 口径）。
  *
  * 锁六件事：
  * ① 93 条种子齐全、id 唯一且与 builtin-skills/*.md 清洗终稿同步（改了 md 不重跑
  *    gen-builtin-seeds.mjs 会红）；分类收口（C-2 + 0925 拍板收紧）后同一条还锁 seed 侧的
- *    category/tags 口径：category ∈ 12 词表、tags 里既无作废受众词、也不含**任何**词表词
+ *    category/tags 口径：category ∈ 11 词表（0017 收敛，0925 拍板删「开学季」）、tags 里
+ *    既无作废受众词、也不含**任何**词表词与已作废历史词表词「开学季」
  *    （0016 口径：标签是标签、分类是分类，洗后内置 tags 多为空数组是预期终态）；
  * ② markdown→blocks 解析/兜底双路径都产出可通过 skillContentSchema 的合法内容，
  *    兜底块全文无损；
@@ -30,8 +37,8 @@ import { skillContentSchema } from '../skills.dto';
  * ④ ensureDefaultSkills 幂等：重复执行不增行；且预置真的把 category 写进库、tags 不再回灌
  *    受众词（否则 0015 迁移洗的数会被启动 upsert 全部洗回去）；
  * ⑤ 全量 94 条（含 §9.2 规范样例 code-review）的 category 守护 + 分类分布快照；
- * ⑥ 分片 ⇔ 千问原始 catalog ⇔ skill-categories.ts helper 三方同口径（含生成器词表与本文件
- *    词表逐字一致），杜绝「生成器自己算一套、运行时再猜一套」。
+ * ⑥ 分片 ⇔ 千问原始 catalog ⇔ skill-categories.ts helper 三方同口径（含生成器三份词表
+ *    字面量与本文件逐字一致），杜绝「生成器自己算一套、运行时再猜一套」。
  */
 
 const MD_DIR = path.resolve(__dirname, '../builtin-skills');
@@ -88,13 +95,13 @@ describe('千问迁移内置种子（#41）', () => {
     for (const seed of BUILTIN_SKILL_SEEDS) {
       expect(seed.id).toMatch(/^skl_builtin_[a-z0-9._-]+$/);
       expect(seed.description.length).toBeGreaterThan(0);
-      // 分类收口（C-2 + 0925 收紧）：不再断言 tags 数量——catalog 的 tags 主要是「受众词 +
-      // 分类词」，新口径下全部剔掉；这里锁两条硬口径：tags 无受众词、无任何词表词
-      // （词表词进 tags 会在卡片标签区呈现为第二套分类，0016 迁移按同口径洗存量）。
-      expect(isSkillCategory(seed.category), `${seed.id} category 不在 12 词表：${seed.category}`).toBe(true);
+      // 分类收口（C-2 + 0925 收紧 + 四片删词）：不再断言 tags 数量——catalog 的 tags 主要是
+      // 「受众词 + 分类词」，新口径下全部剔掉；这里锁两条硬口径：tags 无受众词、无任何
+      // 词表词与已作废历史词表词「开学季」（残留它会以普通标签身份重新长成「伪分类」）。
+      expect(isSkillCategory(seed.category), `${seed.id} category 不在 11 词表：${seed.category}`).toBe(true);
       for (const tag of seed.tags) {
         expect(AUDIENCE_TAGS as readonly string[], `${seed.id} 残留受众词 ${tag}`).not.toContain(tag);
-        expect(isSkillCategory(tag), `${seed.id} 自由标签里残留词表词 ${tag}`).toBe(false);
+        expect(isPurgedCategoryTerm(tag), `${seed.id} 自由标签里残留词表/作废词 ${tag}`).toBe(false);
       }
       expect(seed.mcpDependencies).toEqual([]);
     }
@@ -165,7 +172,7 @@ describe('千问迁移内置种子（#41）', () => {
       const tags = JSON.parse(row.tags) as string[];
       for (const tag of tags) {
         expect(AUDIENCE_TAGS as readonly string[], `${row.id} 库内回灌受众词 ${tag}`).not.toContain(tag);
-        expect(isSkillCategory(tag), `${row.id} 库内 tags 残留词表词 ${tag}`).toBe(false);
+        expect(isPurgedCategoryTerm(tag), `${row.id} 库内 tags 残留词表/作废词 ${tag}`).toBe(false);
       }
     }
     // PRD §9.2 规范样例：单值分类 + 自由标签两字段各归各位。
@@ -183,8 +190,9 @@ describe('千问迁移内置种子（#41）', () => {
       expect(isSkillCategory(seed.category), `${seed.id} category 非法：${JSON.stringify(seed.category)}`).toBe(true);
     }
     // 分布锁：0015 回填 + seed 收口 + 0925 拍板一 CATEGORY_FIXES 纠偏后库内应有的分类
-    // 分布（多一条/少一条都会红，防误改词表映射与补正表）。开学季=0 是预期终态：两条
-    // 占位词误取（code-mentor/deep-research）已改判内容词，词表值本身仍合法（用户可选手选）。
+    // 分布（多一条/少一条都会红，防误改词表映射与补正表）。快照本就不含开学季——拍板一
+    // 先把仅有的两条落点（code-mentor/deep-research）改判内容词，拍板四又把它删出词表
+    // （0017 收敛 CHECK）：内置零条是预期终态，11 键恰好覆盖现行 11 词。
     const dist = DEFAULT_SKILL_SEEDS.reduce<Record<string, number>>((acc, seed) => {
       acc[seed.category] = (acc[seed.category] ?? 0) + 1;
       return acc;
@@ -202,7 +210,9 @@ describe('千问迁移内置种子（#41）', () => {
       推荐: 1,
       质量保障: 1,
     });
-    // tags 快照（口径 = 0925 拍板收紧后的 0016 洗数段：受众词与一切词表词都不留）：
+    expect(Object.keys(dist)).toHaveLength(11);
+    // tags 快照（口径 = 0925 拍板收紧后的 0016 洗数段 + 拍板四的作废词：受众词、一切
+    // 词表词与已作废「开学季」都不留）：
     // 93 条迁移内置洗后 tags 全为空数组（catalog 的 tags 本就是「受众词 + 分类词」），
     // 唯一非空的是手写的 §9.2 规范样例 code-review（review/quality 是真自由标签）。
     // 空数组是预期终态，不是 bug：卡片标签区空就空，分类展示与搜索命中面都走 category 列。
@@ -216,26 +226,32 @@ describe('千问迁移内置种子（#41）', () => {
       review: 1,
       quality: 1,
     });
-    // 定点防线（0925 两项拍板的靶子）：code-mentor 的 catalog tags 是 [开学季, 开发编程]——
-    // 拍板一：占位词「开学季」不再被首词规则取走，category 纠偏为内容词「开发编程」；
-    // 拍板收紧口径：「开发编程」也**不得**留在 tags 里（它曾在真机卡片上与分类徽标同字重现，
-    // 造成「两套分类标准」观感）。谁把 freeTagsOf 退回旧口径、或删掉 code-mentor 这条补正，本条即红。
+    // 定点防线（0925 拍板一+四的合体靶子）：code-mentor 的 catalog tags 是 [开学季, 开发编程]——
+    // 拍板四删词后首词规则即可直接算出「开发编程」（开学季已不在词表、不再截位），补正表里
+    // 不再有这条；若词表哪天飘回 12 项（含开学季），本条立刻红——它是 11 词收敛最锋利的哨兵。
+    // 拍板收紧口径不变：「开发编程」与「开学季」都不得留在 tags 里（曾在真机卡片上与分类徽标
+    // 同字重现，造成「两套分类标准」观感）。谁把 freeTagsOf 退回旧口径，本条即红。
     const codeMentor = DEFAULT_SKILL_SEEDS.find((seed) => seed.name === 'code-mentor');
     expect(codeMentor?.category).toBe('开发编程');
     expect(codeMentor?.tags).toEqual([]);
-    // 逐条守护：seed 的 tags 里出现任何词表词即 fail（0016 口径的服务端等价物，
-    // 防生成器/helper 两侧哪天飘回旧口径）。
+    // 逐条守护：seed 的 tags 里出现任何词表词或已作废历史词表词「开学季」即 fail
+    // （0016 口径 + 0017 作废词的服务端等价物，防生成器/helper 两侧飘回旧口径）。
     for (const seed of DEFAULT_SKILL_SEEDS) {
       for (const tag of seed.tags) {
-        expect(isSkillCategory(tag), `${seed.id} tags 残留词表词 ${tag}`).toBe(false);
+        expect(isPurgedCategoryTerm(tag), `${seed.id} tags 残留词表/作废词 ${tag}`).toBe(false);
       }
     }
   });
 
   it('⑥ 分片 ⇔ 千问原始 catalog ⇔ skill-categories.ts 三方同口径（生成器不得自造一套）', () => {
-    // 词表两份字面量必须逐字一致（生成器是 .mjs，import 不了 TS 常量）。
+    // 三份词表字面量必须逐字一致（生成器是 .mjs，import 不了 TS 常量）：现行 11 词、
+    // 受众词、已作废历史词表词（0925 拍板四删的「开学季」）——少比一份都会让两侧漂移。
     expect(literalFromGenerator('SKILL_CATEGORIES')).toEqual([...SKILL_CATEGORIES]);
     expect(literalFromGenerator('AUDIENCE_TAGS')).toEqual([...AUDIENCE_TAGS]);
+    expect(literalFromGenerator('RETIRED_CATEGORY_TERMS')).toEqual([...RETIRED_CATEGORY_TERMS]);
+    expect(SKILL_CATEGORIES).toHaveLength(11);
+    expect(SKILL_CATEGORIES).not.toContain('开学季');
+    expect(RETIRED_CATEGORY_TERMS).toEqual(['开学季']);
     const catalog = JSON.parse(readFileSync(CATALOG_PATH, 'utf8')) as Array<{
       slug: string;
       tags?: Record<string, string>;

@@ -128,7 +128,7 @@ export type SkillTestCase = z.infer<typeof skillTestCaseSchema>;
 export const skillTestCasesSchema = z.array(skillTestCaseSchema).max(50);
 
 /**
- * §9.2（0015 分类收口）单值分类入参校验：取值 = 12 项受控词表 + `''`（未分类）。
+ * §9.2（0015 分类收口，0017 词表收敛）单值分类入参校验：取值 = 11 项受控词表 + `''`（未分类）。
  * 词表从 skill-categories.ts 派生（唯一事实源），本文件不抄字面清单；越表即
  * 422 VALIDATION_FAILED（ZodPipe 统一错误体）。SKILL.md 导出/导入是前端 markdown.ts
  * 与本文件 api 镜像的共享契约，导出/展示字段一律 snake_case 风格沿用列名 `category`。
@@ -288,7 +288,7 @@ export interface SkillDto {
   status: SkillStatus;
   description: string;
   tags: string[];
-  /** §9.2（0015）单值分类：12 项词表或 ''（未分类）；tags 是纯自由标签，两者语义独立。 */
+  /** §9.2（0015 加列 / 0017 词表）单值分类：11 项词表或 ''（未分类）；tags 是纯自由标签，两者语义独立。 */
   category: SkillCategoryOrNone;
   current_version: string;
   content: SkillContent;

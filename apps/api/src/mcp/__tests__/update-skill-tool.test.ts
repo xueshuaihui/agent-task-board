@@ -255,7 +255,7 @@ describe('update_skill 复用 SkillsService 的三条守卫（一条都不放宽
 });
 
 describe('update_skill 的 category 词表回显（B6 口径补在 agent 入口这一层）', () => {
-  it('通道二（callAgentTool 直连）→ 422：details 带全量 12 词表 + 当前收到的值 + 字段描述', async () => {
+  it('通道二（callAgentTool 直连）→ 422：details 带全量 11 词表 + 当前收到的值 + 字段描述', async () => {
     const skill = await seedSkill({ name: '词表用例', category: '推荐' });
 
     await expect(
@@ -273,15 +273,39 @@ describe('update_skill 的 category 词表回显（B6 口径补在 agent 入口�
     }
     const [detail] = caught!.details!;
     expect(detail).toMatchObject({ path: 'category', code: 'invalid_value', received: '不存在的分类' });
-    // 一次改对：12 个词全在回显里，agent 不必试错。
+    // 一次改对：11 个词全在回显里，agent 不必试错。
     const hint = `${detail!.message} ${detail!.hint}`;
     for (const category of SKILL_CATEGORIES) {
       expect(hint).toContain(category);
     }
-    expect(SKILL_CATEGORIES).toHaveLength(12);
+    expect(SKILL_CATEGORIES).toHaveLength(11);
     // 未分类的空串也是合法值，回显里要点明。
     expect(detail!.hint).toContain("''");
     expect((await h.prisma.skill.findUniqueOrThrow({ where: { id: skill.id } })).category).toBe('推荐');
+  });
+
+  // 0925 拍板（第四片）：「开学季」已从词表删除，如今是**越表值**——agent 直传同样 422、
+  // 列值不动，且全量回显里不再出现该词（词表收敛必须能从这里被 agent 看见）。
+  it('「开学季」现为越表值：422 VALIDATION_FAILED，回显词表不含它，列值不动', async () => {
+    const skill = await seedSkill({ name: '越表靶子', category: '开发编程' });
+
+    let caught: { details?: Record<string, unknown>[] } | undefined;
+    await expect(
+      callAgentTool(toolCtx, agent, 'update_skill', { skill_id: skill.id, category: '开学季' }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    try {
+      await callAgentTool(toolCtx, agent, 'update_skill', { skill_id: skill.id, category: '开学季' });
+    } catch (error) {
+      caught = error as { details?: Record<string, unknown>[] };
+    }
+    const [detail] = caught!.details!;
+    expect(detail).toMatchObject({ path: 'category', code: 'invalid_value', received: '开学季' });
+    // hint = 「可接受值：<11 词全量枚举>；当前收到 "开学季"；<字段描述含可选：…全量词表>」——
+    // 该词只允许以「当前收到」的回显出现，两处词表枚举段都不许再含它。
+    const hint = String(detail!.hint);
+    expect(hint.split('；当前收到')[0]!).not.toContain('开学季');
+    expect(hint.split('可选：')[1]!).not.toContain('开学季');
+    expect((await h.prisma.skill.findUniqueOrThrow({ where: { id: skill.id } })).category).toBe('开发编程');
   });
 
   it('通道一（SDK tools/call）→ SDK 自己的 enum 检查先拦（isError + 纯文本、无 structuredContent），词表原文照出', async () => {

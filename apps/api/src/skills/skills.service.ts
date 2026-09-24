@@ -80,7 +80,7 @@ function toDto(row: Skill): SkillDto {
     status: row.status as SkillStatus,
     description: row.description,
     tags: parsed.tags,
-    // 列值经 0015 CHECK 保证在词表内；读侧再过一次 toSkillCategory 纯属防脏库炸类型。
+    // 列值经 0017 收敛后的 CHECK 保证在词表内；读侧再过一次 toSkillCategory 纯属防脏库炸类型。
     category: toSkillCategory(row.category),
     current_version: row.currentVersion,
     content: parsed.content,
