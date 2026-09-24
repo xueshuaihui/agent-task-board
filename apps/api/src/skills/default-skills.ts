@@ -58,7 +58,9 @@ export const DEFAULT_SKILL_SEEDS: DefaultSkillSeed[] = [
     name: 'code-review',
     type: 'flow',
     description: '对代码 diff 做风格、安全、逻辑三层审查',
-    tags: ['review', 'quality'],
+    // tags 首项必须是受众词（官方/社区），其余为分类词——分类不加 schema 列，
+    // 前端 categoryTagsOf/audienceTagOf 全靠这套词表（见 web features/skills/meta.ts）。
+    tags: ['官方', '开发编程'],
     content: CODE_REVIEW,
     mcpDependencies: [{ server: 'github', tools: ['get_pull_request'], required: false, reason: '拉取待审查 diff' }],
   },

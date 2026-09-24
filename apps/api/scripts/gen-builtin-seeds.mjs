@@ -23,6 +23,12 @@ const catalogPath = path.join(repoRoot, 'docs/v0.0.4/skills-data/qwen-skills-cat
 const LIMIT = 24576;
 const CHUNK_SIZE = 10;
 
+/**
+ * 分类词补正：上游 catalog 有 slug 无分类词，直接随 tags 落库会在技能库「分类」筛选
+ * 与子技能选择器里长出「未分类」孤例。catalog.json 是千问原始导出不可改，补正留这里。
+ */
+const CATEGORY_FIXES = { 'skill-creator': ['实用工具'] };
+
 const catalog = JSON.parse(readFileSync(catalogPath, 'utf8'));
 const bySlug = new Map(catalog.map((item) => [item.slug, item]));
 const slugs = readdirSync(mdDir)
@@ -39,7 +45,9 @@ const rows = slugs.map((slug) => {
   if (bytes > LIMIT) throw new Error(`${slug} 正文 ${bytes}B 超 24K 上限，先裁剪再分片`);
   const desc = (item.desc || '').trim() || String(item.summary || '').split(/[。\n]/)[0];
   const sourceTag = item.source === 'OFFICIAL' ? '官方' : '社区';
-  const tags = [sourceTag, ...Object.keys(item.tags || {})].filter(Boolean);
+  const categories = [...Object.keys(item.tags || {}), ...(CATEGORY_FIXES[slug] ?? [])];
+  const tags = [sourceTag, ...categories].filter(Boolean);
+  if (!tags[1]) throw new Error(`${slug} 无分类词：补 CATEGORY_FIXES 或修 catalog`);
   return { slug, nameCn: item.nameCn, description: desc.slice(0, 500), tags, markdown };
 });
 
