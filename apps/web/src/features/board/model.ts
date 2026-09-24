@@ -54,10 +54,12 @@ export function neighbourColumn(from: string, step: 1 | -1): TaskStatus | null {
 }
 
 /**
- * 3.1 折叠规则：列内无可渲染卡片 → 40px 竖条。
- * 唯一例外在默认视图（`view=all` 且无筛选）：除「异常/失败」外的五列即使为空也保持占一列宽
- * （B7 起为弹性等分，不再是 280px 定档），因为默认视图里的空列是「这一类确实没活」的信息，
- * 视图预设/筛选下的空列只是噪声。
+ * 「默认视图」的判定：`view=all` 且八个筛选维度全空。
+ *
+ * G-5（2026-09-24 用户拍板）起，这一位**不再参与列宽/折叠**：列不随筛选结果折叠，
+ * 七列在任何视图下恒等分（`BoardColumnView` 恒 `min-w-[180px] flex-1`），空列照常渲染
+ * 「暂无任务」。它只剩一个消费者——`index.tsx` 的「整张看板空（`total === 0`）才用
+ * 页面级空态替掉列区」：筛选后 0 条不是「没活」，该看到的是七列七个空态，不是整页空态。
  */
 export function isDefaultBoardView(
   filters: Pick<
@@ -96,12 +98,6 @@ export function boardFilterCount(
     filters.agents.length +
     Object.keys(filters.customFields).length
   );
-}
-
-export function columnCollapsed(column: Pick<BoardColumn, 'status' | 'tasks'>, defaultView: boolean): boolean {
-  if (column.tasks.length > 0) return false;
-  if (defaultView && column.status !== 'FAILED') return false;
-  return true;
 }
 
 /** 6.9：卡片只画 `show_on_card` 且仍启用的字段，按 `sort_order`，最多 2 个。 */

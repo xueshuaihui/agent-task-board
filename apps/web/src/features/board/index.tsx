@@ -177,7 +177,6 @@ export function BoardPage() {
                   defs={defs}
                   actions={actions}
                   overlayOf={overlayOf}
-                  defaultView
                   dropState={null}
                   isOver={false}
                   loading
@@ -195,7 +194,8 @@ export function BoardPage() {
               onRequestDelete={setDeleteTarget}
             />
           ) : total === 0 && defaultView ? (
-            // 3.6：只有「整张看板空」才替掉六列；筛选后的空态由折叠列 + 工具栏那句文案表达。
+            // 3.6 + G-5：只有「整张看板空 **且未筛**」才替掉七列；筛到 0 条时列区照常在，
+            // 七列恒等分、空列各显示「暂无任务」（列不随筛选折叠，2026-09-24 用户拍板）。
             <BoardEmpty onCreate={() => setQuick({ target: 'BACKLOG' })} />
           ) : (
             <DndContext
@@ -217,7 +217,6 @@ export function BoardPage() {
                       defs={defs}
                       actions={actions}
                       overlayOf={overlayOf}
-                      defaultView={defaultView}
                       dropState={dropMap ? dropMap[column.status] : null}
                       isOver={overColumn === columnDropId(column.status)}
                       loading={false}

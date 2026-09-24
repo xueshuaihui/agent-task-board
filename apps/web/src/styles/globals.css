@@ -119,8 +119,8 @@
 
   /* —— 1.5 尺寸档 —— */
   /* B7：看板列宽改弹性等分（flex-1 + min-w-[180px]），旧 280/240 定档 token 无消费者已删；
-     折叠竖条仍定宽参与布局，保留。 */
-  --container-column-collapsed: 40px;
+     G-5（2026-09-24 用户拍板）取消「空列折叠为 40px 竖条」后，那条竖条的定档 token
+     同样归零消费者、一并删除——七列在任何视图下都吃弹性等分，不再有定宽态。 */
   --container-card: 248px;
   --container-drawer: 640px;
   --container-drawer-md: 560px;

@@ -4,8 +4,8 @@
 
 ## 0. 下载与完整性（前置）｜**只能打包 dmg**
 
-> **截至 2026-09-24（HEAD `3ae627f`，尚未切 beta.7）**：标题里的 beta.6 指被验内容基线；dev 可验面已全绿——§6.2/§6.3/§6.4/§6.5/§7.1/§7.2(前二)/§7.3/§7.4 逐条勾销，实测数字在正文、批次记录在矩阵「beta.6 之后：dev 演练真机轮」节，该轮查出并修掉的缺陷为 `96f7fb7`（相对时间退化）、`9777249`（forceMount Portal 丢 ref）、`c3fa31e`（MCP structuredContent 丢可接受值）、`e27d26e`（React Flow 水印恢复显示 + 「第 N 次」缺空格）。**其后又跑了用户报障的 G 批（见 §10）**：任务列表列宽跳变（`ac5b45a` + `8c1d550`，含中途查出的 1280 档横滚回归）、Agent 侧任务与技能的全字段编辑面（新增 MCP 工具 `update_task` `4dc8764`、`update_skill` `3ae627f`，工具总数 26→28）。
-> **剩余未勾项全部依赖打包 dmg**：§0–§5、§6.1、§7.2-③ 托盘深色可见性、§9 的 beta 包复验腿（§9 各条 dev 走查证据在 C/D 批 commit 里）、§10.1 的经典占位滚动条档与 §10.2/§10.3 的真实客户端实调。tag 由用户另行拍板，推 tag = 触发 CI 出包。
+> **截至 2026-09-24（HEAD `5b1b17e`，尚未切 beta.7）**：标题里的 beta.6 指被验内容基线；dev 可验面已全绿——§6.2/§6.3/§6.4/§6.5/§7.1/§7.2(前二)/§7.3/§7.4 逐条勾销，实测数字在正文、批次记录在矩阵「beta.6 之后：dev 演练真机轮」节，该轮查出并修掉的缺陷为 `96f7fb7`（相对时间退化）、`9777249`（forceMount Portal 丢 ref）、`c3fa31e`（MCP structuredContent 丢可接受值）、`e27d26e`（React Flow 水印恢复显示 + 「第 N 次」缺空格）。**其后又跑了用户报障的 G 批（见 §10、§11）**：任务列表列宽跳变（`ac5b45a` + `8c1d550`，含中途查出的 1280 档横滚回归）、Agent 侧任务与技能的全字段编辑面（新增 MCP 工具 `update_task` `4dc8764`、`update_skill` `3ae627f`，工具总数 26→28）、技能库搜索 keyword 命中面收口（`e1a8e31`，文档面同步 `5b1b17e`）、**看板列宽与筛选结果解耦（§11，G-5：删掉空列折叠规则本身，PRD v1.5 §4.1/§5 原条款按用户拍板覆盖）**。
+> **剩余未勾项全部依赖打包 dmg**：§0–§5、§6.1、§7.2-③ 托盘深色可见性、§9 的 beta 包复验腿（§9 各条 dev 走查证据在 C/D 批 commit 里）、§10.1 的经典占位滚动条档与 §10.2/§10.3 的真实客户端实调、§11 的打包环境滚动条挤压与最小窗横滚手势（该节列宽数字 dev 已实测，见 §11 待包项）。tag 由用户另行拍板，推 tag = 触发 CI 出包。
 
 - [ ] 按本机架构下载对应 dmg：Apple Silicon → `Jarvis.Workbench_0.1.0_arm64.dmg`；Intel → `Jarvis.Workbench_0.1.0_x64.dmg`
 - [ ] 校验 SHA-256 与 Release 内 `SHA256SUMS.txt` 一致（注意 SUMS 内以空格名登记，比对以哈希为准）：
@@ -115,7 +115,7 @@
 - [ ] 视图段（全部/待我审核/可领取/已阻塞/异常）与筛选叠加正确：二者是**正交两轴**——视图段是作用域限定、chip 条是过滤条件，叠加后 URL 形如 `#/board?view=claimable&priority=1&type=缺陷`，工具栏给「视图：可领取 · 已筛 2 项」。**「全部」=视图作用域复位（不是清空过滤）**，过滤条件的复位入口只有 chip 条 × 与「清除全部」（旧文案把「全部」当成一键回全量，2026-09-24 R-D 实测后更正，与 §6.3 同口径）
 - [ ] URL 同步：加条件后地址栏为 `#/board?…`，复制该 URL 到新窗口/换设备能完整还原过滤；刷新不丢
 - [ ] 偏好迁移：用 beta.5 及以前版本用过分组过滤，升级 beta.6 首开后原分组条件仍在（自动迁成 chip）；已清空的旧分组不会「复活」
-- [ ] 过滤态在看板/列表/流程图三视图共用；空列折叠为细条带；960px 最小宽工具栏折行不压字、列横滚兜底
+- [ ] 过滤态在看板/列表/流程图三视图共用；**看板空列不折叠**——恒占一列宽并显示「暂无任务」，加筛选前后七列宽度逐像素一致（G-5 拍板，见 §11；本条旧文案写的是「空列折叠为细条带」，该规则已整体作废）；960px 最小宽工具栏折行不压字、列横滚兜底
 - [ ] 列表页「分组方式」菜单独立于过滤（分节维度本地记忆），筛选 chip 与分节互不干扰
 
 ### 7.4 B13/B14 与 dnd 回归
@@ -183,6 +183,22 @@
 
 **本片门禁**：api `npm run typecheck` 干净、`npm test` **63 files / 683 tests 全绿**（G-2 前基线 61/650 → G-2 +17 → G-3 +16，零删零 skip 零放宽期望）、`scripts/boot-smoke.sh` PASS ×2；web `npx tsc --noEmit` 干净、`npx vitest run` **13 files / 119 tests 全绿**、`npx vite build` 产物 CSS 内 `min-w-[1022px]` 在场且 `min-w-[1150px]` 已消失。
 
+## 11. G-5 看板列宽与筛选结果解耦（全列常驻等分 + 空列「暂无任务」，2026-09-24 写回）
+
+用户报障原话：**「添加任意筛选项筛选后列宽发生变化……有内容的列宽度发生变化，如果每一列都有内容不会出现」**，并自行定位到「空列没有『暂无任务』占位、撑不起列宽」。与 §10.1 是同一类病（列宽成了筛选结果的函数），但落点在看板列而非任务列表，故单开一节。
+
+**冲突与拍板**：PRD v1.5 §4.1 与 §5 第 5 条明文规定「列内无可渲染卡片时该列折叠为 40px 竖条，筛选视图里的空列只是噪声」——照这条做就必然复现用户看到的现象。摆清冲突后**用户选择「全列常驻等分 + 暂无任务」**：取消该折叠规则，任何视图下七列恒等分，空列照常显示「暂无任务」。**该拍板覆盖 v1.5 原条款**，PRD 两处已就地改写并留原文与实测证据。
+
+- [x] 根因唯一：`features/board/model.ts::columnCollapsed`（列内无卡 + 非默认视图 ⇒ 折叠）→ `board-column.tsx` 用 `w-column-collapsed shrink-0` 定宽 40px 并把整段列体（含 `ColumnEmpty`「暂无任务」）条件短路。修法为**修模型而非打补丁**：该函数连同 `collapsed` prop、`w-column-collapsed` 分支、列头竖条形态、`{collapsed ? null : …}` 包裹一起删除，列恒为 `min-w-[180px] flex-1`；`--container-column-collapsed`（40px）token 零消费者后一并删；随折叠存在的 `transition-[width]` 也删（`motion-spec.md` L3 的纯 CSS 位移档只授权「侧栏折叠」，看板列折叠本就不在授权表内）。
+- [x] 未牵连的相邻规则：`index.tsx` 的 `total === 0 && defaultView`（**整张看板**空且未筛才用页面级空态替掉列区）行为一字未改，`defaultView` 只是不再下传给列。
+- [x] **dev 已验（2026-09-24 · dev 演练环境 5196/7796，非打包 dmg）——筛选后列宽恒定**：验证动作 = 看板工具栏「筛选」→ 优先级面板点 `P3 低`（URL 成 `#/board?priority=3`），用 `getBoundingClientRect()` 量七个 `<section>`。真实窗口 1940px 档：**无筛选 7 列 × 228px** → **加 P3 后仍是 7 列 × 228px（逐像素一致）**，列行容器 clientW 1692 = 7×228 + 6×16 gap；空列由无筛选时 3 个增至 5 个，**5 个空列全部渲染出「暂无任务」**（修复前同一操作：需求池/待执行 228→**698px**、其余五列塌成 **40px 竖条且不显示「暂无任务」**）。页面级 `documentElement.scrollWidth 1940 === clientWidth 1940`，无横向溢出。
+- [x] **dev 已验——三档响应式（960 / 1280 / 1600，同源 iframe 造真视口，每档各跑「无筛选」与「P3」两态）**：三档**列数恒 7、单列宽恒 180px**（筛选前后完全一致），列宽地板 7×180 + 6×16 = 1356 大于容器可用宽，故按 B7 口径走**容器内横滚兜底**——列行容器 clientW/scrollW 实测：960 档 **848 / 1356**、1280 档 **1032 / 1356**、1600 档 **1352 / 1356**；三档**页面级 `scrollWidth === clientWidth`（960/1280/1600 各自相等）零横向溢出**，横滚只在看板列行内。空列「暂无任务」在无筛选态 3 个、P3 态 5 个，逐档一致。列内竖滚（B4）未退化：需求池 `.atb-scroll` clientH 1225 < scrollH 1450、`overflow-y: auto`。console 零 error/warning。
+- [x] 回归单测：新增 `features/board/__tests__/column-always-open.test.ts`（7 例，用 `renderToStaticMarkup` 真渲 `BoardColumnView`）——断言非默认视图下空列 class 含 `flex-1` + `min-w-[180px]` 且不含 `w-column-collapsed`/`shrink-0`、七个状态列逐个显示「暂无任务」、只剩一列有卡的筛选快照仍渲出 **7 个列容器 + 6 个空态**（七列数量不随筛选减少）、全空快照仍 7 列 7 个空态；既有的 `columnCollapsed` 断言用例为零（无既有用例需删）。
+- [ ] **待 beta 包复验**（本条 dev 已验，复验看的是打包环境）：①macOS **经典（占位）滚动条**会挤掉容器宽，需在 dmg 里确认三档仍是 7 列等分、且横滚不泄漏到页面级；②Tauri WebView 下最小窗 960px 档列行横滚可拖可滚（触控板与滚动条两种手势）；③深色主题下空列虚线框与「暂无任务」可读性。
+- 相邻面刻意未动：`docs/Agent Task Board 高保真原型 v1.1.md` §3.1/§3.4（366、623 行）与 `docs/v0.0.4/回归验收矩阵.md` §7.3 记录行仍写着折叠 40px——前者是**已定版的原型历史稿**、后者是**G-5 之前的实测留档**，均不回改；权威口径以 PRD v1.5 §4.1/§5 改后条款 + 本节为准。折叠的另外两个同名概念未碰：主导航折叠（`atb.nav.collapsed`，motion-spec L3 授权项）、任务列表分节折叠。
+
+**本节门禁**：web `npx tsc --noEmit` 干净、`npx vitest run` **14 files / 126 tests 全绿**（基线 13/119 + 本节新增 7 例，零删零 skip 零放宽期望）、`npm run build` 成功；产物 CSS 内 `column-collapsed` 类与 40px 定档已消失。本片未触碰 `apps/api` 源码，api 门禁不适用。
+
 ## 记录区（现象/截图/报错贴这里）
 
 | 项 | 结果（过/挂） | 现象备注 |
@@ -206,5 +222,6 @@
 | §10.1 G-1 任务列表列宽 | 过（2026-09-24 · dev 真机浏览器，非打包 dmg） | 根因=auto 布局按可见行内容重算列宽（过滤/分节行/滚动条三放大器）。修模：`Table` 加 `columns`→`table-layout:fixed`+`<colgroup>`，列宽唯一真值 `task-list/columns.ts`。真机三档 × 四形态复验：11 列像素恒定 [40,80,228,72,78,96,112,112,64,96,52]、表头全 44px 无折行无截断、20 行×11 格零内容溢出邻列、1800 档标题独吞 640。**中途查出并收掉一条自己的回归**：首版地板 1150 让 1280 档出现修复前没有的容器内横滚（容器=视口−250=1030，旧 auto 实测恰好塞满 1030 不滚）→ 地板收到 1022，1280 实测 `scrollW==clientW==1030` 零横滚、960 档页面零横向溢出。待包：经典占位滚动条挤掉 15px 后 1280 是否仍不滚（余量仅 8px）。 |
 | §10.2 G-2 `update_task` | 协议层过（2026-09-24 · dev，InMemoryTransport 全链路 17 用例），客户端实调待包 | MCP 工具 26→27。守卫三支（拍板）：RUNNING 须持当前租约（与 `update_progress` 同 `leases.verify` 口径）、BACKLOG/READY 免租约、其余四状态拒 409 `TASK_NOT_EDITABLE` 且 details 指名该走的链路。字段面逐字取 `taskPatchSchema.shape`（13 可写字段），校验/审计只有 `TasksService.applyPatch` 一份；**REST `PATCH /tasks/:id` 的 RUNNING 即拒一字未动**（既有测试 + 新增红线用例双向锁住）；`status`/`assignee` 不在可写键内，改不到状态机与执行权。 |
 | §10.3 G-3 `update_skill` | 协议层过（同上，16 用例），客户端实调待包 | 27→28。可写面 = UI `skillPatchSchema` 除 `status` 外全部；`status` **有意排除**（UI 发布=`POST /versions` 快照 + `PATCH {status}` 两步，agent 面无快照工具，只改状态会让 `current_version` 与 content 脱节），`mcp_dependencies` 与 UI PATCH 面一致不可写。守卫全复用 `SkillsService.patch`（默认技能 `SKILL_READONLY`、子技能自引用/成环 `SKILL_REF_SELF`/`SKILL_REF_CYCLE`），`@AuthScope('ui')` 未摘。词表回显补在 agent 入口层：`parseToolInput` details 追加 `received`、hint 拼「可接受值 + 当前收到」，`get_vocabulary` 新增 `skill_categories`；REST 的裸 zod 422 形状 UI 在用、锁进测试未改。 |
+| §11 G-5 看板列宽 | 过（2026-09-24 · dev 真机浏览器，非打包 dmg），打包环境待复验 | 用户拍板「全列常驻等分 + 暂无任务」，覆盖 PRD v1.5 §4.1/§5 的「空列折叠为 40px 竖条」。修法删概念：`model.ts::columnCollapsed` 连函数删除、`board-column.tsx` 的 `collapsed` prop/`w-column-collapsed` 分支/列头竖条形态/条件包裹全清、40px 定档 token 与随之失去对象的 `transition-[width]` 一并删；`total === 0 && defaultView` 那条整页空态规则未动。实测：1940px 真窗口无筛选 7×228 → 加 `P3 低` 后仍 7×228（修复前 698/698/40×5 且空列无「暂无任务」），5 个空列全部显示「暂无任务」；960/1280/1600 三档（同源 iframe 真视口，各跑无筛选与 P3 两态）列数恒 7、单列恒 180px、容器 clientW/scrollW = 848/1356、1032/1356、1352/1356（横滚只在列行内）、三档页面级 `scrollWidth === clientWidth` 零横向溢出；B4 列内竖滚未退化（需求池 clientH 1225 < scrollH 1450）。新增 7 例单测（`renderToStaticMarkup` 真渲列组件）。 |
 
 另记：**React Flow 归属水印**——流程图视图原先 `proOptions={{ hideAttribution: true }}`，控制台明确提示隐藏需订阅 Pro（本项目无订阅）。2026-09-24 拍板「恢复显示」，已随 `e27d26e` 改回 `hideAttribution: false`（与技能画布既有写法同风格），水印走 `globals.css` 既有的弱化配色（透明底 + `--color-text-tertiary`，深浅主题同一令牌），未加隐藏、未改色位。beta 包复验时确认深浅两套主题下不压内容即可。

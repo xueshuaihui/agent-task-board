@@ -13,11 +13,7 @@ import { DraggableCard } from './board-card';
 import { boardCardLayoutId, flyRole } from './fly-motion';
 import type { CardActions } from './card-actions';
 import type { RunOverlay } from './use-run-overlay';
-import {
-  columnCollapsed,
-  groupRunningByToken,
-  showsSeeAll,
-} from './model';
+import { groupRunningByToken, showsSeeAll } from './model';
 import type { Verdict } from './matrix';
 
 export interface BoardColumnViewProps {
@@ -25,8 +21,6 @@ export interface BoardColumnViewProps {
   defs: readonly FieldDef[];
   actions: CardActions;
   overlayOf: (id: string) => RunOverlay;
-  /** 3.1：默认视图下的空列仍占一列宽（弹性等分，最小 180px）。 */
-  defaultView: boolean;
   /** 拖拽开始时按卡片状态算出的该列落点态；空闲时为 null（PRD 7.2 首条）。 */
   dropState: Verdict | null;
   isOver: boolean;
@@ -36,21 +30,21 @@ export interface BoardColumnViewProps {
 
 /**
  * 3.1/3.2 一列：44px 列头固定 + 列内纵向滚动 + 列底常驻入口。
- * 列宽（B7 改版）：`flex-1 basis-0` 等分铺满容器、最小 180px 兜底，窗口变窄放不下时
- * 由 `ColumnRow` 的 `overflow-x-auto` 横向滚动；折叠态仍是 40px 竖条定宽不参与弹性。
+ * 列宽（B7 定弹性等分、G-5 收口）：`min-w-[180px] flex-1` 等分铺满容器、最小 180px 兜底，
+ * 窗口变窄放不下时由 `ColumnRow` 的 `overflow-x-auto` 横向滚动。**列宽与筛选结果无关**
+ * （2026-09-24 用户拍板覆盖 PRD v1.5 §4.1 的「空列折叠为 40px 竖条」）：七列在任何视图下
+ * 恒常驻、恒等分，空列照常渲染 `ColumnEmpty`「暂无任务」，故此处不再有 width 过渡对象。
  */
 export function BoardColumnView({
   column,
   defs,
   actions,
   overlayOf,
-  defaultView,
   dropState,
   isOver,
   loading,
   onDraggingChange,
 }: BoardColumnViewProps) {
-  const collapsed = columnCollapsed(column, defaultView);
   const { setNodeRef } = useDroppable({ id: `column:${column.status}`, data: { status: column.status } });
   const style = statusStyle(column.status);
   const reduce = useReducedMotion();
@@ -66,8 +60,7 @@ export function BoardColumnView({
       ref={setNodeRef}
       aria-label={statusLabel(column.status)}
       className={cn(
-        'relative flex h-full min-h-0 flex-col rounded-card transition-[width] duration-200 ease-settle',
-        collapsed ? 'w-column-collapsed shrink-0' : 'min-w-[180px] flex-1',
+        'relative flex h-full min-h-0 min-w-[180px] flex-1 flex-col rounded-card',
         dropActive ? 'border-2 border-dashed' : 'border-2 border-transparent',
         dropActive && forbidden && 'border-solid border-status-failed bg-status-failed-soft',
         dropActive && highlighted && 'border-primary bg-primary-light',
@@ -78,101 +71,94 @@ export function BoardColumnView({
         <span aria-hidden className="absolute inset-x-0 top-0 h-0.5 rounded-t-card bg-primary" />
       ) : null}
 
-      <ColumnHeader
-        column={column}
-        collapsed={collapsed}
-        style={style}
-        formAction={dropActive ? formAction : undefined}
-      />
+      <ColumnHeader column={column} style={style} formAction={dropActive ? formAction : undefined} />
 
-      {collapsed ? null : (
-        <>
-          {column.status === 'RUNNING' && column.tasks.length > 0 ? (
-            <TokenGrouping tasks={column.tasks} />
-          ) : null}
+      {column.status === 'RUNNING' && column.tasks.length > 0 ? (
+        <TokenGrouping tasks={column.tasks} />
+      ) : null}
 
-          {/* §5.2：列内容器纵向滚动是换列飞行的测量错位来源（回落规则 2），挂 motion 的
-              layoutScroll 让投影在滚动后重测位置。 */}
-          <motion.div
-            layoutScroll
-            className={cn(
-              'atb-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 pb-2',
-              forbidden && 'cursor-not-allowed',
-            )}
-          >
-            {loading && column.tasks.length === 0 ? <CardSkeleton count={2} /> : null}
-            {/* §4 看板：列内卡片 stagger 入场（≤40ms）+ AnimatePresence 退场；列内顺序仍由服务端定 */}
-            <motion.div
-              className="flex flex-col gap-2"
-              variants={listVariants}
-              initial={reduce ? false : 'hidden'}
-              animate="show"
-            >
-              <AnimatePresence>
-                {column.tasks.map((card, index) => {
-                  // §5.2 方案 A 的触发面只有「用户发起的换列」（见 fly-motion.ts 头注）：
-                  // source = 仍停在来源列的飞行源（挂 layoutId、撤 exit，等快照到达瞬时让位）；
-                  // target = 快照落地后目标列里的新挂载点（挂 layoutId、不播入场淡入，位置由飞行承担）。
-                  // null = 其余一切场合（含 WS 换列、规则 3/4/5 命中），逐字节等于现状（方案 B）。
-                  const role = flyRole(card.id, card.status, reduce === true);
-                  if (role === 'target') {
-                    return (
-                      <motion.div
-                        key={card.id}
-                        layoutId={boardCardLayoutId(card.id)}
-                        initial={false}
-                        transition={springs.gentle}
-                        // exit 兜底：TTL 内该卡又从目标列离开且未拿到新一轮 source 标记时
-                        // （快照把它移去第三列）按方案 B 常规淡出，不能瞬时消失。
-                        exit={{ opacity: 0, y: 8, transition: { duration: 0.14, ease: 'easeOut' } }}
-                      >
-                        <DraggableCard
-                          card={card}
-                          defs={defs}
-                          actions={actions}
-                          overlay={overlayOf(card.id)}
-                          onDraggingChange={onDraggingChange}
-                        />
-                      </motion.div>
-                    );
+      {/* §5.2：列内容器纵向滚动是换列飞行的测量错位来源（回落规则 2），挂 motion 的
+          layoutScroll 让投影在滚动后重测位置。 */}
+      <motion.div
+        layoutScroll
+        className={cn(
+          'atb-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 pb-2',
+          forbidden && 'cursor-not-allowed',
+        )}
+      >
+        {loading && column.tasks.length === 0 ? <CardSkeleton count={2} /> : null}
+        {/* §4 看板：列内卡片 stagger 入场（≤40ms）+ AnimatePresence 退场；列内顺序仍由服务端定 */}
+        <motion.div
+          className="flex flex-col gap-2"
+          variants={listVariants}
+          initial={reduce ? false : 'hidden'}
+          animate="show"
+        >
+          <AnimatePresence>
+            {column.tasks.map((card, index) => {
+              // §5.2 方案 A 的触发面只有「用户发起的换列」（见 fly-motion.ts 头注）：
+              // source = 仍停在来源列的飞行源（挂 layoutId、撤 exit，等快照到达瞬时让位）；
+              // target = 快照落地后目标列里的新挂载点（挂 layoutId、不播入场淡入，位置由飞行承担）。
+              // null = 其余一切场合（含 WS 换列、规则 3/4/5 命中），逐字节等于现状（方案 B）。
+              const role = flyRole(card.id, card.status, reduce === true);
+              if (role === 'target') {
+                return (
+                  <motion.div
+                    key={card.id}
+                    layoutId={boardCardLayoutId(card.id)}
+                    initial={false}
+                    transition={springs.gentle}
+                    // exit 兜底：TTL 内该卡又从目标列离开且未拿到新一轮 source 标记时
+                    // （快照把它移去第三列）按方案 B 常规淡出，不能瞬时消失。
+                    exit={{ opacity: 0, y: 8, transition: { duration: 0.14, ease: 'easeOut' } }}
+                  >
+                    <DraggableCard
+                      card={card}
+                      defs={defs}
+                      actions={actions}
+                      overlay={overlayOf(card.id)}
+                      onDraggingChange={onDraggingChange}
+                    />
+                  </motion.div>
+                );
+              }
+              return (
+                <motion.div
+                  key={card.id}
+                  variants={itemVariants}
+                  // 显式 initial/animate + custom 索引延迟：数据晚到的卡（WS 推送、
+                  // 拖拽回列）不依赖父容器 stagger 编排，否则会卡在 hidden 态不可见。
+                  initial={reduce ? false : 'hidden'}
+                  animate={reduce ? undefined : 'show'}
+                  custom={index}
+                  layoutId={role === 'source' ? boardCardLayoutId(card.id) : undefined}
+                  transition={role === 'source' ? springs.gentle : undefined}
+                  // source 撤 exit：旧列必须与新列挂载同帧瞬时卸载，飞行体才能接管；
+                  // 若让它播 140ms 淡出就与飞出的卡构成同 id 双画面（§5.2 禁止）。
+                  exit={
+                    role === 'source' || reduce
+                      ? undefined
+                      : { opacity: 0, y: 8, transition: { duration: 0.14, ease: 'easeOut' } }
                   }
-                  return (
-                    <motion.div
-                      key={card.id}
-                      variants={itemVariants}
-                      // 显式 initial/animate + custom 索引延迟：数据晚到的卡（WS 推送、
-                      // 拖拽回列）不依赖父容器 stagger 编排，否则会卡在 hidden 态不可见。
-                      initial={reduce ? false : 'hidden'}
-                      animate={reduce ? undefined : 'show'}
-                      custom={index}
-                      layoutId={role === 'source' ? boardCardLayoutId(card.id) : undefined}
-                      transition={role === 'source' ? springs.gentle : undefined}
-                      // source 撤 exit：旧列必须与新列挂载同帧瞬时卸载，飞行体才能接管；
-                      // 若让它播 140ms 淡出就与飞出的卡构成同 id 双画面（§5.2 禁止）。
-                      exit={
-                        role === 'source' || reduce
-                          ? undefined
-                          : { opacity: 0, y: 8, transition: { duration: 0.14, ease: 'easeOut' } }
-                      }
-                    >
-                      <DraggableCard
-                        card={card}
-                        defs={defs}
-                        actions={actions}
-                        overlay={overlayOf(card.id)}
-                        onDraggingChange={onDraggingChange}
-                      />
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-            </motion.div>
-            {!loading && column.tasks.length === 0 ? <ColumnEmpty column={column} actions={actions} /> : null}
-          </motion.div>
+                >
+                  <DraggableCard
+                    card={card}
+                    defs={defs}
+                    actions={actions}
+                    overlay={overlayOf(card.id)}
+                    onDraggingChange={onDraggingChange}
+                  />
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </motion.div>
+        {/* G-5：空列（含「异常/失败」）在任何视图下都照常渲染空态——列宽与筛选结果无关，
+            「这一类确实没活」在筛选视图里同样是有效信息，不是噪声。 */}
+        {!loading && column.tasks.length === 0 ? <ColumnEmpty column={column} actions={actions} /> : null}
+      </motion.div>
 
-          <ColumnFooter column={column} actions={actions} />
-        </>
-      )}
+      <ColumnFooter column={column} actions={actions} />
     </section>
   );
 }
@@ -180,15 +166,14 @@ export function BoardColumnView({
 /**
  * 3.2 列头（改版后）：soft 底状态徽标胶囊（色点 + 列名）+ 可点计数胶囊。
  * 计数变化带 springs.pop 弹跳（DESIGN.md §5 数字徽标）；没有排序/折叠/筛选三项。
+ * G-5 起列头只有一种形态：竖条态（色点 + 计数 + 竖排列名）随折叠规则一起删除。
  */
 function ColumnHeader({
   column,
-  collapsed,
   style,
   formAction,
 }: {
   column: BoardColumn;
-  collapsed: boolean;
   style: StatusStyle;
   formAction?: string;
 }) {
@@ -217,18 +202,6 @@ function ColumnHeader({
       </motion.span>
     </button>
   );
-
-  if (collapsed) {
-    return (
-      <header className="flex h-11 shrink-0 flex-col items-center gap-2 pb-3 pt-1">
-        <StatusDot className={style.dot} />
-        {count}
-        <span className="min-h-0 flex-1 truncate text-aux text-text-secondary [writing-mode:vertical-rl]">
-          {label}
-        </span>
-      </header>
-    );
-  }
 
   return (
     <header className="flex h-11 shrink-0 items-center gap-2 pb-3">
