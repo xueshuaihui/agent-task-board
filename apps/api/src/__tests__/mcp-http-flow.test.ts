@@ -46,7 +46,8 @@ import {
 
 /**
  * §12 + §16.1 已落地子集（9 基础 + block_task + wait_for_resume + 技能三工具 + 策略二工具
- * + W7 board.* 拆解五工具 + W8-a2 创建闭环三工具 create_task/get_creation_status/wait_for_confirmation）。
+ * + W7 board.* 拆解五工具 + W8-a2 创建闭环三工具 create_task/get_creation_status/wait_for_confirmation
+ * + W8-a3 board.create_tasks_batch + B6 get_vocabulary + §16.1 update_task）。
  * 与内存传输那份各写一份是有意的：两边都得独立对表，不互相引用。
  */
 const CHAPTER_12_TOOLS = [
@@ -75,6 +76,7 @@ const CHAPTER_12_TOOLS = [
   'report_mcp_call',
   'search_skills',
   'update_progress',
+  'update_task',
   'wait_for_resume',
 ];
 

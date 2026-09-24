@@ -18,6 +18,7 @@ import {
   progressSchema,
   reportMcpCallSchema,
   reviewFeedbackQuerySchema,
+  updateTaskSchema,
   waitForResumeSchema,
 } from '../contract/agent-schemas';
 import { idLike } from '../contract/schemas';
@@ -42,6 +43,7 @@ export type {
   CreateTaskToolInput,
   CreateTasksBatchInput,
   CreationRequestRefInput,
+  UpdateTaskInput,
 } from '../contract/agent-schemas';
 
 /** 12 章：`get_task` 是只读工具，不需要三元组（三元组只在写回侧强制）。 */
@@ -72,5 +74,6 @@ export {
   progressSchema,
   reportMcpCallSchema,
   reviewFeedbackQuerySchema,
+  updateTaskSchema,
   waitForResumeSchema,
 };

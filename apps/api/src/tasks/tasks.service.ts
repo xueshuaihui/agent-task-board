@@ -167,7 +167,32 @@ export class TasksService {
     if (before.status === 'RUNNING') {
       throw new ApiException('TASK_RUNNING', '执行中的任务不可编辑，请先强制停止');
     }
+    return this.applyPatch(id, before, input, { actorType: 'user' });
+  }
 
+  /**
+   * v0.0.4 §16.1 `update_task`（Agent 面全字段 PATCH）的窄入口。
+   *
+   * 与 REST 的 `patch` 只差开头那句「RUNNING 即拒」——守卫在 `WritebackService.updateTask`
+   * 里已按状态三支裁过：走到这里的 RUNNING 任务必定是 `leases.verify` 通过的当前持有者，
+   * 它是唯一写入方，不存在 8.1 那句守卫要防的「人正在 UI 上编辑 / 强制停止打架」的并发场景。
+   * 不改 REST 行为（那条路径仍走 `patch`），字段级校验也仍然只有 `applyPatch` 一份实现。
+   */
+  async patchAsAgent(id: string, input: TaskPatchInput, actorName: string): Promise<TaskDetailDto> {
+    const before = await this.requireTask(id);
+    return this.applyPatch(id, before, input, { actorType: 'agent', actorName });
+  }
+
+  /**
+   * 8.1 的编辑落点（REST 与 Agent 共用这一份）：只写 input 里出现的列，
+   * 审计 `task_update` + `task.updated` 事件同样在这里发，两条入口不各写一套。
+   */
+  private async applyPatch(
+    id: string,
+    before: Task,
+    input: TaskPatchInput,
+    actor: { actorType: 'user' | 'agent'; actorName?: string },
+  ): Promise<TaskDetailDto> {
     const data: Prisma.TaskUpdateInput = { updatedAt: nowSql() };
     if (input.title !== undefined) data.title = input.title;
     if (input.description !== undefined) data.description = input.description;
@@ -230,7 +255,8 @@ export class TasksService {
 
     await this.prisma.task.update({ where: { id }, data });
     await this.audit.record({
-      actorType: 'user',
+      actorType: actor.actorType,
+      actorName: actor.actorName,
       action: 'task_update',
       targetType: 'task',
       targetId: id,

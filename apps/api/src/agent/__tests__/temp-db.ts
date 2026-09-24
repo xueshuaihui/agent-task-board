@@ -18,6 +18,9 @@ import { ClaimService } from '../claim.service';
 import { LeaseService } from '../lease.service';
 import { McpPolicyService } from '../mcp-policy.service';
 import { WritebackService } from '../writeback.service';
+import { TasksService } from '../../tasks/tasks.service';
+import type { ArtifactsService } from '../../artifacts/artifacts.service';
+import type { AppLogger } from '../../infra/logger';
 
 /**
  * 每个测试文件一个独立临时库：ATB_DATA_DIR 指到 mkdtemp 目录后 PrismaService 的连接串
@@ -43,6 +46,11 @@ export interface AgentHarness {
   breakdown: BreakdownService;
   /** W8 §8.7：board.create_task 的会话创建闭环上下文（直建/静默；light 占位）。 */
   creation: CreationService;
+  /**
+   * §16.1 `update_task`：Agent 侧编辑的落库与字段校验复用 TasksService 那一份 patch 实现，
+   * 守卫在 WritebackService.updateTask（构造时注入进来，与真机 AgentModule import TasksModule 同形）。
+   */
+  tasks: TasksService;
   /** 造一个 Agent 凭证：只返回服务层真正用到的那部分（tokenId / name / capabilities）。 */
   agent(name: string, capabilities?: string[]): Promise<RequestAuth>;
   dispose: () => Promise<void>;
@@ -65,7 +73,19 @@ export function createAgentHarness(): AgentHarness {
   const skills = new SkillsService(prisma);
   const query = new AgentQueryService(prisma, skills);
   const claims = new ClaimService(prisma, settings, leases, audit, events, query);
-  const writeback = new WritebackService(prisma, leases, audit, events, notifications, query);
+  // §16.1 update_task：ArtifactsService 只在 remove() 的产物目录清理里被用到、AppLogger 只在
+  // 未知枚举上报里被用到，编辑路径两者都不碰——按 creation.test.ts 的同口径打桩。
+  const tasks = new TasksService(
+    prisma,
+    settings,
+    audit,
+    events,
+    notifications,
+    { cleanupTaskDir: () => {} } as unknown as ArtifactsService,
+    skills,
+    { error: () => {} } as unknown as AppLogger,
+  );
+  const writeback = new WritebackService(prisma, leases, audit, events, notifications, query, tasks);
   const policy = new McpPolicyService(prisma, audit);
   const breakdown = new BreakdownService(prisma, audit, events);
   const creation = new CreationService(prisma, settings, audit, events, skills, notifications);
@@ -85,6 +105,7 @@ export function createAgentHarness(): AgentHarness {
     policy,
     breakdown,
     creation,
+    tasks,
     agent: async (name: string, capabilities: string[] = []) => {
       const id = newId();
       await prisma.apiToken.create({

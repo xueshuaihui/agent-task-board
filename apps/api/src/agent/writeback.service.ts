@@ -5,11 +5,15 @@ import {
   LOG_LINES_HEAD,
   LOG_LINES_MAX,
   LOG_LINES_TAIL,
+  STATUS_LABEL,
   type TaskStatus,
 } from '../contract/enums';
 import { durationMs, nowSql } from '../contract/time';
 import { newId } from '../contract/ids';
 import { parseJsonObject } from '../tasks/task.dto';
+import type { TaskDetailDto } from '../tasks/task.dto';
+import { TasksService } from '../tasks/tasks.service';
+import { taskPatchFromUpdateInput } from '../contract/agent-schemas';
 import type { RequestAuth } from '../auth/auth.scope';
 import { AuditService } from '../infra/audit.service';
 import { EventsService } from '../infra/events.service';
@@ -17,9 +21,40 @@ import { NotificationsService } from '../infra/notifications.service';
 import { PrismaService } from '../infra/prisma.service';
 import { agentOf } from './agent-auth';
 import { AgentQueryService } from './agent-query.service';
-import type { AppendLogInput, BlockedInput, CompleteInput, FailInput, ProgressInput, WaitResumeInput } from './agent-inputs';
+import type {
+  AppendLogInput,
+  BlockedInput,
+  CompleteInput,
+  FailInput,
+  ProgressInput,
+  UpdateTaskInput,
+  WaitResumeInput,
+} from './agent-inputs';
 import type { LeaseVerdict } from './lease.service';
 import { LeaseService } from './lease.service';
+
+/**
+ * `update_task` 拒绝时的出口指引（三支裁定的第三支）：状态本身不可编辑，
+ * 但每个状态都有它自己的那条链路——错误里直接指名，Agent 一次改对而不是试错。
+ */
+const NOT_EDITABLE_ROUTE: Partial<Record<TaskStatus, { route: string; via: string }>> = {
+  BLOCKED: {
+    route: 'manual_resume',
+    via: '人工处理后由 UI 把任务转回「待执行」（READY）或需求池，再 claim_next_task 拿新三元组（block_task 已把租约清空，本任务不存在可用租约）；等待解除可用 wait_for_resume',
+  },
+  REVIEW: {
+    route: 'review_form',
+    via: '走审核链路：只能由人在 UI 提交审核结论（通过=已完成 / 驳回=退回 READY 或 BACKLOG），驳回后重新认领才可编辑；先看意见用 get_review_feedback',
+  },
+  DONE: {
+    route: 'new_task',
+    via: '已完成是终态（4.5 状态机没有出边），不可编辑；需要返工请在 UI 新建后续任务，再走拆解/认领流程',
+  },
+  FAILED: {
+    route: 'reopen_and_reclaim',
+    via: '请先由人在 UI 把它转回「待执行」（READY）或需求池，再 claim_next_task 建新 Run 与新租约；持新租约后就能用本工具改字段',
+  },
+};
 
 @Injectable()
 export class WritebackService {
@@ -30,7 +65,88 @@ export class WritebackService {
     private readonly events: EventsService,
     private readonly notifications: NotificationsService,
     private readonly query: AgentQueryService,
+    /** §16.1 `update_task`：字段级校验与落库复用 TasksService 那一份 patch 实现（不写第二套）。 */
+    private readonly tasks: TasksService,
   ) {}
+
+  /**
+   * §16.1 `update_task`：Agent 面的全字段 PATCH。本方法只做**写权限守卫**，
+   * 字段校验（type 词表 + 可接受值回显、priority 0-3、tags、skills 归属/版本、
+   * parent 层级 ≤2、group 存在、custom_fields）与审计/事件全在 `TasksService` 那一份里。
+   *
+   * 三支裁定：
+   *  1. `RUNNING`：必须带**该任务当前**的租约三元组，口径与 `update_progress` 完全一致
+   *     （`leases.verify`：过期/吊销/不属本 Token/不是当前持有者一律沿用既有 410 语义）。
+   *     校验通过才放行，并且走 `patchAsAgent` 绕过 REST 那句「执行中不可编辑」——
+   *     8.1 那条守卫防的是 UI 侧与人抢改，当前持有者是唯一写入方，不存在这个冲突；
+   *     UI 的行为一字不动，故 REST 入口仍走 `patch()`。
+   *  2. `BACKLOG` / `READY`：免租约可改（拆解/建单 Agent 修正自己产出的子任务的标题、
+   *     优先级、标签、技能绑定）——这两个状态还没被认领，没有租约可带。
+   *  3. 其余（`BLOCKED` / `REVIEW` / `DONE` / `FAILED`，含表外状态）：拒 409
+   *     `TASK_NOT_EDITABLE`，message 与 details 指名该走的链路。
+   *
+   * 越权面：`status` / `assignee` 都不在 `updateTaskSchema` 的可写键里——MCP 协议层会先按
+   * inputSchema 把未声明的键剥掉（非 HTTP 直连通道则由 `.strict()` 报 422
+   * `unrecognized_keys`），本工具改不到状态机与执行权。
+   */
+  async updateTask(input: UpdateTaskInput, auth: RequestAuth): Promise<TaskDetailDto> {
+    const agent = agentOf(auth);
+    const task = await this.prisma.task.findUnique({ where: { id: input.task_id } });
+    if (!task) {
+      throw new ApiException('NOT_FOUND', '任务不存在', undefined, { task_id: input.task_id });
+    }
+    const patch = taskPatchFromUpdateInput(input);
+
+    if (task.status === 'RUNNING') {
+      if (!input.run_id || !input.lease_id) {
+        throw new ApiException(
+          'VALIDATION_FAILED',
+          `任务 ${task.id} 正在执行中，改字段必须带当前租约三元组：run_id + lease_id（来自 claim_next_task 的 lease 对象；本任务当前 run 是 ${task.currentRunId ?? '未知'}）。未认领的任务（BACKLOG/READY）才免租约可改`,
+          [
+            { path: 'run_id', code: 'required_when_running', message: 'claim_next_task 返回的 lease.run_id' },
+            { path: 'lease_id', code: 'required_when_running', message: 'claim_next_task 返回的 lease.lease_id' },
+          ],
+          { task_id: task.id, status: task.status, current_run_id: task.currentRunId },
+        );
+      }
+      const verdict = await this.leases.verify(
+        { task_id: input.task_id, run_id: input.run_id, lease_id: input.lease_id },
+        auth,
+      );
+      if (verdict.kind !== 'ok') {
+        // verify 对非 RUNNING 任务按孤儿回写处理（Run 置 ABANDONED）；这里没有可写的窗口。
+        throw new ApiException(
+          'TASK_NOT_RUNNING',
+          `任务 ${task.id} 已不在执行中（当前「${STATUS_LABEL[verdict.task.status as TaskStatus] ?? verdict.task.status}」），无法按租约编辑`,
+          undefined,
+          { task_id: task.id, run_id: verdict.run.id, status: verdict.task.status },
+        );
+      }
+      return this.tasks.patchAsAgent(task.id, patch, agent.tokenName);
+    }
+
+    if (task.status !== 'BACKLOG' && task.status !== 'READY') {
+      const label = STATUS_LABEL[task.status as TaskStatus] ?? task.status;
+      const guide = NOT_EDITABLE_ROUTE[task.status as TaskStatus] ?? {
+        route: 'manual',
+        via: `状态「${task.status}」不在可编辑窗口内：可编辑的只有 BACKLOG/READY（免租约）与 RUNNING（持当前租约）`,
+      };
+      throw new ApiException(
+        'TASK_NOT_EDITABLE',
+        `任务 ${task.id} 处于「${label}」，不可编辑。该走这条路：${guide.via}`,
+        [
+          {
+            path: 'status',
+            code: 'not_editable',
+            message: `当前「${label}」不可编辑；可编辑：BACKLOG/READY（免租约）、RUNNING（须持当前 run_id + lease_id）。下一步：${guide.via}`,
+          },
+        ],
+        { task_id: task.id, status: task.status, route: guide.route },
+      );
+    }
+
+    return this.tasks.patchAsAgent(task.id, patch, agent.tokenName);
+  }
 
   async updateProgress(input: ProgressInput, auth: RequestAuth) {
     const verdict = await this.leases.verify(input, auth);

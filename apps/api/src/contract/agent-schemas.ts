@@ -1,6 +1,12 @@
 import { z } from 'zod';
-import { AGENT_CONFIRMATION_MODES, ARTIFACT_TYPES, DEFAULT_TASK_TYPES } from './enums';
-import { capabilitySchema, idLike } from './schemas';
+import {
+  AGENT_CONFIRMATION_MODES,
+  ARTIFACT_TYPES,
+  DEFAULT_TASK_TYPES,
+  TAG_MAX_LENGTH,
+  TAGS_MAX_PER_TASK,
+} from './enums';
+import { capabilitySchema, idLike, taskPatchSchema, type TaskPatchInput } from './schemas';
 import {
   ARTIFACT_TYPE_DESC,
   CAPABILITIES_ARRAY_DESC,
@@ -8,6 +14,7 @@ import {
   CREATE_TASK_TYPE_DESC,
   LOG_LEVELS,
   PRIORITY_FIELD_DESC,
+  PRIORITY_LEVELS_TEXT,
   TASK_TYPE_FILTER_DESC,
 } from './vocabulary';
 
@@ -153,6 +160,87 @@ export const waitForResumeSchema = z.object({
     .describe('长轮询超时秒数，1-300，缺省 60；超时不算错误，返回 timed_out:true，需自行续等'),
 });
 export type WaitResumeInput = z.infer<typeof waitForResumeSchema>;
+
+/**
+ * v0.0.4 §16.1 `update_task`：任务全字段 PATCH 的 Agent 面。
+ *
+ * 可写字段**逐字取 REST 的 `taskPatchSchema.shape`**（同一批 zod 实例，不抄第二套校验；
+ * 词表/技能/父子/分组这些字段级规则全部留在 `TasksService` 的 `applyPatch` 那一处实现里，
+ * UI 与 Agent 共用）。
+ * `.describe()` 只是给 tools/list 下发口径用的包装（zod 返回新实例，不污染 UI 侧那份）。
+ *
+ * 越权面：`status` / `assignee` 这些状态机与执行权列根本不在 shape 里，本工具改不到：
+ * MCP 协议层会先按 inputSchema 把未声明键剥掉（只提交越权键时命中下面的 refine，
+ * 报「没有需要更新的字段」），非 HTTP 直连通道才由 `.strict()` 报 422 `unrecognized_keys`。
+ * `run_id` / `lease_id` 是**选填**：BACKLOG/READY 还没被认领、没有租约可带；RUNNING 必须带，
+ * 缺了由 `WritebackService.updateTask` 拒掉并在错误里点名要带什么（与 update_progress 同口径的
+ * `leases.verify`，租约不匹配/过期/被吊销沿用既有的 410 语义，不另造规则）。
+ */
+const patchField = <K extends keyof typeof taskPatchSchema.shape>(key: K, desc: string) =>
+  taskPatchSchema.shape[key].describe(desc);
+
+/** 可写字段名单：从 shape 派生，不手抄第二份，避免与 REST 的 patch 面漂移。 */
+export const TASK_PATCH_FIELDS = Object.keys(taskPatchSchema.shape) as (keyof TaskPatchInput & string)[];
+
+export const updateTaskSchema = z
+  .object({
+    task_id: idParam.describe(
+      '要编辑的任务 ID（如 T-1024 或 task_ 前缀主键）；RUNNING 必须带当前租约三元组，BACKLOG/READY 免租约，其余状态会被拒',
+    ),
+    run_id: idParam
+      .optional()
+      .describe('Run ID（claim_next_task 返回的 lease.run_id）：任务处于 RUNNING 时必填，用于租约校验；未认领任务可省'),
+    lease_id: z
+      .string()
+      .uuid()
+      .optional()
+      .describe('租约 ID（UUID，claim_next_task 返回的 lease.lease_id）：任务处于 RUNNING 时必填；未认领任务可省'),
+    title: patchField('title', '任务标题（1-200 字符，首尾空白自动去掉）；只改提交的字段，未提交的保持原样'),
+    type: patchField(
+      'type',
+      `任务类型，必须命中服务端生效词表（否则 422 并在 details 里回显「可选：…」全量词表）。默认词表：${DEFAULT_TASK_TYPES.join('/')}，自定义类型由设置项 task_types 扩充（先调 get_vocabulary 拿口径，不要试错）。改类型会按新类型重校验 custom_fields 的适用性`,
+    ),
+    priority: patchField('priority', `优先级，整数：${PRIORITY_LEVELS_TEXT}；数字越小越紧急。表外值 422`),
+    description: patchField('description', '任务描述（≤20000 字符）；传 null 清空描述'),
+    tags: patchField(
+      'tags',
+      `标签数组（≤${TAGS_MAX_PER_TASK} 个、单个 ≤${TAG_MAX_LENGTH} 字符，服务端去重）；**整体覆盖**现有标签，不是追加`,
+    ),
+    required_capabilities: patchField('required_capabilities', CAPABILITIES_ARRAY_DESC + '；整体覆盖写入，影响后续可认领性，格式非法 422'),
+    custom_fields: patchField(
+      'custom_fields',
+      '自定义字段键值对象，增量合并进现有值；键必须已在字段定义里登记且适用于当前类型，值需符合该字段类型，否则 422 逐键回显原因',
+    ),
+    due_at: patchField('due_at', '到期日：YYYY-MM-DD 或 ISO 时间（服务端归一为日期）；传 null 清空到期日'),
+    pinned: patchField('pinned', '是否置顶（布尔）'),
+    group_id: patchField(
+      'group_id',
+      '归属分组 ID（UUID，≤64 字符），跨组移动用它；传 null 表示移出分组到未分配。目标分组已归档回 409 GROUP_ARCHIVED',
+    ),
+    parent_task_id: patchField(
+      'parent_task_id',
+      '父需求任务 ID；传 null 脱离父需求。父必须是「需求」类型且自身不是子任务（层级最多两层），本任务已有子任务时也不能再挂上去，否则 422',
+    ),
+    sort_order: patchField('sort_order', '同列/同需求内的手动排序序号（整数，越小越前），拖拽排序的落库值'),
+    skills: patchField(
+      'skills',
+      '绑定的技能引用数组（≤20）：[{skill_id, version?}]，version 缺省取该技能当前版本；**整体覆盖**现有绑定；技能或版本不存在时 422，details 指名是哪个引用（可先用 list_skills 查可用技能与版本，不要试错）',
+    ),
+  })
+  .strict()
+  .refine((value) => TASK_PATCH_FIELDS.some((field) => value[field] !== undefined), {
+    message: '没有需要更新的字段：至少提交一个可写字段（title / type / priority / tags / skills …）',
+  });
+export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
+
+/** 从 `update_task` 入参里挑出可写的那部分，交给 TasksService 的同一份 patch 写入逻辑。 */
+export function taskPatchFromUpdateInput(input: UpdateTaskInput): TaskPatchInput {
+  const patch: Record<string, unknown> = {};
+  for (const field of TASK_PATCH_FIELDS) {
+    if (input[field] !== undefined) patch[field] = input[field];
+  }
+  return patch as TaskPatchInput;
+}
 
 export const reviewFeedbackQuerySchema = z.object({
   task_id: idParam.describe('任务 ID：读取该任务最近的审核意见（含驳回理由）'),

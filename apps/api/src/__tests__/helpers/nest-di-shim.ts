@@ -97,7 +97,9 @@ export function applyDiShim(): void {
   // index 5 由 @Inject(LEASE_SWEEP_OPTIONS) 自行声明，Object 只用来把数组撑到构造参数个数。
   declare(LeaseService, [PrismaService, SettingsService, AuditService, EventsService, NotificationsService, Object]);
   declare(ClaimService, [PrismaService, SettingsService, LeaseService, AuditService, EventsService, AgentQueryService]);
-  declare(WritebackService, [PrismaService, LeaseService, AuditService, EventsService, NotificationsService, AgentQueryService]);
+  // index 6 = TasksService：§16.1 `update_task` 的落库复用 TasksService 的窄入口 patchAsAgent
+  // （真机侧由 AgentModule import TasksModule 提供，字段校验只有一份实现）。
+  declare(WritebackService, [PrismaService, LeaseService, AuditService, EventsService, NotificationsService, AgentQueryService, TasksService]);
   declare(AgentController, [ClaimService, LeaseService, WritebackService, AgentQueryService]);
   declare(McpController, [ClaimService, LeaseService, WritebackService, AgentQueryService, SkillsService, McpPolicyService, BreakdownService, CreationService, SettingsService]);
 

@@ -40,6 +40,10 @@ export const ERROR_STATUS = {
   BREAKDOWN_DRAFT_REF_TAKEN: 409,
   // v0.0.4 W8-a2 §8.7：轻确认决策回传时请求已终结（已建/已取消/已超时/宽限期外）。
   CREATION_REQUEST_RESOLVED: 409,
+  // v0.0.4 §16.1 `update_task`（MCP 全字段 PATCH）：任务停在 BLOCKED/REVIEW/DONE/FAILED
+  // 这些「编辑窗口之外」的状态。与 TASK_RUNNING（执行中、可持租约改）分开：本码必须
+  // 在 details 里指名该走哪条链路（审核/重开/转 READY 重新认领），让 Agent 一次改对。
+  TASK_NOT_EDITABLE: 409,
   ARTIFACT_TOO_LARGE: 413,
   LEASE_EXPIRED: 410,
   LEASE_REVOKED: 410,

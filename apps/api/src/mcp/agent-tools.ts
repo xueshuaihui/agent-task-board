@@ -22,6 +22,7 @@ import {
   progressSchema,
   reportMcpCallSchema,
   reviewFeedbackQuerySchema,
+  updateTaskSchema,
   waitForResumeSchema,
   type AppendLogInput,
   type BlockedInput,
@@ -42,6 +43,7 @@ import {
   type ProgressInput,
   type ReportMcpCallInput,
   type ReviewFeedbackInput,
+  type UpdateTaskInput,
   type WaitResumeInput,
 } from '../agent/agent-inputs';
 import type { AgentQueryService } from '../agent/agent-query.service';
@@ -107,7 +109,9 @@ export interface AgentTool {
  * + v0.0.4 W7 §16.1 的拆解五工具（board.begin_breakdown / report_progress / report_task_draft /
  * finish_breakdown / cancel_breakdown）
  * + v0.0.4 W8 §8.7 的 board.create_task（直建/静默两模式核心落库；light 决策闭环与
- * board.wait_for_confirmation、get_creation_status 归下一切片）。
+ * board.wait_for_confirmation、get_creation_status 归下一切片）
+ * + v0.0.4 §16.1 的 update_task（全字段 PATCH：RUNNING 需持当前租约、BACKLOG/READY 免租约、
+ * 其余状态拒并在错误里回显该走的链路；字段校验复用 TasksService 那一份，不写第二套）。
  * 业务逻辑全在 Agent 服务层，这里只做「工具名 → 服务方法」的映射，
  * 因此 REST 与 MCP 共用同一套校验与错误语义（13 章错误码只有一份实现）。
  */
@@ -178,6 +182,21 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
       description: '等待人工处理完成：长轮询直到 BLOCKED 转回其它状态或超时（§16.1）',
       input: waitForResumeSchema,
       run: (args, auth) => ctx.writeback.waitResume(args as WaitResumeInput, auth),
+    },
+    // ------------------------------------------- v0.0.4 §16.1：Agent 侧的任务编辑（守卫三支在 writeback.updateTask）
+    {
+      name: 'update_task',
+      description:
+        '全字段 PATCH 编辑任务（§16.1）：title/type/priority/description/tags/required_capabilities/custom_fields/' +
+        'due_at/pinned/group_id/parent_task_id/sort_order/skills 都可改，只改你提交了的字段。' +
+        '写权限按当前状态三支：RUNNING 必须带该任务当前的租约（task_id + run_id + lease_id，与 update_progress 同口径）；' +
+        'BACKLOG / READY（未认领）免租约可改，用于修正自己产出的子任务；' +
+        'BLOCKED / REVIEW / DONE / FAILED 不可编辑，被拒时错误里会指名该走哪条链路。' +
+        '状态变更请用 transition/complete_task/fail_task/block_task：本工具没有 status / assignee 列' +
+        '（run_id / lease_id 只用于租约校验，不是可写字段），走 MCP 协议时未声明的键会被先剥掉、不会生效。' +
+        '取值不确定先调 get_vocabulary；字段非法回 422 并回显可接受值',
+      input: updateTaskSchema,
+      run: (args, auth) => ctx.writeback.updateTask(args as UpdateTaskInput, auth),
     },
     {
       name: 'list_skills',
