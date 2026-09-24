@@ -16,7 +16,12 @@ export interface FilterState {
   priority: number[];
   type: string[];
   tags: string[];
-  /** B15：看板统一过滤维度（服务端多值参数，维内 OR；`none` = 该维未设置）。 */
+  /**
+   * B15：统一过滤维度（服务端多值参数，维内 OR；`none` = 该维未设置）。
+   * §19.14（2026-09-24 拍板）：键**保留但只服务列表路由**——分组作用域
+   * （useTaskListWithGroups / ActiveGroupScope 消费）；看板可见面已下线 groups 维，
+   * 看板侧（toBoardQuery/boardFilterSearch/filter-prefs 切片）不再读写它。
+   */
   groups: string[];
   requirements: string[];
   agents: string[];

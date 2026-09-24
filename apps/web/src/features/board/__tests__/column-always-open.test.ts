@@ -40,16 +40,18 @@ afterAll(() => {
   vi.unstubAllGlobals();
 });
 
-/** 非默认视图的最小筛选态：`priority=[3]` 一条即够（与用户报障复现口径一致）。 */
+/**
+ * 非默认视图的最小筛选态：`priority=[3]` 一条即够（与用户报障复现口径一致）。
+ * §19.14：groups 维已从看板下线，不再参与默认视图判定（切片类型里已无这一位）。
+ */
 const FILTERED: Pick<
   FilterState,
-  'view' | 'priority' | 'type' | 'tags' | 'groups' | 'requirements' | 'agents' | 'customFields'
+  'view' | 'priority' | 'type' | 'tags' | 'requirements' | 'agents' | 'customFields'
 > = {
   view: 'all',
   priority: [3],
   type: [],
   tags: [],
-  groups: [],
   requirements: [],
   agents: [],
   customFields: {},
