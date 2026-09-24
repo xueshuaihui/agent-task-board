@@ -1,6 +1,7 @@
 import type { DefaultSkillSeed } from './default-skills';
 import { markdownToBlocks } from './skill-markdown';
 import { BUILTIN_SKILL_CHUNKS } from './builtin-skills.data';
+import type { SkillCategory } from './skill-categories';
 import type { SkillContent } from './skills.dto';
 
 /**
@@ -20,6 +21,13 @@ export interface BuiltinSkillRaw {
   slug: string;
   nameCn: string;
   description: string;
+  /**
+   * 单值分类（0015 列 + skill-categories.ts 词表）：由生成器按 catalog 原始 tags 取
+   * 「首个非受众词且在词表内」的词得到（口径同 0015 回填 SQL），无分类词的上游条目走
+   * 生成器里的显式补正表，因此分片内 category 必然 ∈ 12 词表（内置技能不允许未分类）。
+   */
+  category: SkillCategory;
+  /** 纯自由标签：已洗掉作废的 官方/社区 与一切词表分类词（分类语义只留 category 一列），多数条目为空数组。 */
   tags: string[];
   markdown: string;
 }
@@ -103,6 +111,10 @@ export const BUILTIN_SKILL_SEEDS: DefaultSkillSeed[] = BUILTIN_SKILLS_RAW.map((r
     name: raw.slug,
     type: mode === 'flow' ? 'flow' : 'prompt',
     description: raw.description,
+    // 分类与自由标签直接取分片值：生成器（scripts/gen-builtin-seeds.mjs）已按
+    // skill-categories.ts 的口径算好 category，并把受众词与一切词表分类词从 tags 洗掉，
+    // 这里不再做任何折算——上一代「按 source 折算 官方/社区」的写法就是本次收口要堵死的路。
+    category: raw.category,
     tags: raw.tags,
     content,
     // 千问平台专属依赖已在清洗阶段降级写进正文说明，不造 MCP 依赖（迁移口径 3）。

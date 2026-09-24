@@ -45,6 +45,13 @@ describe('默认技能预置种子（①）', () => {
     expect(detail.body.content.blocks.length).toBeGreaterThan(0);
     // §9.6 默认技能无版本历史：预置不建 skill_versions 行。
     expect(await t.prisma.skillVersion.count({ where: { skillId: DEFAULT_SKILL_SEEDS[0]!.id } })).toBe(0);
+    // 分类收口（C-2）：seed 提供的 category 必须真的写进 0015 的新列，tags 保持 §9.2 的纯自由标签。
+    const row = await t.prisma.skill.findUniqueOrThrow({
+      where: { id: DEFAULT_SKILL_SEEDS[0]!.id },
+      select: { category: true, tags: true },
+    });
+    expect(row.category).toBe('质量保障');
+    expect(JSON.parse(row.tags) as string[]).toEqual(['review', 'quality']);
   });
 
   it('预置行随只读守卫拒改（§9.1）', async () => {
