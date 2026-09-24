@@ -173,9 +173,22 @@ describe('六个字段面都能搜到', () => {
     const hit = hitOf('教育', 'skl_k9l0m1n2');
     expect(hit!.matches).toHaveLength(1);
     expect(hit!.matches[0].field).toBe('category');
+    // 一级兼叶子（教育学习）父即自身，命中面不重复拼接。
     expect(hit!.matches[0].text).toBe('教育学习');
     expect(hit!.matches[0].ranges).toEqual([[0, 2]]);
     expect(hit!.score).toBe(6);
+  });
+
+  it('0925 树化：category 命中面 =「叶子 + 所属一级」拼接，搜一级词「编码」命中其子树叶子', () => {
+    // 代码评审的 category 是叶子「质量与安全」，但拼接面带上「编码开发」——
+    // 内置 40 条编码开发全部可被一级词命中（真实库 40 条，这里用代表 fixture）。
+    const hit = hitOf('编码', 'skl_builtin_code-review');
+    expect(hit).toBeDefined();
+    expect(hit!.matches[0].field).toBe('category');
+    expect(hit!.matches[0].text).toBe('质量与安全 编码开发');
+    expect(hit!.matches[0].ranges).toEqual([[6, 8]]);
+    // 非编码开发子树的技能不因一级词混入。
+    expect(hitOf('编码', 'skl_k9l0m1n2')).toBeUndefined();
   });
 
   it("category 为 '' 时按「未分类」文案命中", () => {
@@ -259,7 +272,8 @@ describe('matches 区间', () => {
     const hit = hitOf('offe', 'skl_e5f6g7h8');
     expect(hit!.matches).toHaveLength(1);
     expect(hit!.matches[0].field).toBe('category');
-    expect(hit!.matches[0].text).toBe('Office办公');
+    // 0925 树化：叶子 + 所属一级拼接（Office办公 → 办公实用）；区间仍在叶子段上。
+    expect(hit!.matches[0].text).toBe('Office办公 办公实用');
     expect(hit!.matches[0].ranges).toEqual([
       [0, 3],
       [5, 6],

@@ -120,11 +120,17 @@ describe('buildGroupPlan 空查询分组（沿用 SubskillField 观感）', () =
 });
 
 describe('buildFlatPlan 查询态平铺（跑在真实 searchSkills 输出上）', () => {
-  it('中文查询从分组切到平铺：「办公」子序列命中 Office办公 两条', () => {
+  it('中文查询从分组切到平铺：「办公」命中 Office办公 两条 + 一级拼接带出的「实用工具」一条（0925 树化）', () => {
     const hits = searchSkills(ITEMS, '办公');
     const flat = buildFlatPlan(hits, NO_DUP, 20);
-    expect(flat.total).toBe(2);
-    expect(new Set(flat.rows.map((r) => r.label))).toEqual(new Set(['文档抽取', '表格汇总']));
+    // 前两条是叶子「Office办公」内的子串命中；第三条来自 category 命中面
+    // 「实用工具 办公实用」对一级词的子序列命中——一级词带出整组是拍板效果。
+    expect(flat.total).toBe(3);
+    expect(new Set(flat.rows.map((r) => r.label))).toEqual(
+      new Set(['文档抽取', '表格汇总', '链接核验']),
+    );
+    // 子序列档（tier 1）分数低于子串档（tier 2）：一级拼接带出的那条恒排最后。
+    expect(flat.rows[2].label).toBe('链接核验');
     // score 并列时按 D-1 的 name→id 全序，平铺不再分组。
     expect(flat.truncated).toBe(false);
   });

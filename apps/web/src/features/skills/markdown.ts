@@ -33,9 +33,11 @@ export interface MarkdownImportResult {
 }
 
 /**
- * frontmatter 的 category 归一（C-5，与 api skills.dto.ts 同名函数导入口径一致）：
- * 词表内值原样采纳，词表外（含旧导出包把 category 写成 workflow/flow 这类
- * 类型枚举值、缺行得到的 ''）一律落未分类 ''、不报错。
+ * frontmatter 的 category 归一（C-5，与 api skills.dto.ts 同名函数导入口径一致，
+ * 0925 树化 Q5-D）：16 叶子词表内值原样采纳；词表外一律落未分类 ''、不报错——
+ * 包括类型枚举值（workflow/flow）、作废词「开学季」「质量保障」（不做 compat 映射）
+ * 与三个**纯分组一级**词（编码开发/办公实用/研究分析，只作分组不是合法取值）。
+ * 导出侧 frontmatter category 恒为叶子值（直读 skill.category，格式不变）。
  */
 export function toSkillCategory(raw: string): SkillCategoryOrNone {
   return (SKILL_CATEGORIES as readonly string[]).includes(raw)

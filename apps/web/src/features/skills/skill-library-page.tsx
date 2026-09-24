@@ -4,7 +4,6 @@ import { ChevronDown, Copy, FileCode2, FileText, Package, Plus, Search, Sparkles
 import {
   Button,
   CardSkeleton,
-  ChipGroup,
   EmptyState,
   Input,
   Menu,
@@ -20,8 +19,9 @@ import { CreateSkillDialog } from './create-skill-dialog';
 import { CopySkillPicker } from './copy-skill-picker';
 import { ImportCenterDialog } from './import-center-dialog';
 import { useCreateSkill, useDeleteSkill, useSkills } from './hooks';
-import { SKILL_CATEGORIES, SKILL_ORIGIN_OPTIONS, SKILL_STARTER_TEMPLATES, SKILL_STATUS_META, UNCATEGORIZED_CATEGORY, UNCATEGORIZED_LABEL } from './meta';
+import { SKILL_ORIGIN_OPTIONS, SKILL_STARTER_TEMPLATES, SKILL_STATUS_META, matchesCategoryTokens } from './meta';
 import { SkillCard } from './skill-card';
+import { SkillCategoryFilter } from './skill-category-filter';
 import { SkillDetailDrawer } from './skill-detail-drawer';
 import { SkillEditorPage } from './skill-editor-page';
 import type { Skill, SkillOrigin, SkillQuery, SkillStatus } from './types';
@@ -46,7 +46,8 @@ export function SkillLibraryPage() {
   const [keywordInput, setKeywordInput] = useState('');
   const [status, setStatus] = useState<SkillStatus | ''>('');
   const [source, setSource] = useState<SkillOrigin | ''>('');
-  /** 分类多选（OR 语义）：不选即全部；选项恒为静态词表 11 项 + 未分类，直读 item.category。 */
+  /** 分类多选（OR 语义）：不选即全部。token 集交给 SkillCategoryFilter（0925 两级：
+   * 一级/叶子/'' 皆可 token），命中解释在下方 visibleItems 按 parentOfCategory 展开。 */
   const [categories, setCategories] = useState<string[]>([]);
 
   /* `?edit=` 挂编辑器；其余查询参数留给后续（如 tag 深链）。必须走响应式订阅：
@@ -64,31 +65,21 @@ export function SkillLibraryPage() {
   );
   const skills = useSkills(query);
   /* 分类筛选（前端侧，用户裁定不给 /skills 加 category= 查询参数）：分类 = skills.category
-   * 真列直读（PRD §9.2），选项恒等于 11 词表 + 未分类共 12 项、按词表顺序渲染，
-   * 不随当前列表 tags 漂移（PRD §19.13 第 82 条）；计数为 0 的项置灰禁用但不消失，
-   * 已选中的项即使计数归零也保留可点（允许取消）。与状态/来源正交。 */
-  const categoryOptions = useMemo(() => {
+   * 真列直读（PRD §9.2），选项恒等于两级词表（7 一级 + 未分类，选中一级展其二级）、
+   * 按树序渲染，不随当前列表 tags 漂移（PRD §19.13 第 82 条）；计数为 0 的项置灰禁用
+   * 但不消失，已选中的项即使计数归零也保留可点（允许取消）。与状态/来源正交。 */
+  const categoryCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const item of skills.data?.items ?? []) {
       counts.set(item.category, (counts.get(item.category) ?? 0) + 1);
     }
-    return [
-      ...SKILL_CATEGORIES.map((value) => {
-        const count = counts.get(value) ?? 0;
-        return { value, label: value, count, disabled: count === 0 };
-      }),
-      {
-        value: UNCATEGORIZED_CATEGORY,
-        label: UNCATEGORIZED_LABEL,
-        count: counts.get(UNCATEGORIZED_CATEGORY) ?? 0,
-        disabled: (counts.get(UNCATEGORIZED_CATEGORY) ?? 0) === 0,
-      },
-    ];
+    return counts;
   }, [skills.data]);
   const visibleItems = useMemo(() => {
     const items = skills.data?.items ?? [];
-    if (categories.length === 0) return items;
-    return items.filter((item) => categories.includes(item.category));
+    // 命中判定统一走 matchesCategoryTokens：叶子/未分类 token 直配，一级 token 靠
+    // 子叶聚合（纯分组一级本身永不是 item.category）。
+    return items.filter((item) => matchesCategoryTokens(item.category, categories));
   }, [skills.data, categories]);
   // r2 允许重名：同名集合驱动卡片上的 id 短后缀消歧（§9.2）。
   const duplicateNames = useMemo(() => {
@@ -319,14 +310,9 @@ export function SkillLibraryPage() {
         />
       </div>
 
-      {/* 分类：静态词表 12 项（11 词 + 未分类）的多选按钮组（OR 语义，不选即全部），
-          恒常渲染、直读 item.category，只在前端过滤。 */}
-      <ChipGroup
-        label="分类"
-        options={categoryOptions}
-        selected={categories}
-        onChange={setCategories}
-      />
+      {/* 分类：两级筛选栏（0925 Q5-A）——第一行 = 7 个一级 + 未分类（一级计数含子树全部叶子），
+          点选带二级的一级后展其二级行；多选 OR、直读 item.category，只在前端过滤。 */}
+      <SkillCategoryFilter counts={categoryCounts} selected={categories} onChange={setCategories} />
 
       {skills.isPending ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(248px,1fr))] gap-3">

@@ -113,7 +113,8 @@ export function duplicateNameSet(skills: readonly Pick<Skill, 'name'>[]): Readon
   return dup;
 }
 
-/** 分类展示文：'' 走「未分类」文案（与 D-1 fieldTexts 的 category 口径逐字一致）。 */
+/** 分类展示文：'' 走「未分类」文案，词表值直出叶子本身（徽标/分组只用叶子，
+ * 一级归属是筛选栏与搜索命中面的事，见 skill-search 的 categoryFieldText 拼接）。 */
 export function categoryDisplay(skill: Skill): string {
   return skill.category === '' ? UNCATEGORIZED_LABEL : skill.category;
 }
@@ -285,8 +286,10 @@ export function windowAroundHits(
 
 /**
  * 取某字段在展示文本上的高亮分段。展示文本按 D-1 口径必然是对应 fieldText 的
- * 片段（name/category 全等；type 展示中文标签、取拼接串中其出现位置起的窗口），
- * 定位不到（如 -1）时整段无高亮，绝不把拼接串原样铺到 UI 上。
+ * 片段（name 全等；category 0925 树化后 fieldText 是「叶子 + 所属一级」拼接，展示
+ * 只取叶子前缀段、window 0 对齐，落在一级段的命中被安全裁掉；type 展示中文标签、
+ * 取拼接串中其出现位置起的窗口），定位不到（如 -1）时整段无高亮，
+ * 绝不把拼接串原样铺到 UI 上。
  */
 function segmentsForField(
   matches: readonly SkillFieldMatch[],

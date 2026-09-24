@@ -189,6 +189,22 @@ export function leavesOfTopCategory(top: TopCategory): readonly SkillCategory[] 
 }
 
 /**
+ * 两级分类筛选的命中判定（「选一级 = 该类全部叶子」的收拢语义，Q5-A）：
+ * token 空集 = 不筛（全通过）；叶子/未分类('') token 直配 item.category；
+ * 一级 token 靠 parentOfCategory 聚合子叶命中（纯分组一级本身永不作为 item.category
+ * 出现，混选一级与子叶天然并集去重——多选恒 OR）。筛选栏与列表过滤共用本函数。
+ */
+export function matchesCategoryTokens(
+  category: SkillCategoryOrNone,
+  tokens: readonly string[],
+): boolean {
+  if (tokens.length === 0) return true;
+  if (tokens.includes(category)) return true;
+  const parent = parentOfCategory(category);
+  return parent !== null && tokens.includes(parent);
+}
+
+/**
  * 分类单选/多选的可选项（C-5 写侧 + 0925 两级收口 Q5）：由树派生，只有**叶子**可提交，
  * 纯分组一级（编码开发/办公实用/研究分析）不进取值集，只作为 group 分组标题呈现
  * （RadioGroup 遇组切换渲染一行组头）；一级兼叶子的词无组头直出。「未分类」恒排最后。

@@ -1,5 +1,5 @@
-import type { Skill } from './types';
-import { SKILL_TYPE_META, UNCATEGORIZED_LABEL } from './meta';
+import type { Skill, SkillCategoryOrNone } from './types';
+import { SKILL_TYPE_META, UNCATEGORIZED_LABEL, parentOfCategory } from './meta';
 
 /**
  * D-1 技能多维模糊匹配（纯函数、零依赖、不进 React）。
@@ -101,12 +101,25 @@ function fieldTexts(skill: Skill): Array<{ field: SkillSearchField; text: string
   const texts: Record<SkillSearchField, string> = {
     name: skill.name,
     description: skill.description,
-    category: skill.category === '' ? UNCATEGORIZED_LABEL : skill.category,
+    category: categoryFieldText(skill.category),
     type: `${skill.type} ${SKILL_TYPE_META[skill.type].label}`,
     id: `${skill.id} ${skill.id.slice(-6)}`,
     tags: skill.tags.join(' '),
   };
   return FIELD_ORDER.map((field) => ({ field, text: texts[field], lower: texts[field].toLowerCase() }));
+}
+
+/**
+ * 分类命中面（0925 树化，§5「Web」拍板口径）：扩为「叶子 + 所属一级」拼接，
+ * 使搜「编码」能命中编码开发子树全部内置（权重仍是 category 的 2，不改）；
+ * 一级兼叶子的（教育学习等）父即自身、不重复拼接；'' 仍是「未分类」文案。
+ * 阶段词同时出现在 tags 命中面属双角色拍板接受（api STAGE_CATEGORY_TERMS 注释），
+ * 这里不去重、不特判。展示面（徽标/picker 行）仍只读叶子，拼接不进 UI。
+ */
+export function categoryFieldText(category: SkillCategoryOrNone): string {
+  if (category === '') return UNCATEGORIZED_LABEL;
+  const parent = parentOfCategory(category);
+  return parent && parent !== category ? `${category} ${parent}` : category;
 }
 
 /** 查询串切词：按空白（含全角空格、NBSP）切分，去空串；JS 的 \s 已覆盖 U+3000。 */
