@@ -40,12 +40,19 @@ describe('task list column width model (B: filter must not reflow columns)', () 
     }
   });
 
-  it('title elastic column keeps its 240px floor inside the table min width', () => {
-    expect(TITLE_MIN_WIDTH).toBe(240);
+  it('title elastic column keeps its 220px floor inside the table min width', () => {
+    expect(TITLE_MIN_WIDTH).toBe(220);
     expect(TASK_TABLE_FIXED_SUM).toBe(
       TASK_TABLE_COLUMNS.reduce((sum, column) => sum + (column.width ?? 0), 0),
     );
     expect(TASK_TABLE_MIN_WIDTH).toBe(TASK_TABLE_FIXED_SUM + TITLE_MIN_WIDTH);
+  });
+
+  it('keeps the table floor within the 1280-viewport container width (<= 1030)', () => {
+    // 真机实测回归：本页水平外框恒为 250px（侧栏 186 + 内边距），1280 视口的表格
+    // 容器宽 = 1030。修复前的 auto 表在这一档无横滚，地板若超过 1030（曾是 1150）
+    // 会给 1280 档平白引入容器内横滚——地板必须 ≤ 1030。
+    expect(TASK_TABLE_MIN_WIDTH).toBeLessThanOrEqual(1030);
   });
 
   it('keeps the Tailwind min-width literal class in sync with the computed floor', () => {
