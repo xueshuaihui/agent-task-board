@@ -86,9 +86,9 @@ export function NotificationCenter() {
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={(next) => setOpen(next)}>
-      <DialogPrimitive.Portal forceMount>
-        <AnimatePresence>
-          {open ? (
+      <AnimatePresence>
+        {open ? (
+          <DialogPrimitive.Portal forceMount>
             <DialogPrimitive.Overlay key="nc-overlay" forceMount asChild>
               <motion.div
                 initial={{ opacity: 0 }}
@@ -100,8 +100,6 @@ export function NotificationCenter() {
                 style={{ left: 'var(--atb-nav-w, 0px)' }}
               />
             </DialogPrimitive.Overlay>
-          ) : null}
-          {open ? (
             <DialogPrimitive.Content
               key="nc-panel"
               forceMount
@@ -165,9 +163,9 @@ export function NotificationCenter() {
                 </div>
               </motion.aside>
             </DialogPrimitive.Content>
-          ) : null}
-        </AnimatePresence>
-      </DialogPrimitive.Portal>
+          </DialogPrimitive.Portal>
+        ) : null}
+      </AnimatePresence>
     </DialogPrimitive.Root>
   );
 }

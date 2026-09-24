@@ -23,6 +23,8 @@ export interface DrawerProps {
  * 遮罩淡入随面板、淡出 140ms；圆角只落在左侧两角（rounded-l-drawer 16px）；
  * 宽度档 11.2：基础 480 / win-lg 560 / win-xl 640。Esc / 遮罩 / X 关闭与滚动锁定由 Radix 提供。
  * prefers-reduced-motion 时只做淡入淡出。
+ * 嵌套顺序 = AnimatePresence 在外、forceMount Portal 在内（Radix Portal 的 asChild Slot 要给
+ * 子节点挂 ref，理由与 DOM 结构影响见 tooltip.tsx 顶部注释）。
  */
 export function Drawer({
   open,
@@ -51,9 +53,9 @@ export function Drawer({
         if (!next) onClose();
       }}
     >
-      <DialogPrimitive.Portal forceMount>
-        <AnimatePresence>
-          {open ? (
+      <AnimatePresence>
+        {open ? (
+          <DialogPrimitive.Portal forceMount>
             <DialogPrimitive.Overlay key="drawer-overlay" forceMount asChild>
               <motion.div
                 initial={{ opacity: 0 }}
@@ -64,8 +66,6 @@ export function Drawer({
                 className="fixed inset-0 z-40 bg-black/45 backdrop-blur-[2px] dark:bg-black/60"
               />
             </DialogPrimitive.Overlay>
-          ) : null}
-          {open ? (
             <DialogPrimitive.Content key="drawer-content" forceMount asChild aria-describedby={undefined}>
               <motion.aside
                 {...sheetMotion}
@@ -98,9 +98,9 @@ export function Drawer({
                 ) : null}
               </motion.aside>
             </DialogPrimitive.Content>
-          ) : null}
-        </AnimatePresence>
-      </DialogPrimitive.Portal>
+          </DialogPrimitive.Portal>
+        ) : null}
+      </AnimatePresence>
     </DialogPrimitive.Root>
   );
 }

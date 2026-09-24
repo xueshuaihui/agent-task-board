@@ -25,6 +25,11 @@ export interface DialogProps {
  * 退场 = 同轨迹反向 140ms（transitions.exit）；遮罩淡入随面板、淡出 140ms。
  * Esc / 点击遮罩 / X 关闭、焦点圈定与滚动锁定全部由 Radix 提供。
  * prefers-reduced-motion 时只做淡入淡出。
+ *
+ * 嵌套顺序 = AnimatePresence 在外、forceMount Portal 在内（理由见 tooltip.tsx 顶部注释，
+ * 与 popover/menu 同构）。DialogPortal 对 children 逐个套 `<Presence><Portal asChild>`，
+ * 所以遮罩与面板仍各是 body 下的一个节点，DOM 结构与层级不变；变的只是 ref 现在能落到
+ * motion 节点上（Radix Presence / DismissableLayer 拿得到真实元素）。
  */
 export function Dialog({
   open,
@@ -54,9 +59,9 @@ export function Dialog({
         if (!next) onClose();
       }}
     >
-      <DialogPrimitive.Portal forceMount>
-        <AnimatePresence>
-          {open ? (
+      <AnimatePresence>
+        {open ? (
+          <DialogPrimitive.Portal forceMount>
             <DialogPrimitive.Overlay key="dialog-overlay" forceMount asChild>
               <motion.div
                 initial={{ opacity: 0 }}
@@ -67,8 +72,6 @@ export function Dialog({
                 className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px] dark:bg-black/60"
               />
             </DialogPrimitive.Overlay>
-          ) : null}
-          {open ? (
             <DialogPrimitive.Content
               key="dialog-content"
               forceMount
@@ -123,9 +126,9 @@ export function Dialog({
                 </div>
               </motion.div>
             </DialogPrimitive.Content>
-          ) : null}
-        </AnimatePresence>
-      </DialogPrimitive.Portal>
+          </DialogPrimitive.Portal>
+        ) : null}
+      </AnimatePresence>
     </DialogPrimitive.Root>
   );
 }
