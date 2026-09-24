@@ -24,9 +24,9 @@ describe('默认技能预置种子（①）', () => {
     await t.close();
   });
 
-  it('#41 后清单并入千问迁移批次：code-review 仍在首位，总数 94', () => {
+  it('#41 后清单并入千问迁移批次 + 0925 编码技能收录 31 条：code-review 仍在首位，总数 125', () => {
     expect(DEFAULT_SKILL_SEEDS[0]!.id).toBe('skl_builtin_code-review');
-    expect(DEFAULT_SKILL_SEEDS).toHaveLength(94);
+    expect(DEFAULT_SKILL_SEEDS).toHaveLength(125);
   });
 
   it('首次预置：列表读到 source=default、版本 builtin、只读，且不写版本历史', async () => {

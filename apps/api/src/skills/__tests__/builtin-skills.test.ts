@@ -22,33 +22,37 @@ function isPurgedCategoryTerm(tag: string): boolean {
 }
 
 /**
- * v0.0.4 #41：千问工作台技能批量迁移的内置种子守护（映射表 §9 口径）。
+ * v0.0.4 #41：千问工作台技能批量迁移的内置种子守护（映射表 §9 口径）
+ * + 0925 编码技能收录（docs/0925/coding-skills-catalog.json，31 条外部编码技能）。
  *
  * 锁六件事：
- * ① 93 条种子齐全、id 唯一且与 builtin-skills/*.md 清洗终稿同步（改了 md 不重跑
- *    gen-builtin-seeds.mjs 会红）；分类收口（C-2 + 0925 拍板收紧）后同一条还锁 seed 侧的
- *    category/tags 口径：category ∈ 11 词表（0017 收敛，0925 拍板删「开学季」）、tags 里
- *    既无作废受众词、也不含**任何**词表词与已作废历史词表词「开学季」
- *    （0016 口径：标签是标签、分类是分类，洗后内置 tags 多为空数组是预期终态）；
+ * ① 124 条种子齐全（93 千问 + 31 coding）、id 唯一且与 builtin-skills/*.md 清洗终稿同步
+ *    （改了 md 不重跑 gen-builtin-seeds.mjs 会红）；分类收口（C-2 + 0925 拍板收紧）后同一条
+ *    还锁 seed 侧的 category/tags 口径：category ∈ 11 词表（0017 收敛，0925 拍板删「开学季」）、
+ *    tags 里既无作废受众词、也不含**任何**词表词与已作废历史词表词「开学季」
+ *    （0016 口径：标签是标签、分类是分类，93 条千问洗后 tags 为空数组、31 条 coding 原样
+ *    带产研阶段标签，都是预期终态）；
  * ② markdown→blocks 解析/兜底双路径都产出可通过 skillContentSchema 的合法内容，
  *    兜底块全文无损；
  * ③ 17 条「依赖千问后端」档：降级不收 quark-drive，其余 16 条带降级说明行、
  *    不残留平台专属工具关键词；
  * ④ ensureDefaultSkills 幂等：重复执行不增行；且预置真的把 category 写进库、tags 不再回灌
  *    受众词（否则 0015 迁移洗的数会被启动 upsert 全部洗回去）；
- * ⑤ 全量 94 条（含 §9.2 规范样例 code-review）的 category 守护 + 分类分布快照；
- * ⑥ 分片 ⇔ 千问原始 catalog ⇔ skill-categories.ts helper 三方同口径（含生成器三份词表
- *    字面量与本文件逐字一致），杜绝「生成器自己算一套、运行时再猜一套」。
+ * ⑤ 全量 125 条（含 §9.2 规范样例 code-review）的 category 守护 + 分类分布快照 +
+ *    tags 快照（千问源为空 / coding 源逐条等于目录给定的阶段标签）；
+ * ⑥ 分片 ⇔ 两份目录（千问 catalog / 0925 coding 目录）⇔ skill-categories.ts helper 三方
+ *    同口径（含生成器三份词表字面量与本文件逐字一致），杜绝「生成器自己算一套、运行时再猜一套」。
  */
 
 const MD_DIR = path.resolve(__dirname, '../builtin-skills');
 const API_ROOT = path.resolve(__dirname, '../../..');
 const REPO_ROOT = path.resolve(API_ROOT, '../..');
 const CATALOG_PATH = path.join(REPO_ROOT, 'docs/v0.0.4/skills-data/qwen-skills-catalog.json');
+const CODING_CATALOG_PATH = path.join(REPO_ROOT, 'docs/0925/coding-skills-catalog.json');
 const GENERATOR_PATH = path.join(API_ROOT, 'scripts/gen-builtin-seeds.mjs');
-/** #41 批量迁移的条数与含 code-review 的全量条数（改了收编范围要一并改这里）。 */
-const BUILTIN_COUNT = 93;
-const TOTAL_COUNT = 94;
+/** 内置条数（#41 千问迁移 93 + 0925 编码技能 31）与含 code-review 的全量条数（改了收编范围要一并改这里）。 */
+const BUILTIN_COUNT = 124;
+const TOTAL_COUNT = 125;
 /** 抽取生成器里的字面量数组/对象：与运行时常量比对，防止两处各写一套词表。 */
 function literalFromGenerator(decl: string): unknown {
   const src = readFileSync(GENERATOR_PATH, 'utf8');
@@ -61,6 +65,18 @@ function literalFromGenerator(decl: string): unknown {
 function categoryFixes(): Record<string, string> {
   return literalFromGenerator('CATEGORY_FIXES') as Record<string, string>;
 }
+
+/** 0925 编码技能目录（第二源）：category/tags 显式给定，source 溯源字段不进分片。 */
+interface CodingCatalogEntry {
+  slug: string;
+  nameCn: string;
+  description: string;
+  category: string;
+  tags: string[];
+  source: { repo: string; path: string; fetched: boolean; truncated: boolean; renamedFrom?: string };
+}
+const CODING_CATALOG = JSON.parse(readFileSync(CODING_CATALOG_PATH, 'utf8')) as CodingCatalogEntry[];
+const CODING_SLUGS = new Set(CODING_CATALOG.map((item) => item.slug));
 
 /** summary.json hits 非空的 17 条降级档（quark-drive 降级后无有效内容，不收）。 */
 const DOWNGRADED = [
@@ -87,7 +103,7 @@ describe('千问迁移内置种子（#41）', () => {
     await t.close();
   });
 
-  it('① 93 条种子齐全、id 唯一、字段合法，且与 builtin-skills/*.md 清洗终稿同步', () => {
+  it('① 124 条种子（93 千问 + 31 coding）齐全、id 唯一、字段合法，且与 builtin-skills/*.md 终稿同步', () => {
     expect(BUILTIN_SKILL_SEEDS.length).toBe(BUILTIN_COUNT);
     const ids = BUILTIN_SKILL_SEEDS.map((seed) => seed.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -95,9 +111,10 @@ describe('千问迁移内置种子（#41）', () => {
     for (const seed of BUILTIN_SKILL_SEEDS) {
       expect(seed.id).toMatch(/^skl_builtin_[a-z0-9._-]+$/);
       expect(seed.description.length).toBeGreaterThan(0);
-      // 分类收口（C-2 + 0925 收紧 + 四片删词）：不再断言 tags 数量——catalog 的 tags 主要是
-      // 「受众词 + 分类词」，新口径下全部剔掉；这里锁两条硬口径：tags 无受众词、无任何
-      // 词表词与已作废历史词表词「开学季」（残留它会以普通标签身份重新长成「伪分类」）。
+      // 分类收口（C-2 + 0925 收紧 + 四片删词）：不再断言 tags 数量——千问源 catalog 的 tags
+      // 主要是「受众词 + 分类词」，新口径下全部剔掉；coding 源显式带产研阶段标签（⑤ 逐条
+      // 对照目录）。这里锁两条硬口径：tags 无受众词、无任何词表词与已作废历史词表词
+      // 「开学季」（残留它会以普通标签身份重新长成「伪分类」）。
       expect(isSkillCategory(seed.category), `${seed.id} category 不在 11 词表：${seed.category}`).toBe(true);
       for (const tag of seed.tags) {
         expect(AUDIENCE_TAGS as readonly string[], `${seed.id} 残留受众词 ${tag}`).not.toContain(tag);
@@ -148,7 +165,7 @@ describe('千问迁移内置种子（#41）', () => {
     expect(existsSync(path.join(MD_DIR, 'quark-drive.md'))).toBe(false);
   });
 
-  it('④ 幂等：重复 ensure 不增行，列表 total=94（含 code-review），且分类真的落库', async () => {
+  it('④ 幂等：重复 ensure 不增行，列表 total=125（含 code-review），且分类真的落库', async () => {
     const first = await ensureDefaultSkills(t.prisma);
     expect(first.created.length).toBe(DEFAULT_SKILL_SEEDS.length);
     expect(first.created.length).toBe(TOTAL_COUNT);
@@ -181,7 +198,7 @@ describe('千问迁移内置种子（#41）', () => {
     expect(JSON.parse(codeReview?.tags ?? '[]')).toEqual(['review', 'quality']);
   });
 
-  it('⑤ 全量 94 条内置种子守护：category 全部 ∈ 词表（内置不允许未分类）、id 唯一', () => {
+  it('⑤ 全量 125 条内置种子守护：category 全部 ∈ 词表（内置不允许未分类）、id 唯一', () => {
     expect(DEFAULT_SKILL_SEEDS.length).toBe(TOTAL_COUNT);
     const ids = DEFAULT_SKILL_SEEDS.map((seed) => seed.id);
     expect(new Set(ids).size).toBe(TOTAL_COUNT);
@@ -189,42 +206,66 @@ describe('千问迁移内置种子（#41）', () => {
     for (const seed of DEFAULT_SKILL_SEEDS) {
       expect(isSkillCategory(seed.category), `${seed.id} category 非法：${JSON.stringify(seed.category)}`).toBe(true);
     }
-    // 分布锁：0015 回填 + seed 收口 + 0925 拍板一 CATEGORY_FIXES 纠偏后库内应有的分类
-    // 分布（多一条/少一条都会红，防误改词表映射与补正表）。快照本就不含开学季——拍板一
-    // 先把仅有的两条落点（code-mentor/deep-research）改判内容词，拍板四又把它删出词表
-    // （0017 收敛 CHECK）：内置零条是预期终态，11 键恰好覆盖现行 11 词。
+    // 分布锁：0015 回填 + seed 收口 + 0925 拍板一 CATEGORY_FIXES 纠偏 + 0925 编码技能收录
+    // 31 条后库内应有的分类分布（多一条/少一条都会红，防误改词表映射与补正表）。快照本就
+    // 不含开学季——拍板一先把仅有的两条落点（code-mentor/deep-research）改判内容词，拍板四
+    // 又把它删出词表（0017 收敛 CHECK）：内置零条是预期终态，11 键恰好覆盖现行 11 词。
     const dist = DEFAULT_SKILL_SEEDS.reduce<Record<string, number>>((acc, seed) => {
       acc[seed.category] = (acc[seed.category] ?? 0) + 1;
       return acc;
     }, {});
     expect(dist).toEqual({
       教育学习: 23,
+      方案写作: 17,
+      开发编程: 13,
+      实用工具: 13,
+      质量保障: 14,
       投资理财: 13,
-      方案写作: 12,
       内容创作: 12,
       Office办公: 9,
-      实用工具: 8,
       数据分析: 6,
-      开发编程: 5,
       资讯研究: 4,
       推荐: 1,
-      质量保障: 1,
     });
     expect(Object.keys(dist)).toHaveLength(11);
-    // tags 快照（口径 = 0925 拍板收紧后的 0016 洗数段 + 拍板四的作废词：受众词、一切
-    // 词表词与已作废「开学季」都不留）：
-    // 93 条迁移内置洗后 tags 全为空数组（catalog 的 tags 本就是「受众词 + 分类词」），
-    // 唯一非空的是手写的 §9.2 规范样例 code-review（review/quality 是真自由标签）。
-    // 空数组是预期终态，不是 bug：卡片标签区空就空，分类展示与搜索命中面都走 category 列。
+    // tags 快照（口径 = 0925 拍板收紧后的 0016 洗数段 + 拍板四的作废词 + 0925 编码技能
+    // 收录的双源口径）——不再是一句「全为空」，按来源三分收紧：
+    // ① 93 条千问迁移内置洗后 tags 必须全为空数组（catalog 的 tags 本就是「受众词 +
+    //    分类词」，谁回流谁红）；
+    // ② 31 条 coding 内置必须逐条等于 docs/0925/coding-skills-catalog.json 给定的产研
+    //    阶段标签（原样、含顺序；这些阶段词不在词表/作废/受众集合里，是合法自由标签）；
+    // ③ 唯一非两源的手写 §9.2 规范样例 code-review 保持 review/quality 两个真自由标签。
+    expect(CODING_CATALOG).toHaveLength(31);
+    const qwenSlugs = new Set(
+      (JSON.parse(readFileSync(CATALOG_PATH, 'utf8')) as Array<{ slug: string }>).map((item) => item.slug),
+    );
+    for (const seed of DEFAULT_SKILL_SEEDS) {
+      if (seed.name === 'code-review') continue;
+      if (CODING_SLUGS.has(seed.name)) {
+        const entry = CODING_CATALOG.find((item) => item.slug === seed.name)!;
+        expect(seed.tags, `${seed.id} coding tags 与目录不一致`).toEqual(entry.tags);
+        expect(seed.tags.length, `${seed.id} coding 必须带产研阶段标签`).toBeGreaterThan(0);
+      } else {
+        expect(qwenSlugs.has(seed.name), `${seed.id} 不属于任何一源`).toBe(true);
+        expect(seed.tags, `${seed.id} 千问迁移内置 tags 应为空数组`).toEqual([]);
+      }
+    }
     const tagDist: Record<string, number> = {};
     for (const seed of DEFAULT_SKILL_SEEDS) {
       for (const tag of seed.tags) tagDist[tag] = (tagDist[tag] ?? 0) + 1;
     }
-    expect(Object.values(tagDist).reduce((a, b) => a + b, 0)).toBe(2);
-    expect(DEFAULT_SKILL_SEEDS.filter((seed) => seed.tags.length > 0).length).toBe(1);
+    // 2（code-review）+ 32（31 条 coding 共 32 个阶段词：codexqa-defect-analyzer 双阶段）= 34。
+    expect(Object.values(tagDist).reduce((a, b) => a + b, 0)).toBe(34);
+    expect(DEFAULT_SKILL_SEEDS.filter((seed) => seed.tags.length > 0).length).toBe(32);
     expect(tagDist).toEqual({
       review: 1,
       quality: 1,
+      需求与规划: 5,
+      开发与实现: 6,
+      质量与安全: 6,
+      代码清理: 6,
+      运维与协作: 6,
+      测试自动化: 3,
     });
     // 定点防线（0925 拍板一+四的合体靶子）：code-mentor 的 catalog tags 是 [开学季, 开发编程]——
     // 拍板四删词后首词规则即可直接算出「开发编程」（开学季已不在词表、不再截位），补正表里
@@ -234,6 +275,13 @@ describe('千问迁移内置种子（#41）', () => {
     const codeMentor = DEFAULT_SKILL_SEEDS.find((seed) => seed.name === 'code-mentor');
     expect(codeMentor?.category).toBe('开发编程');
     expect(codeMentor?.tags).toEqual([]);
+    // 定点防线（0925 收录的两处改名 + 一处双阶段）：名字必须与正文相符、溯源记在目录
+    // source.renamedFrom；deprecation-and-migration 是 database 改名收编的正身。
+    const depRow = DEFAULT_SKILL_SEEDS.find((seed) => seed.name === 'deprecation-and-migration');
+    expect(depRow?.category).toBe('开发编程');
+    expect(depRow?.tags).toEqual(['开发与实现']);
+    const defect = DEFAULT_SKILL_SEEDS.find((seed) => seed.name === 'codexqa-defect-analyzer');
+    expect(defect?.tags).toEqual(['开发与实现', '测试自动化']);
     // 逐条守护：seed 的 tags 里出现任何词表词或已作废历史词表词「开学季」即 fail
     // （0016 口径 + 0017 作废词的服务端等价物，防生成器/helper 两侧飘回旧口径）。
     for (const seed of DEFAULT_SKILL_SEEDS) {
@@ -243,7 +291,7 @@ describe('千问迁移内置种子（#41）', () => {
     }
   });
 
-  it('⑥ 分片 ⇔ 千问原始 catalog ⇔ skill-categories.ts 三方同口径（生成器不得自造一套）', () => {
+  it('⑥ 分片 ⇔ 两份目录（千问 catalog / 0925 coding 目录）⇔ skill-categories.ts 三方同口径（生成器不得自造一套）', () => {
     // 三份词表字面量必须逐字一致（生成器是 .mjs，import 不了 TS 常量）：现行 11 词、
     // 受众词、已作废历史词表词（0925 拍板四删的「开学季」）——少比一份都会让两侧漂移。
     expect(literalFromGenerator('SKILL_CATEGORIES')).toEqual([...SKILL_CATEGORIES]);
@@ -257,8 +305,25 @@ describe('千问迁移内置种子（#41）', () => {
       tags?: Record<string, string>;
     }>;
     const bySlug = new Map(catalog.map((item) => [item.slug, item]));
+    const codingBySlug = new Map(CODING_CATALOG.map((item) => [item.slug, item]));
+    // 两源 slug 不得重复（与生成器构建期校验同口径，重复会让 md 归属含糊）。
+    for (const slug of codingBySlug.keys()) {
+      expect(bySlug.has(slug), `coding 目录与千问 catalog slug 重复：${slug}`).toBe(false);
+    }
     const fixes = categoryFixes();
     for (const raw of BUILTIN_SKILLS_RAW) {
+      if (codingBySlug.has(raw.slug)) {
+        // coding 源：category/tags 目录显式给定，分片必须逐字等于目录；tags 必须
+        // 原样通过 freeTagsOf（产研阶段词合法，词表/作废/受众词不许混进来）。
+        const entry = codingBySlug.get(raw.slug)!;
+        expect(isSkillCategory(entry.category), `${raw.slug} coding 目录分类不在 11 词表`).toBe(true);
+        expect(raw.category, `${raw.slug} 分类与 coding 目录不一致`).toBe(entry.category);
+        expect(raw.tags, `${raw.slug} 自由标签与 coding 目录不一致`).toEqual(entry.tags);
+        expect(freeTagsOf(entry.tags), `${raw.slug} tags 未原样通过 freeTagsOf`).toEqual(entry.tags);
+        expect(raw.nameCn).toBe(entry.nameCn);
+        expect(raw.description).toBe(entry.description.slice(0, 500));
+        continue;
+      }
       const item = bySlug.get(raw.slug);
       expect(item, `catalog 缺 ${raw.slug}`).toBeTruthy();
       const original = Object.keys(item!.tags || {}).filter(Boolean);
@@ -271,10 +336,25 @@ describe('千问迁移内置种子（#41）', () => {
     }
     // 补正表是「上游数据缺陷 / 0015 首词盲取错值」的唯一豁免口：条目必须真的缺词、
     // 或补正确实改变了首词规则的结果（与生成器防呆同逻辑）——上游修好数据后及时清理。
+    // 0925 双源后补正表只许收千问源 slug（coding 源 category 显式给定，无需补正）。
     for (const [slug, fixed] of Object.entries(fixes)) {
       expect(isSkillCategory(fixed), `${slug} 补正成了词表外分类`).toBe(true);
+      expect(codingBySlug.has(slug), `CATEGORY_FIXES 只许收千问源 slug：${slug}`).toBe(false);
       const computed = categoryFromTags(Object.keys(bySlug.get(slug)?.tags || {}));
       expect(fixed, `${slug} 的补正是 no-op（首词规则已算出 ${JSON.stringify(computed)}），清理 CATEGORY_FIXES`).not.toBe(computed);
+    }
+    // coding 目录自身完备性：md ⇔ 目录双向一一对应（正向已在 ① 的分片⇔md 锁里覆盖，
+    // 这里补反向——目录多余条目即漏收正文）；source 溯源字段留在目录、不进分片。
+    const mdSlugs = readdirSync(MD_DIR).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3));
+    for (const entry of CODING_CATALOG) {
+      expect(mdSlugs, `coding 目录多余条目（缺正文 md）：${entry.slug}`).toContain(entry.slug);
+      expect(entry.source.fetched, `${entry.slug} source.fetched 必须为 true`).toBe(true);
+      expect(entry.source.repo.length).toBeGreaterThan(0);
+      expect(entry.source.path.length).toBeGreaterThan(0);
+    }
+    for (const raw of BUILTIN_SKILLS_RAW) {
+      const extra = Object.keys(raw).filter((k) => !['slug', 'nameCn', 'description', 'category', 'tags', 'markdown'].includes(k));
+      expect(extra, `${raw.slug} 分片混入目录溯源字段：${extra.join(', ')}`).toEqual([]);
     }
   });
 });

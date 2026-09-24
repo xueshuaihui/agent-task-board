@@ -71,7 +71,8 @@ for _ in $(seq 1 90); do
   sleep 0.5
 done
 
-# v0.0.4 #41：默认技能批量预置（千问迁移 93 条 + code-review = 94）必须真启动落库。
+# v0.0.4 #41 + 0925 编码技能收录：默认技能批量预置（千问迁移 93 条 + 0925 coding 31 条
+# + code-review = 125）必须真启动落库。
 # 读 GET /skills?source=default 的 total——必须在 kill 前查，进程停了 curl 只会拿 000。
 SKILL_FAIL=""
 if [ "${READY}" = "1" ]; then
@@ -79,10 +80,10 @@ if [ "${READY}" = "1" ]; then
     -H "Authorization: Bearer ${TOKEN}" "${BASE}/skills?source=default&pageSize=1" 2>/dev/null || true)
   if [ "${SCODE}" = "200" ]; then
     DEFAULT_TOTAL=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).total ?? -1)' "${TMP_DIR}/skills.json")
-    if [ "${DEFAULT_TOTAL}" -ge 94 ] 2>/dev/null; then
+    if [ "${DEFAULT_TOTAL}" -ge 125 ] 2>/dev/null; then
       echo "  ok  默认技能入库 total=${DEFAULT_TOTAL}"
     else
-      SKILL_FAIL="FAIL: 默认技能仅 ${DEFAULT_TOTAL} 条（期望 ≥94：93 条千问迁移 + code-review）"
+      SKILL_FAIL="FAIL: 默认技能仅 ${DEFAULT_TOTAL} 条（期望 ≥125：93 条千问迁移 + 31 条 0925 coding + code-review）"
     fi
   else
     SKILL_FAIL="FAIL: GET /api/v1/skills?source=default -> ${SCODE:-无}"
