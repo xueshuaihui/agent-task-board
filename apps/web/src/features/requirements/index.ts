@@ -10,6 +10,14 @@ export { RequirementDrawer, RequirementDrawerHost } from './requirement-drawer';
 export { useRequirementDrawerStore } from './requirement-store';
 export { RequirementBadge, type RequirementBadgeProps } from './requirement-badge';
 export {
+  useRequirementOptions,
+  buildRequirementOptions,
+  requirementCreateBody,
+  requirementMoveBody,
+  REQUIREMENT_TYPE,
+  type RequirementOption,
+} from './use-requirement-options';
+export {
   DependencyGraphGlobalHost,
   openDependencyGraph,
   closeDependencyGraph,
