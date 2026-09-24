@@ -109,12 +109,20 @@ export class SkillsService {
         if (query.type && row.type !== query.type) return false;
         if (query.status && row.status !== query.status) return false;
         if (query.source && toDto(row).source !== query.source) return false;
-        if (keyword) {
-          const hit =
-            row.name.toLowerCase().includes(keyword) || row.description.toLowerCase().includes(keyword);
-          if (!hit) return false;
+        if (keyword || query.tag) {
+          const { tags } = parseSkill(row);
+          if (keyword) {
+            // 命中面 = 名称/描述/分类/标签四字段任一子串命中，与技能库搜索框的 placeholder
+            // 逐字对齐（口径沿用原 name/description 的 toLowerCase().includes()，大小写不敏感）。
+            // 空串必须显式跳过：category 的合法存储值含 ''（未分类），历史 tags 里也存得出 ''，
+            // 让它们进命中面就等于「未分类」被任意关键词命中——搜什么都退化成全量。
+            const hit = [row.name, row.description, row.category, ...tags].some(
+              (field) => field !== '' && field.toLowerCase().includes(keyword),
+            );
+            if (!hit) return false;
+          }
+          if (query.tag && !tags.includes(query.tag)) return false;
         }
-        if (query.tag && !parseSkill(row).tags.includes(query.tag)) return false;
         return true;
       })
       .map(toDto);

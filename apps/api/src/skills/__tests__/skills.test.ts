@@ -112,6 +112,66 @@ describe('技能管理', () => {
     expect(all.body.total).toBeGreaterThanOrEqual(2);
   });
 
+  /**
+   * G-4：技能库搜索框 placeholder 承诺「名称、描述、分类、标签」，但 keyword 历史上只匹配
+   * name/description，输入标签词（walk）或分类词（开学季/教育学习）就是 0 条——用户体感即
+   * 「分类问题还在」。这里钉死四字段命中面，以及最容易写坏的一条：category 的合法存储值含
+   * ''（未分类）、历史 tags 里也存得出 ''，空串一旦进命中面就会「任意关键词都命中」。
+   */
+  it('列表：keyword 命中名称/描述/分类/标签四字段（大小写不敏感），空分类不被任意命中', async () => {
+    const ids = async (keyword: string) => {
+      const res = await ui.get(`${API}/skills?keyword=${encodeURIComponent(keyword)}`);
+      expect(res.status).toBe(200);
+      return res.body.items.map((row: any) => row.id) as string[];
+    };
+
+    const byTag = await createSkill(ui, {
+      name: 'G4-甲技能',
+      description: 'G4-甲描述',
+      tags: ['walk', '搜索面标签'],
+    });
+    const byCategory = await createSkill(ui, {
+      name: 'G4-乙技能',
+      description: 'G4-乙描述',
+      category: '教育学习',
+    });
+    const uncategorized = await createSkill(ui, {
+      name: 'G4-丙技能',
+      description: 'G4-丙描述',
+      tags: ['G4-丙标签'],
+    });
+    expect(uncategorized.category).toBe('');
+
+    // ① 标签子串命中，且大小写不敏感（与 name/description 同口径）
+    expect(await ids('wal')).toContain(byTag.id);
+    expect(await ids('WALK')).toContain(byTag.id);
+    expect(await ids('搜索面标签')).toContain(byTag.id);
+    // ② 分类词命中：本文件其余技能全部未分类，故命中的恰是这一条
+    expect(await ids('教育学习')).toEqual([byCategory.id]);
+    expect(await ids('教育')).toEqual([byCategory.id]);
+    // ③ 四字段（名称/描述/分类/标签）全不命中 → 0 条
+    expect(await ids('G4-压根不存在的词')).toEqual([]);
+    // ④ 未分类（''）技能不会被上述任一标签词/分类词捞出来；它仍只按自身名称命中
+    for (const keyword of ['wal', 'WALK', '搜索面标签', '教育学习', '教育']) {
+      expect(await ids(keyword)).not.toContain(uncategorized.id);
+    }
+    expect(await ids('G4-丙技能')).toEqual([uncategorized.id]);
+
+    // ④ 补：历史脏库形状（API 入参已禁空串标签，列里存得出来）同样不进命中面
+    await t.prisma.skill.create({
+      data: {
+        id: 'skl_g4_legacy_empty_tag',
+        name: 'G4-丁技能',
+        type: 'prompt',
+        tags: '[""]',
+      },
+    });
+    expect(await ids('G4-丁技能')).toEqual(['skl_g4_legacy_empty_tag']);
+    for (const keyword of ['wal', '搜索面标签', '教育学习']) {
+      expect(await ids(keyword)).not.toContain('skl_g4_legacy_empty_tag');
+    }
+  });
+
   it('PATCH：基础字段 + content 只写当前草稿，不动 versions', async () => {
     const skill = await createSkill(ui);
     const patched = await ui.patch(`${API}/skills/${skill.id}`, {

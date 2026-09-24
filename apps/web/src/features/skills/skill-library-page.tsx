@@ -293,7 +293,7 @@ export function SkillLibraryPage() {
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
           <Input
             value={keywordInput}
-            placeholder="搜索名称、描述、标签…"
+            placeholder="搜索名称、描述、分类、标签…"
             className="w-full pl-8"
             onChange={(event) => setKeywordInput(event.target.value)}
           />
