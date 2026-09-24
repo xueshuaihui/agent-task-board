@@ -113,10 +113,10 @@
 
 ### 7.4 B13/B14 与 dnd 回归
 
-- [ ] 任务列表页 console 无 React validateDOMNesting（thead/tr）报错（2026-09-24 R-E 实测：`#/tasks` 全新加载后 console 无 validateDOMNesting 类报错，该项过。**但同屏有另一类 error**，见下条）
-- [ ] （R-E 新发现，2026-09-24）`#/board` 与 `#/tasks` 纯挂载即各出 3 条 React error「Function components cannot be given refs…forwardRef()」，栈顶均为 `AnimatePresence` → `Primitive.div.Slot` → `Portal` → `Presence`，落点 = `components/ui/tooltip.tsx`（board 由 BoardToolbar、tasks 由 task-list/cells.tsx TitleCell 触发）、`app/notification-center.tsx` 的 Dialog、`features/dependency-graph/DependencyGraphDialog`。疑为 motion 的 AnimatePresence 直接包 Radix Content（asChild + forceMount）导致 ref 落不到节点——若 ref 落不到，退场 presence 追踪同样失效，与 §6.4「浮层退场可播」同源，按 bug 处理（登记 #23），不按「只是噪音」销账
+- [x] 任务列表页 console 无 React validateDOMNesting（thead/tr）报错（2026-09-24 R-E 实测：`#/tasks` 全新加载后 console 无 validateDOMNesting 类报错，该项过。**同屏曾有另一类 error**，见下条，已修）
+- [x] （R-E 发现并已修，`9777249`）`#/board` 与 `#/tasks` 纯挂载即各出 3 条 React error「Function components cannot be given refs…forwardRef()」，栈顶均为 `AnimatePresence` → `Primitive.div.Slot` → `Portal` → `Presence`，落点 = `components/ui/tooltip.tsx`（board 由 BoardToolbar、tasks 由 task-list/cells.tsx TitleCell 触发）、`app/notification-center.tsx` 的 Dialog、`features/dependency-graph/DependencyGraphDialog`。**根因不是 Content 上的 motion 元素**（motion 13.4 的 `motion.span/div` 都是 forwardRef），而是直写在 `Portal forceMount` 里的 `<AnimatePresence>` 本身：Radix Portal 内部是 `<Presence><Portal asChild>{children}</Portal></Presence>`，Slot 用 `cloneElement(child,{ref})` 把 Presence 的合成 ref 转给唯一子节点，而 motion 的 AnimatePresence 是无 forwardRef 的普通函数组件，React 18.3.1 遂告警并丢 ref（forceMount ⇒ 与 open 无关、纯挂载即报；drawer 同形状潜伏，走查时未挂载故未现）。修法：AnimatePresence 移到 Portal 外（与已上线的 popover/menu 同构），四处 forceMount 保留。复验：board/tasks 挂载 console 归零，通知中心关闭 WAAPI 采到遮罩 DIV + 面板 ASIDE 两条动画 opacity 0.97→0.00（~210ms）后才卸载、退场未回归
 - [ ] 主导航折叠：底部「折叠导航」整行按钮 / 折叠态轨底「展开导航」图标各点一次（按钮实际文案是「折叠导航」，验条旧写作「收起导航」，2026-09-24 R-E 实测更正）；窗口拉窄到 <1200px 自动收成 64px 图标轨，手动折叠/展开态在刷新后仍在（`atb.nav.collapsed` = '1'/'0'/缺失三态；缺失才跟随断点，显式偏好优先于断点，2026-09-24 R-E 实测：767px 窄窗口下 `pref='0'` 恒 200px、清偏好后回 64px 自动收起）
-- [ ] 看板卡拖拽换列（重构后唯一 dnd 路径）：拖动落列、状态落库、计数即时刷新、layoutId 飞行可感知；过滤态下拖到不可见列外的行为正常
+- [ ] 看板卡拖拽换列（重构后唯一 dnd 路径）：拖动落列、状态落库、计数即时刷新、layoutId 飞行可感知；**过滤态下拉到列后卡片仍按过滤结果呈现**（旧文案「拖到不可见列外」是泳道时代口径——B15 起列恒为七列、过滤维不含状态，不存在「不可见的目标列」，2026-09-24 R-E 更正）。R-E 实测：合成 Pointer 序列把 T-1010 需求池→待执行，1.2s 内两列卡片归属互换、`GET /tasks?keyword=T-1010` 回 `status=READY`（落库）、再拖回为 `BACKLOG`、全程 console 无新报错
 
 ## 8. 收尾
 
@@ -158,12 +158,12 @@
 | §6.1 B1 包名切换 | | |
 | §6.2 B2/B2b 状态可见性 | 过（2026-09-24 R-A · dev 演练环境，非打包 dmg） | 三项均按真实 claim/stop 造数验过：chip「执行中 N · 最近活动…」随 WS 实时 +1、无进度数据时占位条在、RUNNING=0 且 24h 无活动整条隐藏（含 2h 对照证明是规则生效非请求挂）。**发现并修 1 缺陷**：Agent 刚 claim 的瞬间「最近活动」退化成绝对时间，30s 后自愈——根因 `formatRelative` 把几秒级负 delta 当未来时间，`96f7fb7` 修（60s 时钟抖动容差 + 3 单测）。 |
 | §6.3 B3/B4/B5/B7 交互 | 过（R-A · dev） | 分类筛选平铺多选 OR（13 chip 计数与卡片数吻合）、列内竖滚 + 列底「还有 N 条」（把 `board_column_limit` 调到下限 10 造超限后还原）、列最小 180px 整行横滚兜底、960px 七列等分铺满不压字。分组过滤复位入口的验条文案已按实测更正（见 §7.3）。 |
-| §6.4 动效 v1.2 | | R-B 待跑；#23 修 ref 落不到节点的问题与「浮层退场可播」同源，跑本节前先看 #23 结论 |
+| §6.4 动效 v1.2 | | R-B 待跑。#23（forceMount Portal 里的 AnimatePresence 丢 ref）已在 `9777249` 修掉并已用 WAAPI 采样确认通知中心/抽屉退场仍可播；跑本节时把 tooltip/menu/popover 的退场与 layoutId 换列飞行补量到帧即可 |
 | §6.5 B6 MCP 词表 | | |
 | §7.1 B8/B8s 审核产物 | | |
 | §7.2 B9/B10/B11 设置与托盘 | | |
 | §7.3 B12→B15 统一过滤 | 过（2026-09-24 R-D · dev，七项全过） | 六维弹层维内 OR/维间 AND、chip 逐条 × 与「清除全部」、URL `#/board?…` 同步 + 刷新不丢 + 全新 profile（headless）从 URL 完整还原、v1 槽 + 旧 `board.grouping` 一次性迁移三维并存（这条同时是 B15-④ 水合竞态修复的真机路径背书，此前只有单测）、已清空的旧分组不复活、看板/列表/流程图三视图共用过滤态、空列折叠 40px 竖条、960px 工具栏折行不压字、列表页「分组方式」独立偏好互不干扰。唯一文案不符处（视图段「全部」被写成一键回全量）已在 `7b933ee` 更正验条。**另记**：视图段「全部」确实不清过滤，属设计内正交两轴。 |
-| §7.4 B13/B14 与 dnd | 部分过（2026-09-24 R-E · dev） | 已过两腿：①`#/tasks` 全新加载 console 无 validateDOMNesting（thead/tr）；②导航折叠三态（无偏好跟随 <1200px 断点自动收 64px、`pref='0'` 在 767px 窄窗口恒 200px 且刷新后仍在、清偏好回自动），按钮实际文案「折叠导航」已更正验条。待验：看板换列 dnd。**新挂账**：board/tasks 纯挂载各 3 条 forwardRef console error（登记 #23，见上第二条验条）。 |
+| §7.4 B13/B14 与 dnd | 过（2026-09-24 R-E · dev，三腿全过） | ①`#/tasks` 全新加载 console 无 validateDOMNesting（thead/tr）；②导航折叠三态在 767px 真窗口全验（无偏好→自动收 64px、`pref='0'`→恒 200px 且刷新后仍在、`pref='1'`→64px、清偏好→回自动），按钮实际文案「折叠导航」已更正验条；③合成 Pointer 序列拖 T-1010 需求池→待执行→拖回，两列归属 1.2s 内互换、`GET /tasks` 回 `READY`/`BACKLOG`（落库）、全程 console 无新报错。**同轮发现并修掉 1 条挂账**：board/tasks 纯挂载各 3 条 forwardRef error（#23，`9777249`，根因=直写在 forceMount Portal 里的 AnimatePresence 无 forwardRef，退路是同 popover 形状；修后挂载归零、通知中心退场 WAAPI 采样 0.97→0.00 约 210ms 后卸载）。残留：layoutId 换列飞行动效只测到「拖拽期间有动画在跑」，未逐帧分辨 layoutId，归 §6.4（R-B）一并看 |
 | §9.1 技能分类一套标准 | | |
 | §9.2 技能选择器四处统一 | | |
 
