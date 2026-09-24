@@ -1,0 +1,23 @@
+# Code Simplify
+
+Make the **current diff** simpler and clearer without changing what it does.
+
+## Instructions
+
+1. **Scope to the current diff.** Inspect `git diff` (unstaged) and
+   `git diff --cached` (staged) and only refactor code that changed.
+2. **Simplify, behavior-preserving:**
+   - remove duplication and dead/unreachable code
+   - flatten deep nesting (early returns, guard clauses)
+   - collapse redundant intermediate variables and needless abstraction
+   - prefer standard-library and existing project helpers over new code —
+     search the codebase for an existing utility before writing one
+
+   Done only when every changed hunk has been considered for simplification.
+3. **Keep it minimal (YAGNI).** The diff's current needs set the ceiling —
+   ship the smallest change that simplifies.
+4. **Preserve behavior and public interfaces.** Same inputs → same outputs,
+   same side effects, same exported signatures unless explicitly asked.
+5. **Verify** after simplifying: run the project's tests / typecheck / linter
+   where available, and report the result.
+6. **Report briefly** what you simplified and why.

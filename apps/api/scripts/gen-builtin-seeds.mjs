@@ -21,6 +21,19 @@
  * 同日再拍板（第四片）：词表删「开学季」（0017 迁移收敛 CHECK，12 → 11 项）——code-mentor、
  * deep-research 两条「开学季→X」补正因此变成首词规则即可算出的 no-op，按防呆口径删表；
  * 「开学季」进 RETIRED_CATEGORY_TERMS 作废词集合，freeTagsOf 继续剔它（理由见该常量注释）。
+ *
+ * 0925 编码技能收录（本文件第二源）：docs/0925/coding-skills-catalog.json 收 31 条外部
+ * 编码技能（GitHub 官方原文正文，builtin-skills/*.md 同名 md），走同一条分片管线：
+ * - 千问源（docs/v0.0.4/skills-data 导出，绝对不许改）：category = CATEGORY_FIXES ??
+ *   categoryFromTags(tags)，tags 过 freeTagsOf 洗——原逻辑不变；
+ * - coding 源：category 与 tags 都在目录 JSON 里**显式给定**（人工按内容判定，不做首词
+ *   盲取）；category 仍必须 ∈ 11 词表，tags 必须原样通过 freeTagsOf（即不得含词表词/
+ *   作废词/受众词，否则构建期报错）——产研阶段词（需求与规划/开发与实现/质量与安全/
+ *   代码清理/运维与协作/测试自动化）都不在这三类集合里，是合法自由标签；
+ * - source 溯源字段（repo/path/fetched/truncated/renamedFrom）只进目录 JSON 留档，
+ *   不进 BuiltinSkillRaw 分片（结构不变）；
+ * - 两源 slug 重复、coding 目录缺 md 正文、coding 目录多余条目，都构建期报错；
+ *   CATEGORY_FIXES 防呆只作用于千问源。
  */
 import { readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -116,23 +129,66 @@ const apiRoot = path.resolve(scriptDir, '..');
 const repoRoot = path.resolve(apiRoot, '../..');
 const mdDir = path.join(apiRoot, 'src/skills/builtin-skills');
 const catalogPath = path.join(repoRoot, 'docs/v0.0.4/skills-data/qwen-skills-catalog.json');
+const codingCatalogPath = path.join(repoRoot, 'docs/0925/coding-skills-catalog.json');
 const LIMIT = 24576;
 const CHUNK_SIZE = 10;
 
+/** 千问原始导出：slug 不得重复（重复会让 bySlug 静默吞条目）。 */
 const catalog = JSON.parse(readFileSync(catalogPath, 'utf8'));
-const bySlug = new Map(catalog.map((item) => [item.slug, item]));
-const slugs = readdirSync(mdDir)
+const bySlug = new Map();
+for (const item of catalog) {
+  if (bySlug.has(item.slug)) throw new Error(`千问 catalog 重复 slug：${item.slug}`);
+  bySlug.set(item.slug, item);
+}
+
+/**
+ * 0925 编码技能目录（第二源）：category/tags 显式给定、source 只作溯源留档。
+ * slug 不得与千问源重复（同一内置管线一个 slug 只能有一份正文/分类口径）。
+ */
+const codingCatalog = JSON.parse(readFileSync(codingCatalogPath, 'utf8'));
+const codingBySlug = new Map();
+for (const item of codingCatalog) {
+  if (codingBySlug.has(item.slug)) throw new Error(`coding 目录重复 slug：${item.slug}`);
+  if (bySlug.has(item.slug)) throw new Error(`coding 目录与千问 catalog slug 重复：${item.slug}`);
+  codingBySlug.set(item.slug, item);
+}
+
+const mdSlugs = readdirSync(mdDir)
   .filter((f) => f.endsWith('.md'))
   .map((f) => f.slice(0, -3))
   .sort();
+/** coding 目录多余条目（无正文 md）构建期报错——md ⇔ coding 目录必须双向一一对应。 */
+for (const item of codingCatalog) {
+  if (!mdSlugs.includes(item.slug)) throw new Error(`coding 目录多余条目（builtin-skills/ 缺正文 md）：${item.slug}`);
+}
 
-/** builtin-skills/ 下存在正文 md 即迁移收编；catalog 必须有同名条目。 */
-const rows = slugs.map((slug) => {
+/** builtin-skills/ 下存在正文 md 即迁移收编；两份目录之一必须有同名条目。 */
+const rows = mdSlugs.map((slug) => {
+  const coding = codingBySlug.get(slug);
   const item = bySlug.get(slug);
-  if (!item) throw new Error(`catalog 缺少 slug：${slug}`);
+  if (!item && !coding) throw new Error(`两份目录都缺少 slug：${slug}`);
   const markdown = readFileSync(path.join(mdDir, `${slug}.md`), 'utf8');
   const bytes = Buffer.byteLength(markdown, 'utf8');
   if (bytes > LIMIT) throw new Error(`${slug} 正文 ${bytes}B 超 24K 上限，先裁剪再分片`);
+  if (coding) {
+    // coding 源：category/tags 显式给定，只校验不折算。
+    if (!SKILL_CATEGORIES.includes(coding.category)) {
+      throw new Error(`${slug} coding 目录 category 不在 11 词表：${JSON.stringify(coding.category)}`);
+    }
+    const tags = coding.tags;
+    if (!Array.isArray(tags) || tags.length === 0 || tags.some((t) => typeof t !== 'string' || !t)) {
+      throw new Error(`${slug} coding 目录 tags 必须是非空字符串数组（0925 收录要求带产研阶段标签）`);
+    }
+    // tags 必须原样通过 freeTagsOf：含词表词/作废词/受众词即口径违规，报错而非静默洗掉。
+    if (freeTagsOf(tags).length !== tags.length) {
+      const purged = tags.filter((t) => !freeTagsOf([t]).includes(t));
+      throw new Error(`${slug} coding 目录 tags 含词表/作废/受众词，无法原样通过 freeTagsOf：${purged.join(', ')}`);
+    }
+    const desc = String(coding.description || '').trim();
+    if (!desc) throw new Error(`${slug} coding 目录缺 description`);
+    if (!String(coding.nameCn || '').trim()) throw new Error(`${slug} coding 目录缺 nameCn`);
+    return { slug, nameCn: coding.nameCn, description: desc.slice(0, 500), category: coding.category, tags, markdown };
+  }
   const desc = (item.desc || '').trim() || String(item.summary || '').split(/[。\n]/)[0];
   // catalog.tags 是 {中文分类词: 英文key} 形态，词表判定只看 key（顺序即数组序）。
   const rawTags = Object.keys(item.tags || {}).filter(Boolean);
@@ -149,9 +205,12 @@ const rows = slugs.map((slug) => {
 // 首词规则算出的值。两类都适用：缺词型算出 ''、补上词表词才算有效；0925 纠偏型算出
 // 占位词/误取值、改成真语义词才算有效。上游哪天修好了 tags 使首词规则直接算出正确值，
 // 这条补正就成了 no-op——报错提示清理，绝不静默覆盖（也防手滑填成与首词相同的废条目）。
+// 0925 双源后本表只作用于千问源：coding 源 category 本就直接给定，补正无从谈起，混进
+// 来即多余条目，报错。
 for (const slug of Object.keys(CATEGORY_FIXES)) {
   const row = rows.find((item) => item.slug === slug);
   if (!row) throw new Error(`CATEGORY_FIXES 多余条目（未收编）：${slug}`);
+  if (codingBySlug.has(slug)) throw new Error(`CATEGORY_FIXES 只许收千问源 slug（coding 源 category 显式给定）：${slug}`);
   const computed = categoryFromTags(Object.keys(bySlug.get(slug).tags || {}).filter(Boolean));
   if (CATEGORY_FIXES[slug] === computed) {
     throw new Error(`CATEGORY_FIXES 已多余：${slug} 首词规则已直接算出 ${JSON.stringify(computed)}，删掉这条补正`);

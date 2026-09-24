@@ -14,7 +14,9 @@ import { DEFAULT_SKILL_VERSION, type SkillContent, type SkillMcpDependency, type
  *
  * 清单来源：#19 落 PRD §9.2 规范样例「代码审查」1 条；v0.0.4 #41 批量并入千问工作台
  * 技能迁移的 93 条内置种子（BUILTIN_SKILL_SEEDS，正文走 builtin-skills.data 分片，
- * 口径与映射表见 docs/v0.0.4/千问技能迁移映射表.md）。
+ * 口径与映射表见 docs/v0.0.4/千问技能迁移映射表.md）；0925 编码技能收录再并入 31 条
+ * 外部编码技能（目录 docs/0925/coding-skills-catalog.json，category/tags 显式给定、
+ * tags 带产研阶段词，与千问源同走生成器分片管线）。
  *
  * 分类收口（0015 + C-2）：seed 现在同时提供 `category`（单值受控词表，见 skill-categories.ts）
  * 与纯自由 `tags`，upsert 两个分支都写 category——否则每次启动会把 0015 迁移回填的 category
