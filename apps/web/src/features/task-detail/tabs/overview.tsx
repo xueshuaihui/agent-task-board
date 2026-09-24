@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Pencil } from 'lucide-react';
 import { fieldErrorsOf, useFieldDefs, useSettings, useTags } from '@/api';
-import { useActiveGroups } from '@/features/groups';
 import type { FieldDef, TaskDetail, TaskTab } from '@/api';
 import { Badge, Button, Field, Input, Progress, Select, TagBadge, Textarea } from '@/components/ui';
 import { priorityText, statusLabel } from '@/lib/labels';
 import { formatDateTime } from '@/lib/time';
 import { useShellStore } from '@/app/store/shell';
+import {
+  requirementMoveBody,
+  useRequirementOptions,
+} from '@/features/requirements/use-requirement-options';
 import { useRequirementDrawerStore } from '@/features/requirements/requirement-store';
 import {
   applicableFieldDefs,
@@ -59,12 +62,6 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
     [fieldDefs.data, detail.type],
   );
   const defByKey = useMemo(() => new Map(defs.map((def) => [def.key, def])), [defs]);
-  // 0919 五章：基本信息里带出所属分组（详情接口的卡片 DTO 已有 group_id）。
-  const groups = useActiveGroups();
-  const groupName = useMemo(
-    () => (detail.group_id ? (groups.data?.items ?? []).find((p) => p.id === detail.group_id) : undefined),
-    [groups.data?.items, detail.group_id],
-  );
 
   const editable = detail.status !== 'RUNNING';
 
@@ -125,10 +122,6 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
             defs={defs}
             typeOptions={typeOptions}
             tagCandidates={tags.data?.tags ?? []}
-            groupOptions={(groups.data?.items ?? []).map((group) => ({
-              value: group.id,
-              label: `${group.icon ? `${group.icon} ` : ''}${group.name}`,
-            }))}
             onCancel={() => {
               setEditing(false);
               patch.reset();
@@ -144,9 +137,11 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
               { label: '类型', value: detail.type },
               { label: '优先级', value: priorityText(detail.priority) },
               {
-                label: '分组',
-                value: groupName ? `${groupName.icon ? `${groupName.icon} ` : ''}${groupName.name}` : '未分配',
-                muted: !groupName,
+                // §19.14·86（W2-b）：只读行从「分组」改为「所属需求」——看板可见面
+                // 不再展示 Group 归属；卡片有组但无需求时如实显示「未分配」。
+                label: '所属需求',
+                value: detail.parent?.title ?? '未分配',
+                muted: !detail.parent,
               },
               {
                 label: '标签',
@@ -285,8 +280,6 @@ interface EditFormProps {
   defs: FieldDef[];
   typeOptions: { value: string; label: string }[];
   tagCandidates: string[];
-  /** 0919 五章：分组候选（仅活跃分组；归档中的分组不再出现，原值仍可保留/清空）。 */
-  groupOptions: { value: string; label: string }[];
   onCancel: () => void;
   onSubmit: (body: DrawerTaskPatch) => void;
   pending: boolean;
@@ -300,7 +293,6 @@ function OverviewEditForm({
   defs,
   typeOptions,
   tagCandidates,
-  groupOptions,
   onCancel,
   onSubmit,
   pending,
@@ -313,8 +305,29 @@ function OverviewEditForm({
   const [tagsValue, setTagsValue] = useState<string[]>(detail.tags);
   const [capabilities, setCapabilities] = useState<string[]>(detail.required_capabilities);
   const [dueAt, setDueAt] = useState(detail.due_at ?? '');
-  const [groupId, setGroupId] = useState(detail.group_id ?? '');
   const [custom, setCustom] = useState<FieldDraft>(() => draftFromValues(defs, detail.custom_fields ?? {}));
+
+  /* §19.14·86（v0.0.4 W2-b）：归属唯一入口 = 「所属需求」下拉。
+   *
+   * 原「分组」下拉与隐性的父需求归属合并为一个控件：选中需求 → 一次 PATCH 原子写
+   * `parent_task_id` + 回填该需求的 `group_id`（`requirementMoveBody` 形状，与看板
+   * 快捷新建/流程图移动同一口径）；「未分配需求」→ 仅 `parent_task_id: null`，
+   * `group_id` 不发、原归属保留。
+   *
+   * 有意边界（§19.14 收口）：本文件不再提供任何「纯组迁移」入口——需求即组，
+   * 跨组移动语义已由「换需求」承载，group_id 仍是数据真值、只是不作 UI 选择项。
+   * 归档组任务只读（服务端 409）是最后防线；候选已剔除归档组需求，UI 无需新校验。 */
+  const requirements = useRequirementOptions();
+  const initialRequirementId = detail.parent?.id ?? '';
+  const [requirementId, setRequirementId] = useState(initialRequirementId);
+  const requirementOptions = useMemo(() => {
+    const options = requirements.data.map((option) => ({ value: option.id, label: option.title }));
+    // 当前父需求不在候选（如恰属归档组）时补一条展示项，保证回显不丢、未触碰不产生 PATCH。
+    if (initialRequirementId && !options.some((option) => option.value === initialRequirementId)) {
+      options.unshift({ value: initialRequirementId, label: detail.parent?.title ?? initialRequirementId });
+    }
+    return options;
+  }, [requirements.data, initialRequirementId, detail.parent]);
 
   const save = () => {
     const body: DrawerTaskPatch = {};
@@ -330,7 +343,11 @@ function OverviewEditForm({
       body.required_capabilities = capabilities;
     }
     if (dueAt !== (detail.due_at ?? '')) body.due_at = dueAt === '' ? null : dueAt;
-    if (groupId !== (detail.group_id ?? '')) body.group_id = groupId === '' ? null : groupId;
+    if (requirementId !== initialRequirementId) {
+      const option = requirements.data.find((item) => item.id === requirementId) ?? null;
+      // 选中项必须仍在候选里才发（候选未就绪/数据竞态时不误改归属）。
+      if (requirementId === '' || option) Object.assign(body, requirementMoveBody(option));
+    }
 
     const changed: Record<string, unknown> = {};
     for (const def of defs) {
@@ -366,12 +383,12 @@ function OverviewEditForm({
           />
         </Field>
       </div>
-      <Field label="分组" hint="归档分组不出现在候选里；改为「未分配」即移出分组">
+      <Field label="所属需求" hint="候选为未归档分组下的需求；选中即换需求归属，改「未分配需求」仅脱离需求、原归属保留">
         <Select
-          value={groupId}
-          placeholder="未分配分组"
-          options={groupOptions}
-          onChange={(event) => setGroupId(event.target.value)}
+          value={requirementId}
+          placeholder="未分配需求"
+          options={requirementOptions}
+          onChange={(event) => setRequirementId(event.target.value)}
         />
       </Field>
       <Field label="标签" hint="回车添加；候选来自历史标签的实时聚合（20.3）">

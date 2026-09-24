@@ -155,6 +155,8 @@ export function DrawerMetaRow({ detail }: { detail: TaskDetail }) {
         </MetaCell>
       ) : null}
       {detail.parent ? (
+        // §19.14·86（W2-b）核语义：label 本就是「需求」（detail.parent = 父需求摘要），
+        // 与概览「所属需求」同一口径，无需改动；此处不展示也不消费 group_id。
         <MetaCell label="需求" className="col-span-2">
           <button
             type="button"
