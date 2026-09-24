@@ -255,7 +255,7 @@ describe('update_skill 复用 SkillsService 的三条守卫（一条都不放宽
 });
 
 describe('update_skill 的 category 词表回显（B6 口径补在 agent 入口这一层）', () => {
-  it('通道二（callAgentTool 直连）→ 422：details 带全量 11 词表 + 当前收到的值 + 字段描述', async () => {
+  it('通道二（callAgentTool 直连）→ 422：details 带全量 16 叶子词表 + 当前收到的值 + 字段描述', async () => {
     const skill = await seedSkill({ name: '词表用例', category: '推荐' });
 
     await expect(
@@ -273,12 +273,12 @@ describe('update_skill 的 category 词表回显（B6 口径补在 agent 入口�
     }
     const [detail] = caught!.details!;
     expect(detail).toMatchObject({ path: 'category', code: 'invalid_value', received: '不存在的分类' });
-    // 一次改对：11 个词全在回显里，agent 不必试错。
+    // 一次改对：16 个叶子词全在回显里（两级描述文案「可选：…」同样在场），agent 不必试错。
     const hint = `${detail!.message} ${detail!.hint}`;
     for (const category of SKILL_CATEGORIES) {
       expect(hint).toContain(category);
     }
-    expect(SKILL_CATEGORIES).toHaveLength(11);
+    expect(SKILL_CATEGORIES).toHaveLength(16);
     // 未分类的空串也是合法值，回显里要点明。
     expect(detail!.hint).toContain("''");
     expect((await h.prisma.skill.findUniqueOrThrow({ where: { id: skill.id } })).category).toBe('推荐');
@@ -286,26 +286,52 @@ describe('update_skill 的 category 词表回显（B6 口径补在 agent 入口�
 
   // 0925 拍板（第四片）：「开学季」已从词表删除，如今是**越表值**——agent 直传同样 422、
   // 列值不动，且全量回显里不再出现该词（词表收敛必须能从这里被 agent 看见）。
-  it('「开学季」现为越表值：422 VALIDATION_FAILED，回显词表不含它，列值不动', async () => {
+  // 0925 树化：作废词集合再加「质量保障」（RETIRED），同一路径语义。
+  it('作废词「开学季」「质量保障」为越表值：422 VALIDATION_FAILED，回显词表不含它们，列值不动', async () => {
     const skill = await seedSkill({ name: '越表靶子', category: '开发编程' });
+
+    for (const retired of ['开学季', '质量保障']) {
+      let caught: { details?: Record<string, unknown>[] } | undefined;
+      await expect(
+        callAgentTool(toolCtx, agent, 'update_skill', { skill_id: skill.id, category: retired }),
+      ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+      try {
+        await callAgentTool(toolCtx, agent, 'update_skill', { skill_id: skill.id, category: retired });
+      } catch (error) {
+        caught = error as { details?: Record<string, unknown>[] };
+      }
+      const [detail] = caught!.details!;
+      expect(detail).toMatchObject({ path: 'category', code: 'invalid_value', received: retired });
+      // hint = 「可接受值：<16 叶子全量枚举>；当前收到 "<作废词>"；<字段描述含可选：…两级全量词表>」——
+      // 该词只允许以「当前收到」的回显出现，两处词表枚举段都不许再含它。
+      const hint = String(detail!.hint);
+      expect(hint.split('；当前收到')[0]!).not.toContain(retired);
+      expect(hint.split('可选：')[1]!).not.toContain(retired);
+    }
+    expect((await h.prisma.skill.findUniqueOrThrow({ where: { id: skill.id } })).category).toBe('开发编程');
+  });
+
+  // 0925 树化：三个**纯分组一级**词（编码开发/办公实用/研究分析）不是合法叶子值——
+  // agent 直传 422，且回显的两级「可选：…」文案里它们以分组身份在场、帮助定位二级。
+  it('纯分组一级「编码开发」为越表值：422，两级回显点明它不可直接提交', async () => {
+    const skill = await seedSkill({ name: '分组一级靶子', category: '开发编程' });
 
     let caught: { details?: Record<string, unknown>[] } | undefined;
     await expect(
-      callAgentTool(toolCtx, agent, 'update_skill', { skill_id: skill.id, category: '开学季' }),
+      callAgentTool(toolCtx, agent, 'update_skill', { skill_id: skill.id, category: '编码开发' }),
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
     try {
-      await callAgentTool(toolCtx, agent, 'update_skill', { skill_id: skill.id, category: '开学季' });
+      await callAgentTool(toolCtx, agent, 'update_skill', { skill_id: skill.id, category: '编码开发' });
     } catch (error) {
       caught = error as { details?: Record<string, unknown>[] };
     }
     const [detail] = caught!.details!;
-    expect(detail).toMatchObject({ path: 'category', code: 'invalid_value', received: '开学季' });
-    // hint = 「可接受值：<11 词全量枚举>；当前收到 "开学季"；<字段描述含可选：…全量词表>」——
-    // 该词只允许以「当前收到」的回显出现，两处词表枚举段都不许再含它。
+    expect(detail).toMatchObject({ path: 'category', code: 'invalid_value', received: '编码开发' });
     const hint = String(detail!.hint);
-    expect(hint.split('；当前收到')[0]!).not.toContain('开学季');
-    expect(hint.split('可选：')[1]!).not.toContain('开学季');
-    expect((await h.prisma.skill.findUniqueOrThrow({ where: { id: skill.id } })).category).toBe('开发编程');
+    // 可接受值枚举段（zod enum = 16 叶子 + ''）不含纯分组一级词；描述段里它以分组标题出现，
+    // 且紧跟括号内二级（「编码开发（需求与规划/…）」形状），回显两级表口径。
+    expect(hint.split('；当前收到')[0]!).not.toContain('编码开发');
+    expect(hint).toContain('编码开发（需求与规划');
   });
 
   it('通道一（SDK tools/call）→ SDK 自己的 enum 检查先拦（isError + 纯文本、无 structuredContent），词表原文照出', async () => {

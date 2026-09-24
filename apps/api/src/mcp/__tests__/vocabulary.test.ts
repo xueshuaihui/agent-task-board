@@ -59,8 +59,32 @@ describe('get_vocabulary：一次调用拿全服务端词表', () => {
     expect(result.capability.pattern).toBe('^[a-z][a-z0-9_-]*:[^\\s]+$');
     expect(result.skill.types).toContain('workflow');
     // §16.1 `update_skill` 的 category 词表也在场：agent 一次调用拿到「可写面 + 可接受值」全口径。
+    // 0925 树化：values 是 16 个**合法叶子**（可提交值），tree 是两级结构（7 个一级，其中
+    // 编码开发/办公实用/研究分析为纯分组一级、不在 values 里）；source 文案钉 0018 CHECK。
     expect(result.skill_categories.values).toEqual([...SKILL_CATEGORIES]);
-    expect(result.skill_categories.values).toHaveLength(11);
+    expect(result.skill_categories.values).toHaveLength(16);
+    expect(result.skill_categories.values).not.toContain('质量保障');
+    expect(result.skill_categories.values).not.toContain('编码开发');
+    expect(result.skill_categories.tree.map((top) => top.value)).toEqual([
+      '编码开发',
+      '教育学习',
+      '内容创作',
+      '方案写作',
+      '投资理财',
+      '办公实用',
+      '研究分析',
+    ]);
+    expect(result.skill_categories.tree.find((top) => top.value === '编码开发')!.children).toEqual([
+      '需求与规划',
+      '开发与实现',
+      '质量与安全',
+      '代码清理',
+      '运维与协作',
+      '测试自动化',
+      '开发编程',
+    ]);
+    expect(result.skill_categories.tree.find((top) => top.value === '教育学习')!.children).toEqual([]);
+    expect(result.skill_categories.source).toContain('0018');
     expect(result.skill_categories.uncategorized).toBe('');
     expect(result.skill_categories.note).toContain('可选：');
   });

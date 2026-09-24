@@ -10,15 +10,24 @@ import {
   AUDIENCE_TAGS,
   RETIRED_CATEGORY_TERMS,
   SKILL_CATEGORIES,
+  SKILL_CATEGORY_TREE,
+  STAGE_CATEGORY_TERMS,
   categoryFromTags,
   freeTagsOf,
   isSkillCategory,
 } from '../skill-categories';
 import { skillContentSchema } from '../skills.dto';
 
-/** tags 残留判定：现行词表词或已作废历史词表词（开学季）都不许出现在自由标签里。 */
+/** 阶段词豁免集（双角色：既是叶子又是合法标签；0925 树化拍板，见 skill-categories.ts）。 */
+const STAGE_SET: ReadonlySet<string> = new Set<string>(STAGE_CATEGORY_TERMS);
+
+/**
+ * tags 残留判定（**0925 树化后的不变量新口径**）：
+ * tags ∩ (叶子 − 六个阶段词) = ∅——六个产研阶段词是双角色豁免词（既是「编码开发」二级
+ * 叶子又合法留在 coding 内置 tags 里，用户拍板的有意特例），其余叶子词与作废词都不许出现。
+ */
 function isPurgedCategoryTerm(tag: string): boolean {
-  return isSkillCategory(tag) || (RETIRED_CATEGORY_TERMS as readonly string[]).includes(tag);
+  return (isSkillCategory(tag) && !STAGE_SET.has(tag)) || (RETIRED_CATEGORY_TERMS as readonly string[]).includes(tag);
 }
 
 /**
@@ -27,11 +36,12 @@ function isPurgedCategoryTerm(tag: string): boolean {
  *
  * 锁六件事：
  * ① 124 条种子齐全（93 千问 + 31 coding）、id 唯一且与 builtin-skills/*.md 清洗终稿同步
- *    （改了 md 不重跑 gen-builtin-seeds.mjs 会红）；分类收口（C-2 + 0925 拍板收紧）后同一条
- *    还锁 seed 侧的 category/tags 口径：category ∈ 11 词表（0017 收敛，0925 拍板删「开学季」）、
- *    tags 里既无作废受众词、也不含**任何**词表词与已作废历史词表词「开学季」
- *    （0016 口径：标签是标签、分类是分类，93 条千问洗后 tags 为空数组、31 条 coding 原样
- *    带产研阶段标签，都是预期终态）；
+ *    （改了 md 不重跑 gen-builtin-seeds.mjs 会红）；分类收口（C-2 + 0925 拍板收紧 + 0925
+ *    树化）后同一条还锁 seed 侧的 category/tags 口径：category ∈ 16 叶子词表（0018 收敛，
+ *    两级树：删「质量保障」、增六个产研阶段叶子）、tags 里既无作废受众词、也不含
+ *    **叶子减阶段词**与已作废历史词表词「开学季」「质量保障」
+ *    （0016 口径 + 树化阶段词豁免：标签是标签、分类是分类，93 条千问洗后 tags 为空数组、
+ *    31 条 coding 原样带产研阶段标签，都是预期终态）；
  * ② markdown→blocks 解析/兜底双路径都产出可通过 skillContentSchema 的合法内容，
  *    兜底块全文无损；
  * ③ 17 条「依赖千问后端」档：降级不收 quark-drive，其余 16 条带降级说明行、
@@ -40,8 +50,9 @@ function isPurgedCategoryTerm(tag: string): boolean {
  *    受众词（否则 0015 迁移洗的数会被启动 upsert 全部洗回去）；
  * ⑤ 全量 125 条（含 §9.2 规范样例 code-review）的 category 守护 + 分类分布快照 +
  *    tags 快照（千问源为空 / coding 源逐条等于目录给定的阶段标签）；
- * ⑥ 分片 ⇔ 两份目录（千问 catalog / 0925 coding 目录）⇔ skill-categories.ts helper 三方
- *    同口径（含生成器三份词表字面量与本文件逐字一致），杜绝「生成器自己算一套、运行时再猜一套」。
+ * ⑥ 分片 ⇔ 两份目录（千问 catalog / 0925 coding 目录）⇔ skill-categories.ts helper ⇔
+ *    生成器字面量 ⇔ 0018 CHECK 同口径（树展平=16 叶子、三方词表字面逐字一致），杜绝
+ *    「生成器自己算一套、运行时再猜一套、迁移 CHECK 又一套」。
  */
 
 const MD_DIR = path.resolve(__dirname, '../builtin-skills');
@@ -50,6 +61,8 @@ const REPO_ROOT = path.resolve(API_ROOT, '../..');
 const CATALOG_PATH = path.join(REPO_ROOT, 'docs/v0.0.4/skills-data/qwen-skills-catalog.json');
 const CODING_CATALOG_PATH = path.join(REPO_ROOT, 'docs/0925/coding-skills-catalog.json');
 const GENERATOR_PATH = path.join(API_ROOT, 'scripts/gen-builtin-seeds.mjs');
+/** 0018 迁移（现行 category CHECK 真值源）：⑥ 的字面三方比对之一。 */
+const MIGRATION_0018_PATH = path.join(API_ROOT, 'prisma/migrations/0018_skill_category_tree/migration.sql');
 /** 内置条数（#41 千问迁移 93 + 0925 编码技能 31）与含 code-review 的全量条数（改了收编范围要一并改这里）。 */
 const BUILTIN_COUNT = 124;
 const TOTAL_COUNT = 125;
@@ -61,7 +74,8 @@ function literalFromGenerator(decl: string): unknown {
   // 生成器里是多行字面量且带尾逗号：先换引号、再去尾逗号，才能喂给 JSON.parse。
   return JSON.parse(hit[1].replace(/'/g, '"').replace(/,(\s*[\]}])/g, '$1'));
 }
-/** 生成器 CATEGORY_FIXES 补正表：缺分类词型 + 0925 拍板一的「0015 首词盲取错值」纠偏型。 */
+/** 生成器 CATEGORY_FIXES 补正表：缺分类词型 + 0925 拍板一的「0015 首词盲取错值」纠偏型
+ * （+ 树化 Q3 拍板三条「方案写作→需求与规划」，补正值 ≠ 首词计算值，合法有效条目）。 */
 function categoryFixes(): Record<string, string> {
   return literalFromGenerator('CATEGORY_FIXES') as Record<string, string>;
 }
@@ -111,11 +125,12 @@ describe('千问迁移内置种子（#41）', () => {
     for (const seed of BUILTIN_SKILL_SEEDS) {
       expect(seed.id).toMatch(/^skl_builtin_[a-z0-9._-]+$/);
       expect(seed.description.length).toBeGreaterThan(0);
-      // 分类收口（C-2 + 0925 收紧 + 四片删词）：不再断言 tags 数量——千问源 catalog 的 tags
+      // 分类收口（C-2 + 0925 收紧 + 树化）：不再断言 tags 数量——千问源 catalog 的 tags
       // 主要是「受众词 + 分类词」，新口径下全部剔掉；coding 源显式带产研阶段标签（⑤ 逐条
-      // 对照目录）。这里锁两条硬口径：tags 无受众词、无任何词表词与已作废历史词表词
-      // 「开学季」（残留它会以普通标签身份重新长成「伪分类」）。
-      expect(isSkillCategory(seed.category), `${seed.id} category 不在 11 词表：${seed.category}`).toBe(true);
+      // 对照目录，阶段词是双角色豁免词、有意保留）。这里锁两条硬口径：tags 无受众词、无任何
+      // 非阶段叶子词与已作废历史词表词「开学季」「质量保障」（残留它们即以普通标签身份重新
+      // 长成「伪分类」）。
+      expect(isSkillCategory(seed.category), `${seed.id} category 不在 16 叶子词表：${seed.category}`).toBe(true);
       for (const tag of seed.tags) {
         expect(AUDIENCE_TAGS as readonly string[], `${seed.id} 残留受众词 ${tag}`).not.toContain(tag);
         expect(isPurgedCategoryTerm(tag), `${seed.id} 自由标签里残留词表/作废词 ${tag}`).toBe(false);
@@ -192,9 +207,10 @@ describe('千问迁移内置种子（#41）', () => {
         expect(isPurgedCategoryTerm(tag), `${row.id} 库内 tags 残留词表/作废词 ${tag}`).toBe(false);
       }
     }
-    // PRD §9.2 规范样例：单值分类 + 自由标签两字段各归各位。
+    // PRD §9.2 规范样例：单值分类 + 自由标签两字段各归各位（0925 树化：作废旧值「质量保障」
+    // 的唯一语义续位是「编码开发/质量与安全」叶子，seed/0019 两侧同值收敛）。
     const codeReview = rows.find((row) => row.id === 'skl_builtin_code-review');
-    expect(codeReview?.category).toBe('质量保障');
+    expect(codeReview?.category).toBe('质量与安全');
     expect(JSON.parse(codeReview?.tags ?? '[]')).toEqual(['review', 'quality']);
   });
 
@@ -206,36 +222,42 @@ describe('千问迁移内置种子（#41）', () => {
     for (const seed of DEFAULT_SKILL_SEEDS) {
       expect(isSkillCategory(seed.category), `${seed.id} category 非法：${JSON.stringify(seed.category)}`).toBe(true);
     }
-    // 分布锁：0015 回填 + seed 收口 + 0925 拍板一 CATEGORY_FIXES 纠偏 + 0925 编码技能收录
-    // 31 条 + 收录批次三条 category 纠偏（commit-plan→实用工具、devops-code-review→质量保障、
-    // vercel-optimize→质量保障）后库内应有的分类分布（多一条/少一条都会红，防误改词表映射与
-    // 补正表）。快照本就
-    // 不含开学季——拍板一先把仅有的两条落点（code-mentor/deep-research）改判内容词，拍板四
-    // 又把它删出词表（0017 收敛 CHECK）：内置零条是预期终态，11 键恰好覆盖现行 11 词。
+    // 分布锁（0925 树化终值，草案 §2 映射表 + Q1 保留开发编程/Q2 三条改判质量与安全/
+    // Q3 千问三条进需求与规划拍板后口径）：0015 回填 + seed 收口 + CATEGORY_FIXES +
+    // 编码技能收录 + 树化 35 行归位（0019 同值）后库内应有的 16 叶子分布——
+    // 多一条/少一条都会红，防误改词表树、补正表与 coding 目录。六个阶段桶合计 35+code-review
+    // 样例=编码域 40 条（需求与规划 8 = coding5+千问3；质量与安全 10 = coding6+Q2 三条+样例）；
+    // 「质量保障」「开学季」都不在桶里（内置零条是预期终态，16 键恰好覆盖现行 16 叶子）。
     const dist = DEFAULT_SKILL_SEEDS.reduce<Record<string, number>>((acc, seed) => {
       acc[seed.category] = (acc[seed.category] ?? 0) + 1;
       return acc;
     }, {});
     expect(dist).toEqual({
+      需求与规划: 8,
+      开发与实现: 4,
+      质量与安全: 10,
+      代码清理: 6,
+      运维与协作: 5,
+      测试自动化: 2,
+      开发编程: 5,
       教育学习: 23,
-      方案写作: 17,
-      质量保障: 15,
-      开发编程: 12,
-      实用工具: 13,
-      投资理财: 13,
       内容创作: 12,
+      方案写作: 9,
+      投资理财: 13,
       Office办公: 9,
+      实用工具: 8,
       数据分析: 6,
       资讯研究: 4,
       推荐: 1,
     });
-    expect(Object.keys(dist)).toHaveLength(11);
-    // tags 快照（口径 = 0925 拍板收紧后的 0016 洗数段 + 拍板四的作废词 + 0925 编码技能
-    // 收录的双源口径）——不再是一句「全为空」，按来源三分收紧：
+    expect(Object.keys(dist)).toHaveLength(16);
+    // tags 快照（口径 = 0925 拍板收紧后的 0016 洗数段 + 作废词 + 0925 编码技能收录双源 +
+    // 树化阶段词豁免）——不再是一句「全为空」，按来源三分收紧：
     // ① 93 条千问迁移内置洗后 tags 必须全为空数组（catalog 的 tags 本就是「受众词 +
     //    分类词」，谁回流谁红）；
     // ② 31 条 coding 内置必须逐条等于 docs/0925/coding-skills-catalog.json 给定的产研
-    //    阶段标签（原样、含顺序；这些阶段词不在词表/作废/受众集合里，是合法自由标签）；
+    //    阶段标签（原样、含顺序；这六个阶段词是双角色豁免词——既是叶子又合法留在 tags，
+    //    0925 树化拍板「继续不洗」，逐条等值锁不动）；
     // ③ 唯一非两源的手写 §9.2 规范样例 code-review 保持 review/quality 两个真自由标签。
     expect(CODING_CATALOG).toHaveLength(31);
     const qwenSlugs = new Set(
@@ -269,23 +291,28 @@ describe('千问迁移内置种子（#41）', () => {
       运维与协作: 6,
       测试自动化: 3,
     });
-    // 定点防线（0925 拍板一+四的合体靶子）：code-mentor 的 catalog tags 是 [开学季, 开发编程]——
-    // 拍板四删词后首词规则即可直接算出「开发编程」（开学季已不在词表、不再截位），补正表里
-    // 不再有这条；若词表哪天飘回 12 项（含开学季），本条立刻红——它是 11 词收敛最锋利的哨兵。
-    // 拍板收紧口径不变：「开发编程」与「开学季」都不得留在 tags 里（曾在真机卡片上与分类徽标
-    // 同字重现，造成「两套分类标准」观感）。谁把 freeTagsOf 退回旧口径，本条即红。
+    // 定点防线（0925 拍板一+四的合体靶子，树化 Q1 后仍有效）：code-mentor 的 catalog tags 是
+    // [开学季, 开发编程]——「开学季」不在词表、首词规则直接算出「开发编程」；若词表哪天飘回
+    // 12 项（含开学季），本条立刻红——它是现行 16 叶子收敛最锋利的哨兵。Q1 拍板「开发编程」
+    // 保留为「编码开发」下过渡二级（千问 5 条存量零迁移），本条 category 不动。
+    // 拍板收紧口径不变：「开发编程」（非阶段叶子）与「开学季」都不得留在 tags 里（曾在真机
+    // 卡片上与分类徽标同字重现，造成「两套分类标准」观感）。谁把 freeTagsOf 退回旧口径，本条即红。
     const codeMentor = DEFAULT_SKILL_SEEDS.find((seed) => seed.name === 'code-mentor');
     expect(codeMentor?.category).toBe('开发编程');
     expect(codeMentor?.tags).toEqual([]);
     // 定点防线（0925 收录的两处改名 + 一处双阶段）：名字必须与正文相符、溯源记在目录
-    // source.renamedFrom；deprecation-and-migration 是 database 改名收编的正身。
+    // source.renamedFrom；deprecation-and-migration 是 database 改名收编的正身，树化后
+    // category 随 coding 目录改判「开发与实现」（tags 仍是 [开发与实现]）。
     const depRow = DEFAULT_SKILL_SEEDS.find((seed) => seed.name === 'deprecation-and-migration');
-    expect(depRow?.category).toBe('开发编程');
+    expect(depRow?.category).toBe('开发与实现');
     expect(depRow?.tags).toEqual(['开发与实现']);
     const defect = DEFAULT_SKILL_SEEDS.find((seed) => seed.name === 'codexqa-defect-analyzer');
     expect(defect?.tags).toEqual(['开发与实现', '测试自动化']);
-    // 逐条守护：seed 的 tags 里出现任何词表词或已作废历史词表词「开学季」即 fail
-    // （0016 口径 + 0017 作废词的服务端等价物，防生成器/helper 两侧飘回旧口径）。
+    // 按 Q2 拍板：defect-analyzer 内容改判「质量与安全」，与 tags 首词解耦。
+    expect(defect?.category).toBe('质量与安全');
+    // 逐条守护：seed 的 tags 里出现任何**非阶段**叶子词或已作废历史词表词（开学季/质量保障）
+    // 即 fail（0016 口径 + 0017/0018 作废词的服务端等价物 + 树化阶段词豁免，
+    // 防生成器/helper 两侧飘回旧口径）。
     for (const seed of DEFAULT_SKILL_SEEDS) {
       for (const tag of seed.tags) {
         expect(isPurgedCategoryTerm(tag), `${seed.id} tags 残留词表/作废词 ${tag}`).toBe(false);
@@ -293,15 +320,42 @@ describe('千问迁移内置种子（#41）', () => {
     }
   });
 
-  it('⑥ 分片 ⇔ 两份目录（千问 catalog / 0925 coding 目录）⇔ skill-categories.ts 三方同口径（生成器不得自造一套）', () => {
-    // 三份词表字面量必须逐字一致（生成器是 .mjs，import 不了 TS 常量）：现行 11 词、
-    // 受众词、已作废历史词表词（0925 拍板四删的「开学季」）——少比一份都会让两侧漂移。
+  it('⑥ 分片 ⇔ 两份目录（千问 catalog / 0925 coding 目录）⇔ skill-categories.ts ⇔ 生成器字面量 ⇔ 0018 CHECK 同口径（生成器/迁移不得自造一套）', () => {
+    // 词表字面量必须逐字一致（生成器是 .mjs，import 不了 TS 常量）：现行 16 叶子、
+    // 阶段词豁免集、受众词、已作废历史词表词（开学季 + 树化作废的质量保障）——
+    // 少比一份都会让两侧漂移；再加两层树口径：SKILL_CATEGORY_TREE 展平 = 16 叶子、
+    // 0018 迁移 CHECK 的 IN 列表 = '' + 16 叶子（顺序无关的字面集合一致）。
     expect(literalFromGenerator('SKILL_CATEGORIES')).toEqual([...SKILL_CATEGORIES]);
+    expect(literalFromGenerator('STAGE_CATEGORY_TERMS')).toEqual([...STAGE_CATEGORY_TERMS]);
     expect(literalFromGenerator('AUDIENCE_TAGS')).toEqual([...AUDIENCE_TAGS]);
     expect(literalFromGenerator('RETIRED_CATEGORY_TERMS')).toEqual([...RETIRED_CATEGORY_TERMS]);
-    expect(SKILL_CATEGORIES).toHaveLength(11);
+    expect(SKILL_CATEGORIES).toHaveLength(16);
     expect(SKILL_CATEGORIES).not.toContain('开学季');
-    expect(RETIRED_CATEGORY_TERMS).toEqual(['开学季']);
+    expect(SKILL_CATEGORIES).not.toContain('质量保障');
+    expect(RETIRED_CATEGORY_TERMS).toEqual(['开学季', '质量保障']);
+    // 树 ⇔ 叶子：一级 7 个、纯分组一级的 children 与「一级即叶子」的展平结果恰好是 16 叶子，
+    // 且全集（一级 ∪ 二级）字面无重复（一级词与二级词不得同词）；阶段词全部在「编码开发」下。
+    expect(SKILL_CATEGORY_TREE).toHaveLength(7);
+    const treeLeaves = SKILL_CATEGORY_TREE.flatMap((top) =>
+      top.children.length > 0 ? top.children : [top.value],
+    );
+    expect([...treeLeaves].sort()).toEqual([...SKILL_CATEGORIES].sort());
+    const allWords = SKILL_CATEGORY_TREE.flatMap((top) => [top.value, ...top.children]);
+    expect(new Set(allWords).size).toBe(allWords.length);
+    expect(treeLeaves).not.toContain('编码开发');
+    expect(treeLeaves).not.toContain('办公实用');
+    expect(treeLeaves).not.toContain('研究分析');
+    const codingTop = SKILL_CATEGORY_TREE.find((top) => top.value === '编码开发')!;
+    for (const stage of STAGE_CATEGORY_TERMS) {
+      expect(codingTop.children as readonly string[]).toContain(stage);
+    }
+    // 0018 CHECK（现行真值源）= '' + 16 叶子：从迁移 SQL 抽 IN 列表比对。
+    const migrationSql = readFileSync(MIGRATION_0018_PATH, 'utf8');
+    const checkHit = migrationSql.match(/CHECK \(category IN \(([\s\S]*?)\)\)\n/);
+    if (!checkHit) throw new Error('0018 迁移里没找到 category CHECK 的 IN 列表');
+    const checkValues = (checkHit[1].match(/'([^']*)'/g) ?? []).map((raw) => raw.slice(1, -1));
+    expect(checkValues).toContain('');
+    expect(checkValues.filter((value) => value !== '').sort()).toEqual([...SKILL_CATEGORIES].sort());
     const catalog = JSON.parse(readFileSync(CATALOG_PATH, 'utf8')) as Array<{
       slug: string;
       tags?: Record<string, string>;
@@ -315,10 +369,12 @@ describe('千问迁移内置种子（#41）', () => {
     const fixes = categoryFixes();
     for (const raw of BUILTIN_SKILLS_RAW) {
       if (codingBySlug.has(raw.slug)) {
-        // coding 源：category/tags 目录显式给定，分片必须逐字等于目录；tags 必须
-        // 原样通过 freeTagsOf（产研阶段词合法，词表/作废/受众词不许混进来）。
+        // coding 源：category/tags 目录显式给定（Q2 拍板后 category 与 tags 解耦，机械规则
+        // 「叶子=tags 首词」作废——目录直接给定六个阶段叶子之一），分片必须逐字等于目录；
+        // tags 必须原样通过 freeTagsOf（阶段词豁免后仍不得混入非阶段叶子/作废/受众词）。
         const entry = codingBySlug.get(raw.slug)!;
-        expect(isSkillCategory(entry.category), `${raw.slug} coding 目录分类不在 11 词表`).toBe(true);
+        expect(isSkillCategory(entry.category), `${raw.slug} coding 目录分类不在 16 叶子词表`).toBe(true);
+        expect(STAGE_CATEGORY_TERMS as readonly string[], `${raw.slug} coding 目录分类必须是六个产研阶段叶子之一`).toContain(entry.category);
         expect(raw.category, `${raw.slug} 分类与 coding 目录不一致`).toBe(entry.category);
         expect(raw.tags, `${raw.slug} 自由标签与 coding 目录不一致`).toEqual(entry.tags);
         expect(freeTagsOf(entry.tags), `${raw.slug} tags 未原样通过 freeTagsOf`).toEqual(entry.tags);
