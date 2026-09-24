@@ -24,6 +24,29 @@ export type SkillStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
 export type SkillOrigin = 'default' | 'custom' | 'imported';
 
 /**
+ * 技能分类受控词表（PRD §9.2 两字段模型，C-4 读侧收口）：skills.category 是真列
+ * （api 0015 迁移），取值只能是下面 12 词之一或 ''（未分类，列默认值）。
+ * 单一事实源在 apps/api/src/skills/skill-categories.ts，此处为其类型化镜像，
+ * 改词表必须两边同步（守护测试 __tests__/skill-categories.test.ts 逐字比对）。
+ */
+export type SkillCategory =
+  | '开学季'
+  | '教育学习'
+  | '投资理财'
+  | '方案写作'
+  | '内容创作'
+  | '推荐'
+  | 'Office办公'
+  | '实用工具'
+  | '数据分析'
+  | '开发编程'
+  | '资讯研究'
+  | '质量保障';
+
+/** category 列的完整合法值：词表内分类，或 ''（未分类）。 */
+export type SkillCategoryOrNone = SkillCategory | '';
+
+/**
  * 块类型（1.md 8.3 表，PRD 15 类）。后端 content 是 passthrough JSON，
  * 前端 schema 自由扩展，后端原样存储。
  */
@@ -136,6 +159,11 @@ export interface Skill {
   status: SkillStatus;
   description: string;
   tags: string[];
+  /**
+   * 分类（PRD §9.2）：直读 api 真列，12 词表内或 ''（未分类）。
+   * tags 是纯自由标签，与分类无关（旧「tags 减法凑分类」口径已废）。
+   */
+  category: SkillCategoryOrNone;
   current_version: string;
   content: SkillContent;
   mcp_dependencies: SkillMcpDependency[];

@@ -20,7 +20,7 @@ import { CreateSkillDialog } from './create-skill-dialog';
 import { CopySkillPicker } from './copy-skill-picker';
 import { ImportCenterDialog } from './import-center-dialog';
 import { useCreateSkill, useDeleteSkill, useSkills } from './hooks';
-import { SKILL_ORIGIN_OPTIONS, SKILL_STARTER_TEMPLATES, SKILL_STATUS_META, SKILL_TYPE_OPTIONS, categoryTagsOf } from './meta';
+import { SKILL_CATEGORIES, SKILL_ORIGIN_OPTIONS, SKILL_STARTER_TEMPLATES, SKILL_STATUS_META, SKILL_TYPE_OPTIONS, UNCATEGORIZED_CATEGORY, UNCATEGORIZED_LABEL } from './meta';
 import { SkillCard } from './skill-card';
 import { SkillDetailDrawer } from './skill-detail-drawer';
 import { SkillEditorPage } from './skill-editor-page';
@@ -47,7 +47,7 @@ export function SkillLibraryPage() {
   const [type, setType] = useState<SkillType | ''>('');
   const [status, setStatus] = useState<SkillStatus | ''>('');
   const [source, setSource] = useState<SkillOrigin | ''>('');
-  /** 分类多选（OR 语义）：不选即全部，选项由当前列表 tags 聚合而来。 */
+  /** 分类多选（OR 语义）：不选即全部；选项恒为静态词表 12 项 + 未分类，直读 item.category。 */
   const [categories, setCategories] = useState<string[]>([]);
 
   /* `?edit=` 挂编辑器；其余查询参数留给后续（如 tag 深链）。必须走响应式订阅：
@@ -65,21 +65,32 @@ export function SkillLibraryPage() {
     [keywordInput, type, status, source],
   );
   const skills = useSkills(query);
-  /* 分类筛选（前端侧，/skills 已带 tags）：分类词 = tags 剔除 官方/社区，
-   * 选项按技能数降序聚合；在服务端结果之上叠加过滤，与类型/状态/来源正交。 */
+  /* 分类筛选（前端侧，用户裁定不给 /skills 加 category= 查询参数）：分类 = skills.category
+   * 真列直读（PRD §9.2），选项恒等于 12 词表 + 未分类共 13 项、按词表顺序渲染，
+   * 不随当前列表 tags 漂移（PRD §19.13 第 82 条）；计数为 0 的项置灰禁用但不消失，
+   * 已选中的项即使计数归零也保留可点（允许取消）。与类型/状态/来源正交。 */
   const categoryOptions = useMemo(() => {
     const counts = new Map<string, number>();
     for (const item of skills.data?.items ?? []) {
-      for (const tag of categoryTagsOf(item.tags)) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      counts.set(item.category, (counts.get(item.category) ?? 0) + 1);
     }
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([value, count]) => ({ value, label: value, count }));
+    return [
+      ...SKILL_CATEGORIES.map((value) => {
+        const count = counts.get(value) ?? 0;
+        return { value, label: value, count, disabled: count === 0 };
+      }),
+      {
+        value: UNCATEGORIZED_CATEGORY,
+        label: UNCATEGORIZED_LABEL,
+        count: counts.get(UNCATEGORIZED_CATEGORY) ?? 0,
+        disabled: (counts.get(UNCATEGORIZED_CATEGORY) ?? 0) === 0,
+      },
+    ];
   }, [skills.data]);
   const visibleItems = useMemo(() => {
     const items = skills.data?.items ?? [];
     if (categories.length === 0) return items;
-    return items.filter((item) => categoryTagsOf(item.tags).some((tag) => categories.includes(tag)));
+    return items.filter((item) => categories.includes(item.category));
   }, [skills.data, categories]);
   // r2 允许重名：同名集合驱动卡片上的 id 短后缀消歧（§9.2）。
   const duplicateNames = useMemo(() => {
@@ -315,15 +326,14 @@ export function SkillLibraryPage() {
         />
       </div>
 
-      {/* 分类：tags 聚合的多选按钮组（OR 语义，不选即全部），只在前端过滤。 */}
-      {categoryOptions.length > 0 ? (
-        <ChipGroup
-          label="分类"
-          options={categoryOptions}
-          selected={categories}
-          onChange={setCategories}
-        />
-      ) : null}
+      {/* 分类：静态词表 13 项（12 词 + 未分类）的多选按钮组（OR 语义，不选即全部），
+          恒常渲染、直读 item.category，只在前端过滤。 */}
+      <ChipGroup
+        label="分类"
+        options={categoryOptions}
+        selected={categories}
+        onChange={setCategories}
+      />
 
       {skills.isPending ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(248px,1fr))] gap-3">

@@ -11,6 +11,8 @@ export interface ChipGroupOption {
   label: string;
   /** 可选计数徽标（如命中条数）。 */
   count?: number;
+  /** 置灰禁用（如计数为 0 的筛选项：出现但不可点）；已选中的项不受禁用影响，保留可点以便取消。 */
+  disabled?: boolean;
 }
 
 export interface ChipGroupProps {
@@ -39,17 +41,20 @@ export function ChipGroup({ options, selected, onChange, label, className, ...pr
       {label ? <span className="mr-1 shrink-0 text-aux text-text-tertiary">{label}</span> : null}
       {options.map((option) => {
         const active = selected.includes(option.value);
+        const disabled = option.disabled === true && !active;
         return (
           <button
             key={option.value}
             type="button"
             aria-pressed={active}
+            disabled={disabled}
             onClick={() => toggle(option.value)}
             className={cn(
               'inline-flex h-7 shrink-0 items-center gap-1 rounded-control border px-2 text-body',
               active
                 ? 'border-primary bg-primary-light text-primary'
                 : 'border-border text-text-secondary hover:bg-bg-muted hover:text-text-primary',
+              disabled && 'cursor-not-allowed opacity-45 hover:bg-transparent hover:text-text-tertiary',
             )}
           >
             {option.label}

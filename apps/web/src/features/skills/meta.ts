@@ -18,7 +18,7 @@ import {
   Wrench,
   Zap,
 } from 'lucide-react';
-import type { OnError, ParallelMerge, SkillBlock, SkillBlockKind, SkillContent, SkillOrigin, SkillStatus, SkillType } from './types';
+import type { OnError, ParallelMerge, SkillBlock, SkillBlockKind, SkillCategory, SkillContent, SkillOrigin, SkillStatus, SkillType } from './types';
 
 /**
  * 技能类型的展示元数据（2.md 10.1/10.2、1.md 8.2）。图标用 lucide 线性图标，
@@ -65,21 +65,33 @@ export const SKILL_ORIGIN_OPTIONS = (Object.keys(SKILL_ORIGIN_META) as SkillOrig
 }));
 
 /**
- * 技能 tags 里的「受众词」：内置技能（千问迁移种子）的 tags 形如
- * `['官方'|'社区', ...分类词]`（见 apps/api/scripts/gen-builtin-seeds.mjs），
- * 分类不加 schema 列，由 tags 去掉这两个词之后的分类词承载。
+ * 技能分类受控词表（PRD §9.2，C-4 读侧收口）：分类是 skills.category 真列
+ * （api 0015 迁移），前端直读 skill.category，分类筛选选项恒等于本词表 + 未分类，
+ * 不再由 tags 减法推导。单一事实源在 apps/api/src/skills/skill-categories.ts，
+ * 本数组必须与其逐字等值、顺序一致——改词表必须两边同步
+ * （守护测试 __tests__/skill-categories.test.ts 从 api 源文件抽取比对，防漂移）。
+ * 历史「官方/社区」受众词已作废（出处由 source_type 三来源承载），tags 是纯自由标签。
  */
-export const CATEGORY_TAG_EXCLUDES = ['官方', '社区'] as const;
+export const SKILL_CATEGORIES: readonly SkillCategory[] = [
+  '开学季',
+  '教育学习',
+  '投资理财',
+  '方案写作',
+  '内容创作',
+  '推荐',
+  'Office办公',
+  '实用工具',
+  '数据分析',
+  '开发编程',
+  '资讯研究',
+  '质量保障',
+];
 
-/** 从 tags 提取分类词（剔除 官方/社区 受众词）。 */
-export function categoryTagsOf(tags: readonly string[] | undefined): string[] {
-  return (tags ?? []).filter((tag) => !(CATEGORY_TAG_EXCLUDES as readonly string[]).includes(tag));
-}
+/** 「未分类」= category 列默认值 ''（0015 DEFAULT ''），筛选匹配用。 */
+export const UNCATEGORIZED_CATEGORY = '' as const;
 
-/** 从 tags 提取受众词（官方/社区），没有则 undefined。 */
-export function audienceTagOf(tags: readonly string[] | undefined): string | undefined {
-  return (tags ?? []).find((tag) => (CATEGORY_TAG_EXCLUDES as readonly string[]).includes(tag));
-}
+/** 未分类的展示文案（筛选 chip / 子技能分组组头），未分类恒排最后。 */
+export const UNCATEGORIZED_LABEL = '未分类';
 
 /** 块类型元数据（1.md 8.3 的 PRD 15 类；图标用 lucide，不引 emoji）。 */
 export const BLOCK_KIND_META: Record<
