@@ -9,6 +9,12 @@ B15-② 删 `useGroupingState`/`useBoardFilterStore`/`filter-model`（三份真�
 B15-③ 删 `GroupFilterSidebar`/`GroupSwitcher`（入口统一为工具栏「筛选」弹层 + 结果区 chip 汇总条）；
 §19.14（v0.0.4 W1）删 groups 筛选维（看板查询/URL/偏好读取时剥离丢弃、不回写；
 `groups` store 键保留，唯一消费者是列表页作用域）。
+§19.14（v0.0.4 W2-a）写入路径以「需求」为唯一归属选择：快捷新建与流程图「移到其他
+需求」选中需求 → 同写 `parent_task_id` + 回填该需求 `group_id`（经
+`features/requirements/use-requirement-options.ts` 的既有 `GET /tasks?type=需求` 取候选、
+剔除归档组需求）；未选新建两字段都不发（服务端落默认组）、脱离需求仅置空
+`parent_task_id`（`group_id` 不动）。看板可见面（quick-create.tsx / FlowBoardView.tsx）
+指 Group 的「分组」字样（含注释）清零。
 
 ## 现在各文件的职责
 
