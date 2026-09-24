@@ -207,7 +207,9 @@ describe('千问迁移内置种子（#41）', () => {
       expect(isSkillCategory(seed.category), `${seed.id} category 非法：${JSON.stringify(seed.category)}`).toBe(true);
     }
     // 分布锁：0015 回填 + seed 收口 + 0925 拍板一 CATEGORY_FIXES 纠偏 + 0925 编码技能收录
-    // 31 条后库内应有的分类分布（多一条/少一条都会红，防误改词表映射与补正表）。快照本就
+    // 31 条 + 收录批次三条 category 纠偏（commit-plan→实用工具、devops-code-review→质量保障、
+    // vercel-optimize→质量保障）后库内应有的分类分布（多一条/少一条都会红，防误改词表映射与
+    // 补正表）。快照本就
     // 不含开学季——拍板一先把仅有的两条落点（code-mentor/deep-research）改判内容词，拍板四
     // 又把它删出词表（0017 收敛 CHECK）：内置零条是预期终态，11 键恰好覆盖现行 11 词。
     const dist = DEFAULT_SKILL_SEEDS.reduce<Record<string, number>>((acc, seed) => {
@@ -217,9 +219,9 @@ describe('千问迁移内置种子（#41）', () => {
     expect(dist).toEqual({
       教育学习: 23,
       方案写作: 17,
-      开发编程: 13,
+      质量保障: 15,
+      开发编程: 12,
       实用工具: 13,
-      质量保障: 14,
       投资理财: 13,
       内容创作: 12,
       Office办公: 9,

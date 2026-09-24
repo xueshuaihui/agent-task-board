@@ -139,7 +139,7 @@
     "slug": "commit-plan",
     "nameCn": "逻辑提交规划器",
     "description": "从当前 diff 提议按逻辑拆分的提交方案，输出 Conventional Commit 消息与待暂存文件清单，不添加署名、不推送。",
-    "category": "质量保障",
+    "category": "实用工具",
     "tags": ["运维与协作"],
     "source": { "repo": "msobczyk-x/agent-skills", "path": "skills/commit-plan/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -147,7 +147,7 @@
     "slug": "vercel-optimize",
     "nameCn": "Vercel 成本与性能优化审计",
     "description": "审计 Vercel 上的成本、性能、可靠性、缓存与函数使用，先采集指标与用量再产出有证据支撑的优先级排序报告。",
-    "category": "开发编程",
+    "category": "质量保障",
     "tags": ["质量与安全"],
     "source": { "repo": "vercel-labs/agent-skills", "path": "skills/vercel-optimize/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -235,7 +235,7 @@
     "slug": "devops-code-review",
     "nameCn": "本地分支代码审查",
     "description": "基于本地 git 比较两个分支变更做全面代码审查，跨 Claude Code/Copilot/Cursor 使用。",
-    "category": "实用工具",
+    "category": "质量保障",
     "tags": ["运维与协作"],
     "source": { "repo": "abdullahkhawer/devops-skills", "path": "skills/code-review/SKILL.md", "fetched": true, "truncated": false, "renamedFrom": "devops-skills" }
   },
