@@ -31,12 +31,20 @@ export function formatDate(value: string | null | undefined): string {
     : '—';
 }
 
+/**
+ * 小幅负 delta 容忍阈值：前端展示用的 now 是本地时钟快照（如 agent-status-chip 的 useNow，
+ * 30s 一跳），可能落后于服务端刚写入的时间戳（Agent claim 瞬间 updated_at 被推到「此刻」），
+ * delta 出现几秒级负值属时钟抖动，按「刚刚」处理；超过阈值视为真正的未来时间，退回绝对值。
+ */
+const FUTURE_SKEW_TOLERANCE_MS = 60_000;
+
 /** 相对时间：距今 24 小时内给相对值，之外退回绝对日期（原型 3.3、3.8）。 */
 export function formatRelative(value: string | null | undefined, now: number = Date.now()): string {
   const date = parseIso(value);
   if (!date) return '—';
   const delta = now - date.getTime();
-  if (delta < 0) return formatDateTime(value);
+  if (delta < -FUTURE_SKEW_TOLERANCE_MS) return formatDateTime(value);
+  if (delta < 0) return '刚刚';
   const minutes = Math.floor(delta / 60_000);
   if (minutes < 1) return '刚刚';
   if (minutes < 60) return `${minutes} 分钟前`;
