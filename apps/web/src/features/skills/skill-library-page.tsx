@@ -128,20 +128,22 @@ export function SkillLibraryPage() {
           type: full.type,
           description: full.description,
           tags: [...full.tags],
+          category: full.category,
           content: full.content,
         }),
       )
       .catch((error) => toast.error('复制失败', errorMessage(error)));
   };
 
-  /** SKILL.md 导出：markdown.ts 的 blocksToMarkdown 直接生成下载（r2：frontmatter 必带 id）。 */
+  /** SKILL.md 导出：markdown.ts 的 blocksToMarkdown 直接生成下载（r2：frontmatter 必带 id；
+   *  category 走真字段——旧实现误把技能类型 skill.type 当分类导出，已修正）。 */
   const exportMarkdown = (skill: Skill) => {
     const markdown = blocksToMarkdown(skill.content, {
       id: skill.id,
       name: skill.name,
       description: skill.description,
       version: skill.current_version,
-      category: skill.type,
+      category: skill.category,
       tags: skill.tags,
       mcpDependencies: skill.mcp_dependencies,
     });

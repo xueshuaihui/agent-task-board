@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Package, Save, Send } from 'lucide-react';
-import { Button, Field, Input, Skeleton, Tabs, Textarea, useToast } from '@/components/ui';
+import { Button, Field, Input, RadioGroup, Skeleton, Tabs, Textarea, useToast } from '@/components/ui';
 import { errorMessage } from '@/api';
 import { BlockEditor } from './block-editor';
 import { usePatchSkill, useSkill } from './hooks';
-import { SKILL_STATUS_META, emptyContent } from './meta';
+import { SKILL_CATEGORY_OPTIONS, SKILL_STATUS_META, emptyContent } from './meta';
+import { toSkillCategory } from './markdown';
 import { PublishDialog } from './publish-dialog';
 import { SkillFlowEditor } from './flow-canvas';
 import { SkillVersionHistory } from './skill-version-history';
 import { SourceEditor } from './source-editor';
 import { StructuredEditor } from './structured-editor';
-import type { Skill, SkillContent } from './types';
+import type { Skill, SkillCategoryOrNone, SkillContent } from './types';
 import { cn } from '@/lib/cn';
 
 /**
@@ -38,10 +39,17 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
   const skill = query.data;
 
   const [content, setContent] = useState<SkillContent>({ blocks: [], entryBlockId: null });
-  const [meta, setMeta] = useState<{ name: string; description: string; tagsText: string }>({
+  const [meta, setMeta] = useState<{
+    name: string;
+    description: string;
+    tagsText: string;
+    /** 分类草稿（C-5）：初值取 skill.category；保存时始终显式提交（含 ''）。 */
+    category: SkillCategoryOrNone;
+  }>({
     name: '',
     description: '',
     tagsText: '',
+    category: '',
   });
   const [dirty, setDirty] = useState(false);
   const [autoSavedAt, setAutoSavedAt] = useState<string | null>(null);
@@ -57,6 +65,7 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
         name: skill.name,
         description: skill.description,
         tagsText: skill.tags.join(', '),
+        category: skill.category,
       });
       setDirty(false);
     }
@@ -68,6 +77,7 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
       name: updated.name,
       description: updated.description,
       tagsText: updated.tags.join(', '),
+      category: updated.category,
     });
     setDirty(false);
   }, []);
@@ -87,6 +97,8 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
         .split(/[,，\s]+/)
         .map((tag) => tag.trim())
         .filter(Boolean),
+      /* 分类始终显式提交当前值（两态语义里「传 '' = 显式改回未分类」要能表达）。 */
+      category: meta.category,
     }),
     [content, meta],
   );
@@ -286,6 +298,14 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
                     onChange={(event) => applyMeta({ tagsText: event.target.value })}
                   />
                 </Field>
+                <Field label="分类" hint="单选，12 类 + 未分类（PRD §9.2 系统词表）">
+                  <RadioGroup
+                    value={meta.category}
+                    options={SKILL_CATEGORY_OPTIONS}
+                    disabled={readonly}
+                    onChange={(value) => applyMeta({ category: value as SkillCategoryOrNone })}
+                  />
+                </Field>
               </div>
             ) : null}
             {skill ? (
@@ -311,7 +331,7 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
                 name: meta.name,
                 description: meta.description,
                 version: skill.current_version,
-                category: skill.type,
+                category: meta.category,
                 tags: meta.tagsText
                   .split(/[,，\s]+/)
                   .map((tag) => tag.trim())
@@ -326,6 +346,9 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
                   name: frontmatter.name || prev.name,
                   description: frontmatter.description || prev.description,
                   tagsText: frontmatter.tags.length > 0 ? frontmatter.tags.join(', ') : prev.tagsText,
+                  // 分类随 frontmatter 落地：词表外值（含旧包 category=workflow 这类
+                  // 类型枚举值）归未分类 ''、不报错（与 api 导入口径一致）。
+                  category: toSkillCategory(frontmatter.category),
                 }));
                 setDirty(true);
               }}

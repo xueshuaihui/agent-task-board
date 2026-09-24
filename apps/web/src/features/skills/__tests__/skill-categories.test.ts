@@ -3,7 +3,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import * as skillMeta from '../meta';
-import { SKILL_CATEGORIES, UNCATEGORIZED_CATEGORY, UNCATEGORIZED_LABEL } from '../meta';
+import { SKILL_CATEGORIES, SKILL_STARTER_TEMPLATES, UNCATEGORIZED_CATEGORY, UNCATEGORIZED_LABEL } from '../meta';
+import { toSkillCategory } from '../markdown';
 
 /**
  * C-4 守护测试：web 侧分类词表与 api 单一事实源逐字等值、顺序一致；旧的
@@ -11,6 +12,10 @@ import { SKILL_CATEGORIES, UNCATEGORIZED_CATEGORY, UNCATEGORIZED_LABEL } from '.
  *
  * 词表漂移曾让分类轴随自由标签变化（PRD §19.13 第 82 条的根因），所以这里**不复制一份
  * 清单手工比对**，而是直接读 api 源文件抽数组字面量比对：改一边不改另一边即红。
+ *
+ * C-5 追加：8 个起步模板必须自带词表内分类（模板是给用户当范用的，'' 等于示范错误
+ * 用法）；frontmatter category 归一函数 toSkillCategory 与 api 导入口径一致
+ * （词表外一律落 ''，不报错）。
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -53,6 +58,36 @@ describe('旧的「tags 减法凑分类」helper 下线', () => {
     const source = readFileSync(metaSourceFile, 'utf8');
     for (const name of ['categoryTagsOf', 'audienceTagOf', 'CATEGORY_TAG_EXCLUDES']) {
       expect(source, `meta.ts 不应再出现 ${name}`).not.toContain(name);
+    }
+  });
+});
+
+describe('起步模板自带分类（C-5 写侧收口）', () => {
+  it('8 个模板齐全', () => {
+    expect(SKILL_STARTER_TEMPLATES).toHaveLength(8);
+  });
+
+  it('每个模板的 category 都在 12 词表内且不是未分类 \'\'（模板当范用，不许示范错误用法）', () => {
+    for (const template of SKILL_STARTER_TEMPLATES) {
+      expect(
+        SKILL_CATEGORIES,
+        `模板 ${template.id} 的 category「${template.category}」不在词表内`,
+      ).toContain(template.category);
+      expect(template.category, `模板 ${template.id} 不许用未分类 '' 蒙混`).not.toBe('');
+    }
+  });
+});
+
+describe('frontmatter category 归一 toSkillCategory（与 api 导入口径一致）', () => {
+  it('词表内值原样采纳（12 词逐一）', () => {
+    for (const value of SKILL_CATEGORIES) {
+      expect(toSkillCategory(value)).toBe(value);
+    }
+  });
+
+  it('词表外值（含旧包把 category 写成类型枚举值）与空串一律落未分类 \'\'、不报错', () => {
+    for (const raw of ['', 'workflow', 'flow', 'prompt', '官方', ' 质量保障', '质量保障 ']) {
+      expect(toSkillCategory(raw), `raw=${JSON.stringify(raw)}`).toBe('');
     }
   });
 });

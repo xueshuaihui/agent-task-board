@@ -197,6 +197,8 @@ export interface SkillCreateInput {
   type: SkillType;
   description: string;
   tags: string[];
+  /** 分类（PRD §9.2，C-5 写侧收口）：可选，后端缺省 ''（未分类）；词表外值 422。 */
+  category?: SkillCategoryOrNone;
   content?: SkillContent;
 }
 
@@ -204,6 +206,12 @@ export interface SkillPatchInput {
   name?: string;
   description?: string;
   tags?: string[];
+  /**
+   * 分类两态语义（与 api patch DTO 对齐）：**字段不出现在请求体 = 不改分类**；
+   * 传 `''` = 显式改为未分类。编辑器保存要始终显式提交当前值（含 ''），
+   * 用户才能把技能改回未分类。
+   */
+  category?: SkillCategoryOrNone;
   content?: SkillContent;
   status?: SkillStatus;
 }

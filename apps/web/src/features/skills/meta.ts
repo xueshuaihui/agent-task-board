@@ -18,7 +18,7 @@ import {
   Wrench,
   Zap,
 } from 'lucide-react';
-import type { OnError, ParallelMerge, SkillBlock, SkillBlockKind, SkillCategory, SkillContent, SkillOrigin, SkillStatus, SkillType } from './types';
+import type { OnError, ParallelMerge, SkillBlock, SkillBlockKind, SkillCategory, SkillCategoryOrNone, SkillContent, SkillOrigin, SkillStatus, SkillType } from './types';
 
 /**
  * 技能类型的展示元数据（2.md 10.1/10.2、1.md 8.2）。图标用 lucide 线性图标，
@@ -92,6 +92,16 @@ export const UNCATEGORIZED_CATEGORY = '' as const;
 
 /** 未分类的展示文案（筛选 chip / 子技能分组组头），未分类恒排最后。 */
 export const UNCATEGORIZED_LABEL = '未分类';
+
+/**
+ * 分类单选/多选的可选项（C-5 写侧）：12 词 + 未分类共 13 项，按词表顺序，
+ * 「未分类」恒排最后。value 即 category 列合法值（'' = 未分类）。
+ * 创建向导与编辑器共用，避免两处各拼一份。
+ */
+export const SKILL_CATEGORY_OPTIONS: readonly { value: SkillCategoryOrNone; label: string }[] = [
+  ...SKILL_CATEGORIES.map((value) => ({ value, label: value })),
+  { value: UNCATEGORIZED_CATEGORY, label: UNCATEGORIZED_LABEL },
+];
 
 /** 块类型元数据（1.md 8.3 的 PRD 15 类；图标用 lucide，不引 emoji）。 */
 export const BLOCK_KIND_META: Record<
@@ -447,6 +457,11 @@ export interface SkillStarterTemplate {
   type: SkillType;
   description: string;
   tags: string[];
+  /**
+   * 模板自带分类（C-5）：词表内值、不允许 ''——模板是给当范用的，
+   * 自带未分类等于示范错误用法（守护测试逐条钉死）。
+   */
+  category: SkillCategoryOrNone;
   content: SkillContent;
 }
 
@@ -464,7 +479,7 @@ function seedBlocks(
 
 /**
  * 内置起步模板（2.md 10.3「从模板起步」）：8 个常用场景的完整正文，
- * 选中后以模板的名称/类型/描述/标签/内容预填创建向导，均可改。
+ * 选中后以模板的名称/类型/描述/标签/分类/内容预填创建向导，均可改。
  * 每个 prompt/step 块都带可直接使用的指令正文（含 {{input.*}} / {{task.*}} 变量示例），
  * 源码模式下导出即为完整可用的 SKILL.md。
  */
@@ -475,6 +490,7 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     type: 'workflow',
     description: '对一次 diff 做多维审查并输出结构化评审意见',
     tags: ['review', 'quality'],
+    category: '质量保障',
     content: seedBlocks([
       {
         kind: 'input',
@@ -518,6 +534,7 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     type: 'flow',
     description: '从报错信息出发定位根因，带条件分支与重试',
     tags: ['debug'],
+    category: '质量保障',
     content: seedBlocks([
       {
         kind: 'input',
@@ -583,6 +600,7 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     type: 'steps',
     description: '汇总本周期任务进展生成周报草稿',
     tags: ['report'],
+    category: '方案写作',
     content: seedBlocks([
       {
         kind: 'step',
@@ -622,6 +640,7 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     type: 'prompt',
     description: '保持术语表一致的技术文档翻译',
     tags: ['i18n'],
+    category: '内容创作',
     content: seedBlocks([
       {
         kind: 'input',
@@ -664,6 +683,7 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     type: 'script',
     description: '对目标服务的核心接口跑一轮确定性冒烟脚本',
     tags: ['testing'],
+    category: '质量保障',
     content: seedBlocks([
       {
         kind: 'input',
@@ -707,6 +727,7 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     type: 'knowledge',
     description: '沉淀代码仓库架构、约定与常见坑的参考资料',
     tags: ['knowledge'],
+    category: '开发编程',
     content: seedBlocks([
       {
         kind: 'knowledge',
@@ -740,6 +761,7 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     type: 'composite',
     description: '编排测试、构建、发布三个子技能完成一次发版',
     tags: ['release'],
+    category: '开发编程',
     content: seedBlocks([
       {
         kind: 'subskill',
@@ -777,6 +799,7 @@ export const SKILL_STARTER_TEMPLATES: SkillStarterTemplate[] = [
     type: 'workflow',
     description: '并行汇总多份材料再合并成单一结论',
     tags: ['summary'],
+    category: 'Office办公',
     content: seedBlocks([
       {
         kind: 'input',

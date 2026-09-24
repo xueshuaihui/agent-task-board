@@ -1,15 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Sparkles } from 'lucide-react';
-import { Button, Dialog, Field, Input, Select, Textarea } from '@/components/ui';
+import { Button, Dialog, Field, Input, RadioGroup, Select, Textarea } from '@/components/ui';
 import { cn } from '@/lib/cn';
-import { SKILL_STARTER_TEMPLATES, SKILL_TYPE_META, SKILL_TYPE_OPTIONS, templateContent } from './meta';
+import {
+  SKILL_CATEGORY_OPTIONS,
+  SKILL_STARTER_TEMPLATES,
+  SKILL_TYPE_META,
+  SKILL_TYPE_OPTIONS,
+  UNCATEGORIZED_CATEGORY,
+  templateContent,
+} from './meta';
 import { useCreateSkill } from './hooks';
-import type { Skill, SkillType } from './types';
+import type { Skill, SkillCategoryOrNone, SkillType } from './types';
 
 /**
  * 新建技能向导（两步，2.md 10.3 打磨版）：
  * ① 名称 + 类型 + 起步方式（空白 / 从模板起步，列出 8 个内置模板摘要）；
- * ② 可选的描述与标签。第一步默认聚焦名称，Enter 前进；第二步 Enter 提交。
+ * ② 可选的描述与标签 + 分类单选（12 词表 + 未分类，PRD §9.2 真字段）。
+ * 第一步默认聚焦名称，Enter 前进；第二步 Enter 提交。
  * 创建成功即 v0.1.0 草稿，onCreated 由页面接进编辑器（?edit= 链路）。
  */
 
@@ -36,9 +44,11 @@ export function CreateSkillDialog({
   const [templateId, setTemplateId] = useState<string | null>(initialTemplateId ?? null);
   const [description, setDescription] = useState('');
   const [tagsText, setTagsText] = useState('');
+  const [category, setCategory] = useState<SkillCategoryOrNone>(UNCATEGORIZED_CATEGORY);
   const nameRef = useRef<HTMLInputElement>(null);
 
-  /* 打开时按外部入口重置，并聚焦名称字段。 */
+  /* 打开时按外部入口重置，并聚焦名称字段。分类：空白默认未分类，
+     外部带了模板 id 时用模板自带分类预填。 */
   useEffect(() => {
     if (!open) return;
     setStep(1);
@@ -47,6 +57,10 @@ export function CreateSkillDialog({
     setTagsText('');
     setType(initialType ?? 'prompt');
     setTemplateId(initialTemplateId ?? null);
+    const initialCategory =
+      SKILL_STARTER_TEMPLATES.find((item) => item.id === initialTemplateId)?.category ??
+      UNCATEGORIZED_CATEGORY;
+    setCategory(initialCategory);
     const timer = window.setTimeout(() => nameRef.current?.focus(), 80);
     return () => window.clearTimeout(timer);
   }, [open, initialTemplateId, initialType]);
@@ -78,6 +92,7 @@ export function CreateSkillDialog({
       type: template?.type ?? type,
       description: finalDescription,
       tags: finalTags.length > 0 ? finalTags : (template?.tags ?? []),
+      category,
       content,
     });
   };
@@ -168,6 +183,8 @@ export function CreateSkillDialog({
                     onClick={() => {
                       setTemplateId(item.id);
                       setType(item.type);
+                      /* 模板起步：用模板自带分类预填（下方第二步可改）。 */
+                      setCategory(item.category);
                     }}
                   />
                 ))}
@@ -201,7 +218,17 @@ export function CreateSkillDialog({
                 onChange={(event) => setTagsText(event.target.value)}
               />
             </Field>
-            <p className="text-aux text-text-tertiary">这两项都可以留空，之后在编辑器里补充。</p>
+            <Field
+              label="分类"
+              hint="单选，12 类 + 未分类（PRD §9.2 系统词表）；模板起步已预填，可改"
+            >
+              <RadioGroup
+                value={category}
+                options={SKILL_CATEGORY_OPTIONS}
+                onChange={(value) => setCategory(value as SkillCategoryOrNone)}
+              />
+            </Field>
+            <p className="text-aux text-text-tertiary">描述与标签可以留空，之后在编辑器里补充；分类之后也能改。</p>
           </div>
         )}
       </div>

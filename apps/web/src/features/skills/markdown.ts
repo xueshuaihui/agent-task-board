@@ -1,5 +1,5 @@
-import { createBlock } from './meta';
-import type { OnError, ParallelMerge, SkillBlock, SkillBlockKind, SkillContent, SkillMcpDependency } from './types';
+import { SKILL_CATEGORIES, createBlock } from './meta';
+import type { OnError, ParallelMerge, SkillBlock, SkillBlockKind, SkillCategoryOrNone, SkillContent, SkillMcpDependency } from './types';
 
 /**
  * SKILL.md <-> blocks 双向转换（1.md 8.3 源码模式）。
@@ -30,6 +30,17 @@ export interface MarkdownImportResult {
   content: SkillContent;
   /** 损失性转换提示（哪些信息没能还原）。 */
   warnings: string[];
+}
+
+/**
+ * frontmatter 的 category 归一（C-5，与 api skills.dto.ts 同名函数导入口径一致）：
+ * 词表内值原样采纳，词表外（含旧导出包把 category 写成 workflow/flow 这类
+ * 类型枚举值、缺行得到的 ''）一律落未分类 ''、不报错。
+ */
+export function toSkillCategory(raw: string): SkillCategoryOrNone {
+  return (SKILL_CATEGORIES as readonly string[]).includes(raw)
+    ? (raw as SkillCategoryOrNone)
+    : '';
 }
 
 /* ---------------------------------- 序列化 --------------------------------- */
