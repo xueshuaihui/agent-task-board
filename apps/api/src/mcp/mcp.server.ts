@@ -116,7 +116,15 @@ export async function toCallToolResult(
     if (!(error instanceof ApiException)) throw error;
     return {
       content: [{ type: 'text', text: JSON.stringify(error.toBody()) }],
-      structuredContent: { code: error.code, message: error.message, ...error.context },
+      structuredContent: {
+        code: error.code,
+        message: error.message,
+        ...error.context,
+        // B6：details（含词表可接受值）与 content[0] 的 toBody 双通道对齐——不少客户端
+        // 只解析 structuredContent，缺了它就拿不到「可选：…」继续试错。纯追加：
+        // 12 章契约的 code/message 与 context 键原样在位，details 缺省时不造键。
+        ...(error.details === undefined ? {} : { details: error.details }),
+      },
       isError: true,
     };
   }
