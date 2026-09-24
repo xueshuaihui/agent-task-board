@@ -7,6 +7,8 @@ import { API, uiSender } from '../../__tests__/helpers/seed';
  * 口径（PRD §9.2 / §21.4，0015 迁移）：
  * - create/patch 入参 category 走 12 词表 + ''（未分类）校验，越表 422 VALIDATION_FAILED；
  * - patch 两态：不传=不改、传 ''=显式改未分类；
+ * - 写入侧 tags 与导入侧同口径（0925 拍板二）：create/patch 整体落库前过 freeTagsOf，
+ *   剔受众词与一切词表词，只洗 tags 不动 category 校验（422 面语义不变）；
  * - 导入（.atskill / SKILL.md / .mdc 共用同一归一口径）：词表外值落 ''、不报错、
  *   且**不再折进 tags**（旧行为已作废）；tags 按 0016 口径（0925 拍板收紧）剔受众词与
  *   一切词表词，其余原序保留；
@@ -93,13 +95,27 @@ describe('skills.category 读写面与导入导出（C-3）', () => {
     expect(back.body.category).toBe('Office办公');
   });
 
-  it('写入侧不删 tags 里的词表词：category 取走一个后，第二个词表词与自由标签原样保留', async () => {
+  it('写入侧洗 tags（0925 拍板二）：create/patch 剔词表词与受众词，真自由标签原序保留', async () => {
     const skill = await createSkill(ui, {
       category: '推荐',
-      tags: ['推荐', '开学季', '我的自由标签'],
+      tags: ['推荐', '开学季', '官方', '我的自由标签'],
     });
     expect(skill.category).toBe('推荐');
-    expect(skill.tags).toEqual(['推荐', '开学季', '我的自由标签']);
+    // 旧口径「写入侧不删词表词」已作废：被 category 取走的 推荐、词表内的 开学季、
+    // 受众词 官方 全部剔除，只剩真自由标签。
+    expect(skill.tags).toEqual(['我的自由标签']);
+    const row = await t.prisma.skill.findUnique({ where: { id: skill.id } });
+    expect(JSON.parse(row!.tags)).toEqual(['我的自由标签']);
+    // patch 整体覆盖前同样洗（前后端零改动：UI 原样提交用户输入，服务端兜底）。
+    const patched = await ui.patch(`${API}/skills/${skill.id}`, {
+      tags: ['社区', '质量保障', '新自由标签', '我的自由标签'],
+    });
+    expect(patched.body.tags).toEqual(['新自由标签', '我的自由标签']);
+    // 只洗 tags 不动 category：越表 category 的 422 面语义不变（见上方用例），
+    // 合法 category 在洗过的写入面上照常两态。
+    const recategorize = await ui.patch(`${API}/skills/${skill.id}`, { category: '数据分析' });
+    expect(recategorize.body.category).toBe('数据分析');
+    expect(recategorize.body.tags).toEqual(['新自由标签', '我的自由标签']);
   });
 
   it('复制路径（技能库复制=GET detail 后 POST create）：category 在读写面上无损带走', async () => {

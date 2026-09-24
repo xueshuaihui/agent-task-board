@@ -185,10 +185,11 @@ export class SkillsService {
         status: 'DRAFT',
         description: input.description,
         // §9.2 两字段两语义：category 单值分类直落列（zod 词表校验/import 侧已归一），
-        // tags 是纯自由标签——create/patch 写入侧不洗（词表词进 tags 由 0016 存量洗数与
-        // 导入路径兜住，UI 手工造词表词标签不做服务端强删）。
+        // tags 是纯自由标签——0925 拍板二：create/patch 写入侧同样过 freeTagsOf 洗
+        // （剔作废受众词与一切词表分类词，其余原序保留），与 0016 存量洗数、两条导入
+        // 路径三方同源。只洗 tags，不碰 category 校验（越表 422 面语义不变）。
         category: input.category,
-        tags: JSON.stringify(input.tags),
+        tags: JSON.stringify(freeTagsOf(input.tags)),
         currentVersion: INITIAL_VERSION,
         content: JSON.stringify(input.content),
         testCases: JSON.stringify(input.test_cases ?? []),
@@ -223,7 +224,8 @@ export class SkillsService {
     if (input.description !== undefined) data.description = input.description;
     // 分类两态：不传=不改；传 ''=显式改未分类（0015 起 '' 是合法落库值，不能按 falsy 跳过）。
     if (input.category !== undefined) data.category = input.category;
-    if (input.tags !== undefined) data.tags = JSON.stringify(input.tags);
+    // 0925 拍板二：tags 整体覆盖前先过 freeTagsOf（同 create，只洗 tags 不动 category 校验）。
+    if (input.tags !== undefined) data.tags = JSON.stringify(freeTagsOf(input.tags));
     if (input.status !== undefined) data.status = input.status;
     if (input.content !== undefined) data.content = JSON.stringify(input.content);
     // 8.6：测试用例只写当前草稿，与 content 同口径；发布时随版本快照。
