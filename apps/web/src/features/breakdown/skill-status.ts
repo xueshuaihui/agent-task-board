@@ -46,30 +46,6 @@ export function skillStatusOf(draft: AnnotatedDraft, value: string): DraftSkillS
   return draft.skills_status?.find((entry) => entry.value === value);
 }
 
-/** 技能列表里出现不止一次的名字集合——选择器 option 文案是否要加区分信息的判据。 */
-export function duplicateSkillNames(skills: readonly Pick<Skill, 'name'>[]): ReadonlySet<string> {
-  const seen = new Set<string>();
-  const dup = new Set<string>();
-  for (const skill of skills) {
-    if (seen.has(skill.name)) dup.add(skill.name);
-    else seen.add(skill.name);
-  }
-  return dup;
-}
-
-/**
- * 条款 81 配套：选择器/候选下拉的技能 option 文案。
- * 同名技能追加「类型 · …短ID 后 6 位」（如「发布检查 · prompt · …da2e」），
- * 保证 4 个同名选项在 UI 上可分辨；唯一名保持原样不加噪。
- */
-export function skillOptionLabel(
-  skill: Pick<Skill, 'id' | 'name' | 'type'>,
-  duplicateNames: ReadonlySet<string>,
-): string {
-  if (!duplicateNames.has(skill.name)) return skill.name;
-  return `${skill.name} · ${skill.type} · …${skill.id.slice(-6)}`;
-}
-
 /** 歧义候选的下拉文案：候选本就同名，无条件带上类型 + 短 ID。 */
 export function skillCandidateLabel(skill: Pick<Skill, 'id' | 'name' | 'type'> | undefined, name: string, id: string): string {
   if (!skill) return `${name} · …${id.slice(-6)}`;

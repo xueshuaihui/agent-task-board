@@ -24,9 +24,7 @@ export {
 export { DraftFlowGraph } from './draft-graph';
 export { DraftEditor } from './draft-editor';
 export {
-  duplicateSkillNames,
   skillCandidateLabel,
-  skillOptionLabel,
   skillStatusOf,
   type AnnotatedDraft,
   type BreakdownDetailAnnotated,
