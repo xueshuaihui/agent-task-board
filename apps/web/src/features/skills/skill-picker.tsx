@@ -246,7 +246,9 @@ function SkillPickerPanel({
 }) {
   const listId = useId();
   const selected = new Set(props.selectedIds ?? []);
-  const activeRow = model.rows[Math.min(model.active, model.rows.length - 1)];  const onKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+  const activeRow = model.rows[Math.min(model.active, model.rows.length - 1)];
+
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       if (model.rows.length === 0) return;
       event.preventDefault();
