@@ -42,6 +42,9 @@ export function CopySkillPicker({ open, onClose, onPicked }: CopySkillPickerProp
             disambiguateOver={items}
             ariaLabel="选择要复制的技能"
             placeholder="搜索技能（名称 / 分类 / 类型 / 标签 / ID）"
+            // C-6b③：搜索是这处的唯一主操作，弹窗打开即聚焦搜索框（改造前是原生
+            // autoFocus，D-4 换内联 SkillPicker 后丢了）；开关默认关闭，其余调用不受影响。
+            autoFocusInput
             onSelect={(skill) => {
               onClose();
               onPicked(skill);

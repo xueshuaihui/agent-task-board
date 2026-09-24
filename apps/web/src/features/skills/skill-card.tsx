@@ -1,10 +1,11 @@
-import { Copy, Download, FileText, MoreHorizontal, Pencil, Send, Trash2 } from 'lucide-react';
+import { Copy, Download, FileText, FolderOpen, MoreHorizontal, Pencil, Send, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui';
 import { Card } from '@/components/ui';
 import { Menu } from '@/components/ui';
 import { TagBadge } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { formatRelative } from '@/lib/time';
+import { categoryDisplay } from './skill-picker-core';
 import type { Skill } from './types';
 import { SKILL_ORIGIN_META, SKILL_STATUS_META, SKILL_TYPE_META } from './meta';
 
@@ -13,6 +14,10 @@ import { SKILL_ORIGIN_META, SKILL_STATUS_META, SKILL_TYPE_META } from './meta';
  * 状态/版本/绑定任务数，右上角操作菜单。
  * v0.0.4 W2：来源徽标（§9.10 三来源）；默认技能只读——编辑/发布/删除置灰；
  * duplicateName 时名称追加 id 短后缀消歧（§9.2 r2 允许重名）。
+ * C-6b①：卡片显式展示分类徽标——口径与筛选器同源（直读 skill.category、
+ * 未分类走 UNCATEGORIZED_LABEL，复用 skill-picker-core 的 categoryDisplay），
+ * 绝不从 tags 推导；徽标（Badge tone + 分类图标）与自由标签 TagBadge 视觉分家，
+ * 消灭「卡片上看到的还是两套分类标准」的观感。tags 仍只渲染前 3 个（现状不变）。
  */
 
 export interface SkillCardProps {
@@ -146,6 +151,11 @@ export function SkillCard({
         <span className={cn('rounded-badge px-2 py-0.5 text-badge', status.className)}>
           {status.label}
         </span>
+        {/* 分类徽标：带 lucide 分类图标 + Badge 语义 tone（做法对齐上方来源徽标——
+            图标承载语义、中性底区别于 TagBadge 的 primary 标签 chip）。 */}
+        <Badge tone="neutral" icon={<FolderOpen className="size-3" aria-hidden />}>
+          {categoryDisplay(skill)}
+        </Badge>
         {skill.tags.slice(0, 3).map((tag) => (
           <TagBadge key={tag}>{tag}</TagBadge>
         ))}

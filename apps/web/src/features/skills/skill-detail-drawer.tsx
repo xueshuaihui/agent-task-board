@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Copy, Download, History, Play, RotateCcw } from 'lucide-react';
-import { Button, Drawer, EmptyState, Field, Skeleton, Tabs, TagBadge, Textarea, useToast } from '@/components/ui';
+import { Copy, Download, FolderOpen, History, Play, RotateCcw } from 'lucide-react';
+import { Badge, Button, Drawer, EmptyState, Field, Skeleton, Tabs, TagBadge, Textarea, useToast } from '@/components/ui';
 import { errorMessage } from '@/api';
 import { cn } from '@/lib/cn';
 import { formatDateTime } from '@/lib/time';
 import { skillsApi } from './api';
 import { useRollbackSkill, useSkill, useSkillBoundTasks, useTestSkill } from './hooks';
+import { categoryDisplay } from './skill-picker-core';
 import { BLOCK_KIND_META, SKILL_ORIGIN_META, SKILL_STATUS_META, SKILL_TYPE_META } from './meta';
 import type { Skill } from './types';
 
@@ -94,6 +95,15 @@ export function SkillDetailDrawer({ skillId, open, onClose, onEdit }: SkillDetai
         </div>
       ) : (
         <div className="flex flex-col gap-4 px-5 py-4">
+          {/* C-6b①：分类独立成行、与 tags 分区——口径与筛选器/卡片同源
+              （直读 skill.category，未分类走 UNCATEGORIZED_LABEL），不从 tags 推导。 */}
+          <div className="flex items-center gap-2">
+            <span className="shrink-0 text-aux text-text-tertiary">分类</span>
+            <Badge tone="neutral" icon={<FolderOpen className="size-3" aria-hidden />}>
+              {categoryDisplay(skill)}
+            </Badge>
+          </div>
+
           <div className="flex flex-wrap items-center gap-2">
             <span className={cn('rounded-badge px-2 py-0.5 text-badge', status?.className)}>
               {status?.label}

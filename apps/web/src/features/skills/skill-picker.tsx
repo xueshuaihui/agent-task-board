@@ -12,10 +12,11 @@ import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Badge, Input, Popover } from '@/components/ui';
 import { searchSkills } from './skill-search';
-import { SKILL_STATUS_META, SKILL_TYPE_META } from './meta';
+import { SKILL_TYPE_META } from './meta';
 import type { Skill } from './types';
 import {
   DEFAULT_PICKER_LIMIT,
+  PICKER_NAME_BUDGET,
   buildFlatPlan,
   buildGroupPlan,
   duplicateNameSet,
@@ -33,6 +34,9 @@ import {
  *   有查询按 score 序平铺 + 命中数弱提示；截断默认 20 条，尾提示「细化查询」。
  * - 行内容一套标准：消歧名 + D-1 matches 高亮 + 分类/类型/版本/状态；业务动作
  *   只经 trailing 插槽注入，组件本身不发请求、不做业务过滤（排除已选/归档归调用方）。
+ *   C-6b② 起行内名称优先：分组态只留名称+版本（徽标撤，分类归组头）；查询态留
+ *   名称（按命中窗口化，见 skill-picker-core 的 windowAroundHits）+类型徽标+版本，
+ *   分类文本仅命中在分类上时出现；状态徽标两态都撤。
  * - 挂载两形态：SkillPicker（内联面板）与 SkillPickerPopover（带触发器弹层），
  *   共用同一份面板实现；键盘 ↑↓/Enter 在输入框上完成，Esc 不拦截、交给弹层关闭。
  *
@@ -69,6 +73,11 @@ export interface SkillPickerProps {
   className?: string;
   /** 搜索框追加样式（如子技能块的 h-7 紧凑档）。 */
   inputClassName?: string;
+  /**
+   * C-6b③：挂载时聚焦搜索框（如「复制技能」弹窗——搜索是唯一主操作，打开即该能
+   * 打字）。默认 false = 行为与 C-6b 之前完全一致；弹层形态本就打开即聚焦，无需此开关。
+   */
+  autoFocusInput?: boolean;
 }
 
 export interface SkillPickerPopoverProps extends SkillPickerProps {
@@ -106,9 +115,11 @@ function useSkillPickerModel(props: SkillPickerProps) {
   const duplicateNames = useMemo(() => duplicateNameSet(duplicateSource), [duplicateSource]);
 
   const flat: PickerFlatPlan | null = trimmed
-    ? buildFlatPlan(hits, duplicateNames, props.limit ?? DEFAULT_PICKER_LIMIT)
+    ? buildFlatPlan(hits, duplicateNames, props.limit ?? DEFAULT_PICKER_LIMIT, { nameBudget: PICKER_NAME_BUDGET })
     : null;
-  const groups: PickerGroupPlan[] | null = flat ? null : buildGroupPlan(props.candidates, duplicateNames);
+  const groups: PickerGroupPlan[] | null = flat
+    ? null
+    : buildGroupPlan(props.candidates, duplicateNames, { nameBudget: PICKER_NAME_BUDGET });
   /** 键盘导航的扁平行序 = 渲染行序（平铺即 rows；分组按组序拼接）。 */
   const rows: PickerRowPlan[] = flat ? flat.rows : (groups ?? []).flatMap((group) => group.rows);
 
@@ -164,7 +175,6 @@ function PickerRow({
   onSelect: () => void;
   trailing?: (skill: Skill) => ReactNode;
 }) {
-  const status = SKILL_STATUS_META[row.skill.status];
   return (
     <div
       id={domId}
@@ -184,20 +194,26 @@ function PickerRow({
           {checked ? <Check className="size-3.5 text-primary" aria-hidden /> : null}
         </span>
       ) : null}
+      {/* C-6b② 名称优先：nameSegments 已在纯函数层按命中位置窗口化（预算内命中必可见），
+          truncate 只留作 CJK 超长名的兜底；行 title 仍是全名 + 消歧后缀。 */}
       <span className="min-w-0 flex-1 truncate">
         <Segments segments={row.nameSegments} />
         {row.suffix ? <span className="text-aux text-text-tertiary">{row.suffix}</span> : null}
       </span>
-      {/* 分组态的分类由组头承载，不逐行重复（SubskillField 现行观感）。 */}
-      {!grouped && row.skill.category !== '' ? (
+      {/* 分组态不逐行渲染徽标：分类由组头承载、类型/状态对选技能帮助有限（走查实测
+          320px 弹层里徽标把名称挤成 `boge-kaoyan-…`）。查询态只保留必要项：分类文本仅
+          当命中落在分类上时出现（交代命中原因），类型徽标恒在；状态徽标两态都撤——
+          排除 ARCHIVED 等过滤本归调用方，草稿/已发布对「挑一个技能」决策帮助有限。 */}
+      {!grouped && row.categorySegments.some((segment) => segment.hit) ? (
         <span className="shrink-0 text-aux text-text-tertiary">
           <Segments segments={row.categorySegments} />
         </span>
       ) : null}
-      <Badge tone="outline" className="shrink-0">
-        <Segments segments={row.typeSegments} />
-      </Badge>
-      {status ? <Badge className={cn('shrink-0', status.className)}>{status.label}</Badge> : null}
+      {!grouped ? (
+        <Badge tone="outline" className="shrink-0">
+          <Segments segments={row.typeSegments} />
+        </Badge>
+      ) : null}
       <span className="shrink-0 font-mono text-badge text-text-tertiary">{row.skill.current_version}</span>
       {trailing ? (
         <span className="flex shrink-0 items-center" onClick={(event) => event.stopPropagation()}>
@@ -230,9 +246,7 @@ function SkillPickerPanel({
 }) {
   const listId = useId();
   const selected = new Set(props.selectedIds ?? []);
-  const activeRow = model.rows[Math.min(model.active, model.rows.length - 1)];
-
-  const onKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+  const activeRow = model.rows[Math.min(model.active, model.rows.length - 1)];  const onKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       if (model.rows.length === 0) return;
       event.preventDefault();
@@ -283,6 +297,9 @@ function SkillPickerPanel({
         value={model.query}
         placeholder={props.placeholder ?? '搜索技能（名称 / 分类 / 类型 / 标签 / ID）'}
         disabled={props.disabled}
+        // C-6b③：默认 undefined = 不聚焦（现状不变）；置 true 的挂载形态（复制技能弹窗）
+        // 打开即聚焦搜索框——Radix FocusScope 见焦点已在面板内即让位，与改造前 autoFocus 同机制。
+        autoFocus={props.autoFocusInput}
         className={props.inputClassName}
         onChange={(event) => model.setQuery(event.target.value)}
         onKeyDown={onKeyDown}
