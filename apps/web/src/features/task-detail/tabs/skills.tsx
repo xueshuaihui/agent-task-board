@@ -2,14 +2,15 @@ import { useMemo, useRef, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { errorMessage, qk, useApiMutation } from '@/api';
 import { navigate } from '@/app/router';
-import { Badge, Button, Input } from '@/components/ui';
+import { Badge, Button } from '@/components/ui';
 import {
   SkillDetailDrawer,
   taskSkillsApi,
   useSkills,
   type Skill,
 } from '@/features/skills';
-import { SKILL_STATUS_META, SKILL_TYPE_META } from '@/features/skills/meta';
+import { SkillPicker } from '@/features/skills/skill-picker';
+import { SKILL_TYPE_META } from '@/features/skills/meta';
 import { InlineError, LoadingBlock, Section } from '../ui-bits';
 import type { TaskDetailView, TaskSkillRefView } from '../types';
 
@@ -22,14 +23,16 @@ import type { TaskDetailView, TaskSkillRefView } from '../types';
  *   成功后失效任务根 + board/tasks 前缀（与 ../mutations.ts 的 keysFor 同口径），
  *   技能列表缓存不受影响（绑定关系存在任务侧）。
  * - 点击行打开 SkillDetailDrawer；「编辑」跳 `#/skills?edit=<id>`（技能库页内部挂编辑器）。
+ * - D-3：绑定候选区换成共享 SkillPicker（内联多选形态）——多维模糊匹配、
+ *   空查询按分类分组、命中高亮与重名消歧全走组件标准；本页只留业务过滤
+ *   （排除已绑定与 ARCHIVED），行主点击仍是「打开详情抽屉」，绑定动作在 trailing 插槽。
  */
 export function SkillsTab({ detail }: { detail: TaskDetailView }) {
   const taskId = detail.id;
   const all = useSkills();
   const [detailId, setDetailId] = useState<string | undefined>(undefined);
-  const [keyword, setKeyword] = useState('');
   // 候选含 DRAFT 与 PUBLISHED（排除 ARCHIVED）：下发语义不变（后端按绑定版本下发，
-  // 10.1 未限制草稿），草稿技能可先绑定、发布后生效。keyword 由前端过滤，少发请求。
+  // 10.1 未限制草稿），草稿技能可先绑定、发布后生效。查询匹配交给 SkillPicker（本地零请求）。
 
   const bound = useMemo(() => detail.skills ?? [], [detail.skills]);
   const byId = useMemo(
@@ -56,14 +59,13 @@ export function SkillsTab({ detail }: { detail: TaskDetailView }) {
     setSkills.mutate(refs);
   };
 
-  const candidates = useMemo(() => {
-    const items = (all.data?.items ?? []).filter((skill) => skill.status !== 'ARCHIVED');
-    const kw = keyword.trim().toLowerCase();
-    return items
-      .filter((skill) => !boundIds.has(skill.id))
-      .filter((skill) => (kw ? skill.name.toLowerCase().includes(kw) || skill.id.toLowerCase().includes(kw) : true))
-      .slice(0, 8);
-  }, [all.data?.items, boundIds, keyword]);
+  const candidates = useMemo(
+    () =>
+      (all.data?.items ?? []).filter(
+        (skill) => skill.status !== 'ARCHIVED' && !boundIds.has(skill.id),
+      ),
+    [all.data?.items, boundIds],
+  );
 
   if (all.isPending) return <LoadingBlock lines={4} />;
   if (all.isError) return <InlineError text={all.error.message} />;
@@ -93,44 +95,27 @@ export function SkillsTab({ detail }: { detail: TaskDetailView }) {
       </Section>
 
       <Section title="绑定技能">
-        <Input
-          value={keyword}
-          onChange={(event) => setKeyword(event.target.value)}
-          placeholder="搜索技能（名称 / ID，草稿与已发布）"
+        <SkillPicker
+          candidates={candidates}
+          multiple
+          selectedIds={bound.map((ref) => ref.skill_id)}
+          // 行主点击保持既有交互：打开技能详情；「绑定」是行尾独立动作。
+          onSelect={(skill) => setDetailId(skill.id)}
+          trailing={(skill) => (
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<Plus className="size-3.5" aria-hidden />}
+              disabled={setSkills.isPending}
+              onClick={() => save([...bound, { skill_id: skill.id }])}
+            >
+              绑定
+            </Button>
+          )}
+          placeholder="搜索技能（名称 / 分类 / 类型 / 标签 / ID，草稿与已发布）"
+          emptyText="没有可绑定的技能"
+          ariaLabel="绑定技能候选"
         />
-        {all.isPending ? (
-          <LoadingBlock lines={2} />
-        ) : candidates.length === 0 ? (
-          <p className="mt-2 text-aux text-text-tertiary">
-            {keyword ? '没有匹配的技能' : '没有可绑定的技能'}
-          </p>
-        ) : (
-          <ul className="mt-2 flex flex-col gap-1">
-            {candidates.map((skill) => (
-              <li key={skill.id} className="flex min-w-0 items-center gap-2">
-                <button
-                  type="button"
-                  className="min-w-0 flex-1 truncate rounded-control px-1 py-1 text-left text-body text-text-primary hover:bg-bg-muted"
-                  onClick={() => setDetailId(skill.id)}
-                >
-                  {skill.name}
-                  <span className="ml-2 font-mono text-aux text-text-tertiary">{skill.current_version}</span>
-                </button>
-                <SkillStatusBadge skill={skill} />
-                <SkillTypeBadge skill={skill} />
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon={<Plus className="size-3.5" aria-hidden />}
-                  disabled={setSkills.isPending}
-                  onClick={() => save([...bound, { skill_id: skill.id }])}
-                >
-                  绑定
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
       </Section>
 
       <SkillDetailDrawerHost skillId={detailId} onClose={() => setDetailId(undefined)} />
@@ -180,13 +165,6 @@ function SkillRow({
 function SkillTypeBadge({ skill }: { skill: Skill }) {
   const meta = SKILL_TYPE_META[skill.type];
   return <Badge tone="outline">{meta?.label ?? skill.type}</Badge>;
-}
-
-/** 候选行的状态徽标（草稿/已发布）：草稿可绑定但尚未下发，发布后生效。 */
-function SkillStatusBadge({ skill }: { skill: Skill }) {
-  const meta = SKILL_STATUS_META[skill.status];
-  if (!meta) return null;
-  return <Badge className={meta.className}>{meta.label}</Badge>;
 }
 
 /** 详情抽屉挂载在 Tab 内部：编辑跳技能库页的 `?edit=` 深链（路由接线见 features/skills README）。 */

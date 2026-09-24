@@ -5,14 +5,27 @@ import { Button, Card, Field, Input, Select, Textarea, useToast } from '@/compon
 import { PRIORITY_LABEL } from '@/lib/labels';
 import { cn } from '@/lib/cn';
 import { useSkills } from '@/features/skills/hooks';
+import { SkillPickerPopover } from '@/features/skills/skill-picker';
 import { normalizeAcceptance, shouldResyncBuffersOnRegen, toggleDependency } from './draft-edit';
-import { duplicateSkillNames, skillCandidateLabel, skillOptionLabel, skillStatusOf, type AnnotatedDraft } from './skill-status';
+import { skillCandidateLabel, skillStatusOf, type AnnotatedDraft } from './skill-status';
+
+/**
+ * D-3：技能候选行点击 = 对草案 `skill_ids` 的增删切换——未选中的追加（保持原顺序、
+ * 末尾插入），已选中的移除（与页面上方 chip 的移除按钮同一数据通道 onPatch({skill_ids})，
+ * 不改数据形状）。抽成纯函数供单测（web 无 @testing-library，组件行为留 C-6 真机走查）。
+ */
+export function toggleDraftSkillId(selectedIds: readonly string[], skillId: string): string[] {
+  return selectedIds.includes(skillId)
+    ? selectedIds.filter((item) => item !== skillId)
+    : [...selectedIds, skillId];
+}
 
 /**
  * §7.4 草案编辑面板（W7 遗留 b3 起接服务端写端点，不再是本地暂存）。
  *
- * 覆盖 PRD 表格里的最小集：标题、描述、优先级、技能（标签删 + 选择器加/换，
- * 条款 81 的歧义/未解析重选走 onPatch({ skill_ids })）、验收标准（逐条编辑/增删，
+ * 覆盖 PRD 表格里的最小集：标题、描述、优先级、技能（标签删 + 共享 SkillPickerPopover
+ * 多选增删切换（D-3），条款 81 的歧义/未解析重选走 onPatch({ skill_ids })）、
+ * 验收标准（逐条编辑/增删，
  * onPatch({ acceptance })）、依赖连/断、删草案、加草案；「重新生成」调专用端点
  * （重置该草案待 Agent 重报，见 onRegenerate）。父需求原文（session.requirement_text）不可编辑。
  *
@@ -41,7 +54,6 @@ export interface DraftEditorProps {
 export function DraftEditor({ drafts, draftRef, onSelect, onPatch, onDelete, onAdd, onRegenerate, skillNames }: DraftEditorProps) {
   const toast = useToast();
   const skills = useSkills(undefined, { enabled: true });
-  const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const draft = draftRef ? (drafts.find((item) => item.ref === draftRef) ?? null) : null;
 
   /* 标题/描述/验收标准本地缓冲（null = 无未提交输入）；切草案即丢弃缓冲。 */
@@ -75,19 +87,15 @@ export function DraftEditor({ drafts, draftRef, onSelect, onPatch, onDelete, onA
     setAccBuffer(null);
   };
 
-  /* 条款 81 真机反馈：选择器里 4 个同名「发布检查」无从分辨——全量表中重名的
-   * option 一律追加「类型 · …短ID 后 6 位」；判据取全量而非过滤后的列表，
-   * 避免重名兄弟被 filter 掉后剩下的选项反而看不出歧义。 */
+  /* 条款 81 真机反馈：选择器里 4 个同名「发布检查」无从分辨——消歧改由共享
+   * SkillPicker 承载（重名行自动带「·短ID 后 6 位」后缀）；判据 disambiguateOver
+   * 传全量 skillItems 而非过滤后的候选，保证排除已选前后消歧口径一致。 */
   const skillItems = skills.data?.items ?? [];
-  const duplicateNames = useMemo(() => duplicateSkillNames(skillItems), [skillItems]);
   const skillById = useMemo(() => new Map(skillItems.map((skill) => [skill.id, skill])), [skillItems]);
 
-  const skillOptions = useMemo(
-    () =>
-      skillItems
-        .filter((skill) => !draft?.skill_ids.includes(skill.id))
-        .map((skill) => ({ value: skill.id, label: skillOptionLabel(skill, duplicateNames) })),
-    [skillItems, draft, duplicateNames],
+  const skillCandidates = useMemo(
+    () => skillItems.filter((skill) => !draft?.skill_ids.includes(skill.id)),
+    [skillItems, draft],
   );
 
   if (!draft) return null;
@@ -228,34 +236,36 @@ export function DraftEditor({ drafts, draftRef, onSelect, onPatch, onDelete, onA
                 </span>
               );
             })}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSkillPickerOpen((open) => !open)}
-              disabled={skillOptions.length === 0}
-              data-testid="breakdown-draft-skill-add"
-            >
-              <Plus className="size-3.5" aria-hidden />
-              添加技能
-            </Button>
-          </div>
-          {skillPickerOpen ? (
-            <div className="mt-1.5">
-              <Select
-                value=""
-                placeholder={skills.isPending ? '技能加载中…' : '选择技能…'}
-                options={skillOptions}
-                onChange={(event) => {
-                  const id = event.target.value;
-                  if (id) {
-                    onPatch(draft.ref, { skill_ids: [...draft.skill_ids, id] });
-                  }
-                  setSkillPickerOpen(false);
-                }}
-                data-testid="breakdown-draft-skill-select"
+            {/* D-3：原生 Select（选中即关面板、多选要反复点开）换成 SkillPickerPopover 多选
+                形态——选中后面板保持打开、行带勾选态，点击做 skill_ids 增删切换。
+                data-testid：触发器文案挂 breakdown-draft-skill-add（点击冒泡到弹层触发按钮）；
+                面板 wrapper 挂 breakdown-draft-skill-search，C-6 走查用
+                `[data-testid=...] input[role="combobox"]` / `[data-testid=...] [role="listbox"]` 定位。 */}
+            <div data-testid="breakdown-draft-skill-search" className="mt-1.5">
+              <SkillPickerPopover
+                multiple
+                candidates={skillCandidates}
+                selectedIds={draft.skill_ids}
+                disambiguateOver={skillItems}
+                onSelect={(skill) =>
+                  onPatch(draft.ref, { skill_ids: toggleDraftSkillId(draft.skill_ids, skill.id) })
+                }
+                disabled={skillCandidates.length === 0}
+                emptyText={skills.isPending ? '技能加载中…' : '没有可添加的技能'}
+                placeholder="搜索技能（名称 / 分类 / 类型 / 标签 / ID）"
+                ariaLabel="添加草案技能"
+                triggerContent={() => (
+                  <span
+                    className="inline-flex min-w-0 items-center gap-1.5 text-text-secondary"
+                    data-testid="breakdown-draft-skill-add"
+                  >
+                    <Plus className="size-3.5" aria-hidden />
+                    添加技能
+                  </span>
+                )}
               />
             </div>
-          ) : null}
+          </div>
         </Field>
       </div>
 

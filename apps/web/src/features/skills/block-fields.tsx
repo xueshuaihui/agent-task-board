@@ -1,9 +1,7 @@
-import { ChevronDown } from 'lucide-react';
-import { useState } from 'react';
-import { cn } from '@/lib/cn';
-import { Badge, Field, Input, Menu, Select, Textarea, type MenuGroup } from '@/components/ui';
-import { ON_ERROR_META, PARALLEL_MERGE_META, SKILL_ORIGIN_META, UNCATEGORIZED_LABEL, VALUE_TYPE_OPTIONS } from './meta';
+import { Badge, Field, Input, Select, Textarea } from '@/components/ui';
+import { ON_ERROR_META, PARALLEL_MERGE_META, SKILL_ORIGIN_META, VALUE_TYPE_OPTIONS } from './meta';
 import { useSkills } from './hooks';
+import { SkillPickerPopover, duplicateNameSet, skillPickerDisplayLabel } from './skill-picker';
 import type { OnError, ParallelMerge, Skill, SkillBlock } from './types';
 import { VariableTextarea, type VariableMenuProps } from './variable-picker';
 
@@ -284,14 +282,15 @@ export function BlockFields({ block, variableOptions, targetOptions, readOnly = 
 
 /**
  * 子技能块字段（W3 §9.4/§7 智能辅助「技能插入」）：从技能库（GET /skills 存量）
- * 下拉选择，按唯一 id 写入块载荷 `skillRef`（§9.2 r2：绑定/下发一律按 id，
+ * 选择，按唯一 id 写入块载荷 `skillRef`（§9.2 r2：绑定/下发一律按 id，
  * content 是 passthrough JSON，版本快照/导出 .atskill/SKILL.md 天然兼容）。
- * 分组轴为分类（直读 skill.category 真列，PRD §9.2 单值词表；'' 归「未分类」且恒排最后）；
- * 行尾小徽标只剩非默认来源注记（官方/社区 受众词已作废，出处由 source_type 承载）。
- * 重名技能追加 id 后 6 位消歧后缀（§9.2 r2 允许重名，与技能卡片同口径）。
- * 技能库空/加载中退回手填 id 输入框。
- * W3 遗留①：列表顶部提供名称搜索框，大小写不敏感子串过滤，保留分组与消歧口径；
- * 无匹配时渲染「无匹配技能」禁用态。
+ * D-3：下拉换共享 SkillPickerPopover 单选形态——多维模糊匹配（D-1）、空查询按
+ * 分类分组（组头 `分类（条数）`、'' 归「未分类」恒最后、组内名称稳定序）、重名
+ * `·id后6位` 消歧与命中高亮全走组件标准，替代原「名称子串搜索 + Menu 手工分组」。
+ * 保留的既有行为：技能库空/加载中（拿不到条目）退回手填 skl_xxx 的输入框；
+ * 库外引用在触发器上回显「<id>（不在技能库）」（原面板顶部的禁用行）；
+ * 面板尾部 footer 承载「清除引用」；行尾与触发器的非默认来源注记徽标
+ * （官方/社区 受众词已作废，出处由 source_type 承载，默认技能无徽标）。
  */
 function SubskillField({
   block,
@@ -301,7 +300,6 @@ function SubskillField({
   onPatch: (patch: Partial<SkillBlock>) => void;
 }) {
   const skills = useSkills();
-  const [query, setQuery] = useState('');
   const items = skills.data?.items ?? [];
   if (items.length === 0) {
     return (
@@ -310,109 +308,62 @@ function SubskillField({
       </Field>
     );
   }
-  // r2 允许重名：同名集合基于全量列表统计，保证过滤前后消歧后缀口径一致。
-  const nameCount = new Map<string, number>();
-  for (const skill of items) nameCount.set(skill.name, (nameCount.get(skill.name) ?? 0) + 1);
-  const needle = query.trim().toLowerCase();
-  const visible = needle ? items.filter((skill) => skill.name.toLowerCase().includes(needle)) : items;
-  const selected = items.find((skill) => skill.id === block.skillRef);
-  // 分组轴 = skill.category 真列直读；''（未分类）归「未分类」组。
-  const byCategory = new Map<string, Skill[]>();
-  for (const skill of visible) {
-    const label = skill.category || UNCATEGORIZED_LABEL;
-    const bucket = byCategory.get(label);
-    if (bucket) bucket.push(skill);
-    else byCategory.set(label, [skill]);
-  }
-  const groups: { label: string; skills: Skill[] }[] = [...byCategory.entries()]
-    .sort((a, b) => {
-      if (a[0] === UNCATEGORIZED_LABEL) return 1;
-      if (b[0] === UNCATEGORIZED_LABEL) return -1;
-      return b[1].length - a[1].length || a[0].localeCompare(b[0]);
-    })
-    .map(([label, skills]) => ({ label: `${label}（${skills.length}）`, skills }));
-  const menuGroups: MenuGroup[] = groups.map((group) => ({
-    label: group.label,
-    items: group.skills.map((skill) => ({
-      id: skill.id,
-      label: <SkillRefOption skill={skill} duplicateName={(nameCount.get(skill.name) ?? 0) > 1} />,
-      onSelect: () => onPatch({ skillRef: skill.id }),
-    })),
-  }));
-  if (menuGroups.length === 0) {
-    menuGroups.push({
-      label: '搜索结果',
-      items: [{ id: '__no-match', disabled: true, label: <span className="text-text-tertiary">无匹配技能「{query.trim()}」</span> }],
-    });
-  }
-  if (block.skillRef && !selected) {
-    menuGroups.unshift({
-      label: '技能库外引用',
-      items: [{ id: block.skillRef, disabled: true, label: <span className="truncate text-text-secondary">{block.skillRef}（不在技能库）</span> }],
-    });
-  }
-  menuGroups.push({
-    label: ' ',
-    items: [{ id: '__clear', label: '（清除引用）', onSelect: () => onPatch({ skillRef: '' }) }],
-  });
+  // r2 允许重名：消歧判据基于全量列表统计（与组件内部口径一致），搜索过滤不改后缀。
+  const duplicateNames = duplicateNameSet(items);
+  const selected = items.find((skill) => skill.id === block.skillRef) ?? null;
+  // 非默认来源注记徽标（原 SkillRefOption 行尾信息）：默认技能行尾无徽标是预期。
+  const originAnnotation = (skill: Skill | null) =>
+    skill && skill.source !== 'default' ? SKILL_ORIGIN_META[skill.source].label : '';
   return (
     <Field label="引用技能" hint="从技能库选择子技能，按唯一 id 绑定；按分类分组，行尾徽标为非默认来源注记">
-      <div className="flex flex-col gap-1.5">
-        <Input
-          value={query}
-          placeholder="搜索技能名称…"
-          aria-label="搜索技能名称"
-          className="h-7 text-aux"
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        <Menu
-          width={300}
-          selectedId={selected ? selected.id : block.skillRef}
-          groups={menuGroups}
-          trigger={() => (
-            <button
-              type="button"
-              className={cn(
-                'flex h-8 w-full items-center justify-between gap-2 rounded-control border border-border bg-bg-raised px-3 text-left text-body text-text-primary',
-                'transition-colors duration-140 ease-settle hover:border-border-strong',
-                'focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary-ring',
-                'disabled:cursor-not-allowed disabled:opacity-60',
-              )}
-            >
-              {selected ? (
-                <SkillRefOption skill={selected} duplicateName={(nameCount.get(selected.name) ?? 0) > 1} />
-              ) : (
-                <span className="min-w-0 flex-1 truncate text-text-tertiary">
-                  {block.skillRef ? `${block.skillRef}（不在技能库）` : '（选择子技能）'}
+      <SkillPickerPopover
+        candidates={items}
+        value={selected}
+        disambiguateOver={items}
+        onSelect={(skill) => onPatch({ skillRef: skill.id })}
+        placeholder="搜索技能（名称 / 分类 / 类型 / 标签 / ID）"
+        inputClassName="h-7 text-aux"
+        ariaLabel="选择子技能"
+        trailing={(skill) => {
+          const annotation = originAnnotation(skill);
+          return annotation ? (
+            <Badge tone="neutral" className="max-w-[120px]">
+              {annotation}
+            </Badge>
+          ) : null;
+        }}
+        triggerContent={({ selected: current }) => {
+          if (current) {
+            const annotation = originAnnotation(current);
+            return (
+              <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                <span className="truncate" title={current.name}>
+                  {skillPickerDisplayLabel(current, duplicateNames)}
                 </span>
-              )}
-              <ChevronDown className="pointer-events-none size-4 shrink-0 text-text-tertiary" />
-            </button>
-          )}
-        />
-      </div>
+                {annotation ? (
+                  <Badge tone="neutral" className="max-w-[120px] shrink-0">
+                    {annotation}
+                  </Badge>
+                ) : null}
+              </span>
+            );
+          }
+          return (
+            <span className="min-w-0 flex-1 truncate text-text-tertiary">
+              {block.skillRef ? `${block.skillRef}（不在技能库）` : '（选择子技能）'}
+            </span>
+          );
+        }}
+        footer={
+          <button
+            type="button"
+            className="self-start rounded-control px-2 py-1 text-left text-aux text-text-tertiary hover:bg-bg-muted hover:text-text-secondary"
+            onClick={() => onPatch({ skillRef: '' })}
+          >
+            （清除引用）
+          </button>
+        }
+      />
     </Field>
-  );
-}
-
-/**
- * 技能选项行：名称（重名带 ·id 后 6 位消歧）+ 行尾小徽标（非默认来源注记；
- * 官方/社区 受众词已作废，默认技能行尾无徽标）+ 版本。分类由组头承载，不再逐行展示。
- */
-function SkillRefOption({ skill, duplicateName }: { skill: Skill; duplicateName: boolean }) {
-  const origin = SKILL_ORIGIN_META[skill.source];
-  const annotation = skill.source === 'default' ? '' : origin.label;
-  return (
-    <span className="flex min-w-0 flex-1 items-center gap-1.5">
-      <span className="truncate" title={skill.name}>
-        {duplicateName ? `${skill.name} ·${skill.id.slice(-6)}` : skill.name}
-      </span>
-      {annotation ? (
-        <Badge tone="neutral" className="max-w-[120px] shrink-0">
-          {annotation}
-        </Badge>
-      ) : null}
-      <span className="ml-auto shrink-0 tabular-nums text-aux text-text-tertiary">{skill.current_version}</span>
-    </span>
   );
 }
