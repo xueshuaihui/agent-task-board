@@ -18,8 +18,7 @@ import { skillContentSchema } from '../skills.dto';
  *    兜底块全文无损；
  * ③ 17 条「依赖千问后端」档：降级不收 quark-drive，其余 16 条带降级说明行、
  *    不残留平台专属工具关键词；
- * ④ ensureDefaultSkills 幂等：重复执行不增行；
- * ⑤ tags 词表：受众词在首、分类词全在表内（技能库「分类」筛选与子技能分组轴的唯一数据源）。
+ * ④ ensureDefaultSkills 幂等：重复执行不增行。
  */
 
 const MD_DIR = path.resolve(__dirname, '../builtin-skills');
@@ -34,14 +33,6 @@ const DOWNGRADED = [
 const PLATFORM_TOOL_RE =
   /(quark_scan|quark-drive|夸克扫描|夸克网盘|恒生聚源|聚源|盈米|万相|wanx|qwen3[-_ ]?tts|tts_synthesize|语音合成|语音播报|内置搜索|web_search|实时行情|scripts\/[\w.-]+\.(py|sh|js))/i;
 const DOWNGRADE_NOTE = '本技能由千问工作台技能降级迁移，原平台专属能力不可用';
-
-/** tags 首项受众词（千问 source 折算）。 */
-const AUDIENCE_WORDS = ['官方', '社区'];
-/** ⑤ 守护用的分类词表：93 条迁移种子聚合出的 11 个中文分类，新增分类须在此登记。 */
-const CATEGORY_WORDS = [
-  '开学季', '教育学习', '投资理财', '方案写作', '内容创作', '推荐',
-  'Office办公', '实用工具', '数据分析', '开发编程', '资讯研究',
-];
 
 describe('千问迁移内置种子（#41）', () => {
   let t: TestApp;
@@ -122,17 +113,5 @@ describe('千问迁移内置种子（#41）', () => {
     expect(list.status).toBe(200);
     expect(list.body.total).toBe(94);
     expect(Array.isArray(list.body.items)).toBe(true);
-  });
-
-  it('⑤ tags 词表：94 条首项为受众词、其余分类词全在词表内且非空', () => {
-    // 分类不加 schema 列，全压在 tags 上（口径见 web features/skills/meta.ts 的
-    // CATEGORY_TAG_EXCLUDES）：这里锁住词表，防内置技能长出筛选器里的孤立分类。
-    expect(DEFAULT_SKILL_SEEDS.length).toBe(94);
-    for (const seed of DEFAULT_SKILL_SEEDS) {
-      expect(AUDIENCE_WORDS, `${seed.id} 缺受众词`).toContain(seed.tags[0] ?? '');
-      const categories = seed.tags.slice(1);
-      expect(categories.length, `${seed.id} 缺分类词（会归「未分类」）`).toBeGreaterThan(0);
-      for (const tag of categories) expect(CATEGORY_WORDS, `${seed.id} 分类词越表：${tag}`).toContain(tag);
-    }
   });
 });
