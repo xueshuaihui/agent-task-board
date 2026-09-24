@@ -1,14 +1,20 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Copy, Search } from 'lucide-react';
-import { Button, Dialog, EmptyState, Input } from '@/components/ui';
+import { useMemo } from 'react';
+import { Button, Dialog, EmptyState } from '@/components/ui';
 import { errorMessage } from '@/api';
-import { SKILL_TYPE_META } from './meta';
 import { useSkills } from './hooks';
+import { SkillPicker } from './skill-picker';
 import type { Skill } from './types';
 
 /**
- * 「复制现有技能」的技能选择器：搜索 + 列表，选中后由页面用
- * GET /skills/:id 拿内容并 POST /skills 创建副本（名称加「副本」后缀）。
+ * 「复制现有技能」的技能选择器：弹窗内就地展示共享 SkillPicker（内联形态），
+ * 选中后由页面用 GET /skills/:id 拿内容并 POST /skills 创建副本（名称加「副本」后缀）。
+ *
+ * D-4（条款 83 收口）：第四处「选技能」入口此前自绘搜索框 + 自绘列表，并把搜索词
+ * 作为查询参数传给 GET /skills——每次按键一次服务端请求。现在技能列表一次性全量
+ * 在手（`useSkills()`，与另三处接线同一取数口径），查询匹配交 SkillPicker 内部调
+ * searchSkills 本地算，搜索零请求、`GET /skills` 不因搜索新增查询参数。
+ * 取数与业务分支仍归本页：加载/失败/无技能三种状态留在调用方（组件不管取数），
+ * 原每行的「N 个块」信息经 trailing 插槽保留（类型中文标签组件行里已有）。
  */
 
 export interface CopySkillPickerProps {
@@ -18,60 +24,32 @@ export interface CopySkillPickerProps {
 }
 
 export function CopySkillPicker({ open, onClose, onPicked }: CopySkillPickerProps) {
-  const [keyword, setKeyword] = useState('');
-  const skills = useSkills(keyword ? { keyword } : undefined);
-
-  useEffect(() => {
-    if (open) setKeyword('');
-  }, [open]);
-
+  const skills = useSkills();
   const items = useMemo(() => skills.data?.items ?? [], [skills.data]);
 
   return (
     <Dialog open={open} onClose={onClose} title="复制技能">
-      {items.length === 0 && !skills.isPending ? (
+      {skills.isPending ? (
+        <p className="py-6 text-center text-aux text-text-tertiary">加载中…</p>
+      ) : skills.isError ? (
+        <p className="py-6 text-center text-aux text-status-failed">{errorMessage(skills.error)}</p>
+      ) : items.length === 0 ? (
         <EmptyState title="没有可复制的技能" description="先创建或导入一个技能" />
       ) : (
         <div className="flex flex-col gap-3">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
-            <Input
-              value={keyword}
-              placeholder="搜索技能…"
-              className="pl-8"
-              onChange={(event) => setKeyword(event.target.value)}
-              autoFocus
-            />
-          </div>
-          <div className="flex max-h-80 flex-col gap-1.5 overflow-y-auto pr-1 atb-scroll">
-            {skills.isPending ? (
-              <p className="py-6 text-center text-aux text-text-tertiary">加载中…</p>
-            ) : skills.isError ? (
-              <p className="py-6 text-center text-aux text-status-failed">{errorMessage(skills.error)}</p>
-            ) : items.length === 0 ? (
-              <p className="py-6 text-center text-aux text-text-tertiary">没有匹配的技能</p>
-            ) : (
-              items.map((skill) => (
-                <button
-                  key={skill.id}
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    onPicked(skill);
-                  }}
-                  className="flex items-center gap-2 rounded-control border border-border bg-bg-surface px-3 py-2 text-left transition-colors hover:border-primary/60 hover:bg-bg-raised"
-                >
-                  <Copy className="size-4 shrink-0 text-text-tertiary" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-body text-text-primary">{skill.name}</span>
-                    <span className="block truncate text-aux text-text-secondary">
-                      {SKILL_TYPE_META[skill.type]?.label ?? skill.type} · {skill.content.blocks.length} 个块
-                    </span>
-                  </span>
-                </button>
-              ))
+          <SkillPicker
+            candidates={items}
+            disambiguateOver={items}
+            ariaLabel="选择要复制的技能"
+            placeholder="搜索技能（名称 / 分类 / 类型 / 标签 / ID）"
+            onSelect={(skill) => {
+              onClose();
+              onPicked(skill);
+            }}
+            trailing={(skill) => (
+              <span className="text-aux text-text-tertiary">{skill.content.blocks.length} 个块</span>
             )}
-          </div>
+          />
           <p className="text-aux text-text-tertiary">复制会创建一个新草稿，名称自动加「副本」后缀。</p>
         </div>
       )}
