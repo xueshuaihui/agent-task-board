@@ -55,7 +55,8 @@ export function BoardPage() {
   const params = useMemo(() => toBoardQuery(filters), [filters]);
   const defaultView = useMemo(() => isDefaultBoardView(filters), [filters]);
 
-  // B15：分组与其余过滤维度同走 `toBoardQuery` 的服务端参数，单一一份 `/board` 请求。
+  // §19.14：分组维已从看板下线，`toBoardQuery` 只产出需求/类型/优先级/Agent/标签等服务端参数，
+  // 单一一份 `/board` 请求。
   const board = useBoardWithGroups(params);
   const fieldDefs = useFieldDefs();
   const defs = useMemo(() => fieldDefs.data?.items ?? [], [fieldDefs.data?.items]);

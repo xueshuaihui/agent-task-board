@@ -4,7 +4,6 @@ import { X } from 'lucide-react';
 import { useSettings, useTags } from '@/api';
 import type { TaskCard } from '@/api/types';
 import { useFilterStore } from '@/app/store/filters';
-import { useActiveGroups } from '@/features/groups';
 import {
   FILTER_DIMENSIONS,
   deriveFilterOptions,
@@ -20,7 +19,6 @@ import {
 export function FilterChipsBar({ cards }: { cards: readonly TaskCard[] }) {
   const filters = useFilterStore(
     useShallow((state) => ({
-      groups: state.groups,
       requirements: state.requirements,
       type: state.type,
       priority: state.priority,
@@ -28,18 +26,16 @@ export function FilterChipsBar({ cards }: { cards: readonly TaskCard[] }) {
       tags: state.tags,
     })),
   );
-  const groups = useActiveGroups();
   const settings = useSettings();
   const tags = useTags();
   const options = useMemo(
     () =>
       deriveFilterOptions({
         cards,
-        groups: groups.data?.items ?? [],
         types: settings.data?.task_types ?? [],
         tags: tags.data?.tags ?? [],
       }),
-    [cards, groups.data?.items, settings.data?.task_types, tags.data?.tags],
+    [cards, settings.data?.task_types, tags.data?.tags],
   );
 
   const chips = useMemo(

@@ -5,7 +5,6 @@ import type { TaskCard } from '@/api/types';
 import { useFilterStore } from '@/app/store/filters';
 import { cn } from '@/lib/cn';
 import { ChipGroup, Popover } from '@/components/ui';
-import { useActiveGroups } from '@/features/groups';
 import { boardFilterCount } from '../model';
 import {
   FILTER_DIMENSIONS,
@@ -26,18 +25,16 @@ export function FilterMenu({ cards }: { cards: readonly TaskCard[] }) {
   const filters = useFilterStore();
   const conditions = useMemo(() => boardFilterCount(filters), [filters]);
 
-  const groups = useActiveGroups();
   const settings = useSettings();
   const tags = useTags();
   const options = useMemo(
     () =>
       deriveFilterOptions({
         cards,
-        groups: groups.data?.items ?? [],
         types: settings.data?.task_types ?? [],
         tags: tags.data?.tags ?? [],
       }),
-    [cards, groups.data?.items, settings.data?.task_types, tags.data?.tags],
+    [cards, settings.data?.task_types, tags.data?.tags],
   );
 
   const anchor = (

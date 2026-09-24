@@ -5,16 +5,19 @@ import { useFilterStore, type FilterState } from '@/app/store/filters';
 /**
  * B15-③：看板筛选弹层/chip 条共用的维度词表与派生逻辑。
  *
- * 值候选从**当前看板快照**派生（分组/需求/Agent 没有独立的服务端词表接口）：
+ * §19.14（2026-09-24 拍板）：看板 UI 上「分组」与「需求」是同一概念，`groups` 维
+ * 从看板可见面整体下线（Group 实体不再暴露）；`requirements` 维维持现语义
+ * （候选 = 卡片父需求）。
+ *
+ * 值候选从**当前看板快照**派生（需求/Agent 没有独立的服务端词表接口）：
  * 过滤生效时候选会随可见卡收缩，这是可接受的取舍——chip 条保证已选值永远可见可删；
  * 已选但不在候选里的值会被补回选项（回显不失明）。
  */
 
-export type FilterDimKey = 'groups' | 'requirements' | 'type' | 'priority' | 'agents' | 'tags';
+export type FilterDimKey = 'requirements' | 'type' | 'priority' | 'agents' | 'tags';
 
 /** 弹层内的展示顺序。 */
 export const FILTER_DIMENSIONS: readonly { key: FilterDimKey; label: string }[] = [
-  { key: 'groups', label: '分组' },
   { key: 'requirements', label: '需求' },
   { key: 'type', label: '类型' },
   { key: 'priority', label: '优先级' },
@@ -22,7 +25,7 @@ export const FILTER_DIMENSIONS: readonly { key: FilterDimKey; label: string }[] 
   { key: 'tags', label: '标签' },
 ];
 
-/** 服务端约定：`none` = 该维「未设置」（group_id/parent/agent 为 NULL）。 */
+/** 服务端约定：`none` = 该维「未设置」（parent/agent 为 NULL）。 */
 export const NONE_VALUE = 'none';
 
 export interface FilterOption {
@@ -31,7 +34,6 @@ export interface FilterOption {
 }
 
 const NONE_LABEL: Partial<Record<FilterDimKey, string>> = {
-  groups: '无分组',
   requirements: '未归属需求',
   agents: '未设置',
 };
@@ -44,15 +46,13 @@ export type FilterOptionsMap = Record<FilterDimKey, FilterOption[]>;
 
 export interface DeriveInput {
   cards: readonly TaskCard[];
-  /** 未归档分组（id→name）。 */
-  groups: readonly { id: string; name: string; color?: string | null }[];
   /** settings `task_types`。 */
   types: readonly string[];
   /** /tags 词表。 */
   tags: readonly string[];
 }
 
-export function deriveFilterOptions({ cards, groups, types, tags }: DeriveInput): FilterOptionsMap {
+export function deriveFilterOptions({ cards, types, tags }: DeriveInput): FilterOptionsMap {
   const requirementValues = uniqStrings(cards.map((card) => card.parent?.id));
   const requirementLabels = new Map(
     requirementValues.map((id) => [id, cards.find((c) => c.parent?.id === id)?.parent?.title ?? id]),
@@ -72,11 +72,6 @@ export function deriveFilterOptions({ cards, groups, types, tags }: DeriveInput)
   };
 
   return {
-    groups: listNone(
-      'groups',
-      groups.map((group) => group.id),
-      (id) => groups.find((group) => group.id === id)?.name ?? id,
-    ),
     requirements: listNone('requirements', requirementValues, (id) => requirementLabels.get(id) ?? id),
     type: typeValues.map((value) => ({ value, label: value })),
     priority: [0, 1, 2, 3].map((value) => ({ value: String(value), label: priorityText(value) })),
@@ -102,7 +97,7 @@ export function setFilterDimension(dim: FilterDimKey, values: string[]): void {
   useFilterStore.setState({ [dim]: values } as unknown as Pick<FilterState, FilterDimKey>);
 }
 
-/** chip 条/弹层共用的显示名查表；查不到回显裸值（旧分组被删等场景）。 */
+/** chip 条/弹层共用的显示名查表；查不到回显裸值（条件指向已删除对象的场景）。 */
 export function optionLabel(options: readonly FilterOption[], value: string): string {
   return options.find((option) => option.value === value)?.label ?? value;
 }

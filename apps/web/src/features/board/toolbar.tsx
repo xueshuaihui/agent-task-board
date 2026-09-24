@@ -15,9 +15,9 @@ import { FilterMenu } from './filter/FilterMenu';
  * 3.4 工具栏：48px 高、左右 24px（沿用 `main` 的 padding），底边 1px。
  * 每段都不参与收缩，装不下时整行换行成两行——最小窗口 960px 下也不能互相压字。
  *
- * B15-③ 的取舍（Linear 式统一过滤）：
- * - 过滤入口只有一个「筛选」弹层（`filter/FilterMenu`），分组/需求/类型/优先级/Agent/
- *   标签六维在同一面板加规则；旧的 GroupSwitcher 与三枚 chip、「更多」下拉全部下线
+ * B15-③ 的取舍（Linear 式统一过滤）+ §19.14（分组维从看板下线，看板上的「分组」即「需求」）：
+ * - 过滤入口只有一个「筛选」弹层（`filter/FilterMenu`），需求/类型/优先级/Agent/
+ *   标签五维在同一面板加规则；旧的 GroupSwitcher 与三枚 chip、「更多」下拉全部下线
  *   （「更多」和视图段本来就是同一参数的两种写法）；
  * - 已激活条件由结果区上方的 `filter/FilterChipsBar` 逐条可删地呈现；
  * - 没有「状态」chip（六列本身就是状态，再放一个多选会和列头互相矛盾）；
