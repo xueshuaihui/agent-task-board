@@ -104,13 +104,16 @@ export const useFilterStore = create<FilterState>((set) => ({
 
 /* ------------------------------------------------------------------ 选择器 */
 
-/** 20.7：board 不接受 `status`，六列本身就是状态。 */
+/**
+ * 20.7：board 不接受 `status`，六列本身就是状态。
+ * §19.14（2026-09-24 拍板）：看板不再暴露 Group——`groups` 键**恒不进**看板查询
+ * （store 的 groups 键只服务列表作用域），`requirements=` 照旧。
+ */
 export function toBoardQuery(state: FilterState): BoardQuery {
   const query: BoardQuery = { view: state.view };
   if (state.priority.length) query.priority = state.priority;
   if (state.type.length) query.type = state.type;
   if (state.tags.length) query.tags = state.tags;
-  if (state.groups.length) query.groups = state.groups;
   if (state.requirements.length) query.requirements = state.requirements;
   if (state.agents.length) query.agents = state.agents;
   if (Object.keys(state.customFields).length) {
@@ -160,7 +163,11 @@ export function activeFilterCount(state: FilterState): number {
 
 /* ------------------------------------------------- URL 查询串 ←→ 筛选状态 */
 
-/** 从 hash 的查询串水合筛选（跳入列表页时用）；无相关参数时返回 null，调用方就别 reset。 */
+/**
+ * 从 hash 的查询串水合筛选（跳入列表页时用）；无相关参数时返回 null，调用方就别 reset。
+ * `groups` 参数只对列表路由有意义（作用域 chip / 分组方式消费）；看板侧在
+ * `features/board/filter-url-sync.ts` 已先行剥离，不会把 groups 水合进 store。
+ */
 export function filtersFromSearch(
   search: URLSearchParams,
 ): Partial<
@@ -242,11 +249,13 @@ export function taskListSearch(input: {
 /**
  * B15：看板过滤态 → `#/board` 的查询串（可分享、可书签）。只序列化服务端过滤维度；
  * custom_fields 不进 URL（其 key 自由、值含逗号/空格，编解码收益低、坑多）。
+ * §19.14：`groups` 不再进看板 URL——看板可见面已无分组维，列表作用域的 groups
+ * 键在 store 里保留但不属于看板。
  */
 export function boardFilterSearch(
   state: Pick<
     FilterState,
-    'view' | 'priority' | 'type' | 'tags' | 'groups' | 'requirements' | 'agents'
+    'view' | 'priority' | 'type' | 'tags' | 'requirements' | 'agents'
   >,
 ): string {
   const search = new URLSearchParams();
@@ -254,7 +263,6 @@ export function boardFilterSearch(
   if (state.priority.length) search.set('priority', state.priority.join(','));
   if (state.type.length) search.set('type', state.type.join(','));
   if (state.tags.length) search.set('tags', state.tags.join(','));
-  if (state.groups.length) search.set('groups', state.groups.join(','));
   if (state.requirements.length) search.set('requirements', state.requirements.join(','));
   if (state.agents.length) search.set('agents', state.agents.join(','));
   const encoded = search.toString();

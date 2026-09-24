@@ -54,7 +54,8 @@ export function neighbourColumn(from: string, step: 1 | -1): TaskStatus | null {
 }
 
 /**
- * 「默认视图」的判定：`view=all` 且八个筛选维度全空。
+ * 「默认视图」的判定：`view=all` 且看板的六个筛选维度全空
+ * （§19.14 起 groups 维已下线，不进判定）。
  *
  * G-5（2026-09-24 用户拍板）起，这一位**不再参与列宽/折叠**：列不随筛选结果折叠，
  * 七列在任何视图下恒等分（`BoardColumnView` 恒 `min-w-[180px] flex-1`），空列照常渲染
@@ -64,7 +65,7 @@ export function neighbourColumn(from: string, step: 1 | -1): TaskStatus | null {
 export function isDefaultBoardView(
   filters: Pick<
     FilterState,
-    'view' | 'priority' | 'type' | 'tags' | 'groups' | 'requirements' | 'agents' | 'customFields'
+    'view' | 'priority' | 'type' | 'tags' | 'requirements' | 'agents' | 'customFields'
   >,
 ): boolean {
   return (
@@ -72,7 +73,6 @@ export function isDefaultBoardView(
     filters.priority.length === 0 &&
     filters.type.length === 0 &&
     filters.tags.length === 0 &&
-    filters.groups.length === 0 &&
     filters.requirements.length === 0 &&
     filters.agents.length === 0 &&
     Object.keys(filters.customFields).length === 0
@@ -82,18 +82,18 @@ export function isDefaultBoardView(
 /**
  * 3.4「已筛 N 项」的 N：只数看板真会带进 `GET /board` 的条件。
  * 基座的 `activeFilterCount` 还包含状态/关键词/归档三组（只有列表页用），直接拿过来会虚报。
+ * §19.14：groups 维已从看板下线（不进看板请求），这里同步不数。
  */
 export function boardFilterCount(
   filters: Pick<
     FilterState,
-    'priority' | 'type' | 'tags' | 'groups' | 'requirements' | 'agents' | 'customFields'
+    'priority' | 'type' | 'tags' | 'requirements' | 'agents' | 'customFields'
   >,
 ): number {
   return (
     filters.priority.length +
     filters.type.length +
     filters.tags.length +
-    filters.groups.length +
     filters.requirements.length +
     filters.agents.length +
     Object.keys(filters.customFields).length

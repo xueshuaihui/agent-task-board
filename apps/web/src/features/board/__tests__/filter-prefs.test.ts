@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, afterAll, describe, expect, it, vi } from 'vitest';
 import { boardFilterSearch, filtersFromSearch } from '@/app/store/filters';
 import {
   BOARD_FILTER_LOCAL_KEY,
@@ -35,6 +35,19 @@ async function load(initial: Record<string, string>) {
 }
 
 afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+// `filter-url-sync` 经 `@/app/router` 进模块图——router 装配期读一次 hash。
+// 与 `column-always-open.test.ts` 同法：先 stub 最小 window，再顶层 await 动态 import。
+vi.stubGlobal('window', {
+  location: { hash: '' },
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+});
+const { stripLegacyGroupsParam } = await import('../filter-url-sync');
+afterAll(() => {
   vi.unstubAllGlobals();
 });
 
@@ -136,8 +149,8 @@ describe('B15-② 偏好迁移 → v2 扁平', () => {
 });
 
 describe('B15-② URL 查询串 ←→ 过滤态', () => {
-  it('boardFilterSearch → filtersFromSearch 往返保持三维与逗号值', () => {
-    const search = boardFilterSearch({
+  it('boardFilterSearch 恒不产出 groups 键（§19.14：store 残值被剥离），其余维度与逗号值保持往返', () => {
+    const withLegacyGroups = {
       view: 'all',
       priority: [1],
       type: ['Bug'],
@@ -145,16 +158,31 @@ describe('B15-② URL 查询串 ←→ 过滤态', () => {
       groups: ['g-1', 'none'],
       requirements: [],
       agents: ['atb'],
-    });
-    expect(search).toBe('?priority=1&type=Bug&groups=g-1%2Cnone&agents=atb');
+    } satisfies Parameters<typeof boardFilterSearch>[0] & { groups: string[] };
+    const search = boardFilterSearch(withLegacyGroups);
+    expect(search).toBe('?priority=1&type=Bug&agents=atb');
+    expect(search).not.toContain('groups');
     const patch = filtersFromSearch(new URLSearchParams(search.slice(1)));
     expect(patch).toMatchObject({
       priority: [1],
       type: ['Bug'],
-      groups: ['g-1', 'none'],
       agents: ['atb'],
     });
+    expect(patch?.groups).toBeUndefined();
     expect(patch?.view).toBeUndefined();
+  });
+
+  it('看板解析 URL 前剥离 groups=（stripLegacyGroupsParam）；列表路由的 filtersFromSearch 照旧认 groups', () => {
+    const search = new URLSearchParams('priority=1&groups=g-1%2Cnone&type=Bug');
+    const stripped = stripLegacyGroupsParam(search);
+    expect(stripped.has('groups')).toBe(false);
+    expect(stripped.get('priority')).toBe('1');
+    expect(stripped.get('type')).toBe('Bug');
+    const patch = filtersFromSearch(stripped);
+    expect(patch?.groups).toBeUndefined();
+    // 原 search 不被改动（新对象），且直接喂 filtersFromSearch 仍能得到 groups（列表口径不变）。
+    expect(search.has('groups')).toBe(true);
+    expect(filtersFromSearch(search)?.groups).toEqual(['g-1', 'none']);
   });
 
   it('无过滤参数 → boardFilterSearch 给空串', () => {
@@ -164,7 +192,6 @@ describe('B15-② URL 查询串 ←→ 过滤态', () => {
         priority: [],
         type: [],
         tags: [],
-        groups: [],
         requirements: [],
         agents: [],
       }),
