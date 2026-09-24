@@ -1,6 +1,7 @@
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -16,10 +17,10 @@ import { SKILL_TYPE_META } from './meta';
 import type { Skill } from './types';
 import {
   DEFAULT_PICKER_LIMIT,
-  PICKER_NAME_BUDGET,
   buildFlatPlan,
   buildGroupPlan,
   duplicateNameSet,
+  pickerRowNameSegments,
   type PickerFlatPlan,
   type PickerGroupPlan,
   type PickerRowPlan,
@@ -34,9 +35,11 @@ import {
  *   有查询按 score 序平铺 + 命中数弱提示；截断默认 20 条，尾提示「细化查询」。
  * - 行内容一套标准：消歧名 + D-1 matches 高亮 + 分类/类型/版本/状态；业务动作
  *   只经 trailing 插槽注入，组件本身不发请求、不做业务过滤（排除已选/归档归调用方）。
- *   C-6b② 起行内名称优先：分组态只留名称+版本（徽标撤，分类归组头）；查询态留
- *   名称（按命中窗口化，见 skill-picker-core 的 windowAroundHits）+类型徽标+版本，
- *   分类文本仅命中在分类上时出现；状态徽标两态都撤。
+ *   C-6b② 起行内名称优先；C-6c 收口窗口化门控与预算来源：仅当名称字段确有命中时
+ *   才按命中位置开窗（零命中/分组态恒全名直出），预算由每行名称盒的实测像素宽换算
+ *   （显示宽度单位，见 skill-picker-core 的 pickerRowNameSegments）；消歧后缀渲染在
+ *   truncate 盒之外恒可见。查询态留名称+类型徽标+版本，分类文本仅命中在分类上时出现；
+ *   状态徽标两态都撤。
  * - 挂载两形态：SkillPicker（内联面板）与 SkillPickerPopover（带触发器弹层），
  *   共用同一份面板实现；键盘 ↑↓/Enter 在输入框上完成，Esc 不拦截、交给弹层关闭。
  *
@@ -74,8 +77,10 @@ export interface SkillPickerProps {
   /** 搜索框追加样式（如子技能块的 h-7 紧凑档）。 */
   inputClassName?: string;
   /**
-   * C-6b③：挂载时聚焦搜索框（如「复制技能」弹窗——搜索是唯一主操作，打开即该能
+   * C-6b③/C-6c④：挂载时聚焦搜索框（如「复制技能」弹窗——搜索是唯一主操作，打开即该能
    * 打字）。默认 false = 行为与 C-6b 之前完全一致；弹层形态本就打开即聚焦，无需此开关。
+   * 实现为挂载后的显式 focus（不是 React 原生 autoFocus——真机实测 Radix Dialog 的
+   * open-auto-focus 在其后执行、把焦点抢给关闭按钮，机制见 SkillPickerPanel 注释）。
    */
   autoFocusInput?: boolean;
 }
@@ -114,12 +119,13 @@ function useSkillPickerModel(props: SkillPickerProps) {
   const duplicateSource = props.disambiguateOver ?? props.candidates;
   const duplicateNames = useMemo(() => duplicateNameSet(duplicateSource), [duplicateSource]);
 
+  // C-6c①：模型层不做名称窗口化——分组态根本没有命中要保护；查询态的预算来自
+  // 每行名称盒的实测宽（PickerRow 里逐行测宽后调 pickerRowNameSegments），恒定全局
+  // 预算在模型层截出来的文本对不上行宽，反而制造假省略号。
   const flat: PickerFlatPlan | null = trimmed
-    ? buildFlatPlan(hits, duplicateNames, props.limit ?? DEFAULT_PICKER_LIMIT, { nameBudget: PICKER_NAME_BUDGET })
+    ? buildFlatPlan(hits, duplicateNames, props.limit ?? DEFAULT_PICKER_LIMIT)
     : null;
-  const groups: PickerGroupPlan[] | null = flat
-    ? null
-    : buildGroupPlan(props.candidates, duplicateNames, { nameBudget: PICKER_NAME_BUDGET });
+  const groups: PickerGroupPlan[] | null = flat ? null : buildGroupPlan(props.candidates, duplicateNames);
   /** 键盘导航的扁平行序 = 渲染行序（平铺即 rows；分组按组序拼接）。 */
   const rows: PickerRowPlan[] = flat ? flat.rows : (groups ?? []).flatMap((group) => group.rows);
 
@@ -175,6 +181,26 @@ function PickerRow({
   onSelect: () => void;
   trailing?: (skill: Skill) => ReactNode;
 }) {
+  // C-6c② 逐行测名称盒宽：名称 span 是 flex-1 min-w-0，盒宽由兄弟 shrink-0 元素
+  // （徽标/版本/消歧后缀）决定、不随自身文本变化 → 一次测量即稳定，不造 render 循环；
+  // RO 只为徽标布局变化（分组态↔查询态切换同批行）补测。Math.round 存 state 防浮点抖动。
+  const nameBoxRef = useRef<HTMLSpanElement>(null);
+  const [nameBoxPx, setNameBoxPx] = useState(0);
+  useLayoutEffect(() => {
+    const el = nameBoxRef.current;
+    if (!el) return;
+    const measure = () => {
+      const px = Math.round(el.clientWidth);
+      setNameBoxPx((prev) => (prev === px ? prev : px));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  // C-6c①：窗口化门控与预算换算全在纯函数里（零命中恒全名；未测到宽退化全名）。
+  const nameSegments = useMemo(() => pickerRowNameSegments(row, nameBoxPx), [row, nameBoxPx]);
+
   return (
     <div
       id={domId}
@@ -194,12 +220,15 @@ function PickerRow({
           {checked ? <Check className="size-3.5 text-primary" aria-hidden /> : null}
         </span>
       ) : null}
-      {/* C-6b② 名称优先：nameSegments 已在纯函数层按命中位置窗口化（预算内命中必可见），
-          truncate 只留作 CJK 超长名的兜底；行 title 仍是全名 + 消歧后缀。 */}
-      <span className="min-w-0 flex-1 truncate">
-        <Segments segments={row.nameSegments} />
-        {row.suffix ? <span className="text-aux text-text-tertiary">{row.suffix}</span> : null}
+      {/* C-6c②③ 名称优先：有命中时 nameSegments 已按本行实测盒宽窗口化（显示宽度
+          ≤ 盒宽，命中必落可视区，truncate 只剩极端兜底）；消歧后缀移到 truncate 盒之外
+          的 shrink-0 兄弟——给 suffix 的预算预留由布局承担（测得盒宽天然不含它），
+          无命中/分组态下 suffix 也恒可见，走查实测的「视觉相同的两行」就此根治。
+          行 title 仍是全名 + 消歧后缀。 */}
+      <span ref={nameBoxRef} className="min-w-0 flex-1 truncate">
+        <Segments segments={nameSegments} />
       </span>
+      {row.suffix ? <span className="shrink-0 text-aux text-text-tertiary">{row.suffix}</span> : null}
       {/* 分组态不逐行渲染徽标：分类由组头承载、类型/状态对选技能帮助有限（走查实测
           320px 弹层里徽标把名称挤成 `boge-kaoyan-…`）。查询态只保留必要项：分类文本仅
           当命中落在分类上时出现（交代命中原因），类型徽标恒在；状态徽标两态都撤——
@@ -248,6 +277,27 @@ function SkillPickerPanel({
   const selected = new Set(props.selectedIds ?? []);
   const activeRow = model.rows[Math.min(model.active, model.rows.length - 1)];
 
+  // C-6c④：autoFocusInput 的实现从 React 原生 autoFocus 换成挂载后显式 focus。
+  // 真机实测 + 读 radix focus-scope 源码定案：Dialog 的 open-auto-focus（focusFirst
+  // 抢焦给关闭按钮）跑在 FocusScope 的 passive effect 里——React 原生 autoFocus 在
+  // 挂载阶段落焦、被它后手抢走（activeElement=BUTTON）；而同批次 passive effect 按
+  // 「子先父后」运行，面板里同步 focus() 同样会被祖先的 FocusScope effect 覆写。
+  // 故在面板 effect 里排一个微任务：passive effect 批处理是同步跑完的，微任务恒在
+  // 整批（含祖先）之后执行，焦点确定性最后落进搜索框。不给共享 Dialog 加 props、
+  // 不用可被 preventDefault 的 onOpenAutoFocus 事件钩子，其余 Dialog 调用点零影响。
+  const ownInputRef = useRef<HTMLInputElement>(null);
+  const focusRef = inputRef ?? ownInputRef;
+  useEffect(() => {
+    if (!props.autoFocusInput) return;
+    let committed = true;
+    queueMicrotask(() => {
+      if (committed) focusRef.current?.focus();
+    });
+    return () => {
+      committed = false;
+    };
+  }, [props.autoFocusInput, focusRef]);
+
   const onKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       if (model.rows.length === 0) return;
@@ -290,7 +340,7 @@ function SkillPickerPanel({
   return (
     <div className="flex flex-col gap-1">
       <Input
-        ref={inputRef}
+        ref={focusRef}
         role="combobox"
         aria-expanded={open}
         aria-controls={listId}
@@ -299,9 +349,8 @@ function SkillPickerPanel({
         value={model.query}
         placeholder={props.placeholder ?? '搜索技能（名称 / 分类 / 类型 / 标签 / ID）'}
         disabled={props.disabled}
-        // C-6b③：默认 undefined = 不聚焦（现状不变）；置 true 的挂载形态（复制技能弹窗）
-        // 打开即聚焦搜索框——Radix FocusScope 见焦点已在面板内即让位，与改造前 autoFocus 同机制。
-        autoFocus={props.autoFocusInput}
+        // C-6b③/C-6c④：autoFocusInput 走挂载后显式 focus（见上方 focusRef 注释），
+        // 不用 React 原生 autoFocus——那会被 Radix Dialog 的 open-auto-focus 后手抢走。
         className={props.inputClassName}
         onChange={(event) => model.setQuery(event.target.value)}
         onKeyDown={onKeyDown}

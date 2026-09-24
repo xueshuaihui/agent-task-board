@@ -4,16 +4,24 @@ import { searchSkills } from '../skill-search';
 import { SKILL_CATEGORIES, UNCATEGORIZED_LABEL } from '../meta';
 import {
   categoryDisplay,
+  displayWidth,
+  nameBudgetFromBoxPx,
+  pickerRowNameSegments,
   pickerRowPlan,
   windowAroundHits,
   PICKER_NAME_BUDGET,
+  PICKER_NAME_MIN_BUDGET,
+  PICKER_NAME_PX_PER_UNIT,
 } from '../skill-picker-core';
 
 /**
- * C-6b②/① 纯函数守护：
+ * C-6b②/C-6c①②③ 纯函数守护：
  * - windowAroundHits：名称过长时以命中位置为中心开窗——命中区间必然落在输出片段内、
- *   输出长度受预算约束、无命中退化为前缀截断；
- * - pickerRowPlan 的 nameBudget 接线（省略 = 全名直出，既有行为不回归）；
+ *   输出**显示宽度**受预算约束（C-6c②：单位从字符数改为显示宽度，拉丁 1 / CJK 2）、
+ *   无命中退化为前缀截断（注：选择器渲染层已不再走该分支，见 pickerRowNameSegments）；
+ * - displayWidth / nameBudgetFromBoxPx：盒宽→预算的换算与上下限钳制（C-6c②）；
+ * - pickerRowNameSegments：零名称命中恒全名直出（C-6c①）、未测到宽退化全名、
+ *   实测盒宽下命中必落窗（C-6c②③，走查 CJK 案例回归）；
  * - categoryDisplay：分类展示与筛选器同源的口径（直读 category 列、'' 走未分类文案、
  *   绝不从 tags 推导）。
  */
@@ -48,11 +56,14 @@ describe('windowAroundHits 命中窗口化', () => {
     expect(windowAroundHits('周报', [[1, 99]], 24).ranges).toEqual([[1, 2]]);
   });
 
-  it('无命中：退化为前缀截断，两侧只有尾部省略号且长度 ≤ 预算', () => {
+  it('无命中：退化为前缀截断，两侧只有尾部省略号且显示宽度 ≤ 预算', () => {
     const name = 'boge-kaoyan-writing-coach';
     const w = windowAroundHits(name, [], 24);
-    expect(w.text).toBe('boge-kaoyan-writing-coa…');
-    expect(w.text.length).toBeLessThanOrEqual(24);
+    // C-6c② 单位改为显示宽度后，省略号按 2 单位计（本字体渲染为全角宽，取保守值），
+    // 正文比旧的字符数模型少一个拉丁字符。渲染层已不再走「无命中截断」这条分支
+    // （pickerRowNameSegments 零命中恒全名），此处守护的是原语自身的前缀退化语义。
+    expect(w.text).toBe('boge-kaoyan-writing-co…');
+    expect(displayWidth(w.text)).toBeLessThanOrEqual(24);
     expect(w.ranges).toEqual([]);
     expect(w.truncated).toBe(true);
   });
@@ -61,13 +72,14 @@ describe('windowAroundHits 命中窗口化', () => {
     const name = 'financial-analysis-18steps';
     const ranges: Array<[number, number]> = [[19, 26]];
     const w = windowAroundHits(name, ranges, PICKER_NAME_BUDGET);
-    expect(w.text.length).toBeLessThanOrEqual(PICKER_NAME_BUDGET);
+    expect(displayWidth(w.text)).toBeLessThanOrEqual(PICKER_NAME_BUDGET);
     expect(w.truncated).toBe(true);
     expect(w.ranges).toHaveLength(1);
     const [start, end] = w.ranges[0];
     expect(w.text.slice(start, end)).toBe('18steps');
     // 窗口从原文连续片段而来：命中前仍带可辨认的词根语境。
-    expect(w.text).toContain('alysis');
+    // C-6c②：省略号吃 2 单位后语境预算从 7 字符降到 6，可见词根相应少一个头字符。
+    expect(w.text).toContain('lysis');
     expect(w.text.startsWith('…')).toBe(true);
   });
 
@@ -135,32 +147,101 @@ describe('windowAroundHits 命中窗口化', () => {
   });
 });
 
-describe('pickerRowPlan nameBudget 接线（跑真实 searchSkills 输出）', () => {
-  it('省略 nameBudget = 全名直出（既有行为不回归）', () => {
+describe('displayWidth 显示宽度单位（C-6c②）', () => {
+  it('拉丁/数字/半角 1 单位，CJK 与全角标点 2 单位，省略号 … 2 单位', () => {
+    expect(displayWidth('18steps')).toBe(7);
+    expect(displayWidth('boge-kaoyan-writing-coach')).toBe(25);
+    expect(displayWidth('考研数学')).toBe(8);
+    expect(displayWidth('，。（）')).toBe(8); // 全角标点
+    expect(displayWidth('…')).toBe(2);
+    expect(displayWidth('a周1')).toBe(4); // 混排逐码元计
+    expect(displayWidth('')).toBe(0);
+  });
+
+  it('走查正主案例：20 字 CJK 名宽度 40 > 24 → 字符数模型（20 ≤ 24）漏放的必须截', () => {
+    const name = '考研数学极限连续与多元微分综合讲解练习';
+    expect(name.length).toBeLessThanOrEqual(PICKER_NAME_BUDGET); // 旧字符数模型：原样吐出（缺陷）
+    expect(displayWidth(name)).toBeGreaterThan(PICKER_NAME_BUDGET); // 新单位：超预算，必须开窗
+  });
+});
+
+describe('nameBudgetFromBoxPx 盒宽→预算换算（C-6c②）', () => {
+  it('floor(boxPx / PX_PER_UNIT)，上下钳到 [MIN, PICKER_NAME_BUDGET]', () => {
+    expect(nameBudgetFromBoxPx(20 * PICKER_NAME_PX_PER_UNIT)).toBe(20);
+    expect(nameBudgetFromBoxPx(20 * PICKER_NAME_PX_PER_UNIT + 7)).toBe(20); // floor：不足一单位舍去
+    expect(nameBudgetFromBoxPx(4 * PICKER_NAME_PX_PER_UNIT)).toBe(PICKER_NAME_MIN_BUDGET); // 下限钳制
+    expect(nameBudgetFromBoxPx(400)).toBe(PICKER_NAME_BUDGET); // 上限钳制（走查实测 440px 面板盒宽 273px → 封顶 24）
+  });
+});
+
+describe('CJK 名按显示宽度开窗：命中必落可视预算内（C-6c② 走查回归）', () => {
+  it('尾部命中「练习」：窗口显示宽度 ≤ 预算且高亮段完整', () => {
+    const name = '考研数学极限连续与多元微分综合讲解练习';
+    const at = name.indexOf('练习');
+    expect(at).toBeGreaterThan(-1);
+    const ranges: Array<[number, number]> = [[at, at + 2]];
+    const w = windowAroundHits(name, ranges, nameBudgetFromBoxPx(209));
+    expect(w.truncated).toBe(true);
+    expect(displayWidth(w.text)).toBeLessThanOrEqual(PICKER_NAME_BUDGET);
+    expect(w.ranges.map(([s, e]) => w.text.slice(s, e))).toEqual(['练习']);
+  });
+
+  it('多段 CJK 命中 + 逐段平移与原文逐字相等（单位化后不变式仍在）', () => {
+    const name = '考研数学' + '—'.repeat(20) + '极限连续' + '—'.repeat(20) + '综合讲解练习';
+    const ranges: Array<[number, number]> = [
+      [0, 4],
+      [24, 28],
+      [48, 52],
+    ];
+    // 预算 60 单位：24（命中宽）+ 8（间隙省略号）放得下，走语境均分档。
+    const w = windowAroundHits(name, ranges, 60);
+    expect(displayWidth(w.text)).toBeLessThanOrEqual(60);
+    expect(w.ranges).toHaveLength(3);
+    expect(w.ranges.map(([s, e]) => w.text.slice(s, e))).toEqual(
+      ranges.map(([s, e]) => name.slice(s, e)),
+    );
+  });
+});
+
+describe('pickerRowNameSegments 行级窗口接线（跑真实 searchSkills 输出）', () => {
+  it('未给盒宽（首帧未测到）= 全名直出 + 命中分段，既有行为不回归', () => {
     const target = skill({ id: 'skl_fin001', name: 'financial-analysis-18steps' });
     const hit = searchSkills([target], '18steps')[0];
     const row = pickerRowPlan(hit, NO_DUP);
     expect(row.nameSegments.map((s) => s.text).join('')).toBe(target.name);
     expect(row.nameSegments.filter((s) => s.hit).map((s) => s.text)).toEqual(['18steps']);
+    // nameRanges 原样暴露在全名坐标系上，供渲染层按行实测宽后再开窗。
+    expect(row.nameRanges).toEqual(hit.matches.find((m) => m.field === 'name')!.ranges);
+    expect(pickerRowNameSegments(row, 0).map((s) => s.text).join('')).toBe(target.name);
   });
 
-  it('给了 nameBudget：分段拼接 = 窗口文本，命中段一定在高亮分段里', () => {
+  it('给到实测盒宽：分段拼接 = 窗口文本（显示宽度 ≤ 预算），命中段一定在高亮分段里', () => {
     const target = skill({ id: 'skl_fin001', name: 'financial-analysis-18steps' });
     const hit = searchSkills([target], '18steps')[0];
-    const row = pickerRowPlan(hit, NO_DUP, { nameBudget: PICKER_NAME_BUDGET });
-    const joined = row.nameSegments.map((s) => s.text).join('');
-    expect(joined.length).toBeLessThanOrEqual(PICKER_NAME_BUDGET);
+    const row = pickerRowPlan(hit, NO_DUP);
+    const segments = pickerRowNameSegments(row, PICKER_NAME_BUDGET * PICKER_NAME_PX_PER_UNIT);
+    const joined = segments.map((s) => s.text).join('');
+    expect(displayWidth(joined)).toBeLessThanOrEqual(PICKER_NAME_BUDGET);
     expect(joined).toContain('18steps');
-    expect(row.nameSegments.filter((s) => s.hit).map((s) => s.text)).toEqual(['18steps']);
+    expect(segments.filter((s) => s.hit).map((s) => s.text)).toEqual(['18steps']);
     // label 仍是全名：title 回显与消歧后缀不受窗口化影响。
     expect(row.label).toBe(target.name);
   });
 
-  it('分组态（空查询、零命中）传预算 → 前缀截断兜底', () => {
+  it('零名称命中恒全名直出：分组态与「命中落在其他字段」都不再窗口化（C-6c①）', () => {
     const target = skill({ id: 'skl_boge001', name: 'boge-kaoyan-writing-coach' });
-    const row = pickerRowPlan({ skill: target, score: 0, matches: [] }, NO_DUP, { nameBudget: 12 });
-    expect(row.nameSegments.map((s) => s.text).join('')).toBe('boge-kaoyan…');
-    expect(row.nameSegments.every((s) => !s.hit)).toBe(true);
+    // 分组态（空查询、零命中）：预算再小也不截——没有命中要保护，截断是纯损失。
+    const grouped = pickerRowPlan({ skill: target, score: 0, matches: [] }, NO_DUP);
+    expect(pickerRowNameSegments(grouped, 64).map((s) => s.text).join('')).toBe(target.name);
+    // 查询态但命中在分类上（走查案例：搜「分析」命中分类、名称零命中）：名称恒全名。
+    const cat = skill({ id: 'skl_fin002', name: 'financial-analysis-18steps', category: '数据分析' });
+    const hit = searchSkills([cat], '分析')[0];
+    expect(hit.matches.some((m) => m.field === 'category')).toBe(true);
+    expect(hit.matches.some((m) => m.field === 'name')).toBe(false);
+    const row = pickerRowPlan(hit, NO_DUP);
+    const segments = pickerRowNameSegments(row, 64);
+    expect(segments.map((s) => s.text).join('')).toBe('financial-analysis-18steps');
+    expect(segments.every((s) => !s.hit)).toBe(true);
   });
 });
 

@@ -42,8 +42,10 @@ export function CopySkillPicker({ open, onClose, onPicked }: CopySkillPickerProp
             disambiguateOver={items}
             ariaLabel="选择要复制的技能"
             placeholder="搜索技能（名称 / 分类 / 类型 / 标签 / ID）"
-            // C-6b③：搜索是这处的唯一主操作，弹窗打开即聚焦搜索框（改造前是原生
-            // autoFocus，D-4 换内联 SkillPicker 后丢了）；开关默认关闭，其余调用不受影响。
+            // C-6b③/C-6c④：搜索是这处的唯一主操作，弹窗打开即聚焦搜索框（改造前是原生
+            // autoFocus，D-4 换内联 SkillPicker 后丢了）。开关默认关闭，其余调用不受影响；
+            // 聚焦由面板挂载后的显式 focus 完成——原生 autoFocus 会被 Radix Dialog 的
+            // open-auto-focus 后手抢给关闭按钮（真机实测），组件内已换机制。
             autoFocusInput
             onSelect={(skill) => {
               onClose();

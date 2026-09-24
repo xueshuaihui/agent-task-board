@@ -17,12 +17,48 @@ import type { SkillFieldMatch, SkillSearchField, SkillSearchHit } from './skill-
 export const DEFAULT_PICKER_LIMIT = 20;
 
 /**
- * C-6b② 行内名称的窗口化字符预算（含省略号位）。按最窄挂载——320px 子技能弹层
- * 查询态实测取数：行左右 pad 16 + 勾选/check 槽 + 版本 ~48 + 类型徽标 ~52 + 间隙
- * ~24，留给名称约 ~180px ≈ 24 个拉丁字符；超出预算交给 windowAroundHits 按命中
- * 位置开窗，不再依赖 CSS truncate 随机吞词。
+ * C-6b② 行内名称的窗口化显示宽度预算上限（C-6c②：单位从「字符数」改为「显示宽度」——
+ * 拉丁/半角 1 单位、CJK/全角约 2 单位，实测本字体 latin ≈ 8px/单位、CJK ≈ 13.5px/字）。
+ * 纯字符数预算对 CJK 名严重低估宽度：320px 弹层里 20 字 CJK 名「20 ≤ 24」原样吐出，
+ * 命中高亮整段被 CSS ellipsis 吞在盒外（走查实测 mark right 381 vs 名称盒 right 208）。
+ * 这里只作上限：真实预算由 nameBudgetFromBoxPx 按该行名称盒的实测像素宽换算。
  */
 export const PICKER_NAME_BUDGET = 24;
+
+/** 显示宽度 1 单位对应的像素宽（走查实测 latin ≈ 8px/单位，CJK ≈ 13.5px ≈ 1.7 单位，取 8 偏保守）。 */
+export const PICKER_NAME_PX_PER_UNIT = 8;
+
+/** 预算下限：盒宽再窄也至少给出 8 单位（≈4 个 CJK 字），病态布局下窗口仍保有意义。 */
+export const PICKER_NAME_MIN_BUDGET = 8;
+
+/** 单 UTF-16 码元的显示宽度：拉丁/数字/常用变音符等（< U+2000）与半角假名为 1；
+ * CJK、全角标点、省略号 … 等其余为 2。非 BMP 字符占 2 个码元、合计 4，偏保守
+ * （宁可早一个省略号，也不让命中高亮溢出盒子被 CSS 吞掉）。 */
+function codeUnitWidth(code: number): number {
+  if (code < 0x2000) return 1;
+  if (code >= 0xff61 && code <= 0xff9f) return 1;
+  return 2;
+}
+
+/** 字符串的显示宽度预算（与 PICKER_NAME_BUDGET 同单位）。按 UTF-16 码元计，与
+ * D-1 命中区间的索引口径（slice 坐标）保持一致。 */
+export function displayWidth(text: string): number {
+  let total = 0;
+  for (let i = 0; i < text.length; i += 1) total += codeUnitWidth(text.charCodeAt(i));
+  return total;
+}
+
+/**
+ * C-6c② 名称盒实测像素宽 → 窗口预算（显示宽度单位）：
+ * `budget = clamp(floor(boxPx / PX_PER_UNIT), MIN, PICKER_NAME_BUDGET)`。
+ * 逐行测是对的：同一面板里每行的兄弟徽标/版本/消歧后缀占宽不同，名称盒宽也不同。
+ * 消歧后缀不在此扣减——它由布局预留（suffix 是 truncate 盒之外的 shrink-0 兄弟，
+ * 测得盒宽天然不含它，见 skill-picker.tsx 的 PickerRow）。
+ */
+export function nameBudgetFromBoxPx(boxPx: number): number {
+  const units = Math.floor(boxPx / PICKER_NAME_PX_PER_UNIT);
+  return Math.min(PICKER_NAME_BUDGET, Math.max(PICKER_NAME_MIN_BUDGET, units));
+}
 
 /** 文本分段：hit 段渲染高亮，非 hit 段原样。拼接恒等于展示文本。 */
 export interface HighlightSegment {
@@ -35,9 +71,11 @@ export interface PickerRowPlan {
   skill: Skill;
   /** 名称展示文（不含消歧后缀）。 */
   label: string;
-  /** 消歧后缀（` ·id后6位`），非重名时为空串。 */
+  /** 消歧后缀（ ` ·id后6位`），非重名时为空串。渲染为 truncate 盒外的 shrink-0 兄弟，恒可见（C-6c③）。 */
   suffix: string;
-  /** name 字段高亮分段（落在 label 上；传了 nameBudget 时落在窗口化片段上）。 */
+  /** name 字段命中区间（label 全名坐标系，升序不重叠）。渲染层按行实测盒宽窗口化（C-6c②）。 */
+  nameRanges: Array<[number, number]>;
+  /** 全名 + 高亮分段（未窗口化）：首帧未测到盒宽时的退化形态，见 pickerRowNameSegments。 */
   nameSegments: HighlightSegment[];
   /** 分类展示文（含未分类文案）上的高亮分段。 */
   categorySegments: HighlightSegment[];
@@ -128,7 +166,8 @@ export function highlightSegments(
   return segments;
 }
 
-/** C-6b② 窗口里标记「原文有片段被省略」的占位符（两侧与命中段之间的间隙都用它）。 */
+/** C-6b② 窗口里标记「原文有片段被省略」的占位符（两侧与命中段之间的间隙都用它）。
+ * C-6c②：它按显示宽度计入预算（本字体下渲染为全角宽，取 2 单位，偏保守）。 */
 export const WINDOW_ELLIPSIS = '…';
 
 /** windowAroundHits 的输出：开窗后的展示文 + 落在其上的命中区间。 */
@@ -148,9 +187,14 @@ export interface HitWindow {
  * （搜 `18steps` 命中 `financial-analysis-18steps` 高亮等于没显示），根因是
  * 截断发生在渲染层、命中位置对截断不可见——窗口化必须在纯数据层做。
  *
- * 长度不变式：输出 text.length ≤ budget（省略号也计预算）。
- * - 无命中：退化为前缀截断（与原 truncate 观感一致）；
- * - 命中总长 + 间隙省略号已超预算：从首个命中起点硬开窗，保底第一段命中可见。
+ * C-6c②：budget 的单位是**显示宽度**（displayWidth，拉丁 1 / CJK 2），不是字符数。
+ * 走查实测：CJK 名按字符数计预算会严重低估像素宽，20 字 CJK 名在 24「字符」预算下
+ * 原样吐出、命中落在名称盒可视区之外——单位必须与盒宽同源（nameBudgetFromBoxPx）。
+ *
+ * 长度不变式：输出 displayWidth(text) ≤ max(budget, displayWidth(省略号))——
+ * 预算病态小（≤ 一个省略号）时至少吐一枚省略号标记截断，这是唯一允许越界的情形。
+ * - 无命中：退化为前缀截断（供直接调用方兜底；选择器渲染层已改为无命中恒全名，见 pickerRowNameSegments）；
+ * - 命中总宽 + 间隙省略号已超预算：从首个命中起点硬开窗，保底第一段命中可见。
  */
 export function windowAroundHits(
   text: string,
@@ -159,23 +203,46 @@ export function windowAroundHits(
 ): HitWindow {
   const cap = Math.max(1, Math.floor(budget));
   const safe = projectRanges(ranges, 0, text.length);
-  if (text.length <= cap) return { text, ranges: safe, truncated: false };
+  if (displayWidth(text) <= cap) return { text, ranges: safe, truncated: false };
+
+  const ell = displayWidth(WINDOW_ELLIPSIS);
+  // 逐码元累计显示宽度：slice 区间 [a,b) 的宽度 = cum[b] - cum[a]。
+  const cum: number[] = [0];
+  for (let i = 0; i < text.length; i += 1) cum.push(cum[i] + codeUnitWidth(text.charCodeAt(i)));
+  /** 从 from 向右取宽度 ≤ units 的最大码元数，返回右开边界。 */
+  const fitRight = (from: number, units: number): number => {
+    let end = from;
+    while (end < text.length && cum[end + 1] - cum[from] <= units) end += 1;
+    return end;
+  };
+  /** 从 to 向左取宽度 ≤ units 的最大码元数，返回左边界。 */
+  const fitLeft = (to: number, units: number): number => {
+    let start = to;
+    while (start > 0 && cum[to] - cum[start - 1] <= units) start -= 1;
+    return start;
+  };
+
   if (safe.length === 0) {
-    if (cap === 1) return { text: WINDOW_ELLIPSIS, ranges: [], truncated: true };
-    return { text: text.slice(0, cap - 1) + WINDOW_ELLIPSIS, ranges: [], truncated: true };
+    if (cap <= ell) return { text: WINDOW_ELLIPSIS, ranges: [], truncated: true };
+    const end = fitRight(0, cap - ell);
+    return { text: text.slice(0, end) + WINDOW_ELLIPSIS, ranges: [], truncated: true };
   }
 
-  const hitLength = safe.reduce((sum, [start, end]) => sum + (end - start), 0);
+  const hitWidth = safe.reduce((sum, [start, end]) => sum + (cum[end] - cum[start]), 0);
   const gaps = safe.length + 1; // 首段前 + 段间 + 末段后，间隙最坏各占一个省略号。
-  if (hitLength + gaps > cap) {
-    // 命中本身就放不下预算：放弃语境，从首个命中起点取尽量长的连续片段（保底第一段可见）。
+  if (hitWidth + gaps * ell > cap) {
+    // 命中本身就放不下预算：放弃语境，从首个命中起点按宽度取尽量长的连续片段（保底第一段可见）。
     const start = safe[0][0];
     const prefix = start > 0 ? WINDOW_ELLIPSIS : '';
-    const maxBody = Math.max(0, cap - prefix.length);
-    if (maxBody === 0) return { text: WINDOW_ELLIPSIS, ranges: [], truncated: true };
-    const needSuffix = start + maxBody < text.length;
-    const body = text.slice(start, start + Math.max(0, maxBody - (needSuffix ? 1 : 0)));
-    const outRanges = projectRanges(safe, start, start + body.length).map(
+    const maxBody = cap - (start > 0 ? ell : 0);
+    if (maxBody <= 0) return { text: WINDOW_ELLIPSIS, ranges: [], truncated: true };
+    const reachable = fitRight(start, maxBody);
+    // 尾部省略号只有在必将吞掉真实内容、且扣完后窗口仍非空时才挂（否则窗口宽度超预算）。
+    const needSuffix = reachable < text.length && fitRight(start, maxBody - ell) > start;
+    const bodyEnd = needSuffix ? fitRight(start, maxBody - ell) : reachable;
+    const body = text.slice(start, bodyEnd);
+    // projectRanges 已把区间平移到以窗口起点为零点，这里只需再加上前导省略号的宽度位。
+    const outRanges = projectRanges(safe, start, bodyEnd).map(
       ([s, e]) => [s + prefix.length, e + prefix.length] as [number, number],
     );
     return {
@@ -185,17 +252,17 @@ export function windowAroundHits(
     };
   }
 
-  // 语境预算：先为每个间隙预留省略号位，剩余预算在 gaps 个间隙位上均分。
-  const context = Math.floor((cap - hitLength - gaps) / gaps);
+  // 语境预算：先为每个间隙预留省略号位（各 ell 单位），剩余预算在 gaps 个间隙位上均分。
+  const context = Math.floor((cap - hitWidth - gaps * ell) / gaps);
   const spans: Array<[number, number]> = [];
   for (const [start, end] of safe) {
-    const from = Math.max(0, start - context);
+    const from = fitLeft(start, context);
     const prev = spans[spans.length - 1];
     if (prev && from <= prev[1]) prev[1] = Math.max(prev[1], end);
     else spans.push([from, end]);
   }
   const last = spans[spans.length - 1];
-  last[1] = Math.min(text.length, last[1] + context);
+  last[1] = fitRight(last[1], context);
 
   let out = '';
   const outRanges: Array<[number, number]> = [];
@@ -232,44 +299,50 @@ function segmentsForField(
   return highlightSegments(display, projectRanges(match.ranges, windowStart, windowStart + display.length));
 }
 
-/** pickerRowPlan 的可选展示参数（全部省略 = 与 C-6b 之前的行为逐字节一致）。 */
-export interface PickerRowPlanOptions {
-  /** 名称窗口化字符预算（C-6b②）：给定时才截断/开窗，省略 = 全名直出。 */
-  nameBudget?: number;
-}
-
-/** 名称高亮分段：给了 nameBudget 先按命中位置开窗、再在窗口文本上出分段。 */
-function nameSegmentsFor(
-  matches: readonly SkillFieldMatch[],
-  name: string,
-  options: PickerRowPlanOptions,
-): HighlightSegment[] {
-  const match = matches.find((entry) => entry.field === 'name');
-  const ranges = match?.ranges ?? [];
-  if (options.nameBudget === undefined) return highlightSegments(name, ranges);
-  const window = windowAroundHits(name, ranges, options.nameBudget);
-  return highlightSegments(window.text, window.ranges);
+/** 取 name 字段在全名坐标系上的命中区间（无命中 = 空数组，窗口化据此门控，C-6c①）。 */
+function nameRangesFor(matches: readonly SkillFieldMatch[]): Array<[number, number]> {
+  return matches.find((entry) => entry.field === 'name')?.ranges ?? [];
 }
 
 /** 单条命中 → 行计划。duplicateNames 判消歧；matches 供高亮投影。 */
 export function pickerRowPlan(
   hit: SkillSearchHit,
   duplicateNames: ReadonlySet<string>,
-  options: PickerRowPlanOptions = {},
 ): PickerRowPlan {
   const { skill, matches } = hit;
   const duplicate = duplicateNames.has(skill.name);
   const typeLabel = SKILL_TYPE_META[skill.type].label;
   // type 的 D-1 待匹配文本是 `${type} ${label}`；展示只取中文标签那一段。
   const typeWindow = `${skill.type} `.length;
+  const nameRanges = nameRangesFor(matches);
   return {
     skill,
     label: skill.name,
     suffix: duplicate ? ` ·${skill.id.slice(-6)}` : '',
-    nameSegments: nameSegmentsFor(matches, skill.name, options),
+    nameRanges,
+    nameSegments: highlightSegments(skill.name, nameRanges),
     categorySegments: segmentsForField(matches, 'category', categoryDisplay(skill), 0),
     typeSegments: segmentsForField(matches, 'type', typeLabel, typeWindow),
   };
+}
+
+/**
+ * C-6c①②③ 行级名称分段（PickerRow 拿到本行名称盒实测宽后调用）：
+ * - 窗口化只在名称字段确实有命中时启用——零命中没有要保护的可视内容，恒全名直出。
+ *   （走查实测：无命中也被按预算截，造出「两行视觉相同」与没必要的省略号；分组态
+ *   根本没有命中，天然落入此分支。）
+ * - 有命中：预算 = 本行盒宽换算（nameBudgetFromBoxPx），首次未测到宽（boxPx≤0）
+ *   退化为全名不截；窗口文本按显示宽度 ≤ 预算，命中必落盒内。
+ * - 消歧后缀不占此预算：它渲染在 truncate 盒之外（shrink-0 兄弟），恒可见。
+ */
+export function pickerRowNameSegments(
+  row: Pick<PickerRowPlan, 'label' | 'nameRanges'>,
+  boxPx: number,
+): HighlightSegment[] {
+  if (row.nameRanges.length === 0) return highlightSegments(row.label, []);
+  if (boxPx <= 0) return highlightSegments(row.label, row.nameRanges);
+  const window = windowAroundHits(row.label, row.nameRanges, nameBudgetFromBoxPx(boxPx));
+  return highlightSegments(window.text, window.ranges);
 }
 
 /** 组内行序：名称 localeCompare 稳定序、同名按 id 全序（与 D-1 并列序同思路）。 */
@@ -285,7 +358,6 @@ function byNameThenId(a: Skill, b: Skill): number {
 export function buildGroupPlan(
   candidates: readonly Skill[],
   duplicateNames: ReadonlySet<string>,
-  options: PickerRowPlanOptions = {},
 ): PickerGroupPlan[] {
   const byCategory = new Map<string, Skill[]>();
   for (const skill of candidates) {
@@ -301,7 +373,7 @@ export function buildGroupPlan(
       key: label === UNCATEGORIZED_LABEL ? '' : label,
       title: `${label}（${skills.length}）`,
       rows: skills.map((skill) =>
-        pickerRowPlan({ skill, score: 0, matches: [] }, duplicateNames, options),
+        pickerRowPlan({ skill, score: 0, matches: [] }, duplicateNames),
       ),
     });
   }
@@ -321,11 +393,10 @@ export function buildFlatPlan(
   hits: readonly SkillSearchHit[],
   duplicateNames: ReadonlySet<string>,
   limit: number = DEFAULT_PICKER_LIMIT,
-  options: PickerRowPlanOptions = {},
 ): PickerFlatPlan {
   const capped = Math.max(1, Math.floor(limit));
   return {
-    rows: hits.slice(0, capped).map((hit) => pickerRowPlan(hit, duplicateNames, options)),
+    rows: hits.slice(0, capped).map((hit) => pickerRowPlan(hit, duplicateNames)),
     total: hits.length,
     truncated: hits.length > capped,
   };
