@@ -20,11 +20,11 @@ import { CreateSkillDialog } from './create-skill-dialog';
 import { CopySkillPicker } from './copy-skill-picker';
 import { ImportCenterDialog } from './import-center-dialog';
 import { useCreateSkill, useDeleteSkill, useSkills } from './hooks';
-import { SKILL_CATEGORIES, SKILL_ORIGIN_OPTIONS, SKILL_STARTER_TEMPLATES, SKILL_STATUS_META, SKILL_TYPE_OPTIONS, UNCATEGORIZED_CATEGORY, UNCATEGORIZED_LABEL } from './meta';
+import { SKILL_CATEGORIES, SKILL_ORIGIN_OPTIONS, SKILL_STARTER_TEMPLATES, SKILL_STATUS_META, UNCATEGORIZED_CATEGORY, UNCATEGORIZED_LABEL } from './meta';
 import { SkillCard } from './skill-card';
 import { SkillDetailDrawer } from './skill-detail-drawer';
 import { SkillEditorPage } from './skill-editor-page';
-import type { Skill, SkillOrigin, SkillQuery, SkillStatus, SkillType } from './types';
+import type { Skill, SkillOrigin, SkillQuery, SkillStatus } from './types';
 
 /**
  * 技能库页（2.md 10.1/10.2）。路由：`#/skills`；编辑器以查询参数挂载
@@ -44,7 +44,6 @@ export function SkillLibraryPage() {
   const toast = useToast();
   const reduce = useReducedMotion();
   const [keywordInput, setKeywordInput] = useState('');
-  const [type, setType] = useState<SkillType | ''>('');
   const [status, setStatus] = useState<SkillStatus | ''>('');
   const [source, setSource] = useState<SkillOrigin | ''>('');
   /** 分类多选（OR 语义）：不选即全部；选项恒为静态词表 12 项 + 未分类，直读 item.category。 */
@@ -58,17 +57,16 @@ export function SkillLibraryPage() {
   const query: SkillQuery = useMemo(
     () => ({
       keyword: keywordInput || undefined,
-      type: type || undefined,
       status: status || undefined,
       source: source || undefined,
     }),
-    [keywordInput, type, status, source],
+    [keywordInput, status, source],
   );
   const skills = useSkills(query);
   /* 分类筛选（前端侧，用户裁定不给 /skills 加 category= 查询参数）：分类 = skills.category
    * 真列直读（PRD §9.2），选项恒等于 12 词表 + 未分类共 13 项、按词表顺序渲染，
    * 不随当前列表 tags 漂移（PRD §19.13 第 82 条）；计数为 0 的项置灰禁用但不消失，
-   * 已选中的项即使计数归零也保留可点（允许取消）。与类型/状态/来源正交。 */
+   * 已选中的项即使计数归零也保留可点（允许取消）。与状态/来源正交。 */
   const categoryOptions = useMemo(() => {
     const counts = new Map<string, number>();
     for (const item of skills.data?.items ?? []) {
@@ -271,7 +269,7 @@ export function SkillLibraryPage() {
     );
   }
 
-  const filtersActive = Boolean(keywordInput || type || status || source || categories.length > 0);
+  const filtersActive = Boolean(keywordInput || status || source || categories.length > 0);
   const isEmptyLibrary = !filtersActive && (skills.data?.items.length ?? 0) === 0;
 
   return (
@@ -298,13 +296,6 @@ export function SkillLibraryPage() {
             onChange={(event) => setKeywordInput(event.target.value)}
           />
         </div>
-        <Select
-          className="w-36"
-          value={type}
-          placeholder="全部类型"
-          options={[{ value: '', label: '全部类型' }, ...SKILL_TYPE_OPTIONS]}
-          onChange={(event) => setType(event.target.value as SkillType | '')}
-        />
         <Select
           className="w-36"
           value={status}
@@ -379,7 +370,6 @@ export function SkillLibraryPage() {
               size="sm"
               onClick={() => {
                 setKeywordInput('');
-                setType('');
                 setStatus('');
                 setSource('');
                 setCategories([]);

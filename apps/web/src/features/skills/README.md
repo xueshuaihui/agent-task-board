@@ -14,7 +14,7 @@
 | `api.ts` | `skillsApi`（list/get/create/patch/remove/createVersion/rollback/test/export/import/boundTasks）+ `taskSkillsApi.set`（任务绑定） |
 | `hooks.ts` | TanStack Query 封装（`skillKeys` + use* 查询与变更） |
 | `meta.ts` | 类型/状态/块类型（PRD 15 类，1.md 8.3）的展示元数据与图标、模板起步 `templateContent`、semver 预览、连线校验、循环检测（`cyclicBlockIds`）、变量系统辅助（`inferVariableOptions`/`variableWarnings`） |
-| `skill-library-page.tsx` | 技能库页（搜索/类型/状态筛选、卡片网格、新建/导入对话框挂载、编辑器路由） |
+| `skill-library-page.tsx` | 技能库页（搜索/状态/来源筛选 + 分类 ChipGroup、卡片网格、新建/导入对话框挂载、编辑器路由） |
 | `skill-card.tsx` | 技能卡片（类型徽标、三来源徽标 §9.10、版本、状态、绑定任务数、操作菜单；默认技能菜单项为「查看（只读）」进只读编辑器、同名追加 id 短后缀消歧） |
 | `create-skill-dialog.tsx` | 新建技能两步向导：①名称/类型/起步方式（8 个内置模板摘要）②可选描述/标签，Enter 推进/提交 |
 | `import-center-dialog.tsx` | 统一导入中心（W2 口径）：拖拽/选择 .atskill、SKILL.md、Cursor Rules .mdc，前端解析预览后走后端导入端点落库为「三方技能」；同名不算冲突直接共存，同 ID 冲突行内选「覆盖更新为新版本/跳过」（§9.8.4 r2） |
