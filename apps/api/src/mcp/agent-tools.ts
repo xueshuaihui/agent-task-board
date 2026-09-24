@@ -76,7 +76,7 @@ const searchSkillsSchema = skillListQuerySchema.extend({
     .trim()
     .min(1)
     .max(100)
-    .describe('搜索关键字（1-100 字符），必填：命中技能名称与描述，无关键字不要调本工具'),
+    .describe('搜索关键字（1-100 字符），必填：命中技能名称、描述、分类、标签，无关键字不要调本工具'),
 });
 
 /** B6 词表工具：无入参——一次调用返回服务端当前全部词表口径，agent 不再试错猜值。 */
@@ -224,7 +224,7 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
     },
     {
       name: 'search_skills',
-      description: '按关键字搜索技能（keyword 必填；命中 name/description，§16.1）',
+      description: '按关键字搜索技能（keyword 必填；命中 name/description/category/tags，§16.1）',
       input: searchSkillsSchema,
       run: async (args, auth) => {
         agentOf(auth);

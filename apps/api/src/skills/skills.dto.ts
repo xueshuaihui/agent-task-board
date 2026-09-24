@@ -230,7 +230,7 @@ export const skillListQuerySchema = z.object({
     .trim()
     .max(100)
     .optional()
-    .describe('关键字（≤100 字符），命中技能名称与描述的模糊过滤；不填=不过滤'),
+    .describe('关键字（≤100 字符），命中技能名称、描述、分类、标签的模糊过滤；不填=不过滤'),
   type: z
     .enum(SKILL_TYPES)
     .optional()
