@@ -5,10 +5,12 @@ import { uuidv7 } from '../contract/ids';
 import { nowSql, toIso } from '../contract/time';
 import type { Skill, SkillVersion } from '@prisma/client';
 import { PrismaService } from '../infra/prisma.service';
+import { freeTagsOf } from './skill-categories';
 import {
   LEGACY_SOURCE_TYPES,
   nextPatchVersion,
   parseJson,
+  toSkillCategory,
   type SkillContent,
   type SkillCreateInput,
   type SkillDto,
@@ -78,6 +80,8 @@ function toDto(row: Skill): SkillDto {
     status: row.status as SkillStatus,
     description: row.description,
     tags: parsed.tags,
+    // 列值经 0015 CHECK 保证在词表内；读侧再过一次 toSkillCategory 纯属防脏库炸类型。
+    category: toSkillCategory(row.category),
     current_version: row.currentVersion,
     content: parsed.content,
     test_cases: parsed.testCases,
@@ -172,6 +176,9 @@ export class SkillsService {
         type: input.type,
         status: 'DRAFT',
         description: input.description,
+        // §9.2 两字段两语义：category 单值分类直落列（zod 词表校验/import 侧已归一），
+        // tags 是纯自由标签——写入侧不删词表词（只允许导入路径按 0015 口径剔受众词+取走词）。
+        category: input.category,
         tags: JSON.stringify(input.tags),
         currentVersion: INITIAL_VERSION,
         content: JSON.stringify(input.content),
@@ -205,6 +212,8 @@ export class SkillsService {
     // r2（§16.2）：重名不再受限，改名不查重。
     if (input.name !== undefined) data.name = input.name;
     if (input.description !== undefined) data.description = input.description;
+    // 分类两态：不传=不改；传 ''=显式改未分类（0015 起 '' 是合法落库值，不能按 falsy 跳过）。
+    if (input.category !== undefined) data.category = input.category;
     if (input.tags !== undefined) data.tags = JSON.stringify(input.tags);
     if (input.status !== undefined) data.status = input.status;
     if (input.content !== undefined) data.content = JSON.stringify(input.content);
@@ -361,6 +370,8 @@ export class SkillsService {
       mcp_dependencies: parsed.mcpDependencies,
       description: row.description,
       tags: parsed.tags,
+      // §9.2：单值分类随导出包走（SKILL.md frontmatter 与 .atskill 同源同列）。
+      category: row.category,
       source: row.sourceType,
       exported_at: new Date().toISOString(),
     };
@@ -395,6 +406,7 @@ export class SkillsService {
       mcpDependencies?: unknown;
       description?: unknown;
       tags?: unknown;
+      category?: unknown;
     };
     try {
       payload = JSON.parse(file.buffer.toString('utf8'));
@@ -408,11 +420,16 @@ export class SkillsService {
       throw new ApiException('VALIDATION_FAILED', '技能文件缺少 type 字段');
     }
     const deps = (payload.mcp_dependencies ?? payload.mcpDependencies ?? []) as SkillMcpDependency[];
+    // §9.2 导入归一（与 SKILL.md 路径同口径）：category 词表外落 ''（旧包无此字段即未分类）；
+    // tags 按 0015 洗数口径剔受众词与被 category 取走的词，其余原序保留。
+    const category = toSkillCategory(payload.category);
+    const rawTags = Array.isArray(payload.tags) ? (payload.tags as string[]).map(String) : [];
     const data = {
       name: payload.name.trim(),
       type: payload.type as SkillType,
       description: typeof payload.description === 'string' ? payload.description : '',
-      tags: Array.isArray(payload.tags) ? (payload.tags as string[]).map(String) : [],
+      category,
+      tags: freeTagsOf(rawTags, category).filter((tag) => tag.length > 0 && tag.length <= 30),
       content: (payload.content ?? EMPTY_CONTENT) as SkillContent,
       // 8.6：测试用例随 .atskill 一起带走（旧文件没有该字段就是空）。
       test_cases: Array.isArray(payload.test_cases) ? (payload.test_cases as SkillTestCase[]) : [],
@@ -457,11 +474,12 @@ export class SkillsService {
       };
       parsed.content = { blocks: [block as SkillContent['blocks'][number]], entryBlockId: 'block-import-0' };
     }
-    const tags = [
-      ...(fm?.tags ?? []),
-      // category 没有对应列，折进标签；.mdc 的 Cursor 元数据其余键随 frontmatter 剥离不导入。
-      ...(fm?.category && !fm.tags.includes(fm.category) ? [fm.category] : []),
-    ].filter((tag) => tag.length > 0 && tag.length <= 30);
+    // §9.2 分类收口（0015）：frontmatter `category` 直落 skills.category 列，词表外值
+    // （含旧导出包把 category 写成 workflow/flow 类型枚举值的文件）归未分类 ''、不报错。
+    // 旧实现「category 没有对应列、折进标签」的行为连同 .mdc 共用路径一并作废——
+    // tags 退回纯自由标签，按 0015 洗数口径剔受众词与被 category 取走的词，其余原序保留。
+    const category = toSkillCategory(fm?.category);
+    const tags = freeTagsOf(fm?.tags ?? [], category).filter((tag) => tag.length <= 30);
     const data: SkillCreateInput = {
       name: baseName,
       // 只有一个提示词块 → prompt 技能，否则按流程技能处理。
@@ -469,6 +487,7 @@ export class SkillsService {
         ? 'prompt'
         : 'flow',
       description: fm?.description ?? '',
+      category,
       tags: tags.slice(0, 20),
       content: parsed.content,
       test_cases: [] as SkillTestCase[],
@@ -491,7 +510,9 @@ export class SkillsService {
       name: row.name,
       description: row.description.replace(/\n/g, ' '),
       version: row.currentVersion,
-      category: '',
+      // §9.2：frontmatter category 与 skills.category 列一一对应——导出取真实列值，
+      // 不再硬编码 ''（旧口径没有列，值全靠前端把 type/猜测塞进来，本棒起作废）。
+      category: row.category,
       tags: parsed.tags,
       mcpDependencies: parsed.mcpDependencies,
     });
@@ -697,6 +718,8 @@ export class SkillsService {
         data: {
           name: data.name,
           description: data.description,
+          // 覆盖导入同样覆盖分类（data.category 已在两条导入路径归一为词表值或 ''）。
+          category: data.category,
           tags: JSON.stringify(data.tags),
           content: JSON.stringify(data.content),
           testCases: JSON.stringify(data.test_cases ?? []),

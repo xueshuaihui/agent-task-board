@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import {
+  isSkillCategory,
+  SKILL_CATEGORIES,
+  UNCATEGORIZED,
+  type SkillCategoryOrNone,
+} from './skill-categories';
 
 /** 8.1 技能类型词表（迁移 CHECK 同步）。 */
 export const SKILL_TYPES = [
@@ -121,10 +127,30 @@ export type SkillTestCase = z.infer<typeof skillTestCaseSchema>;
 
 export const skillTestCasesSchema = z.array(skillTestCaseSchema).max(50);
 
+/**
+ * §9.2（0015 分类收口）单值分类入参校验：取值 = 12 项受控词表 + `''`（未分类）。
+ * 词表从 skill-categories.ts 派生（唯一事实源），本文件不抄字面清单；越表即
+ * 422 VALIDATION_FAILED（ZodPipe 统一错误体）。SKILL.md 导出/导入是前端 markdown.ts
+ * 与本文件 api 镜像的共享契约，导出/展示字段一律 snake_case 风格沿用列名 `category`。
+ */
+export const skillCategorySchema = z.enum([UNCATEGORIZED, ...SKILL_CATEGORIES]);
+export type SkillCategoryInput = z.infer<typeof skillCategorySchema>;
+
+/**
+ * 非 zod 入口（.atskill / SKILL.md 文件导入）的归一口径：词表外值一律落未分类 `''`、
+ * **不报错**——要兼容历史导出包把 category 写成 `workflow`/`flow` 这类类型枚举值的旧文件
+ * （PRD §9.2；旧实现把 category 折进 tags 的行为已随 0015 作废，折入路径不得复活）。
+ */
+export function toSkillCategory(value: unknown): SkillCategoryOrNone {
+  return typeof value === 'string' && isSkillCategory(value) ? value : UNCATEGORIZED;
+}
+
 export const skillCreateSchema = z.object({
   name: z.string().trim().min(1).max(100),
   type: z.enum(SKILL_TYPES),
   description: z.string().max(2000).default(''),
+  /** §9.2 单值分类：缺省不传=未分类 ''；越表 422（词表派生自 skill-categories.ts）。 */
+  category: skillCategorySchema.default(UNCATEGORIZED),
   tags: z.array(z.string().trim().min(1).max(30)).max(20).default([]),
   content: skillContentSchema
     .default({ blocks: [], entryBlockId: null }),
@@ -137,6 +163,8 @@ export const skillPatchSchema = z
   .object({
     name: z.string().trim().min(1).max(100).optional(),
     description: z.string().max(2000).optional(),
+    /** 不传=不改分类；显式传 `''`=改未分类（两态语义靠 optional 区分，勿给 default）。 */
+    category: skillCategorySchema.optional(),
     tags: z.array(z.string().trim().min(1).max(30)).max(20).optional(),
     content: skillContentSchema.optional(),
     test_cases: skillTestCasesSchema.optional(),
@@ -260,6 +288,8 @@ export interface SkillDto {
   status: SkillStatus;
   description: string;
   tags: string[];
+  /** §9.2（0015）单值分类：12 项词表或 ''（未分类）；tags 是纯自由标签，两者语义独立。 */
+  category: SkillCategoryOrNone;
   current_version: string;
   content: SkillContent;
   test_cases: SkillTestCase[];
