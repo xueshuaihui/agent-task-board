@@ -1,7 +1,11 @@
 import { useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import type { TaskCreateInput, TaskStatus, TemplatePreset } from '@/api/types';
 import { errorMessage, fieldErrorsOf, isApiError, useFieldDefs, useSettings } from '@/api';
-import { useActiveGroups } from '@/features/groups';
+import {
+  requirementCreateBody,
+  useRequirementOptions,
+  type RequirementOption,
+} from '@/features/requirements/use-requirement-options';
 import { useFilterStore } from '@/app/store/filters';
 import { priorityText, STATUS_LABEL } from '@/lib/labels';
 import { clearFieldError } from '@/lib/forms';
@@ -88,18 +92,25 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [createdId, setCreatedId] = useState<string | null>(null);
 
-  // 0919 五章：创建时选归属分组。默认值取切换器「恰好只选了一个分组」的场景，
-  // 其他情况留空（未分配）——分组是弱约束，不该在快速新建里替用户做主。
-  const groups = useActiveGroups();
-  const switcherGroupIds = useFilterStore((state) => state.groups);
-  const [groupId, setGroupId] = useState(
-    switcherGroupIds.length === 1 ? switcherGroupIds[0] : '',
+  // §19.14·86（W2-a）：创建时的唯一归属选择是「需求」——选中即同写 parent_task_id +
+  // 回填该需求的 group_id（Group 概念已从看板 UI 下线，不再直接选它）。
+  // 默认值取看板需求筛选「恰好只选了一个需求」的场景，其他情况留空（不选）——
+  // 归属是弱约束，不该在快速新建里替用户做主。
+  const requirementOptions = useRequirementOptions();
+  const filterRequirements = useFilterStore((state) => state.requirements);
+  const [requirementId, setRequirementId] = useState(() =>
+    defaultRequirementId(filterRequirements),
   );
 
   const defs = useMemo(() => defaults.filter((def) => def.enabled), [defaults]);
   const required = useMemo(() => requiredDefs(defs, type), [defs, type]);
   const optional = useMemo(() => cardDefs(defs, type), [defs, type]);
   const busy = mutations.create.isPending || mutations.advance.isPending || mutations.patch.isPending;
+
+  const selectedRequirement = useMemo<RequirementOption | null>(
+    () => requirementOptions.data.find((option) => option.id === requirementId) ?? null,
+    [requirementOptions.data, requirementId],
+  );
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
@@ -117,7 +128,8 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
           tags: parseTags(tagText),
         };
         if (description.trim()) body.description = description.trim();
-        if (groupId) body.group_id = groupId;
+        // §19.14·86：选需求 → 同写 parent_task_id + 回填 group_id；未选 → 两字段都不发。
+        Object.assign(body, requirementCreateBody(selectedRequirement));
         if (preset?.required_capabilities?.length) body.required_capabilities = preset.required_capabilities;
         if (typeof preset?.due_offset_days === 'number' && preset.due_offset_days > 0) {
           body.due_at = new Date(Date.now() + preset.due_offset_days * 86_400_000).toISOString();
@@ -213,15 +225,15 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
           </Field>
         </div>
 
-        <Field label="分组" hint="可选；归档分组不出现在候选里（5.1）">
+        <Field label="需求" hint="可选；选中后自动跟随该需求的归属（§19.14）">
           <Select
-            value={groupId}
-            placeholder="未分配分组"
-            options={(groups.data?.items ?? []).map((group) => ({
-              value: group.id,
-              label: `${group.icon ? `${group.icon} ` : ''}${group.name}`,
+            value={requirementId}
+            placeholder="未分配需求"
+            options={requirementOptions.data.map((option) => ({
+              value: option.id,
+              label: option.title,
             }))}
-            onChange={(event) => setGroupId(event.target.value)}
+            onChange={(event) => setRequirementId(event.target.value)}
           />
         </Field>
 
@@ -266,6 +278,14 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
       </form>
     </Dialog>
   );
+}
+
+/**
+ * §19.14·86 的默认归属规则：看板「需求」筛选恰好只选 1 个时默认挂该需求，
+ * 否则不选（不替用户做主）。纯函数供单测直钉。
+ */
+export function defaultRequirementId(filterRequirements: readonly string[]): string {
+  return filterRequirements.length === 1 ? filterRequirements[0]! : '';
 }
 
 /** 20.3：标签去重、去首尾空白、单个 ≤ 16 字、每任务 ≤ 10 个。 */
