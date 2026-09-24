@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestApp, request, type Sender, type TestApp } from '../../__tests__/helpers/http-app';
 import { API, uiSender } from '../../__tests__/helpers/seed';
+import { ensureDefaultSkills } from '../default-skills';
 
 /**
  * 0919 技能管理（1.md 第八章 + 10.3 随任务下发）：CRUD / 版本 / 回滚 / 测试运行 /
@@ -117,13 +118,16 @@ describe('技能管理', () => {
    * name/description，输入标签词（walk）或分类词（教育学习/推荐）就是 0 条——用户体感即
    * 「分类问题还在」。这里钉死四字段命中面，以及最容易写坏的一条：category 的合法存储值含
    * ''（未分类）、历史 tags 里也存得出 ''，空串一旦进命中面就会「任意关键词都命中」。
+   * 0925 树化补口（⑤~⑧）：分类命中面拼「叶子+所属一级」（与 web categoryFieldText 同口径），
+   * 搜「编码」「办公」等一级词要能收拢命中其子树；末级/一级兼叶子的既有行为不变。
    */
-  it('列表：keyword 命中名称/描述/分类/标签四字段（大小写不敏感），空分类不被任意命中', async () => {
-    const ids = async (keyword: string) => {
+  it('列表：keyword 命中名称/描述/分类（叶子+所属一级）/标签（大小写不敏感），空分类不被任意命中', async () => {
+    const itemsOf = async (keyword: string) => {
       const res = await ui.get(`${API}/skills?keyword=${encodeURIComponent(keyword)}`);
       expect(res.status).toBe(200);
-      return res.body.items.map((row: any) => row.id) as string[];
+      return res.body.items as any[];
     };
+    const ids = async (keyword: string) => (await itemsOf(keyword)).map((row) => row.id) as string[];
 
     const byTag = await createSkill(ui, {
       name: 'G4-甲技能',
@@ -170,6 +174,38 @@ describe('技能管理', () => {
     for (const keyword of ['wal', '搜索面标签', '教育学习']) {
       expect(await ids(keyword)).not.toContain('skl_g4_legacy_empty_tag');
     }
+
+    // ⑤ 0925 树化补口：把 125 条内置真落库（本文件此前只有用户行、且几乎全未分类，
+    // 「一级词收拢子树」的树面只能拿内置叶子验）。②~④ 的精确断言都发生在种子落入前，互不影响。
+    await ensureDefaultSkills(t.prisma);
+
+    // ⑤-a 纯分组一级词「编码」：编码开发子树 40 条内置（阶段词 35 + 开发编程 5，草案 §1.1 终值
+    // 分布）全部收拢。debug-pro 的 category=开发编程、名称/描述/标签均不含「编码」字样，
+    // 只能经「叶子+所属一级」拼接命中——真机走查里这正是搜「编码」0 条的缺口。
+    const byStageLeaf = await createSkill(ui, { name: 'G4-戊技能', category: '开发与实现' });
+    const coding = await ids('编码');
+    expect(coding).toContain('skl_builtin_debug-pro');
+    expect(coding).toContain(byStageLeaf.id);
+    expect(coding.filter((id) => id.startsWith('skl_builtin_'))).toHaveLength(40);
+
+    // ⑥ 一级词「办公」收拢 Office办公(9) + 实用工具(8) 两叶子共 17 条内置：contract-review
+    // category=实用工具、全字段无「办公」字样，同样只靠所属一级词进命中面。
+    const byOfficeLeaf = await createSkill(ui, { name: 'G4-己技能', category: 'Office办公' });
+    const office = await ids('办公');
+    expect(office).toContain(byOfficeLeaf.id);
+    expect(office).toContain('skl_builtin_contract-review');
+    expect(office.filter((id) => id.startsWith('skl_builtin_'))).toHaveLength(17);
+
+    // ⑦ 「未分类」哨兵：'' 不进命中面（row.category='' 与 parentOfCategory('') 的 ?? '' 都被
+    // filter 显式跳过），此刻库里 30+ 用户行全是未分类——防线一破这条就会以千倍命中炸掉。
+    expect(await ids('未分类')).toEqual([]);
+
+    // ⑧ 一级兼叶子（教育学习）：parentOfCategory 返回自身、拼接不引入其它分类的行，
+    // 行为与树化前等价——命中恒等于「category=教育学习」集合（内置 23 条 + ② 的 byCategory）。
+    const edu = await itemsOf('教育学习');
+    expect(edu.map((row) => row.id)).toContain(byCategory.id);
+    expect(edu).toHaveLength(24);
+    for (const row of edu) expect(row.category).toBe('教育学习');
   });
 
   it('PATCH：基础字段 + content 只写当前草稿，不动 versions', async () => {

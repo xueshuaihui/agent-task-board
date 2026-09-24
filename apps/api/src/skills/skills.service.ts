@@ -5,7 +5,7 @@ import { uuidv7 } from '../contract/ids';
 import { nowSql, toIso } from '../contract/time';
 import type { Skill, SkillVersion } from '@prisma/client';
 import { PrismaService } from '../infra/prisma.service';
-import { freeTagsOf } from './skill-categories';
+import { freeTagsOf, parentOfCategory } from './skill-categories';
 import {
   LEGACY_SOURCE_TYPES,
   nextPatchVersion,
@@ -114,11 +114,15 @@ export class SkillsService {
           if (keyword) {
             // 命中面 = 名称/描述/分类/标签四字段任一子串命中，与技能库搜索框的 placeholder
             // 逐字对齐（口径沿用原 name/description 的 toLowerCase().includes()，大小写不敏感）。
-            // 空串必须显式跳过：category 的合法存储值含 ''（未分类），历史 tags 里也存得出 ''，
-            // 让它们进命中面就等于「未分类」被任意关键词命中——搜什么都退化成全量。
-            const hit = [row.name, row.description, row.category, ...tags].some(
-              (field) => field !== '' && field.toLowerCase().includes(keyword),
-            );
+            // 0925 树化补口：分类词拼「叶子 + 所属一级」（parentOfCategory，一级兼叶子返回自身、
+            // 重复无害不特判），与 web SkillPicker 的 categoryFieldText 同口径——row.category 恒为
+            // 叶子，一级词不在任何行存储值里，不拼则搜「编码」「办公」等一级词服务端恒 0 条。
+            // 空串必须显式跳过：category 的合法存储值含 ''（未分类，parentOfCategory('') 也落
+            // null→''），历史 tags 里也存得出 ''，让它们进命中面就等于「未分类」被任意关键词
+            // 命中——搜什么都退化成全量。
+            const hit = [row.name, row.description, row.category, parentOfCategory(row.category) ?? '', ...tags]
+              .filter((field) => field !== '')
+              .some((field) => field.toLowerCase().includes(keyword));
             if (!hit) return false;
           }
           if (query.tag && !tags.includes(query.tag)) return false;
