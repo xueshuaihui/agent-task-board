@@ -29,7 +29,7 @@ export interface DefaultSkillSeed {
   type: SkillType;
   description: string;
   /**
-   * 单值分类（skills.category，11 词受控词表）：内置技能随安装包发布就必须带分类，
+   * 单值分类（skills.category，两级树 16 叶子受控词表，0925 树化）：内置技能随安装包发布就必须带分类，
    * 不允许未分类（空串）——生成器与单测两侧都拦。词表来源见 skill-categories.ts。
    */
   category: SkillCategory;
@@ -78,9 +78,12 @@ export const DEFAULT_SKILL_SEEDS: DefaultSkillSeed[] = [
      * 为什么要在 seed 里显式写：0015 的回填按通用规则「tags 中首个词表词」取分类，而它的
      * tags 两个词都不在词表内 ⇒ 迁移只能给它 ''，且刻意不给任何技能 id 写特例（见该迁移
      * 文件头注 3）。语义归属由此定死：**通用清洗归迁移、单条技能的分类归 seed**——seed 每次
-     * 启动 upsert 会把它刷成 质量保障，这是设计如此，不是与迁移打架。
+     * 启动 upsert 会把它刷成本行 category，这是设计如此，不是与迁移打架。
+     *
+     * 0925 树化：旧值「质量保障」作废退出词表（0018 收敛 CHECK、0019 逐 id 回填同值），
+     * 语义唯一续位是「编码开发/质量与安全」叶子（草案 §2 判定规则第二条），故此处改判。
      */
-    category: '质量保障',
+    category: '质量与安全',
     tags: ['review', 'quality'],
     content: CODE_REVIEW,
     mcpDependencies: [{ server: 'github', tools: ['get_pull_request'], required: false, reason: '拉取待审查 diff' }],

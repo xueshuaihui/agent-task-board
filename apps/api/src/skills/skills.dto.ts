@@ -128,7 +128,9 @@ export type SkillTestCase = z.infer<typeof skillTestCaseSchema>;
 export const skillTestCasesSchema = z.array(skillTestCaseSchema).max(50);
 
 /**
- * §9.2（0015 分类收口，0017 词表收敛）单值分类入参校验：取值 = 11 项受控词表 + `''`（未分类）。
+ * §9.2（0015 分类收口，0017 词表收敛，0018 两级树化）单值分类入参校验：
+ * 取值 = 16 项**叶子**词表 + `''`（未分类）。三个纯分组一级词（编码开发/办公实用/研究分析）
+ * 不在词表内——传它们同样 422，agent/MCP 面的回显（SKILL_CATEGORY_DESC）给两级表帮助改对。
  * 词表从 skill-categories.ts 派生（唯一事实源），本文件不抄字面清单；越表即
  * 422 VALIDATION_FAILED（ZodPipe 统一错误体）。SKILL.md 导出/导入是前端 markdown.ts
  * 与本文件 api 镜像的共享契约，导出/展示字段一律 snake_case 风格沿用列名 `category`。
@@ -140,6 +142,9 @@ export type SkillCategoryInput = z.infer<typeof skillCategorySchema>;
  * 非 zod 入口（.atskill / SKILL.md 文件导入）的归一口径：词表外值一律落未分类 `''`、
  * **不报错**——要兼容历史导出包把 category 写成 `workflow`/`flow` 这类类型枚举值的旧文件
  * （PRD §9.2；旧实现把 category 折进 tags 的行为已随 0015 作废，折入路径不得复活）。
+ * 0925 树化 Q5 拍板：**不给作废词「质量保障」做 compat 特例**——旧导出 frontmatter 里
+ * 出现它按词表外归 ''（与「开学季」0017 同口径）；用户库存量「质量保障」的直映射是
+ * 0018 迁移洗数面的事，不在导入面。
  */
 export function toSkillCategory(value: unknown): SkillCategoryOrNone {
   return typeof value === 'string' && isSkillCategory(value) ? value : UNCATEGORIZED;
@@ -288,7 +293,7 @@ export interface SkillDto {
   status: SkillStatus;
   description: string;
   tags: string[];
-  /** §9.2（0015 加列 / 0017 词表）单值分类：11 项词表或 ''（未分类）；tags 是纯自由标签，两者语义独立。 */
+  /** §9.2（0015 加列 / 0018 树化）单值分类：16 项叶子词表或 ''（未分类）；tags 是纯自由标签，两者语义独立。 */
   category: SkillCategoryOrNone;
   current_version: string;
   content: SkillContent;

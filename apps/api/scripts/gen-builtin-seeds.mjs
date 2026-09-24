@@ -14,7 +14,8 @@
  * v0.0.4 分类收口（C-2）：不再折算「官方/社区」受众词（该维度已作废，出处由 source_type
  * 表达），改为产出单值 category + 自由 tags。category 的取词口径与 0015 迁移回填一致
  * （tags 中首个「非受众词且在词表内」的词）；tags 的洗法按 0925 拍板收紧后的 0016 口径——
- * 受众词与一切词表词都不留，其余原序保留（内置洗后大量条目 tags 为空数组，是预期终态），
+ * 受众词与词表词都不留，其余原序保留（内置洗后大量条目 tags 为空数组，是预期终态；
+ * 0925 树化后追加阶段词豁免，见下方「0925 树化」段），
  * 权威口径见 src/skills/skill-categories.ts。0925 拍板一另起 CATEGORY_FIXES 纠偏段：
  * 12 条内置的 category 因 0015「首词盲取」取到季节/运营占位词（开学季/推荐）或误取的
  * 教育学习，经补正表改判内容词（例外：proactive-paper-recommendation 的「推荐」是真语义）。
@@ -22,14 +23,23 @@
  * deep-research 两条「开学季→X」补正因此变成首词规则即可算出的 no-op，按防呆口径删表；
  * 「开学季」进 RETIRED_CATEGORY_TERMS 作废词集合，freeTagsOf 继续剔它（理由见该常量注释）。
  *
+ * 0925 树化（本文件第二改）：词表 11 → 16 **叶子**（两级树，权威源 skill-categories.ts 的
+ * SKILL_CATEGORY_TREE，0018 迁移收敛 CHECK）——「质量保障」作废退表（进 RETIRED，14 条 coding
+ * 与 code-review 样例逐条改判到阶段叶子），新增六个产研阶段叶子。双角色口径：阶段词既是
+ * 「编码开发」二级叶子又是合法自由标签，**freeTagsOf 镜像对六个阶段词豁免不洗**（剔除集合 =
+ * 受众词 ∪ (叶子 − 阶段词) ∪ 作废词，不变量 tags ∩ (叶子 − 阶段词) = ∅）。
+ *
  * 0925 编码技能收录（本文件第二源）：docs/0925/coding-skills-catalog.json 收 31 条外部
  * 编码技能（GitHub 官方原文正文，builtin-skills/*.md 同名 md），走同一条分片管线：
  * - 千问源（docs/v0.0.4/skills-data 导出，绝对不许改）：category = CATEGORY_FIXES ??
- *   categoryFromTags(tags)，tags 过 freeTagsOf 洗——原逻辑不变；
+ *   categoryFromTags(tags)，tags 过 freeTagsOf 洗——原逻辑不变（千问 tags 永不含阶段词，
+ *   词表含阶段词后首词结果不变）；
  * - coding 源：category 与 tags 都在目录 JSON 里**显式给定**（人工按内容判定，不做首词
- *   盲取）；category 仍必须 ∈ 11 词表，tags 必须原样通过 freeTagsOf（即不得含词表词/
- *   作废词/受众词，否则构建期报错）——产研阶段词（需求与规划/开发与实现/质量与安全/
- *   代码清理/运维与协作/测试自动化）都不在这三类集合里，是合法自由标签；
+ *   盲取；0925 Q2 拍板后「叶子=tags 首词」机械规则作废——codexqa-code-reviewer /
+ *   codexqa-defect-analyzer / devops-code-review 三条 category 一律=质量与安全，其 tags
+ *   阶段词原样保留，category 与 tags 解耦）；category 必须 ∈ 16 叶子 ∧ ∈ 六个阶段词
+ *   （coding 批次只在「编码开发」域），tags 必须原样通过 freeTagsOf（阶段词豁免后仍不得
+ *   含非阶段叶子词/作废词/受众词，否则构建期报错）；
  * - source 溯源字段（repo/path/fetched/truncated/renamedFrom）只进目录 JSON 留档，
  *   不进 BuiltinSkillRaw 分片（结构不变）；
  * - 两源 slug 重复、coding 目录缺 md 正文、coding 目录多余条目，都构建期报错；
@@ -40,10 +50,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * 11 项分类词表（0925 拍板删「开学季」）：**必须与 src/skills/skill-categories.ts 的
- * SKILL_CATEGORIES 逐项一致**。生成器是纯 .mjs（构建期跑，不经过 ts 编译），没法 import
- * TS 常量，所以这里留一份字面量；一致性由 src/skills/__tests__/builtin-skills.test.ts
- * 正则抽取本数组与 TS 侧比对锁住。
+ * 16 项叶子词表（0925 树化，11 → 16：删「质量保障」、增六个产研阶段叶子）：
+ * **必须与 src/skills/skill-categories.ts 的 SKILL_CATEGORIES 逐项一致（含顺序）**，
+ * 也与 0018 迁移 category CHECK 的 IN 列表（'' + 16 叶子）同集合。生成器是纯 .mjs
+ * （构建期跑，不经过 ts 编译），没法 import TS 常量，所以这里留一份字面量；一致性由
+ * src/skills/__tests__/builtin-skills.test.ts 正则抽取本数组与 TS 侧、0018 SQL 三方比对锁住。
  */
 const SKILL_CATEGORIES = [
   '教育学习',
@@ -56,17 +67,38 @@ const SKILL_CATEGORIES = [
   '数据分析',
   '开发编程',
   '资讯研究',
-  '质量保障',
+  '需求与规划',
+  '开发与实现',
+  '质量与安全',
+  '代码清理',
+  '运维与协作',
+  '测试自动化',
+];
+/**
+ * 六个产研阶段词（「编码开发」下的二级叶子，双角色特例，与 skill-categories.ts 的
+ * STAGE_CATEGORY_TERMS 逐项一致）：既是合法 category 值（coding 源必须取其一），
+ * 又是合法自由标签（freeTagsOf 对它们豁免不洗——0925 用户拍板，卡片「分类徽标 + 同名
+ * 标签」两行呈现是接受的特例）。
+ */
+const STAGE_CATEGORY_TERMS = [
+  '需求与规划',
+  '开发与实现',
+  '质量与安全',
+  '代码清理',
+  '运维与协作',
+  '测试自动化',
 ];
 /** 作废的受众词：出现在 catalog tags 里也不进 category、并且要从自由标签洗掉。 */
 const AUDIENCE_TAGS = ['官方', '社区'];
 /**
- * 已作废的历史词表词：不再进 category，但**同样要从自由标签洗掉**——上游 catalog 有
- * 31 条内置的 tags 带「开学季」，只按现行 11 词洗会让它以普通标签身份回流分片 tags（卡片
- * 又长出同款「伪分类」标签，且分片内容级漂移）。与 skill-categories.ts 的
- * RETIRED_CATEGORY_TERMS 逐项一致（比对锁在 builtin-skills.test.ts ⑥）。
+ * 已作废的历史词表词：不再进 category，但**同样要从自由标签洗掉**——
+ * - 「开学季」：上游 catalog 有 31 条内置的 tags 带它，只按现行词表洗会让它以普通标签身份
+ *   回流分片 tags（卡片又长出同款「伪分类」标签，且分片内容级漂移）。
+ * - 「质量保障」（0925 树化作废）：导入/上游数据里它仍可能出现在 tags，继续剔；
+ *   category 面它由 0018 直映射「质量与安全」，生成器两源都不许再产出该值。
+ * 与 skill-categories.ts 的 RETIRED_CATEGORY_TERMS 逐项一致（比对锁在 builtin-skills.test ⑥）。
  */
-const RETIRED_CATEGORY_TERMS = ['开学季'];
+const RETIRED_CATEGORY_TERMS = ['开学季', '质量保障'];
 
 /**
  * 上游 catalog 的 category 纠偏/补正表（人工判定，不改 catalog）。
@@ -84,6 +116,9 @@ const RETIRED_CATEGORY_TERMS = ['开学季'];
  * 开学季→资讯研究」两条已随词表缩短变成 no-op——「开学季」不再在词表内，首词规则会自然跳过它
  * 直接算出内容词（补正值 = 首词结果，正是防呆要报错的形状），已删。原 10 条不变，「推荐」仍在
  * 词表内，excel/pptx 等「推荐→X」纠偏与占位词无关，继续有效。
+ * 0925 树化（Q3 拍板）+3 条：prd / prd-generator / brainstorming（技术方案梳理）与 coding 批次
+ * 「需求与规划」内容同质，从「方案写作」（首词规则算出的占位在案值）改判「编码开发/需求与规划」
+ * 叶子——补正值 ≠ 首词计算值，是本表合法有效条目（防呆见下）。
  */
 const CATEGORY_FIXES = {
   'skill-creator': '实用工具',
@@ -97,6 +132,9 @@ const CATEGORY_FIXES = {
   'self-finance-report': '投资理财',
   'research-data-analysis-visualization': '数据分析',
   'proactive-paper-recommendation': '推荐',
+  'prd': '需求与规划',
+  'prd-generator': '需求与规划',
+  'brainstorming': '需求与规划',
 };
 
 /** 与 skill-categories.ts 的 categoryFromTags 同口径（= 0015 回填 SQL 的判定）。 */
@@ -109,17 +147,18 @@ function categoryFromTags(tags) {
 }
 
 /**
- * 与 skill-categories.ts 的 freeTagsOf 同口径（0925 拍板收紧 = 0016 洗数段）：受众词、
- * 一切词表分类词与已作废历史词表词（开学季）都不留，其余原序保留。「标签是标签，分类是
- * 分类」——词表词留在 tags 里会让卡片标签区（skill-card 的 tags.slice(0,3)）与搜索命中面
- * 把同一技能呈现成两套分类；绑定技能搜索不受影响（category 是独立命中面）。内置洗后 tags
- * 多为空数组，是预期终态。
+ * 与 skill-categories.ts 的 freeTagsOf 同口径（**0925 树化后的剔除集合**：受众词 ∪
+ * (16 叶子 − 六个阶段词) ∪ 作废词）：「标签是标签，分类是分类」——非阶段叶子词、受众词与
+ * 作废词都不留，其余原序保留；**六个产研阶段词是双角色豁免词，有意不洗**（用户拍板：既是
+ * 分类叶子又合法留在 tags，31 条 coding 的阶段标签靠这条豁免活下来；不变量
+ * tags ∩ (叶子 − 阶段词) = ∅）。内置终态：93 条千问洗后 tags 为空数组、31 条 coding
+ * 原样带阶段标签，都是预期终态。
  */
 function freeTagsOf(tags) {
   return tags.filter(
     (tag) =>
       !AUDIENCE_TAGS.includes(tag) &&
-      !SKILL_CATEGORIES.includes(tag) &&
+      !(SKILL_CATEGORIES.includes(tag) && !STAGE_CATEGORY_TERMS.includes(tag)) &&
       !RETIRED_CATEGORY_TERMS.includes(tag),
   );
 }
@@ -171,18 +210,25 @@ const rows = mdSlugs.map((slug) => {
   const bytes = Buffer.byteLength(markdown, 'utf8');
   if (bytes > LIMIT) throw new Error(`${slug} 正文 ${bytes}B 超 24K 上限，先裁剪再分片`);
   if (coding) {
-    // coding 源：category/tags 显式给定，只校验不折算。
+    // coding 源：category/tags 显式给定，只校验不折算（0925 Q2 拍板：category 由目录
+    // 逐条给定、与 tags 解耦，「叶子=tags 首词」机械规则作废）。
     if (!SKILL_CATEGORIES.includes(coding.category)) {
-      throw new Error(`${slug} coding 目录 category 不在 11 词表：${JSON.stringify(coding.category)}`);
+      throw new Error(`${slug} coding 目录 category 不在 16 叶子词表：${JSON.stringify(coding.category)}`);
+    }
+    if (!STAGE_CATEGORY_TERMS.includes(coding.category)) {
+      throw new Error(
+        `${slug} coding 目录 category 必须是六个产研阶段叶子之一（编码批次只在「编码开发」域）：${JSON.stringify(coding.category)}`,
+      );
     }
     const tags = coding.tags;
     if (!Array.isArray(tags) || tags.length === 0 || tags.some((t) => typeof t !== 'string' || !t)) {
       throw new Error(`${slug} coding 目录 tags 必须是非空字符串数组（0925 收录要求带产研阶段标签）`);
     }
-    // tags 必须原样通过 freeTagsOf：含词表词/作废词/受众词即口径违规，报错而非静默洗掉。
+    // tags 必须原样通过 freeTagsOf（阶段词豁免；非阶段叶子词/作废词/受众词不许混进来），
+    // 含即口径违规，报错而非静默洗掉。
     if (freeTagsOf(tags).length !== tags.length) {
       const purged = tags.filter((t) => !freeTagsOf([t]).includes(t));
-      throw new Error(`${slug} coding 目录 tags 含词表/作废/受众词，无法原样通过 freeTagsOf：${purged.join(', ')}`);
+      throw new Error(`${slug} coding 目录 tags 含非阶段叶子/作废/受众词，无法原样通过 freeTagsOf：${purged.join(', ')}`);
     }
     const desc = String(coding.description || '').trim();
     if (!desc) throw new Error(`${slug} coding 目录缺 description`);

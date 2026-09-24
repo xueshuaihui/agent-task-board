@@ -3,7 +3,7 @@
     "slug": "rc-grill-me",
     "nameCn": "追问澄清需求",
     "description": "让 AI 扮演特别烦人的面试官，就模糊需求连续追问，直到关键假设与决策分支全部澄清。",
-    "category": "方案写作",
+    "category": "需求与规划",
     "tags": ["需求与规划"],
     "source": { "repo": "rightcodehere/skills", "path": "skills/rc-grill-me/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -11,7 +11,7 @@
     "slug": "rc-tdd",
     "nameCn": "红绿重构测试驱动",
     "description": "垂直切片 TDD 红绿重构循环：先写失败测试，再做最小实现，后重构，接口设计优先。",
-    "category": "开发编程",
+    "category": "开发与实现",
     "tags": ["开发与实现"],
     "source": { "repo": "rightcodehere/skills", "path": "skills/rc-tdd/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -19,7 +19,7 @@
     "slug": "rc-codeprobe",
     "nameCn": "九维代码综合审计",
     "description": "综合代码审计编排器，覆盖 SOLID、安全、架构、异味、模式、性能、错误处理、测试与惯用法九维度。",
-    "category": "质量保障",
+    "category": "质量与安全",
     "tags": ["质量与安全"],
     "source": { "repo": "rightcodehere/skills", "path": "skills/rc-codeprobe/SKILL.md", "fetched": true, "truncated": true }
   },
@@ -27,7 +27,7 @@
     "slug": "rc-code-review",
     "nameCn": "四阶段PR代码审查",
     "description": "四阶段 Pull Request 审查流程，按严重程度标注问题，配套 17+ 语言专项指南。",
-    "category": "质量保障",
+    "category": "质量与安全",
     "tags": ["质量与安全"],
     "source": { "repo": "rightcodehere/skills", "path": "skills/rc-code-review/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -35,7 +35,7 @@
     "slug": "addyosmani-test-driven-development",
     "nameCn": "测试驱动开发全流程纪律",
     "description": "以红绿重构为核心的 TDD 全流程纪律，Bug 修复必须先用测试复现再改代码。",
-    "category": "开发编程",
+    "category": "开发与实现",
     "tags": ["开发与实现"],
     "source": { "repo": "addyosmani/agent-skills", "path": "skills/test-driven-development/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -43,7 +43,7 @@
     "slug": "deprecation-and-migration",
     "nameCn": "废弃与零停机迁移",
     "description": "系统/功能下线与迁移纪律，含生产库 Schema 零停机 Expand-Contract 迁移与安全下线流程。",
-    "category": "开发编程",
+    "category": "开发与实现",
     "tags": ["开发与实现"],
     "source": { "repo": "addyosmani/agent-skills", "path": "skills/deprecation-and-migration/SKILL.md", "fetched": true, "truncated": false, "renamedFrom": "database" }
   },
@@ -51,7 +51,7 @@
     "slug": "api-design",
     "nameCn": "API 与接口契约设计",
     "description": "稳定 API 与接口契约设计规范：REST/GraphQL 端点、模块边界与类型契约设计。",
-    "category": "开发编程",
+    "category": "开发与实现",
     "tags": ["开发与实现"],
     "source": { "repo": "addyosmani/agent-skills", "path": "skills/api-and-interface-design/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -59,7 +59,7 @@
     "slug": "product-methodology",
     "nameCn": "产品方法论工具箱",
     "description": "RICE、MoSCoW、机会解树、优先级排序、PRD 与决策日志等产品管理方法论汇编。",
-    "category": "方案写作",
+    "category": "需求与规划",
     "tags": ["需求与规划"],
     "source": { "repo": "magnus919/agent-skills", "path": "product-methodology/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -67,7 +67,7 @@
     "slug": "product-discovery",
     "nameCn": "产品需求发现方法",
     "description": "干系人映射、访谈指南、转录转规格、缺口检测与 Pre-mortem 等产品发现方法。",
-    "category": "方案写作",
+    "category": "需求与规划",
     "tags": ["需求与规划"],
     "source": { "repo": "magnus919/agent-skills", "path": "product-discovery/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -75,7 +75,7 @@
     "slug": "codexqa-defect-analyzer",
     "nameCn": "AI 缺陷分析与代码风险扫描",
     "description": "SAST/Lint/密钥扫描与 Agent 语义分析合并为 P0-P3 优先级 HTML 缺陷报告，本地运行，支持 10 种语言的全量或增量扫描。",
-    "category": "质量保障",
+    "category": "质量与安全",
     "tags": ["开发与实现", "测试自动化"],
     "source": { "repo": "openqa-cn/codexqa", "path": "skills/codexqa-defect-analyzer/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -83,7 +83,7 @@
     "slug": "codexqa-code-reviewer",
     "nameCn": "变更合并就绪代码审查",
     "description": "基于符号图谱证据的变更合并就绪审查，收集调用方、影响范围与测试边缘证据，生成双语 REVIEW-REPORT.html。",
-    "category": "质量保障",
+    "category": "质量与安全",
     "tags": ["开发与实现"],
     "source": { "repo": "openqa-cn/codexqa", "path": "skills/codexqa-code-reviewer/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -91,7 +91,7 @@
     "slug": "security-audit-skill",
     "nameCn": "Cloudflare 多阶段安全审计",
     "description": "Cloudflare 官方多阶段安全审计技能：侦察、攻击类分析、独立验证与机器可读报告，可直接进入 CI/CD。",
-    "category": "质量保障",
+    "category": "质量与安全",
     "tags": ["质量与安全"],
     "source": { "repo": "cloudflare/security-audit-skill", "path": "skills/security-audit/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -99,7 +99,7 @@
     "slug": "bug-hunter",
     "nameCn": "对抗性 Bug 猎手",
     "description": "多 Agent 流水线（Hunter/Skeptic/Referee/Fixer）发现安全漏洞、逻辑错误与运行时 Bug，并在安全分支内自主修复。",
-    "category": "质量保障",
+    "category": "质量与安全",
     "tags": ["质量与安全"],
     "source": { "repo": "codexstar69/bug-hunter", "path": "SKILL.md", "fetched": true, "truncated": false }
   },
@@ -107,7 +107,7 @@
     "slug": "pragmatic-review",
     "nameCn": "务实主义代码评审",
     "description": "以资深工程师视角审当前分支 diff，按 DRY/YAGNI/SOLID 与《务实程序员》原则输出按严重度排序的报告，不改代码。",
-    "category": "质量保障",
+    "category": "质量与安全",
     "tags": ["质量与安全"],
     "source": { "repo": "msobczyk-x/agent-skills", "path": "skills/pragmatic-review/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -115,7 +115,7 @@
     "slug": "cleanup-comments",
     "nameCn": "冗余注释修剪",
     "description": "修剪当前 diff 涉及文件中的冗余噪声注释，保持代码自解释，不改变任何行为。",
-    "category": "质量保障",
+    "category": "代码清理",
     "tags": ["代码清理"],
     "source": { "repo": "msobczyk-x/agent-skills", "path": "skills/cleanup-comments/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -123,7 +123,7 @@
     "slug": "code-simplify",
     "nameCn": "当前 Diff 代码简化",
     "description": "在不改变行为的前提下简化当前 git diff 中的代码，提升清晰度，适用于提交前或评审后的整理。",
-    "category": "质量保障",
+    "category": "代码清理",
     "tags": ["代码清理"],
     "source": { "repo": "msobczyk-x/agent-skills", "path": "skills/code-simplify/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -131,7 +131,7 @@
     "slug": "code-refactor",
     "nameCn": "React 单职责文件重构",
     "description": "将 React/React Native 代码重构为每文件单一职责：拆分嵌套组件与大型常量组，应用 index.tsx 父目录模式。",
-    "category": "质量保障",
+    "category": "代码清理",
     "tags": ["代码清理"],
     "source": { "repo": "msobczyk-x/agent-skills", "path": "skills/code-refactor/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -139,7 +139,7 @@
     "slug": "commit-plan",
     "nameCn": "逻辑提交规划器",
     "description": "从当前 diff 提议按逻辑拆分的提交方案，输出 Conventional Commit 消息与待暂存文件清单，不添加署名、不推送。",
-    "category": "实用工具",
+    "category": "运维与协作",
     "tags": ["运维与协作"],
     "source": { "repo": "msobczyk-x/agent-skills", "path": "skills/commit-plan/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -147,7 +147,7 @@
     "slug": "vercel-optimize",
     "nameCn": "Vercel 成本与性能优化审计",
     "description": "审计 Vercel 上的成本、性能、可靠性、缓存与函数使用，先采集指标与用量再产出有证据支撑的优先级排序报告。",
-    "category": "质量保障",
+    "category": "质量与安全",
     "tags": ["质量与安全"],
     "source": { "repo": "vercel-labs/agent-skills", "path": "skills/vercel-optimize/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -155,7 +155,7 @@
     "slug": "user-stories-skill",
     "nameCn": "用户故事拆解",
     "description": "分析代码库架构，把目标拆成 2-4 小时可完成的原子用户故事，含依赖排序、复杂度估算与验收标准，支持 JSON 与 Gherkin 两种产出，只规划不实现。",
-    "category": "方案写作",
+    "category": "需求与规划",
     "tags": ["需求与规划"],
     "source": { "repo": "felipereisdev/user-stories-skill", "path": "SKILL.md", "fetched": true, "truncated": false }
   },
@@ -163,7 +163,7 @@
     "slug": "agent-skills-spec-pack",
     "nameCn": "契约优先规格包",
     "description": "协调层主入口技能：从已批准的产品框架驱动 charter→user-stories→requirements→technical-design 产出带溯源与血缘的可追踪规格包，供审批与下游执行。",
-    "category": "方案写作",
+    "category": "需求与规划",
     "tags": ["需求与规划"],
     "source": { "repo": "urban/agent-skills-spec-pack", "path": "skills/specification-authoring/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -171,7 +171,7 @@
     "slug": "simplify-codebase",
     "nameCn": "安全移除偶然复杂度",
     "description": "识别重复状态、无主抽象、无效兼容路径等偶然复杂度，先追踪运行时消费者建立契约，再决定删/并/留，每个候选形成可验证的证明记录，分 Survey 与 Change 两模式。",
-    "category": "开发编程",
+    "category": "代码清理",
     "tags": ["代码清理"],
     "source": { "repo": "tt-a1i/simplify-codebase", "path": "SKILL.md", "fetched": true, "truncated": false }
   },
@@ -179,7 +179,7 @@
     "slug": "merciless-simplification",
     "nameCn": "无情简化",
     "description": "在 100% 保持外部可观察行为前提下系统性消除代码复杂度，以小工单增量执行、每单验证转绿即提交，公共 API 与边界变更需人工显式批准。",
-    "category": "开发编程",
+    "category": "代码清理",
     "tags": ["代码清理"],
     "source": { "repo": "mfenderov/merciless-simplification", "path": "skills/merciless-simplification/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -187,7 +187,7 @@
     "slug": "refine-code",
     "nameCn": "代码精炼",
     "description": "对任意规模代码做改进与重构评估，按『消除的认知负荷』而非删行数排序，证明哪些代码可安全删除，并区分评估与实现两类授权范围。",
-    "category": "开发编程",
+    "category": "代码清理",
     "tags": ["代码清理"],
     "source": { "repo": "vaayne/agent-kit", "path": "skills/refine-code/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -195,7 +195,7 @@
     "slug": "awesome-qa-skills",
     "nameCn": "测试工程全流程技能库",
     "description": "覆盖需求分析、策略、用例、执行与缺陷报告的测试工程技能库，含 25+ 测试类型与工作流技能。",
-    "category": "质量保障",
+    "category": "测试自动化",
     "tags": ["测试自动化"],
     "source": { "repo": "naodeng/awesome-qa-skills", "path": "skills/zh/testing-workflows/discover-testing/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -203,7 +203,7 @@
     "slug": "dsh-qa-skills",
     "nameCn": "QA 测试流水线编排入口",
     "description": "让 AI 像资深测试工程师工作：以可断点续跑的流水线编排需求、策略、用例、执行、回归与报告。",
-    "category": "质量保障",
+    "category": "测试自动化",
     "tags": ["测试自动化"],
     "source": { "repo": "fishzjp/qa-skills", "path": "skills/qa/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -211,7 +211,7 @@
     "slug": "git-worktree",
     "nameCn": "本地 Git Worktree 管理",
     "description": "管理本地 git worktree/branch 的创建、切换、合并与安全清理，用于并行开发，不涉及 push。",
-    "category": "实用工具",
+    "category": "运维与协作",
     "tags": ["运维与协作"],
     "source": { "repo": "jikig-ai/soleur", "path": "plugins/soleur/skills/git-worktree/SKILL.md", "fetched": true, "truncated": true }
   },
@@ -219,7 +219,7 @@
     "slug": "github-ci",
     "nameCn": "GitHub Actions CI 工作流",
     "description": "编写维护 GitHub Actions CI 工作流，涵盖 YAML 结构、触发器、Runner、矩阵、缓存与密钥。",
-    "category": "实用工具",
+    "category": "运维与协作",
     "tags": ["运维与协作"],
     "source": { "repo": "greedychipmunk/agent-skills", "path": "github-ci/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -227,7 +227,7 @@
     "slug": "agent-ops-cicd-github",
     "nameCn": "GitHub CI/CD 流水线工程",
     "description": "为 GitHub Actions 创建高效构建/测试/部署流水线，含多环境矩阵、缓存制品与安全最佳实践。",
-    "category": "实用工具",
+    "category": "运维与协作",
     "tags": ["运维与协作"],
     "source": { "repo": "ruvnet/ruflo", "path": ".agents/skills/agent-ops-cicd-github/SKILL.md", "fetched": true, "truncated": false }
   },
@@ -235,7 +235,7 @@
     "slug": "devops-code-review",
     "nameCn": "本地分支代码审查",
     "description": "基于本地 git 比较两个分支变更做全面代码审查，跨 Claude Code/Copilot/Cursor 使用。",
-    "category": "质量保障",
+    "category": "质量与安全",
     "tags": ["运维与协作"],
     "source": { "repo": "abdullahkhawer/devops-skills", "path": "skills/code-review/SKILL.md", "fetched": true, "truncated": false, "renamedFrom": "devops-skills" }
   },
@@ -243,7 +243,7 @@
     "slug": "rain-skills",
     "nameCn": "Rainbond 应用部署排障",
     "description": "经 Rainbond MCP 接入，识别项目结构并自动完成应用构建、部署、排障与交付验证。",
-    "category": "实用工具",
+    "category": "运维与协作",
     "tags": ["运维与协作"],
     "source": { "repo": "goodrain/rainskills", "path": "rainbond-app-assistant/SKILL.md", "fetched": true, "truncated": false }
   }

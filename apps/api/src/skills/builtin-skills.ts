@@ -22,14 +22,15 @@ export interface BuiltinSkillRaw {
   nameCn: string;
   description: string;
   /**
-   * 单值分类（0015 列 + skill-categories.ts 词表）：千问源由生成器按 catalog 原始 tags 取
+   * 单值分类（0015 列 + skill-categories.ts 两级树词表）：千问源由生成器按 catalog 原始 tags 取
    * 「首个非受众词且在词表内」的词得到（口径同 0015 回填 SQL），缺分类词或首词被占位词
-   * 误取的条目走生成器里的显式补正表 CATEGORY_FIXES（0925 拍板一纠偏 12 条）；0925 编码
-   * 技能收录的 31 条则在 docs/0925/coding-skills-catalog.json 里显式给定。两侧都构建期
-   * 校验，因此分片内 category 必然 ∈ 11 词表（内置技能不允许未分类）。
+   * 误取的条目走生成器里的显式补正表 CATEGORY_FIXES（0925 拍板一纠偏 + 树化 Q3 三条
+   * 「方案写作→需求与规划」）；0925 编码技能收录的 31 条则在 docs/0925/coding-skills-catalog.json
+   * 里显式给定（六个产研阶段叶子之一，Q2 拍板后与 tags 解耦）。两侧都构建期
+   * 校验，因此分片内 category 必然 ∈ 16 叶子词表（内置技能不允许未分类）。
    */
   category: SkillCategory;
-  /** 自由标签：千问源已洗掉作废的 官方/社区 与一切词表分类词（0016 口径，0925 拍板收紧），其余原序保留（大量条目为空数组，预期终态）；0925 coding 源目录显式给定产研阶段词（不得含词表/作废/受众词，构建期校验原样通过 freeTagsOf）。 */
+  /** 自由标签：千问源已洗掉作废的 官方/社区 与非阶段叶子词表词/作废词（0016 口径 + 0925 树化阶段词豁免，见 freeTagsOf 注释），其余原序保留（大量条目为空数组，预期终态）；0925 coding 源目录显式给定产研阶段词（双角色豁免词，合法保留；非阶段叶子/作废/受众词仍不得混入，构建期校验原样通过 freeTagsOf）。 */
   tags: string[];
   markdown: string;
 }

@@ -21,7 +21,11 @@ import {
 import { CAPABILITY_RE } from './schemas';
 import { classifyTransition } from './transitions';
 import { SKILL_ORIGINS, SKILL_STATUSES, SKILL_TYPES } from '../skills/skills.dto';
-import { SKILL_CATEGORIES, UNCATEGORIZED } from '../skills/skill-categories';
+import {
+  SKILL_CATEGORIES,
+  SKILL_CATEGORY_TREE,
+  UNCATEGORIZED,
+} from '../skills/skill-categories';
 
 /** 优先级各级文案：0=紧急 / 1=高 / 2=中 / 3=低（20.2，从 PRIORITY_LABEL 派生）。 */
 export const PRIORITY_LEVELS_TEXT = PRIORITIES.map((value) => `${value}=${PRIORITY_LABEL[value]}`).join(
@@ -47,8 +51,14 @@ export const CREATE_TASK_TYPE_DESC =
   `默认词表：${DEFAULT_TASK_TYPES.join('/')}，自定义类型由设置项 task_types 扩充（建议先调 get_vocabulary 拿当前词表，不要试错）。` +
   `注意：「需求」不走 create_task 直建（应经 board.begin_breakdown 拆解流程，§8.8）。`;
 
-/** §9.2 技能分类的「可选：…」文案：11 项词表 + `''`（未分类），事实源只有一处。 */
-export const SKILL_CATEGORY_LIST_TEXT = SKILL_CATEGORIES.join('/');
+/**
+ * §9.2 技能分类的「可选：…」文案（0925 树化，两级呈现）：一级（含纯分组一级与其叶子）逐组
+ * 展开，事实源只有一处（SKILL_CATEGORY_TREE）。合法取值仍是 16 个叶子 + `''`；
+ * 编码开发/办公实用/研究分析是**纯分组一级**，出现在文案里只用于定位分组，本身不可提交（422）。
+ */
+export const SKILL_CATEGORY_LIST_TEXT = SKILL_CATEGORY_TREE.map((top) =>
+  top.children.length > 0 ? `${top.value}（${top.children.join('/')}）` : top.value,
+).join('｜');
 
 /**
  * 技能分类字段描述（`update_skill` 的 category `.describe()` 与 422 回显共用）。
@@ -59,9 +69,9 @@ export const SKILL_CATEGORY_LIST_TEXT = SKILL_CATEGORIES.join('/');
  * 所以补在 agent 入口这一层（见 `mcp/agent-tools.ts` 的 `parseToolInput`）。
  */
 export const SKILL_CATEGORY_DESC =
-  `技能分类，单值，必须命中服务端受控词表（否则 422 并在 details 里回显「可选：…」全量词表）。` +
-  `可选：${SKILL_CATEGORY_LIST_TEXT}，另接受空串 ''（=未分类）；不传=不改分类。` +
-  `分类与 tags 是两件事：tags 是自由标签、不从词表推导。`;
+  `技能分类，单值，必须命中服务端两级树词表的 16 个叶子（否则 422 并在 details 里回显「可选：…」两级全量词表）。` +
+  `可选：${SKILL_CATEGORY_LIST_TEXT}；括号内的二级才是合法取值，编码开发/办公实用/研究分析是纯分组一级、不可直接提交，另接受空串 ''（=未分类）；不传=不改分类。` +
+  `分类与 tags 是两件事：tags 是自由标签、不从词表推导（六个产研阶段词双角色：既是叶子又是合法标签）。`;
 
 /** §8.2 三种确认模式的语义表（get_vocabulary 与字段描述共用）。 */
 export const CONFIRMATION_MODE_SEMANTICS: Record<(typeof AGENT_CONFIRMATION_MODES)[number], string> = {
@@ -149,11 +159,15 @@ export function buildVocabulary(input: VocabularyInput) {
       statuses: [...SKILL_STATUSES],
       origins: [...SKILL_ORIGINS],
     },
-    // §9.2 单值分类：与 task_types 同一形状（values + source + note），词表不随设置变化。
+    // §9.2 单值分类（0925 树化两级口径）：与 task_types 同一形状（values + source + note），
+    // 词表不随设置变化。values 是 16 个**合法叶子**（可提交值）；tree 给一级→二级的分组结构，
+    // 其中编码开发/办公实用/研究分析为纯分组一级、不在 values 里。
     skill_categories: {
       values: [...SKILL_CATEGORIES],
+      tree: SKILL_CATEGORY_TREE.map((top) => ({ value: top.value, children: [...top.children] })),
       uncategorized: UNCATEGORIZED,
-      source: 'src/skills/skill-categories.ts（11 项受控词表，与 0017 迁移的 category CHECK 逐项一致）',
+      source:
+        'src/skills/skill-categories.ts（两级树词表：7 个一级 / 16 个合法叶子，与 0018 迁移的 category CHECK 逐项一致；内置 35 行叶子归位见 0019）',
       note: SKILL_CATEGORY_DESC,
     },
     artifact_types: {
