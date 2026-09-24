@@ -444,7 +444,7 @@ function ReviewFormBody({
         {/* 原型 5.3 上半区：diff 内嵌预览 + 其他产物的动作按钮，都复用抽屉那套已建好的预览器。 */}
         {artifactRun && run && artifactRun.id !== run.id ? (
           <p className="-mt-2 text-aux text-text-tertiary">
-            本次执行没有回传产物；以下为该任务最近一次有产物的执行（第
+            本次执行没有回传产物；以下为该任务最近一次有产物的执行（第{' '}
             {artifactRun.run_number ?? '?'} 次 · <Mono>{artifactRun.id}</Mono>）。
           </p>
         ) : null}

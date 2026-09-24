@@ -447,7 +447,7 @@ function FlowCanvas({ tasks, edges, edgesLoading, mutations, onRequestDelete }: 
               void fitView({ padding: 0.2, duration: 200 });
             }
           }}
-          proOptions={{ hideAttribution: true }}
+          proOptions={{ hideAttribution: false }}
           data-testid="flow-canvas"
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="var(--color-border-strong)" />
