@@ -72,8 +72,8 @@ afterAll(async () => {
 
 // ---------------------------------------------------------------- 1. 迁移 0013 演练
 
-describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0013）', () => {
-  it('水位 0012 的库增量应用 0013：只重放 0013，新表与 tasks 来源列就位', () => {
+describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0015）', () => {
+  it('水位 0012 的库增量应用 0013/0014/0015：只重放这三棒，新表与 tasks 来源列就位', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'atb-w8-mig-'));
     const previous = { data: process.env.ATB_DATA_DIR, mig: process.env.ATB_MIGRATIONS_DIR };
     try {
@@ -91,14 +91,15 @@ describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0013）', 
       const upTo12 = applyMigrations();
       expect(upTo12[upTo12.length - 1]).toBe(12);
 
-      // 2) 切回全量迁移目录：应只增量应用 0013/0014（W8-a3 追加通知 kind 词表）。
+      // 2) 切回全量迁移目录：应只增量应用 0013/0014（W8-a3 追加通知 kind 词表）
+      //    与 0015（skills.category 收口，加列不重建）。
       delete process.env.ATB_MIGRATIONS_DIR;
       const applied = applyMigrations();
-      expect(applied).toEqual([13, 14]); // 0001~0012 不重放
+      expect(applied).toEqual([13, 14, 15]); // 0001~0012 不重放
 
       const check = new DatabaseSync(path.join(dir, 'jarvis.db'), { readOnly: true });
       const version = check.prepare('PRAGMA user_version').get() as { user_version: number };
-      expect(version.user_version).toBe(14);
+      expect(version.user_version).toBe(15);
       const tables = check
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('agent_sessions','task_creation_logs')")
         .all() as { name: string }[];
@@ -117,6 +118,13 @@ describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0013）', 
       probe.prepare(`INSERT INTO notifications (id, kind, message) VALUES ('n_ok', 'creation_request', 'x')`).run();
       expect(() =>
         probe.prepare(`INSERT INTO notifications (id, kind, message) VALUES ('n_bad', 'sms', 'x')`).run(),
+      ).toThrow();
+      // 0015：skills.category 以 ALTER ADD COLUMN 落地（不整表重建），列级 CHECK 同样生效——
+      // '' （未分类）与词表内值放行，词表外值挡住。
+      probe.prepare(`INSERT INTO skills (id, name, type) VALUES ('s_ok', 'ok', 'prompt')`).run();
+      probe.prepare(`INSERT INTO skills (id, name, type, category) VALUES ('s_cat', 'cat', 'prompt', '质量保障')`).run();
+      expect(() =>
+        probe.prepare(`INSERT INTO skills (id, name, type, category) VALUES ('s_bad', 'bad', 'prompt', '审核')`).run(),
       ).toThrow();
       probe.close();
     } finally {

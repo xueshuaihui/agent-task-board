@@ -296,6 +296,10 @@ model Skill {
   // imported（三方导入）。旧 source 值（local/market/builtin/git/http/directory）已在
   // 0010 迁移收敛改写，r2：三方技能不保留「导入来源」记录。
   sourceType      String         @default("custom") @map("source_type")
+  // 技能分类（0015 迁移，PRD §9.2 两字段模型）：单值受控词表 12 项 + '' （空串=未分类），
+  // CHECK 与 idx_skills_category 只在迁移 SQL 里（本文件表达不了）；tags 自 0015 起退回纯自由
+  // 标签，「官方/社区」受众维度作废（出处由上面的 sourceType 表达）。词表权威见 0015 文件头。
+  category        String         @default("")
   createdAt       String         @default(dbgenerated("(datetime('now'))")) @map("created_at")
   updatedAt       String         @default(dbgenerated("(datetime('now'))")) @map("updated_at")
   versions        SkillVersion[]
@@ -303,6 +307,7 @@ model Skill {
   // r2（§9.2/§21.1）：name 允许重名，唯一性只由 id（主键，终身不变）保证；
   // uniq_skills_name 已随 0010 迁移解除。
   @@index([status], map: "idx_skills_status")
+  @@index([category], map: "idx_skills_category")
   @@map("skills")
 }
 
