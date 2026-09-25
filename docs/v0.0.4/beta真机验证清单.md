@@ -1,11 +1,10 @@
-# v0.0.4-beta.6 真机验证清单（#14 销账）
+# v0.0.4-beta.7 真机验证清单（#14 销账）
 
-对象 Release：<https://github.com/xueshuaihui/agent-task-board/releases/tag/v0.0.4-beta.6>（prerelease，tag → `c6b57c6`；内容 = fix/beta6-bug-batch 20 commit（B8 审核产物回退/B8s 产物归属收紧/B9 MCP 设置独立 Tab/B10 设置切换不整页重挂/B11 托盘深色反色 + B12→B13 泳道下线「分组即过滤」+ B14 主导航折叠重做 + B15 Linear 式统一过滤重构）；含 beta.5 全量（bug 批 + 动效 v1.2）与 beta.4 唤醒词。CI run 35888846189 三 job 全绿，Release 由 CI 自动汇集双架构产物）。§1–§6 为 beta.5 存量回归项（其中泳道相关小项已随 beta.6 下线，见 §6.3 标注）；§7 为 beta.6 新增批。§1–§7 全过即 #14 关单、宣布进入预发布。
+对象 Release：<https://github.com/xueshuaihui/agent-task-board/releases/tag/v0.0.4-beta.7>（prerelease，tag → `5ed5861`；内容 = beta.6 之后 main 全量：G 批（`update_task`/`update_skill` MCP 工具、任务列表列宽 fixed、G-5 看板列宽解耦）+ 0925 编码技能收录 31 条（内置 94→**125**）+ **技能分类两级树化**（0018/0019 迁移、16 叶子、阶段词双角色、服务端 keyword 拼一级）+ C/D 批技能选择器与分类收口存量。CI run 36086497632。§1–§7 为 beta.5/6 存量回归项；§9–§11 为 C/D 与 G 批；**§12 为 0925 批（收录+树化）新增**。§1–§7、§9–§12 全过即 #14 关单、宣布进入预发布。
 
 ## 0. 下载与完整性（前置）｜**只能打包 dmg**
 
-> **截至 2026-09-24（HEAD `5b1b17e`，尚未切 beta.7）**：标题里的 beta.6 指被验内容基线；dev 可验面已全绿——§6.2/§6.3/§6.4/§6.5/§7.1/§7.2(前二)/§7.3/§7.4 逐条勾销，实测数字在正文、批次记录在矩阵「beta.6 之后：dev 演练真机轮」节，该轮查出并修掉的缺陷为 `96f7fb7`（相对时间退化）、`9777249`（forceMount Portal 丢 ref）、`c3fa31e`（MCP structuredContent 丢可接受值）、`e27d26e`（React Flow 水印恢复显示 + 「第 N 次」缺空格）。**其后又跑了用户报障的 G 批（见 §10、§11）**：任务列表列宽跳变（`ac5b45a` + `8c1d550`，含中途查出的 1280 档横滚回归）、Agent 侧任务与技能的全字段编辑面（新增 MCP 工具 `update_task` `4dc8764`、`update_skill` `3ae627f`，工具总数 26→28）、技能库搜索 keyword 命中面收口（`e1a8e31`，文档面同步 `5b1b17e`）、**看板列宽与筛选结果解耦（§11，G-5：删掉空列折叠规则本身，PRD v1.5 §4.1/§5 原条款按用户拍板覆盖）**。
-> **剩余未勾项全部依赖打包 dmg**：§0–§5、§6.1、§7.2-③ 托盘深色可见性、§9 的 beta 包复验腿（§9 各条 dev 走查证据在 C/D 批 commit 里）、§10.1 的经典占位滚动条档与 §10.2/§10.3 的真实客户端实调、§11 的打包环境滚动条挤压与最小窗横滚手势（该节列宽数字 dev 已实测，见 §11 待包项）。tag 由用户另行拍板，推 tag = 触发 CI 出包。
+> **截至 2026-09-25（tag v0.0.4-beta.7 → `5ed5861` 已切、CI run 36086497632）**：dev 可验面已全绿——§6.2/§6.3/§6.4/§6.5/§7.1/§7.2(前二)/§7.3/§7.4 与 §9–§11 的 dev 腿逐条勾销（批次记录在矩阵「beta.6 之后：dev 演练真机轮」节，该轮修掉 `96f7fb7`/`9777249`/`c3fa31e`/`e27d26e` 四缺陷）；G 批（§10、§11）与 0925 批（§12：31 条编码技能收录 + 分类两级树化）均已在 dev HEAD 真机走查（/tmp 副本环境 c6：两级筛选栏、搜「编码」41 条、双角色两行卡片、0018/0019 增量与 fresh 双路径实测）。**剩余未勾项全部依赖打包 dmg**：§0–§5、§6.1、§7.2-③ 托盘深色可见性、§9 的 beta 包复验腿、§10.1 经典占位滚动条档与 §10.2/§10.3 真实客户端实调、§11 打包环境滚动条挤压与最小窗横滚手势、§12 的包内首启核验（真库 0006→0019 直跳是本批最大真实路径）。
 
 - [ ] 按本机架构下载对应 dmg：Apple Silicon → `Jarvis.Workbench_0.1.0_arm64.dmg`；Intel → `Jarvis.Workbench_0.1.0_x64.dmg`
 - [ ] 校验 SHA-256 与 Release 内 `SHA256SUMS.txt` 一致（注意 SUMS 内以空格名登记，比对以哈希为准）：
@@ -29,10 +28,10 @@
 
 ## 3. 条款 68 · 真库首启自动迁移（一次性，重点项）｜**只能打包 dmg，且必须写真库**
 
-场景：本机真实旧库 `~/.agent-board/atb.db`（schema 停 0006、`_prisma_migrations` 账本残缺）→ 首启应自动搬到 `~/.jarvis-workbench/jarvis.db` 并补迁到 0014。
+场景：本机真实旧库 `~/.agent-board/atb.db`（schema 停 0006、`_prisma_migrations` 账本残缺）→ 首启应自动搬到 `~/.jarvis-workbench/jarvis.db` 并补迁到 0019。
 
 - [ ] 首次启动触发搬迁：`~/.jarvis-workbench/` 生成 `jarvis.db`；旧目录保留原位且有 `backups/` 备份与迁移指引文件（`ls ~/.jarvis-workbench ~/.agent-board`）
-- [ ] 迁移水位到 0014：`sqlite3 ~/.jarvis-workbench/jarvis.db "select count(*) from _prisma_migrations where finished_at is not null"` ≥ 14，且 0007–0014 迁移对应新表/列存在（如 notification/creation_request 相关表）
+- [ ] 迁移水位到 0019：`sqlite3 ~/.jarvis-workbench/jarvis.db "PRAGMA user_version"` = 19（或 `select count(*) from _prisma_migrations where finished_at is not null` ≥ 19），且 0007–0019 迁移对应新表/列存在（如 notification/creation_request 相关表、skills.category 列 + `idx_skills_category`）；**0018/0019 树化核验**：`sqlite3 ~/.jarvis-workbench/jarvis.db "select count(*) from skills where category != '' and category not in ('需求与规划','开发与实现','质量与安全','代码清理','运维与协作','测试自动化','开发编程','教育学习','内容创作','方案写作','投资理财','Office办公','实用工具','数据分析','资讯研究','推荐')"` = 0（用户行旧「质量保障」应已被 0018 直映射为「质量与安全」），默认技能 total=125（0019 归位 + seed upsert 双路收敛）
 - [ ] 数据完整保留：旧库里的任务/分组/技能在 UI 中可见、条数对得上（`select count(*) from Task;` 对比旧库副本 `/tmp/atb.db.insure-*`）
 - [ ] `PRAGMA foreign_key_check` 干净：`sqlite3 ~/.jarvis-workbench/jarvis.db "PRAGMA foreign_key_check;"` 无输出
 - [ ] migrated_from 审计/回滚对账信息在位（迁移指引文件可读、指明备份位置与回滚方法）
@@ -177,7 +176,7 @@
 ### 10.3 G-3 `update_skill`（`3ae627f`，27→28）
 
 - [x] 可写面 = UI `skillPatchSchema` 除 `status` 外的全部（`name` / `description` / `category` / `tags` / `content` / `test_cases`）。**`status` 有意排除**，理由是模型一致性不是保守：UI 的「发布」是 `POST /skills/:id/versions`（服务端自增 semver 并设 current）**加上** `PATCH {status:'PUBLISHED'}` 两步（`apps/web/src/features/skills/hooks.ts:102`），而 agent 面没有版本快照工具，只给 status 会让没快照的 content 被标成已发布、`current_version` 与内容脱节；`mcp_dependencies` 与 UI 的 PATCH 面一致不可写（它只在创建与版本创建里出现）。
-- [x] 守卫与校验全复用 `SkillsService.patch` 那一份：内置默认技能（`source='default'`，随包更新的 94 条）→ `SKILL_READONLY`、改到 content 时子技能自引用/成环 → `SKILL_REF_SELF` / `SKILL_REF_CYCLE`（`details.chain` 给环路径）、分类越表 422。`skills.controller.ts` 的 `@AuthScope('ui')` **未动未摘**（agent 面走 MCP 工具→服务方法，与 HTTP scope 无关，与既有 `list_skills` 同口径）。
+- [x] 守卫与校验全复用 `SkillsService.patch` 那一份：内置默认技能（`source='default'`，随包更新的 125 条，0925 收录+树化后口径见 §12）→ `SKILL_READONLY`、改到 content 时子技能自引用/成环 → `SKILL_REF_SELF` / `SKILL_REF_CYCLE`（`details.chain` 给环路径）、分类越表 422（0925 树化后越表面 = 纯分组一级 + 作废词 + 表外词，见 §12）。`skills.controller.ts` 的 `@AuthScope('ui')` **未动未摘**（agent 面走 MCP 工具→服务方法，与 HTTP scope 无关，与既有 `list_skills` 同口径）。
 - [x] 词表回显补在 **agent 入口这一层**（REST 的 422 只有裸 zod 三键 `Invalid option: expected one of …`，UI 控件回填在用，一字未改，新测试专门锁住它不含 `received`/`hint`）：`parseToolInput` 的 details 追加 `received`（zod `invalid_value` issue 实测不带受值），hint 拼「可接受值：…；当前收到 …」，`get_vocabulary` 新增 `skill_categories`（12 词 + `''`=未分类，与 `task_types` 同形状）。
 - [ ] 待 beta 包/真机：同上，客户端实调 `update_skill`（含「改正文必须先 `get_skill` 拿整份 content 再回提，`content`/`tags`/`test_cases` 都是整体覆盖」这条教义在真实客户端里是否被 agent 遵守）。
 
@@ -198,6 +197,20 @@
 - 相邻面刻意未动：`docs/Agent Task Board 高保真原型 v1.1.md` §3.1/§3.4（366、623 行）与 `docs/v0.0.4/回归验收矩阵.md` §7.3 记录行仍写着折叠 40px——前者是**已定版的原型历史稿**、后者是**G-5 之前的实测留档**，均不回改；权威口径以 PRD v1.5 §4.1/§5 改后条款 + 本节为准。折叠的另外两个同名概念未碰：主导航折叠（`atb.nav.collapsed`，motion-spec L3 授权项）、任务列表分节折叠。
 
 **本节门禁**：web `npx tsc --noEmit` 干净、`npx vitest run` **14 files / 126 tests 全绿**（基线 13/119 + 本节新增 7 例，零删零 skip 零放宽期望）、`npm run build` 成功；产物 CSS 内 `column-collapsed` 类与 40px 定档已消失。本片未触碰 `apps/api` 源码，api 门禁不适用。
+
+## 12. 0925 批：编码技能收录 31 条 + 技能分类两级树化（2026-09-25 写回）
+
+用户令「依据 docs/0925/index.md 整理的编码技能按最新技能维护方式录入，标签需补产研阶段」+「技能库需要考虑二级分类，比如编码相关的全部放到二级方便查找」。拍板链：内置 seed 管线 + 抓 GitHub 官方 SKILL.md 原文；词表整体改两层树、125 条全量归类；阶段词双角色（category 叶子 + tags 保留，卡片同名两行是明示接受的特例）；Q1-A/Q2-B/Q3-B/Q4-A/Q5-A+D 逐题拍板。设计依据与 125 行映射表：`docs/0925/二级分类草案.md`；口径写回 PRD §9.2/§15.1/条款 82/§21.6。
+
+- [x] **收录面 dev 已验**（c6 走查环境 /tmp 副本 + 7796/5196）：默认技能 total=125（93 千问 + 31 coding + code-review 样例），31 条 coding 卡片为分类徽标（阶段叶子）+ 阶段标签两行，千问 93 条 tags 恒空；三处诚实改名（deprecation-and-migration/devops-code-review/addyosmani-test-driven-development）在库可见、`source.renamedFrom` 留档目录。
+- [x] **树化 schema（增量与 fresh 双路径）**：0018 整表重建 CHECK（`''` + 16 叶子；Q4 直映射「质量保障→质量与安全」在 INSERT SELECT CASE 内，先 UPDATE 会撞旧 0017 CHECK）、0019 逐 id 归位 35 内置行；/tmp 真增量演练（0017 水位插桩）与 fresh 重放 0001→0019 终值一致；新 CHECK 拒收「质量保障」「编码开发」实炸验证过；`skill_versions` CASCADE 复验过。
+- [x] **两级筛选栏真机走查**：一级行 7+未分类、计数含子树（41/25/12/9/13/17/11+0=128，含 3 条走查遗留用户行）；点「编码开发」展二级行（需求与规划 8/开发与实现 4/质量与安全 10/代码清理 6/运维与协作 5/测试自动化 2/开发编程 6）、选一级=收拢全选子叶、在全选子叶下点某叶子=「除它以外全部子叶」、计数 0 置灰不消失；原生 button 可键盘操作。
+- [x] **搜索命中面（含走查抓出的补口）**：库页服务端 keyword 命中面拼入 `parentOfCategory`（`3dd8f37`）——搜「编码」41 条、复用 placeholder 承诺；SkillPicker（复制现有技能弹窗实测）搜「编码」收拢编码开发子树；搜「未分类」恒 0 条（'' 不进命中面）；`GET /skills` 仍无 `category=` 参数（客户端筛选不变）。
+- [x] **改判落库可见**：prd/prd-generator/brainstorming 徽标=需求与规划（Q3-B）；devops-code-review 徽标=质量与安全而标签仍「运维与协作」（Q2-B category/tags 解耦）；codexqa-defect-analyzer 双阶段标签存活。
+- [x] **编辑器/写入面**：编辑器分类两级 16+1 单选、纯分组一级只作 aria-hidden 组头不可提交；create/patch/MCP `update_skill` 越表（含三纯分组一级与作废词）422 两级回显；SKILL.md 导入词表外（含「质量保障」）归 `''` 不报错（Q5-D，无 compat）。
+- [ ] **待 beta 包复验**（dev 环境等价、包内首启路径不同）：①真库 `~/.agent-board`（停 0006）首启直跳 0019 后 §3 的树化核验 SQL 全过（本批是增量最大的一次，0015~0019 四棒连跑）；②125 条内置随包 seed 首启 upsert 收敛、技能库页「125+用户行」计数正确；③包内 WKWebView 下两级筛选栏两行 chip 在 960px 最小档不折行溢出；④`get_vocabulary` 的 tree 字段在真实 MCP 客户端回显两级词表。
+
+**本节门禁**：api 689 用例 / tsc 0 / boot:smoke PASS（fresh total=125）；web 179 用例 / tsc 0；两侧镜像四导出（树/叶子/阶段词/作废词）逐字守护测试在 web `skill-categories.test.ts`。
 
 ## 记录区（现象/截图/报错贴这里）
 
