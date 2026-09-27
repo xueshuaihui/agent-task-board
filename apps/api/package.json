@@ -4,6 +4,9 @@
   "private": true,
   "description": "Node sidecar：SQLite + REST + MCP + WebSocket，仅监听 127.0.0.1",
   "main": "dist/main.js",
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "build": "nest build",
     "build:sidecar": "node scripts/bundle-sidecar.mjs",
