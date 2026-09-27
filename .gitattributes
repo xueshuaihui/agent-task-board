@@ -1,0 +1,12 @@
+# Windows x64 打包引入 windows-latest runner 后的换行防线：
+# runner 上 git 默认按 native（CRLF）检出，会把 \r\n 烘进 webpack 打好的 sidecar
+# bundle、Prisma schema、迁移 SQL 等源码/生成物；用户在 Windows 上手工编辑的
+# SKILL.md/.mdc 同样是 CRLF，解析侧已按边界归一（skill-markdown.ts）。统一检出为
+# LF，mac/Linux 行为不变。
+* text=auto eol=lf
+
+# 真·二进制资源显式关闭 text=auto：禁用换行/合并/diff，杜绝被启发式误判改写。
+# 按 git ls-files 实测枚举仓库当前实际跟踪的图片类型（仅 png / icns，无 ico/jpg/
+# pdf/woff/woff2——新增别的资源类型时同步补行）。
+*.png binary
+*.icns binary
