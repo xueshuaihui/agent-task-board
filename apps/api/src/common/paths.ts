@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 /** 与主进程 `apps/desktop/src-tauri/src/paths.rs` 的 `DEFAULT_PORT` 同值。 */
 export const DEFAULT_PORT = 7788;
@@ -43,9 +44,14 @@ export function legacyDataDir(): string {
 export const paths = {
   dataDir,
   dbFile: () => path.join(dataDir(), 'jarvis.db'),
-  /** 连接参数是认领并发的前提，见 infra/prisma.service.ts 的注释。 */
+  /**
+   * 连接串必须是合法 file URL：win32 上裸拼 `file:C:\Users\…` 不是有效 URL
+   * （反斜杠 + 盘符，Prisma 解析失败），统一用 pathToFileURL 归一
+   * （unix → `file:///Users/…`，win32 → `file:///C:/…`）。复用同上的 dbFile()。
+   * 尾部连接参数是认领并发的前提，见 infra/prisma.service.ts 的注释。
+   */
   datasourceUrl: () =>
-    `file:${path.join(dataDir(), 'jarvis.db')}?journal_mode=WAL&foreign_keys=On&busy_timeout=5000&connection_limit=1`,
+    `${pathToFileURL(paths.dbFile()).href}?journal_mode=WAL&foreign_keys=On&busy_timeout=5000&connection_limit=1`,
   artifactsDir: () => path.join(dataDir(), 'artifacts'),
   backupsDir: () => path.join(dataDir(), 'backups'),
   /**
