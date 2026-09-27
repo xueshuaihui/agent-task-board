@@ -1,8 +1,9 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Prisma } from '@prisma/client';
 import { newId } from '../../contract/ids';
+import { removeTempDir } from '../../__tests__/helpers/temp-dir';
 import type { RequestAuth } from '../../auth/auth.scope';
 import { applyMigrations } from '../../infra/bootstrap';
 import { AuditService } from '../../infra/audit.service';
@@ -116,7 +117,7 @@ export function createAgentHarness(): AgentHarness {
     dispose: async () => {
       leases.stopSweeper();
       await prisma.$disconnect();
-      rmSync(dir, { force: true, recursive: true });
+      await removeTempDir(dir);
     },
   };
 }

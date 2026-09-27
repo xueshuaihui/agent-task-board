@@ -6,7 +6,6 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
-  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -15,6 +14,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 import { defaultDataDir, legacyDataDir } from '../../common/paths';
+import { removeTempDirSync } from '../../__tests__/helpers/temp-dir';
 import { applyMigrations, collectMigrations, migrationsDir } from '../bootstrap';
 import {
   GUIDANCE_FILE_NAME,
@@ -36,7 +36,7 @@ describe('migrateLegacyDataDir 首启一次性搬迁', () => {
   /** 搭一个假 HOME，返回 { home, legacy, target }；target 按桌面端注入 ATB_DATA_DIR 的口径设好。 */
   function makeFakeHome(): { home: string; legacy: string; target: string } {
     const home = mkdtempSync(path.join(tmpdir(), 'atb-fakehome-'));
-    cleanups.push(() => rmSync(home, { recursive: true, force: true }));
+    cleanups.push(() => removeTempDirSync(home));
     process.env.HOME = home;
     process.env.USERPROFILE = home;
     process.env.APPDATA = path.join(home, 'AppData', 'Roaming');
@@ -220,7 +220,7 @@ describe('migrateLegacyDataDir 首启一次性搬迁', () => {
     const { legacy } = makeFakeHome();
     const legacyDb = writeLegacyDbAt0006(legacy);
     const custom = mkdtempSync(path.join(tmpdir(), 'atb-custom-'));
-    cleanups.push(() => rmSync(custom, { recursive: true, force: true }));
+    cleanups.push(() => removeTempDirSync(custom));
     process.env.ATB_DATA_DIR = custom;
 
     const result = migrateLegacyDataDir();
@@ -236,7 +236,7 @@ describe('migrateLegacyDataDir 首启一次性搬迁', () => {
 
     // 用 ATB_MIGRATIONS_DIR 注入一套「0001~0006 完好 + 0007 必炸」的迁移目录。
     const brokenDir = mkdtempSync(path.join(tmpdir(), 'atb-broken-migrations-'));
-    cleanups.push(() => rmSync(brokenDir, { recursive: true, force: true }));
+    cleanups.push(() => removeTempDirSync(brokenDir));
     for (const migration of collectMigrations(migrationsDir()).filter((m) => m.order <= 6)) {
       mkdirSync(path.join(brokenDir, migration.name), { recursive: true });
       copyFileSync(path.join(migrationsDir(), migration.name, 'migration.sql'), path.join(brokenDir, migration.name, 'migration.sql'));

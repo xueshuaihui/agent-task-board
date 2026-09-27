@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { applyMigrations } from '../../infra/bootstrap';
 import { PrismaService } from '../../infra/prisma.service';
 import { nowSql } from '../../contract/time';
+import { removeTempDir } from '../../__tests__/helpers/temp-dir';
 
 /**
  * 独立临时库：ATB_DATA_DIR 指到 mkdtemp 目录后，PrismaService 的连接串就落在
@@ -26,7 +27,7 @@ export function createTempDb(prefix: string): TempDb {
     prisma,
     dispose: async () => {
       await prisma.$disconnect();
-      rmSync(dir, { force: true, recursive: true });
+      await removeTempDir(dir);
     },
   };
 }

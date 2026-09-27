@@ -1,10 +1,11 @@
 import type { ArgumentMetadata } from '@nestjs/common';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { fieldDefCreateSchema, fieldDefPatchSchema } from '../../contract/schemas';
+import { removeTempDir } from '../../__tests__/helpers/temp-dir';
 import { applyMigrations } from '../../infra/bootstrap';
 import { AuditService } from '../../infra/audit.service';
 import { PrismaService } from '../../infra/prisma.service';
@@ -36,7 +37,7 @@ beforeAll(() => {
 afterAll(async () => {
   delete process.env.ATB_DATA_DIR;
   await prisma.$disconnect();
-  rmSync(dir, { force: true, recursive: true });
+  await removeTempDir(dir);
 });
 
 async function createDef(key = 'impact_scope'): Promise<string> {

@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { ApiException, USER_COPY } from '../../contract/errors';
 import { nowSql } from '../../contract/time';
 import { paths } from '../../common/paths';
+import { removeTempDir } from '../../__tests__/helpers/temp-dir';
 import { backupNameAt } from '../backup-name';
 import type { BackupItem } from '../backup.service';
 import {
@@ -137,7 +138,7 @@ describe('立即备份（VACUUM INTO）', () => {
     expect({ code: error.code, status: error.status }).toEqual({ code: 'INTERNAL', status: 500 });
     expect(readdirSync(paths.backupsDir())).toEqual([]);
     await missing.prisma.$disconnect();
-    rmSync(missing.dir, { force: true, recursive: true });
+    await removeTempDir(missing.dir);
     process.env.ATB_DATA_DIR = h.dir;
   });
 });

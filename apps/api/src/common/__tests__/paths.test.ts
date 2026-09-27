@@ -1,8 +1,9 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_PORT, paths, port } from '../paths';
+import { removeTempDirSync } from '../../__tests__/helpers/temp-dir';
 
 /**
  * 10.3 / 20.9：端口由 `ATB_PORT` → `config.json` 的 `port` → 7788 三级决定，
@@ -24,7 +25,7 @@ describe('port() 三级解析', () => {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
-    rmSync(dir, { recursive: true, force: true });
+    removeTempDirSync(dir);
   });
 
   const writeConfig = (body: string) => writeFileSync(path.join(dir, 'config.json'), body, 'utf8');
@@ -90,7 +91,7 @@ describe('paths.datasourceUrl() 形状', () => {
   afterEach(() => {
     if (saved === undefined) delete process.env.ATB_DATA_DIR;
     else process.env.ATB_DATA_DIR = saved;
-    rmSync(dir, { recursive: true, force: true });
+    removeTempDirSync(dir);
   });
 
   it('file: 前缀 + 原生 dbFile 原样拼接，尾部连接参数不丢', () => {

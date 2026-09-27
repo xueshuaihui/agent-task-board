@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { vi } from 'vitest';
 import { newId } from '../../contract/ids';
 import { nowSql } from '../../contract/time';
 import { paths } from '../../common/paths';
+import { removeTempDir, removeTempDirSync } from '../../__tests__/helpers/temp-dir';
 import { applyMigrations } from '../../infra/bootstrap';
 import { AuditService } from '../../infra/audit.service';
 import type { AppLogger } from '../../infra/logger';
@@ -50,8 +51,8 @@ export function createBackupHarness(prefix: string): BackupHarness {
       await prisma.taskRun.deleteMany();
       await prisma.task.deleteMany();
       await prisma.auditLog.deleteMany();
-      rmSync(paths.artifactsDir(), { force: true, recursive: true });
-      rmSync(paths.backupsDir(), { force: true, recursive: true });
+      removeTempDirSync(paths.artifactsDir());
+      removeTempDirSync(paths.backupsDir());
       mkdirSync(paths.artifactsDir(), { recursive: true });
       mkdirSync(paths.backupsDir(), { recursive: true });
       logger.log.mockClear();
@@ -61,7 +62,7 @@ export function createBackupHarness(prefix: string): BackupHarness {
     dispose: async () => {
       delete process.env.ATB_DATA_DIR;
       await prisma.$disconnect();
-      rmSync(dir, { force: true, recursive: true });
+      await removeTempDir(dir);
     },
   };
 }

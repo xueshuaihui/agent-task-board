@@ -1,8 +1,9 @@
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { paths } from '../../common/paths';
+import { removeTempDirSync } from '../../__tests__/helpers/temp-dir';
 import {
   buildArtifactUri,
   deriveArtifactType,
@@ -44,7 +45,7 @@ beforeAll(() => {
 
 afterAll(() => {
   delete process.env.ATB_DATA_DIR;
-  rmSync(dir, { force: true, recursive: true });
+  removeTempDirSync(dir);
 });
 
 describe('isSafeArtifactUri：字符串层的白名单（20.6）', () => {

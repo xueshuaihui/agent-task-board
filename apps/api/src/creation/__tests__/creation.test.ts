@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -7,6 +7,7 @@ import type { RequestAuth } from '../../auth/auth.scope';
 import { applyMigrations, migrationsDir } from '../../infra/bootstrap';
 import { callAgentTool } from '../../mcp/mcp.server';
 import { createAgentHarness, type AgentHarness } from '../../agent/__tests__/temp-db';
+import { removeTempDirSync } from '../../__tests__/helpers/temp-dir';
 import { skillCreateSchema } from '../../skills/skills.dto';
 import type { ArtifactsService } from '../../artifacts/artifacts.service';
 import { AuditService } from '../../infra/audit.service';
@@ -61,10 +62,18 @@ const baseInput = {
   agent_name: 'qoder-1',
 };
 
+/**
+ * hookTimeout 显式放宽到 30s（只这一个 hook，不动全局 testTimeout/hookTimeout）：
+ * CI run 36329045226 的 win-x64 上这个 beforeAll 报 `Error: Hook timed out in 10000ms.`
+ * （creation.test.ts 因此 19 tests 全 skipped、整文件红）。它做的是
+ * `createAgentHarness()`（19 份迁移 DDL 落临时库）+ 第一次 Prisma 写入（原生查询引擎 DLL
+ * 首次加载），mac 侧整个文件 7932ms / 19 tests 全绿、本 hook 远不到 1s，
+ * Windows runner 上这两项之和却能压过 10s 的默认预算。
+ */
 beforeAll(async () => {
   h = createAgentHarness();
   agent = await h.agent('qoder-w8', []);
-});
+}, 30_000);
 
 afterAll(async () => {
   await h?.dispose();
@@ -232,7 +241,7 @@ describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0019）', 
       ]);
       probe.close();
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeTempDirSync(dir);
       if (previous.data === undefined) delete process.env.ATB_DATA_DIR;
       else process.env.ATB_DATA_DIR = previous.data;
       if (previous.mig === undefined) delete process.env.ATB_MIGRATIONS_DIR;

@@ -1,12 +1,13 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CustomFieldFilter } from '../../contract/schemas';
 import { jsonFilterParts } from '../json-filters';
+import { removeTempDir } from '../../__tests__/helpers/temp-dir';
 
 /**
  * 筛选谓词是手写的 `json_each` SQL，Prisma 只负责占位符绑定。
@@ -74,7 +75,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma?.$disconnect();
-  rmSync(dir, { force: true, recursive: true });
+  await removeTempDir(dir);
 });
 
 describe('tags 筛选', () => {

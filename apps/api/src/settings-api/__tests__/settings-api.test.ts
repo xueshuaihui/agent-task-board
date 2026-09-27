@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -9,6 +9,7 @@ import { PrismaService } from '../../infra/prisma.service';
 import type { AppLogger } from '../../infra/logger';
 import { SettingsService } from '../../infra/settings.service';
 import { SettingsApiService } from '../settings-api.service';
+import { removeTempDir } from '../../__tests__/helpers/temp-dir';
 
 /** 20.9 的键表校验在 `infra/settings.service.ts` 里，本测试验的是 controller 那层透传与审计。 */
 let dir: string;
@@ -37,7 +38,7 @@ beforeAll(() => {
 afterAll(async () => {
   delete process.env.ATB_DATA_DIR;
   await prisma.$disconnect();
-  rmSync(dir, { force: true, recursive: true });
+  await removeTempDir(dir);
 });
 
 describe('GET /settings', () => {

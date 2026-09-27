@@ -1,10 +1,11 @@
 import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AuthGuard } from '../../auth/auth.guard';
+import { removeTempDir } from '../../__tests__/helpers/temp-dir';
 import { hashToken } from '../../contract/ids';
 import { applyMigrations } from '../../infra/bootstrap';
 import { PrismaService } from '../../infra/prisma.service';
@@ -30,7 +31,7 @@ beforeAll(() => {
 afterAll(async () => {
   delete process.env.ATB_DATA_DIR;
   await prisma.$disconnect();
-  rmSync(dir, { force: true, recursive: true });
+  await removeTempDir(dir);
 });
 
 /** 只喂 AuthGuard 真正读的那三个方法，不引 @nestjs/testing（未安装）。 */

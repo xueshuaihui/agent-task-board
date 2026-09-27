@@ -1,10 +1,11 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { ArgumentMetadata } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { applyMigrations } from '../../infra/bootstrap';
 import { EventsService } from '../../infra/events.service';
+import { removeTempDir } from '../../__tests__/helpers/temp-dir';
 import { NotificationsService } from '../../infra/notifications.service';
 import { PrismaService } from '../../infra/prisma.service';
 import { ZodPipe } from '../../infra/zod.pipe';
@@ -30,7 +31,7 @@ beforeAll(() => {
 afterAll(async () => {
   delete process.env.ATB_DATA_DIR;
   await prisma.$disconnect();
-  rmSync(dir, { force: true, recursive: true });
+  await removeTempDir(dir);
 });
 
 async function seedPending(): Promise<void> {

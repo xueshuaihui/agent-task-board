@@ -1,10 +1,11 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 import { applyMigrations, migrationsDir } from '../bootstrap';
+import { removeTempDirSync } from '../../__tests__/helpers/temp-dir';
 
 /** 迁移水位对齐（2026-09-15 真机缺陷 #2）：既有库（prisma migrate 建，无 user_version）不重放 0001。 */
 describe('applyMigrations 水位对齐', () => {
@@ -24,7 +25,7 @@ describe('applyMigrations 水位对齐', () => {
   });
 
   afterAll(() => {
-    for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
+    for (const dir of dirs) removeTempDirSync(dir);
   });
 
   it('空库：正常应用全部迁移', () => {

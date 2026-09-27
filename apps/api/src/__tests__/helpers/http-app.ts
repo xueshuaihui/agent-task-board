@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Global, Module, type Type } from '@nestjs/common';
@@ -13,6 +13,7 @@ import { ApiExceptionFilter } from '../../infra/api-exception.filter';
 import { applyMigrations } from '../../infra/bootstrap';
 import { PrismaService } from '../../infra/prisma.service';
 import { applyDiShim } from './nest-di-shim';
+import { removeTempDir } from './temp-dir';
 
 /**
  * 真 HTTP 集成测试的公共底座：临时 SQLite + 真实 AppModule + 127.0.0.1:0 上的一次性监听。
@@ -147,7 +148,7 @@ export async function createTestApp(options: CreateTestAppOptions = {}): Promise
       if (!keepSweeper) leases.stopSweeper();
       await closeApp();
       await prisma.$disconnect();
-      rmSync(dir, { force: true, recursive: true });
+      await removeTempDir(dir);
       restoreEnv(previous);
     },
   };

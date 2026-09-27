@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestApp, errorCode, errorMessage, type Sender, type TestApp } from '../../__tests__/helpers/http-app';
 import { API, claimOk, clearReadyQueue, issueAgent, toReady, triple, uiSender } from '../../__tests__/helpers/seed';
+import { removeTempDir } from '../../__tests__/helpers/temp-dir';
 
 /**
  * 0919 技能后端深化：8.6 测试用例版本化与两形态测试运行、8.4 人工块 BLOCKED 流转、
@@ -66,7 +67,7 @@ describe('技能深化（8.4/8.6/8.7/8.8）', () => {
   });
 
   afterAll(async () => {
-    rmSync(scanDir, { recursive: true, force: true });
+    await removeTempDir(scanDir);
     await t.close();
   });
 

@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { ArgumentMetadata } from '@nestjs/common';
 import { afterEach, beforeAll, beforeEach, afterAll, describe, expect, it } from 'vitest';
 import { newId } from '../../contract/ids';
+import { removeTempDir } from '../../__tests__/helpers/temp-dir';
 import { nowSql } from '../../contract/time';
 import { applyMigrations } from '../../infra/bootstrap';
 import { AuditService } from '../../infra/audit.service';
@@ -37,7 +38,7 @@ beforeAll(() => {
 afterAll(async () => {
   delete process.env.ATB_DATA_DIR;
   await prisma.$disconnect();
-  rmSync(dir, { force: true, recursive: true });
+  await removeTempDir(dir);
 });
 
 /** 第 n 分钟的时间点：造出严格递增的 created_at，倒序才可断言。 */

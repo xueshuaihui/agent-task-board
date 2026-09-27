@@ -18,6 +18,7 @@ import { ApiException } from '../../contract/errors';
 import { newId } from '../../contract/ids';
 import { nowSql } from '../../contract/time';
 import { paths } from '../../common/paths';
+import { removeTempDir } from '../../__tests__/helpers/temp-dir';
 import { applyMigrations } from '../../infra/bootstrap';
 import type { AppLogger } from '../../infra/logger';
 import { PrismaService } from '../../infra/prisma.service';
@@ -62,14 +63,14 @@ afterAll(async () => {
   delete process.env.ATB_DATA_DIR;
   delete process.env.ATB_UI_TOKEN;
   await prisma.$disconnect();
-  rmSync(dir, { force: true, recursive: true });
+  await removeTempDir(dir);
 });
 
 beforeEach(async () => {
   await prisma.artifact.deleteMany();
   await prisma.taskRun.deleteMany();
   await prisma.task.deleteMany();
-  rmSync(paths.artifactsDir(), { force: true, recursive: true });
+  await removeTempDir(paths.artifactsDir());
   mkdirSync(paths.artifactsDir(), { recursive: true });
   logger.warn.mockClear();
 });
@@ -596,7 +597,7 @@ describe('级联清理（4.3.1 规则 4）', () => {
     expect(existsSync(path.join(other, 'keep.txt'))).toBe(true);
     expect(artifacts.cleanupTaskDir(taskId)).toEqual({ removed: false });
     expect(artifacts.artifactsRoot()).toBe(paths.artifactsDir());
-    rmSync(paths.artifactsDir(), { force: true, recursive: true });
+    await removeTempDir(paths.artifactsDir());
     expect(existsSync(artifacts.artifactsRoot())).toBe(true);
   });
 

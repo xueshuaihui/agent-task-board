@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { vi } from 'vitest';
 import type { Prisma } from '@prisma/client';
 import { newId } from '../../contract/ids';
 import { nowSql } from '../../contract/time';
+import { removeTempDir, removeTempDirSync } from '../../__tests__/helpers/temp-dir';
 import { paths } from '../../common/paths';
 import { applyMigrations } from '../../infra/bootstrap';
 import { AuditService } from '../../infra/audit.service';
@@ -77,8 +78,8 @@ export function createDataHarness(prefix: string): DataHarness {
       await prisma.apiToken.deleteMany();
       await prisma.auditLog.deleteMany();
       await prisma.$executeRawUnsafe(`UPDATE id_sequences SET next = CASE name WHEN 'task' THEN 1000 ELSE 2000 END`);
-      rmSync(paths.artifactsDir(), { force: true, recursive: true });
-      rmSync(paths.backupsDir(), { force: true, recursive: true });
+      removeTempDirSync(paths.artifactsDir());
+      removeTempDirSync(paths.backupsDir());
       mkdirSync(paths.artifactsDir(), { recursive: true });
       mkdirSync(paths.backupsDir(), { recursive: true });
       logger.log.mockClear();
@@ -87,7 +88,7 @@ export function createDataHarness(prefix: string): DataHarness {
     dispose: async () => {
       delete process.env.ATB_DATA_DIR;
       await prisma.$disconnect();
-      rmSync(dir, { force: true, recursive: true });
+      await removeTempDir(dir);
     },
   };
 }

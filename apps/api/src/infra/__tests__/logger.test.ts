@@ -1,9 +1,10 @@
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '../../contract/settings';
 import { AppLogger } from '../logger';
+import { removeTempDir } from '../../__tests__/helpers/temp-dir';
 
 /** 轮转器是 winston transport 的内部形状，测试只需要读它透传给 file-stream-rotator 的那份 options。 */
 interface RotateView {
@@ -34,7 +35,7 @@ afterAll(async () => {
   // 轮转器建流是异步的：目录先删掉会留下 ENOENT 的未处理拒绝。
   await new Promise((resolve) => setTimeout(resolve, 120));
   delete process.env.ATB_LOGS_DIR;
-  rmSync(dir, { force: true, recursive: true });
+  await removeTempDir(dir);
 });
 
 describe('AppLogger 的保留天数（验收 18）', () => {

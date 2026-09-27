@@ -1,9 +1,10 @@
 import type { ArgumentMetadata } from '@nestjs/common';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { capabilitySchema } from '../../contract/schemas';
+import { removeTempDir } from '../../__tests__/helpers/temp-dir';
 import { newId } from '../../contract/ids';
 import { applyMigrations } from '../../infra/bootstrap';
 import { AuditService } from '../../infra/audit.service';
@@ -33,7 +34,7 @@ beforeAll(() => {
 afterAll(async () => {
   delete process.env.ATB_DATA_DIR;
   await prisma.$disconnect();
-  rmSync(dir, { force: true, recursive: true });
+  await removeTempDir(dir);
 });
 
 /** 建一个 select 字段定义，供 preset 的自定义字段默认值用（20.10 要按候选值校验）。 */
