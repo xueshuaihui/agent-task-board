@@ -6,7 +6,11 @@
 * text=auto eol=lf
 
 # 真·二进制资源显式关闭 text=auto：禁用换行/合并/diff，杜绝被启发式误判改写。
-# 按 git ls-files 实测枚举仓库当前实际跟踪的图片类型（仅 png / icns，无 ico/jpg/
-# pdf/woff/woff2——新增别的资源类型时同步补行）。
+# 按 git ls-files 实测枚举仓库当前实际跟踪的图片类型（png / icns / ico，无 jpg/
+# pdf/woff/woff2——新增别的资源类型时同步补行）。*.ico 是 Windows NSIS 安装包图标
+# （apps/desktop/src-tauri/icons/icon.ico）：内容以 NUL 字节开头，text=auto 的启发式
+# 本会自动判二进制，但判据是文件内容、一旦某版图标不含 NUL 就会被改写成 CRLF 坏掉
+# ——与 *.png / *.icns 同理，显式声明、不靠猜。
 *.png binary
 *.icns binary
+*.ico binary
