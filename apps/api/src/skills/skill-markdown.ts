@@ -183,10 +183,15 @@ export function blocksToMarkdown(content: SkillContent, frontmatter: SkillFrontm
 /* ---------------------------------- 解析 ----------------------------------- */
 
 export function parseFrontmatter(source: string): { frontmatter: SkillFrontmatter | null; body: string } {
-  const match = /^---\n([\s\S]*?)\n---\n?/.exec(source);
-  if (!match) return { frontmatter: null, body: source };
+  // 解析入口归一换行：Windows 作者写的 SKILL.md/.mdc 多为 CRLF——frontmatter 开合正则
+  // `^---\n` 匹配不上，正文里 `.` 不吃 `\r`、`$` 又只在 `\n` 前成立，小节/列表整段错位，
+  // 且 `\r` 会漏进 id/name/version。统一成 LF 后 \n 与 \r\n 走同一条路径；返回的 body
+  // 同样是归一后的，markdownToBlocks 下游按 `\n` 切分即自然生效。
+  const text = source.replace(/\r\n/g, '\n');
+  const match = /^---\n([\s\S]*?)\n---\n?/.exec(text);
+  if (!match) return { frontmatter: null, body: text };
   const raw = match[1];
-  const body = source.slice(match[0].length);
+  const body = text.slice(match[0].length);
   const get = (key: string): string => {
     const line = raw.split('\n').find((item) => item.startsWith(`${key}:`));
     return line ? line.slice(key.length + 1).trim() : '';
