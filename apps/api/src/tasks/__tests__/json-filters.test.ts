@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CustomFieldFilter } from '../../contract/schemas';
 import { jsonFilterParts } from '../json-filters';
@@ -41,7 +42,10 @@ async function seed(id: string, tags: string[], customFields: unknown): Promise<
 
 beforeAll(async () => {
   dir = mkdtempSync(path.join(tmpdir(), 'atb-json-filter-'));
-  const url = `file:${path.join(dir, 'jarvis.db')}`;
+  // 连接串必须是合法 file URL：win32 上 path.join 给的是反斜杠 + 盘符，裸拼
+  // `file:C:\Users\…` 不是有效 URL，Prisma 引擎（含 `prisma db push`）直接解析失败。
+  // 与 src/common/paths.ts 的 datasourceUrl 同口径，经 pathToFileURL 归一。
+  const url = pathToFileURL(path.join(dir, 'jarvis.db')).href;
   try {
     execFileSync('npx', ['prisma', 'db', 'push', '--skip-generate'], {
       cwd: apiRoot,

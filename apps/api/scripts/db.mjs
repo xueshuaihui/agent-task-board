@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 import { mkdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -23,7 +23,9 @@ function resolveDataDir() {
 
 const dataDir = resolveDataDir();
 mkdirSync(dataDir, { recursive: true });
-process.env.DATABASE_URL = `file:${path.join(dataDir, 'jarvis.db')}`;
+// DATABASE_URL 必须是合法 file URL：win32 上 path.join 给反斜杠 + 盘符，裸拼
+// `file:C:\Users\…` Prisma 引擎解析不了（与 src/common/paths.ts 的 datasourceUrl 同口径）。
+process.env.DATABASE_URL = pathToFileURL(path.join(dataDir, 'jarvis.db')).href;
 
 const candidates = [
   path.resolve(here, '..', '..', '..', 'node_modules', '.bin', 'prisma'),
