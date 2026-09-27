@@ -16,11 +16,11 @@
  * 产物布局（全部被 .gitignore 覆盖，不入库）：
  *   resources/sidecar/
  *   ├── main.js                    # 单文件 bundle（entry，sidecar.rs 第 2 档找它）
- *   ├── node                       # node 运行时（ATB_NODE_BIN 或当前执行的 node）
+ *   ├── node[.exe]                 # node 运行时（ATB_NODE_BIN 或当前执行的 node；win32 落 node.exe）
  *   ├── prisma/migrations/         # 迁移 SQL（bootstrap.ts 候选一）
  *   └── node_modules/
  *       ├── @prisma/client/        # 仅 package.json + 入口 + runtime/library.js
- *       └── .prisma/client/        # 生成客户端 + schema + query engine 原生库
+ *       └── .prisma/client/        # 生成客户端 + schema + query engine 原生库（平台与构建机一致）
  *
  * 用法：`npm run build:sidecar -w @atb/api`
  *   ATB_NODE_BIN 可显式指定 node 源（如跨架构打包），缺省用当前执行的 node。
@@ -133,13 +133,27 @@ totalBytes += copyTo(path.join(rootModules, '@prisma/client/runtime/library.js')
 for (const file of ['package.json', 'index.js', 'default.js', 'client.js', 'schema.prisma']) {
   totalBytes += copyTo(path.join(rootModules, '.prisma/client', file), path.join(prismaGenDir, file));
 }
-// query engine 原生库：按前缀全收（darwin 平台 1 个，arm64 机器上生成的是 -arm64 变体）。
-const engineFiles = readdirSync(path.join(rootModules, '.prisma/client')).filter((name) =>
-  /^libquery_engine-.+\.node$/.test(name),
+// query engine 原生库：命名随平台不同——darwin 是 libquery_engine-<triple>.dylib.node，
+// win32 是 query_engine-<triple>.dll.node（无 lib 前缀、.dll.node 后缀）。sidecar 只装
+// 「构建机当前平台」那一颗：CI 的 windows-latest / macos runner 本身就是目标平台
+// （同 mac 打包脚本按 uname -m 定 arch 的思路），不支持跨平台装配。故按 process.platform
+// 取平台标识过滤，装了别平台的引擎在目标机上才崩、比直接缺失更难查，命中不到就当场 die。
+const engineDir = path.join(rootModules, '.prisma/client');
+const engineToken = { win32: 'windows', darwin: 'darwin', linux: 'linux' }[process.platform];
+const allEngines = readdirSync(engineDir).filter((name) =>
+  /^(?:lib)?query_engine-.+\.node$/.test(name),
 );
-if (engineFiles.length === 0) die(`未找到 query engine（${rootModules}/.prisma/client），先 npm run prisma`);
+const engineFiles = allEngines.filter((name) => name.includes(engineToken));
+if (engineFiles.length === 0) {
+  die(
+    allEngines.length === 0
+      ? `未找到 query engine（${engineDir}），先 npm run prisma`
+      : `query engine 平台不符：当前 ${process.platform} 需要含「${engineToken}」的引擎，` +
+        `但 ${engineDir} 只有 ${allEngines.join(', ')}（不能跨平台装配）`,
+  );
+}
 for (const file of engineFiles) {
-  totalBytes += copyTo(path.join(rootModules, '.prisma/client', file), path.join(prismaGenDir, file));
+  totalBytes += copyTo(path.join(engineDir, file), path.join(prismaGenDir, file));
 }
 
 // ---------- 3. 迁移目录（bootstrap.ts 候选一：__dirname/prisma/migrations） ----------
@@ -158,11 +172,17 @@ for (const entry of readdirSync(migrationsSource, { withFileTypes: true })) {
 log(`迁移目录已装配（${readdirSync(path.join(resourcesDir, 'prisma', 'migrations')).length} 项）`);
 
 // ---------- 4. node 运行时 ----------
+// 落地文件名随平台：win32 下可执行必须带 .exe（CreateProcess 按扩展名解析，
+// 无扩展名的 node 起不动），其余平台仍为 node。ATB_NODE_BIN 只指定源、不改后缀。
 const nodeSource = process.env.ATB_NODE_BIN?.trim() || process.execPath;
 if (!existsSync(nodeSource)) die(`node 源不存在：${nodeSource}（用 ATB_NODE_BIN 显式指定）`);
-copyFileSync(nodeSource, path.join(resourcesDir, 'node'));
+const nodeBin = process.platform === 'win32' ? 'node.exe' : 'node';
+copyFileSync(nodeSource, path.join(resourcesDir, nodeBin));
 totalBytes += statSync(nodeSource).size;
 
 const mb = (bytes) => `${(bytes / 1024 / 1024).toFixed(1)}M`;
 log(`装配完成 → ${resourcesDir}`);
-log(`  main.js + prisma 最小运行时 + 迁移 + node 共 ${mb(totalBytes)}（engine：${engineFiles.join(', ')}）`);
+log(
+  `  main.js + prisma 最小运行时 + 迁移 + ${nodeBin} 共 ${mb(totalBytes)}` +
+    `（平台：${process.platform}，engine：${engineFiles.join(', ')}）`,
+);
