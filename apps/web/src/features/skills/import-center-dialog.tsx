@@ -466,11 +466,16 @@ function parseMarkdown(file: File, text: string, source: SourceKind): ParsedEntr
 
 /** Cursor Rules .mdc：剥 Cursor frontmatter（description/globs/alwaysApply）再走同一 markdown 转换。 */
 function parseCursorRules(file: File, text: string): ParsedEntry {
-  let body = text;
+  // 与 markdown.ts parseFrontmatter 同修法的第二处边界：.mdc 的 Cursor 元数据头正则是本文件
+  // 自己写的（没走 markdown.ts），同样只认字面 `---\n`——Windows 手写的 .mdc 是 CRLF，不归一
+  // 则 description 整条丢失、连 frontmatter 行一起被当正文塞进提示词块。在解析入口归一一次，
+  // 下游正则/切片/交给 parseMarkdown 的正文全走 LF；LF 输入下是恒等变换。
+  const source = text.replace(/\r\n/g, '\n');
+  let body = source;
   let description = '';
-  const fm = /^---\n([\s\S]*?)\n---\n?/.exec(text);
+  const fm = /^---\n([\s\S]*?)\n---\n?/.exec(source);
   if (fm) {
-    body = text.slice(fm[0].length);
+    body = source.slice(fm[0].length);
     const descLine = fm[1].split('\n').find((line) => line.startsWith('description:'));
     description = descLine ? descLine.slice('description:'.length).trim() : '';
   }
