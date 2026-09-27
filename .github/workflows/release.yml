@@ -143,7 +143,8 @@ jobs:
           set -euo pipefail
           DRAFT=""
           TARGET_REF=""
-          # 事件名走 runner 自带的 GITHUB_EVENT_NAME 环境变量，不从 ${{ }} 表达式内插进脚本
+          # 事件名读 runner 自带的 GITHUB_EVENT_NAME 环境变量，不走工作流表达式内插进脚本
+          # （注意：run 块里出现字面量双大括号语法会被 GitHub 当作表达式解析并报错，注释也不行）。
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             # 试运行通道：见头注「试运行通道」。tag 不以 v 开头 → 不命中 on: push tags 的 v*，
             # 不会自我触发；--target 让 gh 在本次提交上就地建 tag，--draft 使其对用户不可见。
