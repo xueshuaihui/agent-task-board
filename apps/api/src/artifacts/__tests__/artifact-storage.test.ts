@@ -95,26 +95,39 @@ describe('resolveArtifactFile：realpath 之后再比前缀（软链接逃逸）
     }
   });
 
-  it('产物目录里指向外部的软链接读不到（字符串检查会放行，靠 realpath 兜住）', () => {
-    const taskDir = path.join(root, 'T-symlink');
-    mkdirSync(taskDir, { recursive: true });
-    const link = path.join(taskDir, 'escape.diff');
-    symlinkSync(path.join(dir, 'secret.txt'), link);
-    // 先证明字符串层面它是「合法 uri」，否则这条用例什么也没测。
-    const uri = path.relative(paths.dataDir(), link);
-    expect(isSafeArtifactUri(uri)).toBe(true);
-    expect(resolveArtifactFile(uri)).toBeNull();
-  });
+  // win32 跳过的前提是造不出用例本体，而非断言不成立：fs.symlinkSync 在 Windows 需要
+  // SeCreateSymbolicLinkPrivilege（仅管理员或开启「开发人员模式」才默认授予），普通账户
+  // 创建即 EPERM——而这条用例钉死的正是「软链接逃逸靠 realpath 兜住」这一 realpath 专属
+  // 行为，没有软链接就无从构造，也替代不出等价路径（硬链接不改变 realpath、junction 只指目录）。
+  it.skipIf(process.platform === 'win32')(
+    '产物目录里指向外部的软链接读不到（字符串检查会放行，靠 realpath 兜住）',
+    () => {
+      const taskDir = path.join(root, 'T-symlink');
+      mkdirSync(taskDir, { recursive: true });
+      const link = path.join(taskDir, 'escape.diff');
+      symlinkSync(path.join(dir, 'secret.txt'), link);
+      // 先证明字符串层面它是「合法 uri」，否则这条用例什么也没测。
+      const uri = path.relative(paths.dataDir(), link);
+      expect(isSafeArtifactUri(uri)).toBe(true);
+      expect(resolveArtifactFile(uri)).toBeNull();
+    },
+  );
 
-  it('产物根目录内部的软链接仍然可用（白名单不该挡死正常预览）', () => {
-    const uri = legitUri();
-    const absolute = path.resolve(paths.dataDir(), uri);
-    const innerDir = path.join(root, 'T-inside');
-    mkdirSync(innerDir, { recursive: true });
-    const link = path.join(innerDir, 'inner.diff');
-    symlinkSync(absolute, link);
-    expect(resolveArtifactFile(path.relative(paths.dataDir(), link))).toBe(link);
-  });
+  // 同上：本用例的前提就是「根目录内部存在一个软链接」，Windows 普通账户无
+  // SeCreateSymbolicLinkPrivilege 造不出这个前提，只能在 win32 跳过；
+  // 断言本身（resolveArtifactFile 返回链接路径原值）与平台无关。
+  it.skipIf(process.platform === 'win32')(
+    '产物根目录内部的软链接仍然可用（白名单不该挡死正常预览）',
+    () => {
+      const uri = legitUri();
+      const absolute = path.resolve(paths.dataDir(), uri);
+      const innerDir = path.join(root, 'T-inside');
+      mkdirSync(innerDir, { recursive: true });
+      const link = path.join(innerDir, 'inner.diff');
+      symlinkSync(absolute, link);
+      expect(resolveArtifactFile(path.relative(paths.dataDir(), link))).toBe(link);
+    },
+  );
 
   it('文件不存在 / 目标是目录时返回 null（上层据此报 missing）', () => {
     expect(resolveArtifactFile('artifacts/T-1/R-1/ffffffff-1111-4111-8111-ffffffffffff.diff')).toBeNull();
