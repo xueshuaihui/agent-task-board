@@ -188,7 +188,18 @@ fn signal_group(pid: u32, force: bool) -> bool {
   single == 0
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn signal_group(pid: u32, _force: bool) -> bool {
+  // mac 能用 kill(-pgid, SIGTERM) 让整组优雅收尾（Nest 的 shutdown hooks），
+  // Windows 的 GUI 壳没有控制台，想对 sidecar 传「类 SIGTERM」得走
+  // AttachConsole + GenerateConsoleCtrlEvent 那一套，本期不做：
+  // 两档 force 同为 taskkill /T /F 直接收整棵进程树。
+  // 带 /T 是底线——只杀直属 node.exe 会把 Prisma/agent 子进程留成孤儿；
+  // 硬关之所以可接受，是因为库在 sidecar 侧走 SQLite WAL，崩溃点由 WAL 重放恢复。
+  crate::platform::run_taskkill(pid, true)
+}
+
+#[cfg(not(any(unix, windows)))]
 fn signal_group(pid: u32, force: bool) -> bool {
   let _ = (pid, force);
   false
@@ -446,7 +457,9 @@ impl Sidecar {
   }
 
   /// 结束 sidecar：先对整个进程组发 SIGTERM（Nest 的 shutdown hooks 要收尾），
-  /// 3s 不退再 SIGKILL。只有托盘「退出」「重启服务」与超时兜底会走到这里（9.4.1）。
+  /// 3s 不退再 SIGKILL。Windows 没有组信号可发，第一发就是 `taskkill /T /F`
+  /// 收整棵进程树（见 `signal_group`）。
+  /// 只有托盘「退出」「重启服务」与超时兜底会走到这里（9.4.1）。
   pub fn stop(&self) -> Option<u32> {
     let mut guard = lock(&self.child);
     let Some(mut child) = guard.take() else {
