@@ -624,7 +624,11 @@ describe('技能深化（8.4/8.6/8.7/8.8）', () => {
     expect(trav.status).toBe(422);
     expect(trav.body.error.details[0].code).toBe('path_traversal');
 
-    await put({ id: 'gone', type: 'directory', name: '不存在', path: '/tmp/atb-definitely-missing', enabled: true });
+    // 「不存在的目录」这条要给一个**本平台规范形态**的绝对路径：win32 下 '/tmp/…' 这种
+    // POSIX 写法会先被上面的规范化守卫判成 invalid_path（见 skill-sources.ts 的 resolve 比较），
+    // 那是测试夹具的平台假设，不是分类模型的平台差异——分类本身走 existsSync + statSync。
+    const missingDir = path.join(tmpdir(), 'atb-definitely-missing-directory');
+    await put({ id: 'gone', type: 'directory', name: '不存在', path: missingDir, enabled: true });
     const gone = await ui.post(`${API}/skills/sources/scan`, { source_id: 'gone' });
     expect(gone.status).toBe(422);
     expect(gone.body.error.details[0].code).toBe('not_a_directory');
