@@ -5,6 +5,7 @@ mod conflict;
 mod diag;
 mod notify;
 mod paths;
+mod platform;
 mod sidecar;
 mod state;
 mod tray;

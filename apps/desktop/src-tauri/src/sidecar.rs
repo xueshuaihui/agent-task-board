@@ -317,6 +317,10 @@ impl Sidecar {
       // 独立进程组：退出时能整组收掉，不给本机留孤儿 sidecar。
       command.process_group(0);
     }
+    // node.exe 是控制台程序：release 构建（windows_subsystem="windows"）没有自己的
+    // 控制台，CreateProcess 仍会给它分配一个可见窗口——每次启动/重启闪一秒黑框。
+    // hide_console 在非 Windows 是空操作，放这里而不是套 cfg 块（见 platform.rs）。
+    crate::platform::hide_console(&mut command);
 
     let mut child = command.spawn().map_err(|error| {
       let message = format!(

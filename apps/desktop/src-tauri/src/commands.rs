@@ -7,6 +7,7 @@ use tauri::AppHandle;
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 use crate::paths;
+use crate::platform;
 use crate::state;
 use crate::tray;
 use crate::window;
@@ -30,6 +31,9 @@ fn shell_open(target: &str) -> Result<(), String> {
     // `start` 是 cmd 内建命令；第一个空串是它的 title 占位参数。
     let mut command = Command::new("cmd");
     command.args(["/C", "start", "", target]);
+    // cmd.exe 是控制台程序：GUI 主进程下每次「打开链接/打开目录」都会闪一个
+    // 黑框才把浏览器/资源管理器带出来。start 转发的是窗口消息，不受无控制台影响。
+    platform::hide_console(&mut command);
     command.spawn()
   } else {
     let mut command = Command::new("xdg-open");

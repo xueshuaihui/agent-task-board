@@ -106,10 +106,14 @@ fn listener_pids(port: u16) -> Option<Vec<u32>> {
   #[cfg(any(target_os = "macos", target_os = "linux"))]
   let output = Command::new("lsof").args(lsof_args(port)).output().ok()?;
   #[cfg(windows)]
-  let output = Command::new("netstat")
-    .args(["-ano", "-p", "tcp"])
-    .output()
-    .ok()?;
+  let output = {
+    // netstat 是控制台程序：GUI 主进程下即便 `.output()` 全管道捕获，CreateProcess
+    // 照样给它分一个新控制台——每轮冲突检测闪一次黑框。统一过 hide_console。
+    let mut command = Command::new("netstat");
+    command.args(["-ano", "-p", "tcp"]);
+    crate::platform::hide_console(&mut command);
+    command.output().ok()?
+  };
   #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
   {
     let _ = port;
@@ -133,9 +137,13 @@ fn process_name(pid: u32) -> String {
     .args(["-o", "comm=", "-p", &pid.to_string()])
     .output();
   #[cfg(windows)]
-  let output = Command::new("tasklist")
-    .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
-    .output();
+  let output = {
+    // 同 netstat：tasklist 也是控制台程序，不隐藏窗口每次认占用者闪一下黑框。
+    let mut command = Command::new("tasklist");
+    command.args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"]);
+    crate::platform::hide_console(&mut command);
+    command.output()
+  };
   let name = output
     .ok()
     .filter(|out| out.status.success())
