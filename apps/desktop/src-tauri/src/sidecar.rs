@@ -83,9 +83,17 @@ fn split_command(raw: &str) -> Vec<String> {
   parts
 }
 
+/// 随包 node 的可执行文件名：mac 是裸 `node`，Windows 是 `node.exe`
+/// （打包侧 `bundle-sidecar.mjs` 按同名产出 `sidecar/node.exe`）。
+/// 纯函数收 `std::env::consts::EXE_SUFFIX` 当参数，两个平台的取名都能在 mac 上单测。
+fn bundled_node_name(exe_suffix: &str) -> String {
+  format!("node{exe_suffix}")
+}
+
 /// 解析运行 sidecar 用的 node 可执行文件，优先级从高到低：
 /// 1. `ATB_NODE_BIN` —— 显式指定（最高优先，便于调试/替换）；
-/// 2. `<resource_dir>/sidecar/node` —— 随 `.app` 打包进 Resources 的 node，保证从 Finder 双击启动也能用；
+/// 2. `<resource_dir>/sidecar/node`（Windows 上为 `node.exe`，见 `bundled_node_name`）——
+///    随安装包打进 Resources 的 node，保证从 Finder / 资源管理器双击启动也能用；
 /// 3. 系统 `node` —— 仅开发/未打包时依赖 PATH。
 fn resolve_node(resource_dir: Option<&Path>) -> String {
   if let Some(raw) = std::env::var("ATB_NODE_BIN")
@@ -96,7 +104,9 @@ fn resolve_node(resource_dir: Option<&Path>) -> String {
     return raw;
   }
   if let Some(dir) = resource_dir {
-    let bundled = dir.join("sidecar").join("node");
+    let bundled = dir
+      .join("sidecar")
+      .join(bundled_node_name(std::env::consts::EXE_SUFFIX));
     if bundled.is_file() {
       return bundled.display().to_string();
     }
@@ -513,6 +523,13 @@ mod tests {
   fn other_stdout_lines_are_not_ready() {
     assert!(serde_json::from_str::<ReadyInfo>("{\"port\":1}").is_err());
     assert!("node: bad options".strip_prefix(READY_PREFIX).is_none());
+  }
+
+  #[test]
+  fn bundled_node_name_follows_the_platform_exe_suffix() {
+    // mac/Linux 的随包名与旧行为逐字一致；Windows 必须带 .exe，否则双击安装包起不来。
+    assert_eq!(bundled_node_name(""), "node");
+    assert_eq!(bundled_node_name(".exe"), "node.exe");
   }
 
   #[test]
