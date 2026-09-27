@@ -1,19 +1,33 @@
-# 发布流水线：推 tag 即发布（release 像提交代码一样），双架构产物
+# 发布流水线：推 tag 即发布（release 像提交代码一样），三产物 = mac 双架构 dmg + Windows x64 NSIS
 #
-# 用法：
+# 用法（正式通道）：
 #   git tag -a v0.3.0 -m "v0.3.0"
 #   git push origin v0.3.0
-# → GitHub Actions 云端构建（门禁→sidecar→.app→.dmg→冒烟→SHA256）
-# → 自动创建 GitHub Release 并上传 x64 / arm64 两个 dmg + SHA256SUMS.txt
+# → GitHub Actions 云端构建（门禁→sidecar→安装包→冒烟→SHA256）
+# → 自动创建 GitHub Release 并上传 x64 / arm64 两个 dmg + win-x64 的 setup.exe + SHA256SUMS.txt
 #
-# 双架构策略（为什么不是 universal 单包）：
-#   sidecar 的 node 二进制取自构建机当前 node（bundle-sidecar.mjs 第 4 步），
-#   Node 官方无 universal 发行版；Prisma query engine 也是按机器架构生成的
-#   原生库。因此 .app 内的 node/引擎只能单架构 → 用 matrix 在两种 runner 上
-#   各自构建独立 dmg（x64 = macos-15-intel Intel；arm64 = macos-15 Apple Silicon），
-#   每个 .app 自带匹配架构的 node 与引擎，Rosetta 不参与 sidecar 运行。
+# 试运行通道（workflow_dispatch，Windows job 首跑/排障用）：
+#   Actions 页面手动 Run workflow（默认 main）→ 三个平台照常全量构建
+#   → release job 发布为 **draft Release**：用户在 Releases 页完全看不到，验证完一键删
+#     （gh release delete <tag> --cleanup-tag）。draft 用的 tag 名为 dryrun-<sha7>：
+#     刻意不以 v 开头，避免再命中 on: push: tags: v* 触发自我循环；该 tag 由
+#     gh release create --target 在当前提交上就地建出。tag-push 通道行为逐字不变
+#     （含 v0.x.* 的 --prerelease 判定）。
 #
-# 通道约定（与 docs/发布手册.md 一致）：
+# 多平台策略（为什么不 universal、为什么不跨平台装配）：
+#   sidecar 的 node 二进制与 Prisma query engine 都取自**构建机当前运行时**
+#   （bundle-sidecar.mjs：引擎平台与 process.platform 不符直接 die，拒绝跨平台装配）。
+#   Node 官方无 universal 发行版，引擎是按平台/架构生成的原生库 → 每个平台的产物必须
+#   在自家 runner 上构建：x64 dmg = macos-15-intel（最后一代 Intel 免费镜像，
+#   macos-13 已于 2025-12 退役；本镜像用到 2027-08），arm64 dmg = macos-15，
+#   win-x64 setup.exe = windows-latest。
+#
+# Windows 口径（决策已定，细节见 docs/发布手册.md §1.3）：NSIS .exe、仅 x64、
+#   **不签名是既定决策**（无证书；首启 SmartScreen 按手册话术引导，不学 mac 的 ad-hoc）。
+#   打包脚本换成 scripts/package-release-win.sh（Git Bash 运行）：mac 专属的
+#   codesign/hdiutil/plist 环节无对应物，产物冒烟与引擎硬校验逐步保留。
+#
+# 通道约定（与 docs/发布手册.md §0 一致）：
 #   - v0.x.* 一律 prerelease（v0.1.0 正式 tag 仍挂在 A3 真机验收门禁之后）
 #   - v1.0.0 及以上自动作为正式版
 #
@@ -24,6 +38,7 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 concurrency:
   group: release-${{ github.ref }}
@@ -41,8 +56,23 @@ jobs:
         include:
           - arch: x64
             runner: macos-15-intel  # 最后一代 Intel 免费镜像（macos-13 已于 2025-12 退役；本镜像用到 2027-08）
+            platform: macos
+            package_script: scripts/package-release.sh
+            bundle_dir: dmg
+            bundle_ext: dmg
           - arch: arm64
             runner: macos-15      # Apple Silicon：产出原生 _arm64.dmg
+            platform: macos
+            package_script: scripts/package-release.sh
+            bundle_dir: dmg
+            bundle_ext: dmg
+          - arch: win-x64
+            runner: windows-latest  # 仅 x64（不出 win-arm64 是既定决策）；arch 标签带 win- 前缀，
+                                    # 不与 mac 的 x64 撞 pkg-*/产物名，故 Windows 包叫 …_x64-setup.exe
+            platform: windows
+            package_script: scripts/package-release-win.sh
+            bundle_dir: nsis
+            bundle_ext: exe
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
@@ -60,19 +90,19 @@ jobs:
           workspaces: apps/desktop/src-tauri
           prefix-key: rust-${{ matrix.arch }}
 
-      - name: 安装依赖 + Prisma 引擎（按 runner 架构生成）
+      - name: 安装依赖 + Prisma 引擎（按 runner 平台/架构生成）
         run: |
           npm ci
           npm run prisma
 
-      - name: 打包（门禁 → 构建 → sidecar → .app → .dmg → 冒烟 → SHA256）
-        run: bash scripts/package-release.sh
+      - name: 打包（门禁 → 构建 → sidecar → tauri build → 冒烟 → SHA256）
+        run: bash ${{ matrix.package_script }}
 
       - name: 上传构建产物（待 release job 汇总）
         uses: actions/upload-artifact@v4
         with:
-          name: dmg-${{ matrix.arch }}
-          path: apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          name: pkg-${{ matrix.arch }}
+          path: apps/desktop/src-tauri/target/release/bundle/${{ matrix.bundle_dir }}/*.${{ matrix.bundle_ext }}
           if-no-files-found: error
           retention-days: 3
 
@@ -86,17 +116,20 @@ jobs:
       # 工作目录不是 git 仓库，会报 "fatal: not a git repository"。
       - uses: actions/checkout@v4
 
-      - name: 汇集双架构 dmg
+      - name: 汇集全平台产物（mac 双 dmg + win-x64 setup.exe）
         uses: actions/download-artifact@v4
         with:
-          pattern: dmg-*
+          pattern: pkg-*
           merge-multiple: true
           path: dist
 
       - name: 生成合并校验和
         run: |
           cd dist
-          shasum -a 256 -- *.dmg > SHA256SUMS.txt
+          # 统一用 sha256sum（ubuntu 与 Git Bash 都自带；mac 本地脚本的 shasum 同算法同行格式）。
+          # 通配符保留上传时的原文件名（含空格），与手册 §5「GitHub 空格→点号」的对账口径一致；
+          # *.exe 未落进 dist 时（如某平台 job 失败后手工补发）通配符展开失败会在此当场红，不留假账。
+          sha256sum -- *.dmg *.exe > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: 创建 Release 并上传产物
@@ -105,6 +138,17 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          DRAFT=""
+          TARGET_REF=""
+          # 事件名走 runner 自带的 GITHUB_EVENT_NAME 环境变量，不从 ${{ }} 表达式内插进脚本
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            # 试运行通道：见头注「试运行通道」。tag 不以 v 开头 → 不命中 on: push tags 的 v*，
+            # 不会自我触发；--target 让 gh 在本次提交上就地建 tag，--draft 使其对用户不可见。
+            TAG="dryrun-${GITHUB_SHA:0:7}"
+            DRAFT="--draft"
+            TARGET_REF="--target $GITHUB_SHA"
+            echo "试运行（workflow_dispatch）：产物进 draft Release ${TAG}，验证后 gh release delete ${TAG} --cleanup-tag"
+          fi
           # v0.x.* → prerelease（SOP 通道约定）；v1+ → 正式版
           PRERELEASE=""
           case "$TAG" in v0.*) PRERELEASE="--prerelease" ;; esac
@@ -113,7 +157,7 @@ jobs:
             gh release upload "$TAG" dist/* --clobber
           else
             gh release create "$TAG" dist/* \
-              --generate-notes $PRERELEASE \
+              --generate-notes $PRERELEASE $DRAFT $TARGET_REF \
               --title "$TAG"
           fi
           echo "✅ Release ${TAG} 就绪：$(gh release view "$TAG" --json url -q .url)"
