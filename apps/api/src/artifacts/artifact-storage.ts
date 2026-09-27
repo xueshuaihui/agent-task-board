@@ -107,6 +107,26 @@ export function isArtifactType(value: unknown): value is ArtifactType {
   return typeof value === 'string' && (ARTIFACT_TYPES as readonly string[]).includes(value);
 }
 
+/**
+ * 产物 uri 的唯一书写形态（20.6 / 20.7 / 6.12）：相对数据目录、**正斜杠**拼接。
+ * 平台分隔符只属于文件系统调用，不属于库——`artifacts.uri` 存的是一条 URI。
+ * 反斜杠一旦进库，读取侧（`/raw`、预览开关、`missing`、显示名末段）在另一台机器上
+ * 全部失效，9.3 备份出来的库也就不可跨平台恢复。
+ * 生产写入本来就走 `buildArtifactUri` 的模板拼接；这个函数是把该形状变成**可复用的口径**，
+ * 任何从路径派生 uri 的调用方（含测试夹具的 `path.relative`）都必须先过它。
+ */
+export function toArtifactUri(value: string): string {
+  return value.replace(/\\/g, '/');
+}
+
+/**
+ * uri 末段 = 落盘文件名（20.7 的显示名兜底）。先归一分隔符，所以历史库里按平台分隔符
+ * 写下的行也取得出名字，不需要按平台分支。
+ */
+export function artifactUriBasename(uri: string): string {
+  return toArtifactUri(uri).split('/').filter(Boolean).pop() ?? uri;
+}
+
 /** 20.6 路径校验：相对、正斜杠、无 `..` 段、不越出产物根目录。 */
 export function isSafeArtifactUri(uri: string): boolean {
   if (typeof uri !== 'string' || uri.length === 0 || uri.length > 1024) return false;
@@ -124,9 +144,13 @@ export function isSafeArtifactUri(uri: string): boolean {
  * 产物目录里被人放了一个指向 `/etc` 的软链接时，字符串检查是放行不了的。
  */
 export function resolveArtifactFile(uri: string): string | null {
-  if (!isSafeArtifactUri(uri)) return null;
+  // 读取侧对历史行宽容：按原样过白名单，不过再把分隔符归一后**重新过一遍**白名单。
+  // 防穿越的强度一分不降——反斜杠形态不再被直接拒绝，而是被同一套规则（相对、无 `..`
+  // 段、无盘符、无 NUL、首段必须是 artifacts）复查，再叠加下面的 realpath 前缀比对。
+  const candidate = isSafeArtifactUri(uri) ? uri : toArtifactUri(uri);
+  if (!isSafeArtifactUri(candidate)) return null;
   const root = paths.artifactsDir();
-  const absolute = path.resolve(paths.dataDir(), uri);
+  const absolute = path.resolve(paths.dataDir(), candidate);
   if (absolute !== root && !absolute.startsWith(root + path.sep)) return null;
   if (!existsSync(absolute)) return null;
   try {
@@ -164,7 +188,9 @@ export function artifactFileSize(absolute: string): number | null {
 
 /** uri 是相对数据目录的路径、且固定以 `artifacts/` 开头（20.6）：读取侧按它反查绝对路径。 */
 export function buildArtifactUri(taskId: string, runId: string, artifactId: string, ext: string): string {
-  return `artifacts/${taskId}/${runId}/${artifactId}.${ext}`;
+  // 段值由 `isSafeIdSegment` 把关，模板又是正斜杠字面量，这里的归一是把「写入口径只有一处、
+  // 产出必无平台分隔符」这条不变式钉死在构造器上，不随调用方的拼法漂移。
+  return toArtifactUri(`artifacts/${taskId}/${runId}/${artifactId}.${ext}`);
 }
 
 /** 目录名从 id 派生，所以任务号里的路径字符必须先到此为止。 */

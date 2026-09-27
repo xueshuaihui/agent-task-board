@@ -1,5 +1,6 @@
 import { STATUS_LABEL, type TaskStatus, type UnknownEnumReport } from '../contract/enums';
 import { toIso } from '../contract/time';
+import { artifactUriBasename } from '../artifacts/artifact-storage';
 
 /**
  * `$queryRaw` 不做列名→模型字段的映射，读路径拿到的就是 tasks 表的原始列名。
@@ -188,8 +189,9 @@ export function deriveArtifactName(
       return uri;
     }
   }
-  const last = uri.split('/').filter(Boolean).pop();
-  return last ?? uri;
+  // 末段推导只有一份实现：`artifacts.uri` 是正斜杠的相对 URI（20.6），
+  // 但库里可能存在按别的平台分隔符写下的历史行，归一后取名才不会退化成整串路径（20.7）。
+  return artifactUriBasename(uri);
 }
 
 /**

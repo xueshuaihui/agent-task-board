@@ -16,6 +16,7 @@ import { SettingsService } from '../infra/settings.service';
 import { parseUnifiedDiff, type DiffResult } from './artifact-diff';
 import {
   PREVIEWABLE_TYPES,
+  artifactUriBasename,
   buildArtifactUri,
   deriveArtifactType,
   extensionForType,
@@ -168,7 +169,7 @@ export class ArtifactsService {
         id,
         uri,
         type,
-        name: name || uri.split('/').pop()!,
+        name: name || artifactUriBasename(uri),
         size_bytes: file.size,
         mime_type: storedMime,
         requested_type: input.type ?? null,
@@ -377,7 +378,7 @@ function displayName(row: ArtifactRecord): string {
       return row.uri;
     }
   }
-  return row.uri.split('/').filter(Boolean).pop() ?? row.uri;
+  return artifactUriBasename(row.uri);
 }
 
 /** 文件名可能是中文，ASCII 那份只作兜底，真正的名字走 RFC 5987 的 `filename*`。 */

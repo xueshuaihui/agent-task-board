@@ -2,6 +2,7 @@ import type { Artifact, Review, Task, TaskDependency } from '@prisma/client';
 import type { ClaimReason, TaskStatus } from '../contract/enums';
 import { toIso } from '../contract/time';
 import { parseJsonArray, parseJsonObject } from '../tasks/task.dto';
+import { artifactUriBasename } from '../artifacts/artifact-storage';
 import type { TaskSkillPayload } from '../skills/skills.dto';
 
 /** 12 章 `review_feedback` 元素：只给结论与三字段，不给审核时间等 UI 负担。 */
@@ -89,7 +90,7 @@ export function toArtifactDto(artifact: Artifact): {
     id: artifact.id,
     type: artifact.type,
     uri: artifact.uri,
-    name: String(metadata.name ?? artifact.uri.split('/').pop() ?? artifact.uri),
+    name: String(metadata.name ?? artifactUriBasename(artifact.uri)),
     size_bytes: artifact.sizeBytes,
     mime_type: artifact.mimeType,
   };

@@ -26,6 +26,7 @@ import { SettingsService } from '../../infra/settings.service';
 import type { SignedKind } from '../artifact-sign.service';
 import { ArtifactSignService } from '../artifact-sign.service';
 import { uploadTmpDir } from '../artifact-upload';
+import { artifactUriBasename, isSafeArtifactUri, resolveArtifactFile, toArtifactUri } from '../artifact-storage';
 import { ArtifactsService } from '../artifacts.service';
 
 /**
@@ -381,7 +382,7 @@ describe('元信息（GET /artifacts/{id}）', () => {
       mkdirSync(path.dirname(absolute), { recursive: true });
       writeFileSync(absolute, 'payload');
       const row = await insertArtifact({
-        uri: path.relative(paths.dataDir(), absolute),
+        uri: toArtifactUri(path.relative(paths.dataDir(), absolute)),
         type,
         mimeType: mime,
         sizeBytes: 7,
@@ -406,7 +407,7 @@ describe('元信息（GET /artifacts/{id}）', () => {
     mkdirSync(path.dirname(absolute), { recursive: true });
     writeFileSync(absolute, 'x');
     const row = await insertArtifact({
-      uri: path.relative(paths.dataDir(), absolute),
+      uri: toArtifactUri(path.relative(paths.dataDir(), absolute)),
       type: 'log',
       mimeType: 'text/plain',
       sizeBytes: 20 * 1024 * 1024,
@@ -453,11 +454,53 @@ describe('元信息（GET /artifacts/{id}）', () => {
     writeFileSync(absolute, 'x');
     const row = await insertArtifact({
       id,
-      uri: path.relative(paths.dataDir(), absolute),
+      uri: toArtifactUri(path.relative(paths.dataDir(), absolute)),
       type: 'text',
       metadata: '{ 这不是 JSON',
     });
     expect((await artifacts.meta(row.id)).name).toBe(`${id}.txt`);
+  });
+
+  /**
+   * 落库形状的不变式（20.6 / 20.7 / 6.12）：`artifacts.uri` 是一条**相对数据目录、正斜杠拼接**
+   * 的 URI，平台分隔符不属于它。断言里没有任何 process.platform 分支——同一条不变式在
+   * mac 与 Windows 上必须同时成立（run 36329045226 的 win-x64 上，按 path.relative 写下的
+   * 反斜杠 uri 让预览开关退化成 `file_missing`、显示名退化成整串路径）。
+   */
+  it('uri 落库不含平台分隔符、末段就是文件名；反斜杠历史行仍可读取', async () => {
+    const { taskId, runId } = await seedRun();
+    const { file } = stagedFile(Buffer.from('x'), 'note.txt');
+    file.mimetype = 'text/plain';
+    const uploaded = await artifacts.upload({ task_id: taskId, run_id: runId }, file);
+    const row = await prisma.artifact.findUniqueOrThrow({ where: { id: uploaded.id } });
+
+    expect(row.uri.includes('\\')).toBe(false);
+    expect(row.uri).toMatch(/^artifacts\/T-1\/R-1\/[^/]+\.txt$/);
+    expect(artifactUriBasename(row.uri)).toBe(`${row.id}.txt`);
+    // 从真实路径派生 uri 的写法也必须先过同一个口径：正着走一遍，结果不变。
+    expect(toArtifactUri(path.relative(paths.dataDir(), resolveArtifactFile(row.uri)!))).toBe(row.uri);
+    // 上传带原始名时 metadata.name 优先（20.7），落盘名仍是 uri 末段。
+    expect((await artifacts.meta(row.id)).name).toBe('note.txt');
+
+    // 历史行（按别的平台分隔符写进库）仍可读：备份跨机恢复的兜底，不是新的写入口径。
+    const legacyUri = row.uri.split('/').join(String.fromCharCode(92));
+    expect(isSafeArtifactUri(legacyUri)).toBe(false); // 白名单本身依旧不认反斜杠
+    const legacy = await prisma.artifact.create({
+      data: {
+        id: newId(),
+        taskId,
+        runId,
+        type: 'text',
+        uri: legacyUri,
+        mimeType: 'text/plain',
+        sizeBytes: 1,
+        createdAt: nowSql(),
+      },
+    });
+    const legacyMeta = await artifacts.meta(legacy.id);
+    expect(legacyMeta.missing).toBe(false);
+    expect(legacyMeta.name).toBe(`${row.id}.txt`);
+    expect(resolveArtifactFile(legacyUri)).toBe(resolveArtifactFile(row.uri));
   });
 
   it('产物不存在 / id 形状不符都是 NOT_FOUND', async () => {
