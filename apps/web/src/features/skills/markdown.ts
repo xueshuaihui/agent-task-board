@@ -148,10 +148,15 @@ export function blocksToMarkdown(content: SkillContent, frontmatter: SkillFrontm
 /* ---------------------------------- 解析 ----------------------------------- */
 
 function parseFrontmatter(source: string): { frontmatter: SkillFrontmatter | null; body: string } {
-  const match = /^---\n([\s\S]*?)\n---\n?/.exec(source);
-  if (!match) return { frontmatter: null, body: source };
+  // 解析入口归一换行（与 api 侧 skill-markdown.ts 同修法）：Windows 作者手写的 SKILL.md/.mdc
+  // 多为 CRLF——frontmatter 开合正则 `^---\n` 要求字面 \n，`---\r\n` 匹配不上则整份退化成正文
+  // （id/name/version 全丢），即便命中，`\r` 也会漏进标量字段与按 \n 切分的多行块。
+  // markdownToBlocks 下游只消费这里返回的 body，改这一处即覆盖整条解析链；LF 输入下为恒等。
+  const text = source.replace(/\r\n/g, '\n');
+  const match = /^---\n([\s\S]*?)\n---\n?/.exec(text);
+  if (!match) return { frontmatter: null, body: text };
   const raw = match[1];
-  const body = source.slice(match[0].length);
+  const body = text.slice(match[0].length);
   const get = (key: string): string => {
     const line = raw.split('\n').find((item) => item.startsWith(`${key}:`));
     return line ? line.slice(key.length + 1).trim() : '';

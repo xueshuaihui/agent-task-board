@@ -18,8 +18,8 @@ import {
   leavesOfTopCategory,
   parentOfCategory,
 } from '../meta';
-import { toSkillCategory } from '../markdown';
-import type { SkillCategory, TopCategory } from '../types';
+import { blocksToMarkdown, markdownToBlocks, toSkillCategory } from '../markdown';
+import type { SkillBlock, SkillBlockKind, SkillCategory, TopCategory } from '../types';
 
 /**
  * C-4 守护测试：web 侧分类词表与 api 单一事实源逐字等值、顺序一致；旧的
@@ -40,6 +40,14 @@ import type { SkillCategory, TopCategory } from '../types';
  * RETIRED_CATEGORY_TERMS 四个导出均须与 web 镜像一致；CHECK 真值源从 0017 换到
  * 0018（两级 16 叶子）。三个纯分组一级（编码开发/办公实用/研究分析）与作废词
  * 「质量保障」都不许出现在叶子表 / CHECK / options 取值集里。
+ *
+ * Windows 打包（本文件末尾追加）：markdown.ts 与 api skill-markdown.ts 是同一份解析
+ * 逻辑的镜像，同源带着同一个 CRLF 缺陷——frontmatter 开合正则只认字面 `---\n`，
+ * Windows 手写的 .md/.mdc（浏览器 File 读进来的原文就带 \r\n）会整段解析错位。
+ * 归一修法两侧同形（解析入口一次性归一），用例口径也照抄 api
+ * __tests__/skill-markdown.test.ts：只喂字符串、不依赖 Windows，mac/Linux 即跑即绿。
+ * 断言只打**导入侧**容错，导出侧（blocksToMarkdown / toSkillCategory 的词表外一律 ''）
+ * 行为不变，这里顺带守住别让归一改动波及导出。
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -277,5 +285,120 @@ describe('frontmatter category 归一 toSkillCategory（与 api 导入口径一�
 
   it('一级兼叶子的词（内容创作）仍是合法取值，直收不误伤', () => {
     expect(toSkillCategory('内容创作')).toBe('内容创作');
+  });
+});
+
+/* ------------------------------ CRLF 解析归一 ------------------------------ */
+
+/**
+ * 一份「frontmatter + 提示词块 + 步骤块」的最小 SKILL.md（LF 版）；CRLF 版由它逐行
+ * 换行得来——Windows 作者手写的 .md/.mdc、以及浏览器 File 读到的这类文件都是这个形状。
+ * 未归一时 frontmatter 开合正则 `^---\n` 根本不命中，整份退化成正文（id/name/version
+ * 全丢），所以断言全部指向「CRLF 与 LF 同解」。
+ */
+const LF_DOC = [
+  '---',
+  'id: skl_crlf-01',
+  'name: 跨换行技能',
+  'description: 验证 CRLF 解析',
+  'version: v1.2.3',
+  'category: 内容创作',
+  'tags: [评审, 内容创作]',
+  'mcp_dependencies: [{"server":"atb","tools":["board.list_tasks"],"required":true,"reason":"换行验证"}]',
+  '---',
+  '',
+  '入口块：开场',
+  '',
+  '### 开场',
+  '',
+  '<!-- atb:prompt -->',
+  '',
+  '第一行',
+  '第二行',
+  '',
+  '### 步骤',
+  '',
+  '<!-- atb:step -->',
+  '',
+  '1. 读 diff',
+  '2. 写意见',
+  '',
+].join('\n');
+
+const CRLF_DOC = LF_DOC.replace(/\n/g, '\r\n');
+
+/**
+ * 解析结果的可比投影：块 id 由 createBlock 用 Date.now() 生成，两次解析跨一毫秒就不相等，
+ * 故一律抹平；入口块同样按标题比对（不吃 id）。
+ */
+function projectionOf(source: string) {
+  const result = markdownToBlocks(source);
+  const entryId = result.content.entryBlockId;
+  return {
+    frontmatter: result.frontmatter,
+    blocks: result.content.blocks.map((block) => ({ ...block, id: '' })),
+    entryTitle: result.content.blocks.find((block) => block.id === entryId)?.title ?? null,
+    warnings: result.warnings,
+  };
+}
+
+function blockOf(blocks: SkillBlock[], kind: SkillBlockKind): SkillBlock | undefined {
+  return blocks.find((block) => block.kind === kind);
+}
+
+describe('SKILL.md 导入的换行归一（web ↔ api 同修法，Windows 侧防线）', () => {
+  it('markdownToBlocks：CRLF 文档与 LF 逐项同解（frontmatter 命中、入口块解析、无多余警告）', () => {
+    expect(projectionOf(CRLF_DOC)).toEqual(projectionOf(LF_DOC));
+    expect(projectionOf(CRLF_DOC).entryTitle).toBe('开场');
+    const { frontmatter } = markdownToBlocks(CRLF_DOC);
+    expect(frontmatter).not.toBeNull();
+    expect(frontmatter!.id).toBe('skl_crlf-01');
+    expect(frontmatter!.name).toBe('跨换行技能');
+    // v 前缀归一（toSemver）与换行归一无关，两种写法都得同一个 semver。
+    expect(frontmatter!.version).toBe('1.2.3');
+    expect(frontmatter!.tags).toEqual(['评审', '内容创作']);
+    expect(frontmatter!.mcpDependencies).toHaveLength(1);
+    // 小节都带 atb 标记 → 无损往返，CRLF 不该额外冒出推断警告。
+    expect(markdownToBlocks(CRLF_DOC).warnings).toEqual([]);
+  });
+
+  it('frontmatter 各字段不残留 \\r（未归一时只会得 frontmatter:null，字段根本解不出）', () => {
+    const { frontmatter } = markdownToBlocks(CRLF_DOC);
+    expect(frontmatter).not.toBeNull();
+    const scalars = [
+      frontmatter!.id ?? '',
+      frontmatter!.name,
+      frontmatter!.description,
+      frontmatter!.version,
+      frontmatter!.category,
+      ...frontmatter!.tags,
+    ];
+    for (const value of scalars) {
+      expect(value).not.toContain('\r');
+    }
+  });
+
+  it('提示词块多行按 \\n 连接、不夹带 \\r（`.` 不吃 \r 时行间会留脏字符）', () => {
+    const { blocks } = markdownToBlocks(CRLF_DOC).content;
+    expect(blockOf(blocks, 'prompt')?.prompt).toBe('第一行\n第二行');
+    expect(JSON.stringify(blocks)).not.toContain('\\r');
+  });
+
+  it('步骤块列表项 CRLF 完整解出且与 LF 等值（丢 \r 就少一项或带脏尾）', () => {
+    const stepsOf = (source: string) =>
+      blockOf(markdownToBlocks(source).content.blocks, 'step')?.steps;
+    expect(stepsOf(CRLF_DOC)).toEqual(['读 diff', '写意见']);
+    expect(stepsOf(CRLF_DOC)).toEqual(stepsOf(LF_DOC));
+  });
+
+  /**
+   * 导出侧不许变（C-5 口径）：blocksToMarkdown 仍按 \n 拼行、frontmatter category
+   * 原样写出——本用例只是把「\r 不进产物」钉住，防换行归一改动波及序列化路径。
+   */
+  it('导出侧行为不变：CRLF 导入再导出仍是纯 LF', () => {
+    const parsed = markdownToBlocks(CRLF_DOC);
+    const md = blocksToMarkdown(parsed.content, parsed.frontmatter!);
+    expect(md).not.toContain('\r');
+    expect(toSkillCategory(parsed.frontmatter!.category)).toBe(parsed.frontmatter!.category);
   });
 });
