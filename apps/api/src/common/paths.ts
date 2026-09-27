@@ -1,7 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
 
 /** 与主进程 `apps/desktop/src-tauri/src/paths.rs` 的 `DEFAULT_PORT` 同值。 */
 export const DEFAULT_PORT = 7788;
@@ -45,13 +44,16 @@ export const paths = {
   dataDir,
   dbFile: () => path.join(dataDir(), 'jarvis.db'),
   /**
-   * 连接串必须是合法 file URL：win32 上裸拼 `file:C:\Users\…` 不是有效 URL
-   * （反斜杠 + 盘符，Prisma 解析失败），统一用 pathToFileURL 归一
-   * （unix → `file:///Users/…`，win32 → `file:///C:/…`）。复用同上的 dbFile()。
+   * sqlite 数据源 URL 的口径是 `file:` + 一个**文件路径**（Prisma 文档：`file:./dev.db`、
+   * POSIX `file:/Users/janedoe/dev.db`），故 win32 上就是 `file:D:\a\b\jarvis.db`——
+   * 平台原生路径原样拼接，不做 percent-encoding（引擎不解码，会按字面找文件）。
+   * 反面教训（CI run 36327101873，windows-latest 51/64 测试文件红）：pathToFileURL
+   * 给的 `file:///D:/…` 三斜杠形式会让引擎去掉前缀后打开字面 `/D:/…`，
+   * 报 os error 161（ERROR_BAD_PATHNAME）→ SQLite 错误码 14（SQLITE_CANTOPEN）。
    * 尾部连接参数是认领并发的前提，见 infra/prisma.service.ts 的注释。
    */
   datasourceUrl: () =>
-    `${pathToFileURL(paths.dbFile()).href}?journal_mode=WAL&foreign_keys=On&busy_timeout=5000&connection_limit=1`,
+    `file:${paths.dbFile()}?journal_mode=WAL&foreign_keys=On&busy_timeout=5000&connection_limit=1`,
   artifactsDir: () => path.join(dataDir(), 'artifacts'),
   backupsDir: () => path.join(dataDir(), 'backups'),
   /**

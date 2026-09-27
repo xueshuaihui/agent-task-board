@@ -7,7 +7,7 @@ import { mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const apiRoot = path.resolve(here, '..');
@@ -24,9 +24,11 @@ function resolveDataDir() {
 
 const dataDir = resolveDataDir();
 mkdirSync(dataDir, { recursive: true });
-// DATABASE_URL 必须是合法 file URL：win32 上 path.join 给反斜杠 + 盘符，裸拼
-// `file:C:\Users\…` Prisma 引擎解析不了（与 src/common/paths.ts 的 datasourceUrl 同口径）。
-process.env.DATABASE_URL = pathToFileURL(path.join(dataDir, 'jarvis.db')).href;
+// Prisma sqlite 的 URL 口径是 `file:` + 平台原生文件路径（win32 上即
+// `file:D:\a\b\jarvis.db`），与 src/common/paths.ts 的 datasourceUrl 同口径。
+// 不要用 pathToFileURL：`file:///D:/…` 会让引擎打开字面 `/D:/…`，
+// os error 161 / SQLite code 14（CI run 36327101873，windows job 全红）。
+process.env.DATABASE_URL = `file:${path.join(dataDir, 'jarvis.db')}`;
 
 // 定位 prisma CLI 不能找 node_modules/.bin/prisma：Windows 上 npm 生成的 .bin 里
 // POSIX shim（无扩展名）与 prisma.cmd 并存，existsSync 会先命中 POSIX shim、

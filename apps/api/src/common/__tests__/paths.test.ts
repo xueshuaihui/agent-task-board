@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_PORT, port } from '../paths';
+import { DEFAULT_PORT, paths, port } from '../paths';
 
 /**
  * 10.3 / 20.9：端口由 `ATB_PORT` → `config.json` 的 `port` → 7788 三级决定，
@@ -69,5 +69,35 @@ describe('port() 三级解析', () => {
     writeFileSync(file, body, 'utf8');
     expect(port()).toBe(7911);
     expect(readFileSync(file, 'utf8')).toBe(body);
+  });
+});
+
+/**
+ * sqlite 数据源 URL 的形状门禁（CI run 36327101873：win32 上 pathToFileURL 的
+ * `file:///D:/…` 让引擎打开字面 `/D:/…`，os error 161 → SQLite code 14，51/64 文件红）。
+ * 不模拟 win32，只锁平台无关不变式：`file:` 后原样拼接 dbFile()，不插三斜杠、
+ * 不 percent-encode——win32 上这自动给出 `file:D:\…\jarvis.db`（文档契约形态）。
+ */
+describe('paths.datasourceUrl() 形状', () => {
+  let dir: string;
+  const saved = process.env.ATB_DATA_DIR;
+
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(tmpdir(), 'atb-url-'));
+    process.env.ATB_DATA_DIR = dir;
+  });
+
+  afterEach(() => {
+    if (saved === undefined) delete process.env.ATB_DATA_DIR;
+    else process.env.ATB_DATA_DIR = saved;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('file: 前缀 + 原生 dbFile 原样拼接，尾部连接参数不丢', () => {
+    const url = paths.datasourceUrl();
+    expect(url.startsWith(`file:${paths.dbFile()}`)).toBe(true);
+    expect(url.startsWith('file:///')).toBe(false);
+    expect(url).not.toContain('%');
+    expect(url.endsWith('?journal_mode=WAL&foreign_keys=On&busy_timeout=5000&connection_limit=1')).toBe(true);
   });
 });

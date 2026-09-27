@@ -3,7 +3,6 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CustomFieldFilter } from '../../contract/schemas';
@@ -43,10 +42,11 @@ async function seed(id: string, tags: string[], customFields: unknown): Promise<
 
 beforeAll(async () => {
   dir = mkdtempSync(path.join(tmpdir(), 'atb-json-filter-'));
-  // 连接串必须是合法 file URL：win32 上 path.join 给的是反斜杠 + 盘符，裸拼
-  // `file:C:\Users\…` 不是有效 URL，Prisma 引擎（含 `prisma db push`）直接解析失败。
-  // 与 src/common/paths.ts 的 datasourceUrl 同口径，经 pathToFileURL 归一。
-  const url = pathToFileURL(path.join(dir, 'jarvis.db')).href;
+  // `file:` + 平台原生绝对路径是 Prisma sqlite 的文档口径（pathToFileURL 的
+  // `file:///D:/…` 在 win32 上会让引擎打开字面 `/D:/…`，os error 161 → code 14，
+  // CI run 36327101873），与 src/common/paths.ts 的 datasourceUrl 同口径；
+  // schema engine（`prisma db push`）与 query engine（PrismaClient）吃同一个 URL。
+  const url = `file:${path.join(dir, 'jarvis.db')}`;
   // 不能走 `npx`：Windows 上它是 npx.cmd，而 Node ≥ 20.11 起不带 shell:true 直接 spawn
   // .cmd 会抛 EINVAL（防误执行的策略变更），带 shell:true 又把引号问题引回来。
   // 改为用当前 node 二进制执行 prisma CLI 的真实 JS 入口（其 package.json
