@@ -74,7 +74,10 @@ jobs:
             bundle_dir: nsis
             bundle_ext: exe
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    # 120 而非 60：Windows job 是几百个 crate 的冷编译（rust-cache 的 key 含 matrix.arch，
+    # 跨平台不复用），60 分钟是贴着 mac 出包实测值定的、对 win 不够。超时截断的日志看不出
+    # 是「编译没过」还是「没跑完」，宁可留余量也别拿一次红去猜。
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 

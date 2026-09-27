@@ -80,6 +80,8 @@ ok "node：$(node --version)"
 # 冒烟显式用 curl.exe：Git Bash 的 curl 是 shell 函数（代理包装层），会改写参数；
 # 它挡不住的路径问题由第 6 步的 -o NUL（Windows 版 /dev/null）绕开。
 command -v curl.exe >/dev/null 2>&1 || fail "找不到 curl.exe（系统自带于 System32，缺失说明 PATH 异常）"
+# 冒烟的数据目录要经 cygpath 换成 win 拼法（见第 6 步注释），Git Bash 必带它；缺就是环境异常，早停。
+command -v cygpath >/dev/null 2>&1 || fail "找不到 cygpath（Git Bash 自带，缺失说明不是 Git Bash 会话）"
 
 # 随包 node.exe 不入库（.gitignore 整目录覆盖 resources/sidecar/）：全新 checkout（CI）
 # 先拷当前 node 占位，第 3 步 build:sidecar 再以 process.execPath 正式装配成 node.exe
@@ -183,7 +185,10 @@ else
   (
     # 环境口径对齐 Rust 侧拉起（sidecar.rs）：ATB_CONSOLE=1 让致命错误同时进 stderr，
     # 现场就在 ${SMOKE_LOG}；token ≥32 位与 mac 同一枚，仅为满足守卫的格式校验。
-    ATB_DATA_DIR="$TMPD" ATB_PORT="$SMOKE_PORT" \
+    # ATB_DATA_DIR 必须喂 Windows 拼法：MSYS 只改写**参数**里的裸 /tmp 路径，环境变量原样
+    # 透传，而 node.exe 是原生程序——`path.resolve('/tmp/x')` 在 win32 解成 `C:\tmp\x`，
+    # 于是库写在 C:\tmp、cleanup 删的是 MSYS 的 /tmp，冒烟完留一个装过真库的目录。
+    ATB_DATA_DIR="$(cygpath -w "$TMPD")" ATB_PORT="$SMOKE_PORT" \
     ATB_UI_TOKEN=abc123def456abc123def456abc123de ATB_CONSOLE=1 \
       "$SIDECAR_RES/node.exe" "$SIDECAR_RES/main.js" > "$SMOKE_LOG" 2>&1 &
     echo $! > "$TMPD/pid"
