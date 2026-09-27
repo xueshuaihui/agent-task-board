@@ -173,6 +173,7 @@ pub fn next_free_port(from: u16) -> Option<u16> {
 }
 
 /// 收掉 `port` 上的监听进程：先 SIGTERM 给它自己放开端口的机会，超时才 SIGKILL。
+/// Windows 没有信号语义，两发都是 `taskkill /F`（见 [`signal`]），只换「等端口放开」的节奏。
 pub fn terminate(port: u16, target: &Occupant) -> Result<(), String> {
   signal(target.pid, false)?;
   if wait_until_released(port, Duration::from_secs(3)) {
@@ -196,7 +197,22 @@ fn signal(pid: u32, force: bool) -> Result<(), String> {
   Err(format!("向 pid {pid} 发信号失败：{error}"))
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn signal(pid: u32, _force: bool) -> Result<(), String> {
+  // 占用者名字在 Windows 拿得到（tasklist），所以 10.3 的对话框会给出
+  // 「终止占用进程」——这条不能只报错收场。taskkill 不带 /T：unix 那边
+  // 也只 kill 监听端口的这一个 pid，两平台保持同粒度。
+  // Windows 没有 SIGTERM：terminate() 里 force=false 的第一发与补刀同为 /F，
+  // 「发一发 → 等 3 秒看端口放没放开」的节奏不变。
+  if crate::platform::run_taskkill(pid, false) {
+    return Ok(());
+  }
+  Err(format!(
+    "taskkill 未能终止 pid {pid}：目标可能以更高权限（管理员/服务账户）运行，请改用「换个端口启动」"
+  ))
+}
+
+#[cfg(not(any(unix, windows)))]
 fn signal(_pid: u32, _force: bool) -> Result<(), String> {
   Err("当前平台不支持终止占用进程，请改用「换个端口启动」".to_string())
 }
