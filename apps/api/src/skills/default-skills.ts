@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import type { PrismaService } from '../infra/prisma.service';
 import { nowSql } from '../contract/time';
 import { BUILTIN_SKILL_SEEDS } from './builtin-skills';
@@ -109,6 +110,11 @@ export async function ensureDefaultSkills(prisma: PrismaService): Promise<Defaul
   const seededIds = DEFAULT_SKILL_SEEDS.map((seed) => seed.id);
   const existingRows = await prisma.skill.findMany({ where: { id: { in: seededIds } }, select: { id: true } });
   const existingIds = new Set(existingRows.map((row) => row.id));
+  // 写侧同理：125 条逐条 autocommit = 125 次 fsync，Windows  runner 盘上单次提交成本是 macOS
+  // 的 10 倍+（run 36329045226：④ 双跑 ensure ~250 次提交撞穿 30s testTimeout，30012ms vs mac
+  // 1283ms；同一条链路也是 Windows 用户每次启动的真机延迟）。改为数组形态 $transaction：
+  // 事务内按数组顺序逐条执行（写序、幂等口径与逐条版一致），但整批只有一次往返、一次提交。
+  const ops: Prisma.PrismaPromise<unknown>[] = [];
   for (const seed of DEFAULT_SKILL_SEEDS) {
     const builtin = {
       name: seed.name,
@@ -124,14 +130,17 @@ export async function ensureDefaultSkills(prisma: PrismaService): Promise<Defaul
       sourceType: 'default',
     };
     if (existingIds.has(seed.id)) {
-      await prisma.skill.update({ where: { id: seed.id }, data: { ...builtin, updatedAt: nowSql() } });
+      ops.push(prisma.skill.update({ where: { id: seed.id }, data: { ...builtin, updatedAt: nowSql() } }));
       updated.push(seed.id);
     } else {
-      await prisma.skill.create({
-        data: { id: seed.id, status: 'PUBLISHED', testCases: '[]', ...builtin },
-      });
+      ops.push(
+        prisma.skill.create({
+          data: { id: seed.id, status: 'PUBLISHED', testCases: '[]', ...builtin },
+        }),
+      );
       created.push(seed.id);
     }
   }
+  await prisma.$transaction(ops);
   return { created, updated };
 }
