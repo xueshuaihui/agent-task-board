@@ -25,6 +25,13 @@
 #     故第 4.5 步对 .app 做 codesign ad-hoc 签名 + 验签硬门禁；tauri 若已出 .dmg 打包的是未签名
 #     .app，一律作废删除，签名后由本脚本用 hdiutil 统一重出（每架构只生成一次，二次生成会挤爆
 #     runner 磁盘报 No space left，也不复用 tauri dmg）。
+#
+# 本脚本只出 macOS 包，但第 4 步的 `npx tauri build` 不带 --bundles，读的是 tauri.conf.json 的
+# bundle.targets（现为 ["app","dmg","nsis"]）：tauri-bundler 按**构建平台**过滤目标——
+# `Settings::package_types()` 取交集时直接丢弃本平台不支持的项（不报错），过滤后为空也只正常返回，
+# 故 mac 上 nsis 被静默跳过，产物仍是 .app + .dmg，本脚本无需改动。Windows 包由 CI 的
+# windows-latest job 跑 `npx tauri build` 产出 NSIS .exe，口径见 docs/发布手册.md §1.3。
+
 
 set -euo pipefail
 
