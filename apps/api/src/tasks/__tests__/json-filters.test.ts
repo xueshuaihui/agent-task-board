@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CustomFieldFilter } from '../../contract/schemas';
 import { jsonFilterParts } from '../json-filters';
@@ -46,8 +47,13 @@ beforeAll(async () => {
   // `file:C:\Users\…` 不是有效 URL，Prisma 引擎（含 `prisma db push`）直接解析失败。
   // 与 src/common/paths.ts 的 datasourceUrl 同口径，经 pathToFileURL 归一。
   const url = pathToFileURL(path.join(dir, 'jarvis.db')).href;
+  // 不能走 `npx`：Windows 上它是 npx.cmd，而 Node ≥ 20.11 起不带 shell:true 直接 spawn
+  // .cmd 会抛 EINVAL（防误执行的策略变更），带 shell:true 又把引号问题引回来。
+  // 改为用当前 node 二进制执行 prisma CLI 的真实 JS 入口（其 package.json
+  // bin.prisma = build/index.js，exports 允许子路径解析）——三平台同一条 spawn 路径。
+  const prismaCli = createRequire(path.join(apiRoot, 'package.json')).resolve('prisma/build/index.js');
   try {
-    execFileSync('npx', ['prisma', 'db', 'push', '--skip-generate'], {
+    execFileSync(process.execPath, [prismaCli, 'db', 'push', '--skip-generate'], {
       cwd: apiRoot,
       env: { ...process.env, DATABASE_URL: url },
       encoding: 'utf8',
