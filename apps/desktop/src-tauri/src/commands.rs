@@ -200,7 +200,7 @@ pub fn open_log_dir(app: AppHandle) -> bool {
   open_dir_of(&app, DirTarget::Logs)
 }
 
-/// 把一个已解析好的目录交系统文件管理器打开（`open` / `explorer` / `xdg-open`，
+/// 把一个已解析好的目录交系统文件管理器打开（`open` / `cmd /C start` / `xdg-open`，
 /// 与 `open_external` 同一条 `shell_open` 路径，不需要额外依赖）。
 /// 同样返回布尔而不是 Err：`desktop.ts` 的 `call()` 一旦 reject 就是一次未捕获异常。
 fn open_dir_of(app: &AppHandle, kind: DirTarget) -> bool {
