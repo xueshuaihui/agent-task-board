@@ -40,4 +40,18 @@ describe('建单/编辑三处挂的是同一个 ReviewModeField', () => {
       expect(source).toMatch(/<ReviewModeField/);
     });
   }
+
+  /**
+   * 需求不执行、永远不进 REVIEW（1.md 5.2），给它选审核方式是死字段。
+   * 两个建单入口的「钉死/选中需求」分支必须在 `<ReviewModeField` 之前把这一项挡掉。
+   */
+  it.each([
+    ['features/task-detail/create-task-dialog.tsx', /asRequirement \? null :/],
+    ['features/board/quick-create.tsx', /type === '需求' \? null :/],
+  ])('%s 在需求分支里不给审核方式', (file, gate) => {
+    const source = readFileSync(resolve(WEB_SRC, file), 'utf8');
+    const at = source.search(gate);
+    expect(at).toBeGreaterThan(-1);
+    expect(source.indexOf('<ReviewModeField', at)).toBeGreaterThan(at);
+  });
 });

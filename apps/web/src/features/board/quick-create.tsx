@@ -263,12 +263,15 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
           />
         </Field>
 
-        <ReviewModeField
-          value={reviewMode}
-          onChange={setReviewMode}
-          allowDefault
-          globalDefault={settings.data?.default_review_mode}
-        />
+        {/* 需求不执行、不进 REVIEW（1.md 5.2），审核方式对它无意义——类型选中需求时不给这一项。 */}
+        {type === '需求' ? null : (
+          <ReviewModeField
+            value={reviewMode}
+            onChange={setReviewMode}
+            allowDefault
+            globalDefault={settings.data?.default_review_mode}
+          />
+        )}
 
         <Field label="标签" hint="逗号分隔，单个 ≤ 16 字、最多 10 个（20.3）" error={errors.tags}>
           <Input
