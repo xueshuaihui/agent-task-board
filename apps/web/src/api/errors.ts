@@ -66,10 +66,12 @@ export const ERROR_CODE_COPY: Record<ErrorCode, string> = {
   IMPORT_ID_CONFLICT: '导入存在 ID 冲突，请选择处理策略',
   FIELD_IN_USE: '字段已被任务引用，不能删除',
   INVALID_BACKUP_NAME: '备份文件名不合法',
-  GROUP_LIMIT_REACHED: '分组数量已达上限，先删除不用的分组',
-  GROUP_DEFAULT_PROTECTED: '「默认」分组是任务的兜底归属，不可删除或归档',
+  // §19.15·90（r6 R3-D）：分组在 web 已无管理入口，这三条兜底文案改为陈述性口径、
+  // 不再承诺「去分组页做某事」这类 UI 操作（实际可达面只有 REST/Agent）。
+  GROUP_LIMIT_REACHED: '活跃分组数量已达服务端上限，该约束仅在 REST/Agent 面处理（界面已无分组管理入口）',
+  GROUP_DEFAULT_PROTECTED: '「默认」分组是服务端兜底归属的数据层占位，不随界面操作变化',
   GROUP_NOT_ALL_DONE: '组内还有任务未完成或归档，全部处理完才能归档',
-  GROUP_ARCHIVED: '该分组已归档，转为只读',
+  GROUP_ARCHIVED: '该任务所属分组处于归档只读状态（分组状态仅 REST/Agent 面可变更）',
   BACKUP_NOT_FOUND: '备份文件已不在磁盘上',
   // v0.0.4 W7 §7.7：拆解动作与当前状态不匹配（confirm 需在「待确认」、cancel 需在接收/待确认）。
   BREAKDOWN_BAD_STATE: '拆解会话状态已变化，请刷新后重试',

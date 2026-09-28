@@ -5,8 +5,9 @@ import type { BreakdownSession } from '@/api/types';
 
 /**
  * §7.3 两个决策动作的破坏性确认（交付 2「按 PRD」：确认创建批量建任务、取消即弃草案，
- * 都不可逆，一律二次确认）。样式沿 `features/groups/group-delete-dialog.tsx`：
- * 警示图标 + 说明 + danger 主按钮。
+ * 都不可逆，一律二次确认）。样式：警示图标 + 说明 + danger 主按钮——原参照的
+ * `features/groups/group-delete-dialog.tsx` 已随 r6（§19.15·88）分组管理界面删除，
+ * 本对话框即破坏性确认样式在 web 的在位样例。
  */
 export interface SessionActionDialogProps {
   kind: 'confirm' | 'cancel';

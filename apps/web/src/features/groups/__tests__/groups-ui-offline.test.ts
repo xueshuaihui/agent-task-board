@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
+import { AUDIT_ACTION_LABEL } from '@/lib/labels';
+import { ERROR_CODE_COPY } from '@/api/errors';
 
 /**
  * §19.15·87/88/93⑥（r6 R1b-C）：「分组」概念从 web UI 整体下线后的源码闸。
@@ -15,7 +17,8 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
  * **R3 追加（§19.15·90，2026-09-28）**：同一闸文件继续钉「分组」可见面清零的三件事——
  * 列表作用域 chip 改走 `requirements` 维、`filtersFromSearch` 不再水合 `groups`、
  * 分节菜单删 `group` 维候选并改措辞「分节方式 / 不分节」（末尾两个 describe）。
- * R3-C 再追加「归属下拉与组名 badge 退场」段；R3-D 收 labels/errors 中文口径段。
+ * R3-C 追加「归属可见面清零」段（两处归属下拉 + 拆解组名 badge），R3-D 追加
+ * 「中文口径与死链」段（labels 动作中文名 / errors 兜底文案 / 死链注释闸）。
  *
  * 环境口径同 W2 各闸：本仓 vitest 无 jsdom，文件存在性/源码字符串用
  * `readFileSync`/`existsSync`；router 模块装配期读一次 hash（`create` 初值跑
@@ -200,5 +203,64 @@ describe('r6 归属可见面闸：两处归属下拉 + 拆解组名 badge 退场
     expect(overlay).not.toContain('groupName');
     expect(overlay).not.toMatch(/<Badge[\s/>]/);
     expect(overlay).toContain('BreakdownStatusBadge');
+  });
+});
+
+/**
+ * §19.15·90（r6 R3-D）：中文口径与死链。
+ * labels/errors 属排障面文案——r6 后 group_* 审计只由 REST/Agent 或存量数据产生，
+ * 中文改「需求容器…」（动作码不动）；GROUP_* 错误兜底不得再教用户去 UI 里做
+ * 已不存在的操作（「先删除不用的分组」「不可删除或归档」这类承诺全部退场）。
+ * 死链注释两处的在位闸：样式参照对象已删、分组页「查看任务」行为描述已收口。
+ */
+describe('r6 中文口径闸：审计动作改「需求容器」、错误文案不承诺 UI 操作（§19.15·90）', () => {
+  const GROUP_ACTION_KEYS = ['group_change', 'group_archive', 'group_unarchive'] as const;
+
+  it('三条 AUDIT 动作码原样保留，中文已是「需求容器…」、不再出现「分组」', () => {
+    expect(AUDIT_ACTION_LABEL.group_change).toBe('需求容器变更');
+    expect(AUDIT_ACTION_LABEL.group_archive).toBe('需求容器归档');
+    expect(AUDIT_ACTION_LABEL.group_unarchive).toBe('需求容器取消归档');
+    for (const key of GROUP_ACTION_KEYS) {
+      expect(AUDIT_ACTION_LABEL[key]).not.toContain('分组');
+    }
+  });
+
+  it('三条 GROUP_* 错误兜底文案：不出现误导的 UI 操作承诺', () => {
+    const copy = [
+      ERROR_CODE_COPY.GROUP_LIMIT_REACHED,
+      ERROR_CODE_COPY.GROUP_DEFAULT_PROTECTED,
+      ERROR_CODE_COPY.GROUP_ARCHIVED,
+    ];
+    for (const text of copy) {
+      expect(text).not.toContain('分组页');
+      expect(text).not.toContain('先删除');
+      expect(text).not.toContain('不可删除或归档');
+      // 陈述性口径：点明这是数据层/服务端约束，操作面在 REST/Agent。
+      expect(text).toMatch(/REST\/Agent|数据层|服务端/);
+    }
+  });
+
+  it('errors.ts 只动中文映射，动作码键面不增删（types.ts/client.ts 零改动红线的外圈闸）', () => {
+    const errorsSource = readFileSync(join(FEATURES_DIR, '..', 'api', 'errors.ts'), 'utf8');
+    for (const code of ['GROUP_LIMIT_REACHED', 'GROUP_DEFAULT_PROTECTED', 'GROUP_ARCHIVED']) {
+      expect(errorsSource).toContain(`${code}:`);
+    }
+    expect(errorsSource).not.toMatch(/^\s*group_id\s*:/m);
+  });
+});
+
+describe('r6 死链注释闸：样式参照与分组页行为描述不再指已删对象（§19.15·90）', () => {
+  it('session-action-dialog 不再把已删除的 group-delete-dialog 当样式参照', () => {
+    const source = readFileSync(join(FEATURES_DIR, 'breakdown', 'session-action-dialog.tsx'), 'utf8');
+    expect(source).not.toContain('样式沿');
+    // 允许以过去式解释该文件已随 r6 删除，但不作为在位引用。
+    expect(source).toContain('已随 r6');
+  });
+
+  it('board/grouping/README 不再描述分组页「查看任务」行为（消费方接线只剩看板/列表/需求页）', () => {
+    const readme = readFileSync(join(FEATURES_DIR, 'board', 'grouping', 'README.md'), 'utf8');
+    expect(readme).not.toContain('查看任务');
+    expect(readme).not.toContain("setDimension('groups'");
+    expect(readme).toContain('不再写 `groups` 维');
   });
 });
