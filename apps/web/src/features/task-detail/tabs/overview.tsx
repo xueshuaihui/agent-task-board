@@ -307,16 +307,16 @@ function OverviewEditForm({
   const [dueAt, setDueAt] = useState(detail.due_at ?? '');
   const [custom, setCustom] = useState<FieldDraft>(() => draftFromValues(defs, detail.custom_fields ?? {}));
 
-  /* §19.14·86（v0.0.4 W2-b）：归属唯一入口 = 「所属需求」下拉。
+  /* §19.15·91（v0.0.4 r6，推翻 §19.14·86 双写）：归属唯一入口 = 「所属需求」下拉。
    *
-   * 原「分组」下拉与隐性的父需求归属合并为一个控件：选中需求 → 一次 PATCH 原子写
-   * `parent_task_id` + 回填该需求的 `group_id`（`requirementMoveBody` 形状，与看板
-   * 快捷新建/流程图移动同一口径）；「未分配需求」→ 仅 `parent_task_id: null`，
-   * `group_id` 不发、原归属保留。
+   * 原「分组」下拉与隐性的父需求归属合并为一个控件：选中需求 → PATCH 只发
+   * `parent_task_id`（`requirementMoveBody` 形状，与看板快捷新建/流程图移动同一
+   * 口径，组字段不再回填）；「未分配需求」→ 仅 `parent_task_id: null`，原组保留。
    *
-   * 有意边界（§19.14 收口）：本文件不再提供任何「纯组迁移」入口——需求即组，
-   * 跨组移动语义已由「换需求」承载，group_id 仍是数据真值、只是不作 UI 选择项。
-   * 归档组任务只读（服务端 409）是最后防线；候选已剔除归档组需求，UI 无需新校验。 */
+   * 有意边界：跨需求移动不再同步搬组，「父在 A 组、子在 B 组」由 UI 常态产生——
+   * r6 后 UI 既不按组过滤也不归档组，实测无用户可见后果，组字段仅作 Agent/REST
+   * 侧存量语义。本文件仍不提供任何「纯组迁移」入口。归档组任务只读（服务端 409）
+   * 是最后防线；候选已剔除归档组需求，UI 无需新校验。 */
   const requirements = useRequirementOptions();
   const initialRequirementId = detail.parent?.id ?? '';
   const [requirementId, setRequirementId] = useState(initialRequirementId);

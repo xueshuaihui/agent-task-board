@@ -109,8 +109,8 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
   );
   const [skillIds, setSkillIds] = useState<string[]>([]);
 
-  // §19.14·86（W2-a）：创建时的唯一归属选择是「需求」——选中即同写 parent_task_id +
-  // 回填该需求的 group_id（Group 概念已从看板 UI 下线，不再直接选它）。
+  // §19.15·91（r6）：创建时的唯一归属选择是「需求」——选中即只写 parent_task_id，
+  // 不再回填组字段（Group 概念已从看板 UI 与写入侧整体下线）。
   // 默认值取看板需求筛选「恰好只选了一个需求」的场景，其他情况留空（不选）——
   // 归属是弱约束，不该在快速新建里替用户做主。
   const requirementOptions = useRequirementOptions();
@@ -147,7 +147,7 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
         if (description.trim()) body.description = description.trim();
         // 版本一律不传：服务端补当前有效版本（与详情「技能」Tab 同一口径）。
         if (skillIds.length) body.skills = skillIds.map((skill_id) => ({ skill_id }));
-        // §19.14·86：选需求 → 同写 parent_task_id + 回填 group_id；未选 → 两字段都不发。
+        // §19.15·91：选需求 → 只发 parent_task_id；未选 → 两字段都不发（服务端按 §5.2 落默认组兜底）。
         Object.assign(body, requirementCreateBody(selectedRequirement));
         if (preset?.required_capabilities?.length) body.required_capabilities = preset.required_capabilities;
         if (typeof preset?.due_offset_days === 'number' && preset.due_offset_days > 0) {

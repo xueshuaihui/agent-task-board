@@ -557,7 +557,8 @@ function FlowCanvas({ tasks, edges, edgesLoading, mutations, onRequestDelete }: 
                     key={option.id}
                     label={`📌 ${option.title}`}
                     onClick={() => {
-                      // §19.14·86：一次 PATCH 原子写 parent_task_id + 回填该需求的 group_id。
+                      // §19.15·91（r6）：PATCH 只发 parent_task_id，不再回填组字段——
+                      // 跨需求移动不同步搬组，父子跨组是 r6 接受的常态边界。
                       mutations.patch.mutate(
                         { id: menu.card.id, body: requirementMoveBody(option) },
                         { onSuccess: () => setMenu(null) },
@@ -568,7 +569,7 @@ function FlowCanvas({ tasks, edges, edgesLoading, mutations, onRequestDelete }: 
               <MenuItem
                 label="未分配"
                 onClick={() => {
-                  // 脱离需求仅置空 parent_task_id，group_id 不发 PATCH（保持原组）。
+                  // 脱离需求仅置空 parent_task_id，组字段不发 PATCH（保持原组，§19.15·91）。
                   mutations.patch.mutate(
                     { id: menu.card.id, body: requirementMoveBody(null) },
                     { onSuccess: () => setMenu(null) },

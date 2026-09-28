@@ -4,10 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { defaultRequirementId } from '../quick-create';
 
 /**
- * §19.14·84/86（W2-a 切片 2）：快捷新建的「需求」归属写入口径。
+ * §19.14·84 + §19.15·91（r6 改口径）：快捷新建的「需求」归属写入口径。
  * - 默认值规则（恰好只选 1 个需求才预选）是纯函数，直钉；
  * - 「分组」字样从本文件可见面整体下线——web 无 jsdom/@testing-library，
- *   用源码扫描兜正向闸（连注释也不留，口径见需求文档 §19.14）。
+ *   用源码扫描兜正向闸（连注释也不留，口径见需求文档 §19.14·84）。
  */
 
 const source = readFileSync(join(__dirname, '..', 'quick-create.tsx'), 'utf8');
@@ -28,7 +28,8 @@ describe('quick-create.tsx 源码闸：指 Group 的「分组」字样不再出�
     expect(source).not.toContain('分组');
   });
 
-  it('提交体不再直写 group_id——归属字段一律经 requirementCreateBody 成对产出', () => {
+  it('提交体不出现 group_id（§19.15·91）——归属经 requirementCreateBody 只写 parent_task_id', () => {
+    expect(source).not.toContain('group_id');
     expect(source).not.toMatch(/body\.group_id\s*=/);
     expect(source).toContain('requirementCreateBody');
     expect(source).toContain('parent_task_id');

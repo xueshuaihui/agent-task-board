@@ -10,9 +10,11 @@ import {
 } from '../use-requirement-options';
 
 /**
- * §19.14·86（W2-a 切片 1）：需求候选与归属字段构造的正向闸。
+ * §19.14·86 → §19.15·91（r6 改口径）：需求候选与归属字段构造的正向闸。
  * web 无 jsdom/@testing-library，这里钉的是 hook 的纯函数层
  * （候选派生 + 创建/移动两条写入路径的 payload 形状）。
+ * 候选的归档组剔除（buildRequirementOptions）按 §19.15·91 末句**保留不动**——
+ * 它是存量归档组的最后防线。
  */
 
 function taskRow(partial: Partial<TaskListItem> & { id: string; title: string }): TaskListItem {
@@ -74,25 +76,29 @@ describe('buildRequirementOptions：候选派生与归档剔除', () => {
   });
 });
 
-describe('§19.14·86 归属字段构造：创建/移动两条写入路径', () => {
+describe('§19.15·91 归属字段构造：创建/移动两条写入路径（只写 parent_task_id）', () => {
   const option: RequirementOption = { id: 'r-1', title: '活跃需求', group_id: 'g-active' };
 
-  it('选需求：创建 payload 同时含 parent_task_id + group_id，且 group 等于该需求的组', () => {
-    expect(requirementCreateBody(option)).toEqual({ parent_task_id: 'r-1', group_id: 'g-active' });
+  it('选需求：创建 payload 恰含 parent_task_id，组字段不再出现', () => {
+    const body = requirementCreateBody(option);
+    expect(body).toEqual({ parent_task_id: 'r-1' });
+    expect(body).not.toHaveProperty('group_id');
   });
 
-  it('未选需求：创建 payload 两字段皆无（服务端落默认分组兜底）', () => {
+  it('未选需求：创建 payload 两字段皆无（服务端按 §5.2 落默认分组兜底）', () => {
     const body = requirementCreateBody(null);
     expect(body).toEqual({});
     expect(body).not.toHaveProperty('parent_task_id');
     expect(body).not.toHaveProperty('group_id');
   });
 
-  it('移到需求：一次 PATCH 原子写两字段', () => {
-    expect(requirementMoveBody(option)).toEqual({ parent_task_id: 'r-1', group_id: 'g-active' });
+  it('移到需求：PATCH 只发 parent_task_id（不再同写组字段，跨组父子属 r6 常态边界）', () => {
+    const body = requirementMoveBody(option);
+    expect(body).toEqual({ parent_task_id: 'r-1' });
+    expect(body).not.toHaveProperty('group_id');
   });
 
-  it('「未分配」：parent_task_id 置 null、group_id 不发（保持原组）', () => {
+  it('「未分配」：parent_task_id 置 null、组字段不发（保持原组）', () => {
     const body = requirementMoveBody(null);
     expect(body).toEqual({ parent_task_id: null });
     expect(body).not.toHaveProperty('group_id');

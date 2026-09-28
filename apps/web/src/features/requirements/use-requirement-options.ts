@@ -5,11 +5,15 @@ import type { Group } from '@/features/groups/types';
 import type { TaskCreateInput, TaskListItem, TaskPatchInput } from '@/api/types';
 
 /**
- * §19.14·86（v0.0.4 W2-a）：看板写入路径的「需求」候选。
+ * §19.15·91（v0.0.4 r6，推翻 §19.14·86 双写）：看板写入路径的「需求」候选。
  *
  * 看板 UI 上 Group 概念已整体下线（「分组」即「需求」），新建/移动的唯一归属选择
- * 是需求：选中需求 → 同写 `parent_task_id` + 回填该需求的 `group_id`；未选 →
- * 创建两字段都不发（服务端落默认分组兜底）、移动只置空 `parent_task_id`。
+ * 是需求：选中需求 → **只写 `parent_task_id`**，不再回填 `group_id`；未选 →
+ * 创建两字段都不发（服务端按 §5.2 落「默认」分组兜底）、移动只置空 `parent_task_id`。
+ *
+ * 代价与边界（§19.15·91 如实记档）：跨需求移动不再同步搬组，「父在 A 组、子在 B 组」
+ * 由 UI 常态产生而非仅手搭可达——因 r6 后 UI 既不按组过滤也不归档组，实测无用户
+ * 可见后果，`group_id` 仅作 Agent/REST 侧的存量语义。
  *
  * 数据源走**既有** `GET /tasks?type=需求`（零服务端改动、不给 api 加参数），
  * query key 即 `qk.tasks({ type:['需求'], … })`——与
@@ -17,11 +21,12 @@ import type { TaskCreateInput, TaskListItem, TaskPatchInput } from '@/api/types'
  * 同受 `tasksRoot` 的 WS 失效链覆盖。
  *
  * 候选必须排除归档分组下的需求：归档组只读，服务端 `assertGroup` 会 409；
+ * 本剔除与守卫**保留不动**（§19.15·91 末句），是存量归档组的最后防线。
  * 归档判定来自 `useGroups()`（固定 `archived=true` 的全量缓存），
  * `status !== 'ACTIVE'` 即归档（与 `useActiveGroups` 同一口径）。
  */
 
-/** 需求候选：id 写进 `parent_task_id`，group_id 回填进 `group_id`。 */
+/** 需求候选：id 写进 `parent_task_id`；`group_id` 仅供展示层反查（requirementTitleForGroup），不再进任何写入体。 */
 export interface RequirementOption {
   id: string;
   title: string;
@@ -66,25 +71,30 @@ export function useRequirementOptions() {
   return { ...list, data: options };
 }
 
-/** 创建请求的归属字段（§19.14·86：选中同写两字段；未选两字段都不发）。 */
+/**
+ * 创建请求的归属字段（§19.15·91：选中只发 `parent_task_id`；未选两字段都不发）。
+ * 返回类型收窄到不含 `group_id`——四条写路径不再传它由 tsc 代证。
+ */
 export function requirementCreateBody(
   option: RequirementOption | null,
-): Partial<Pick<TaskCreateInput, 'parent_task_id' | 'group_id'>> {
-  return option ? { parent_task_id: option.id, group_id: option.group_id } : {};
+): Partial<Pick<TaskCreateInput, 'parent_task_id'>> {
+  return option ? { parent_task_id: option.id } : {};
 }
 
 /**
- * 移动请求的归属字段（§19.14·86：一次 PATCH 原子写两字段；
- * 「脱离需求」仅置空 `parent_task_id`，`group_id` 不发、保持原组）。
+ * 移动请求的归属字段（§19.15·91：PATCH 只发 `parent_task_id`，不再同写 `group_id`；
+ * 「脱离需求」仅置空 `parent_task_id`，组保持原值）。跨需求移动不再同步搬组，
+ * 父子跨组属 r6 接受的常态边界（见文件头「代价与边界」）。
  */
 export function requirementMoveBody(
   option: RequirementOption | null,
-): Pick<TaskPatchInput, 'parent_task_id'> & Partial<Pick<TaskPatchInput, 'group_id'>> {
-  return option ? { parent_task_id: option.id, group_id: option.group_id } : { parent_task_id: null };
+): Pick<TaskPatchInput, 'parent_task_id'> {
+  return option ? { parent_task_id: option.id } : { parent_task_id: null };
 }
 
 /**
- * 展示层反查（§19.14·84，W2-b 为 creation 确认卡补的纯派生）：`group_id` → 该组
+ * 展示层反查（§19.14·84，W2-b 为 creation 确认卡补的纯派生；§19.15·91 后候选的
+ * `group_id` 字段因此保留——仅供这里反查，不再进写入体）：`group_id` → 该组
  * 需求标题。拆解流程每需求开一组，组内正常只有一张需求卡，取首个命中即可；
  * 组内无需求（或需求所在组已归档被剔出候选）回 null，由调用方兜「未分配」文案。
  */
