@@ -32,6 +32,7 @@ import type {
   ReviewInput,
   TaskCreateInput,
   TaskPatchInput,
+  UserTaskPatchInput,
 } from '../contract/schemas';
 import { jsonFilterParts } from './json-filters';
 import { SkillsService } from '../skills/skills.service';
@@ -123,6 +124,9 @@ export class TasksService {
     const skillsJson = input.skills?.length
       ? await this.skillsService.normalizeTaskBindings(input.skills)
       : '[]';
+    // 0020 草案 §3.1：任务级审核方式选填，缺省取全局 `default_review_mode`。
+    // 只在 REST 用户面生效——Agent 的 create 面不带这个键，越权面由契约层守住。
+    const reviewMode = input.review_mode ?? (await this.settings.get('default_review_mode'));
 
     const id = await this.prisma.$transaction(async (tx) => {
       const taskId = await nextTaskId(tx);
@@ -145,6 +149,7 @@ export class TasksService {
           skills: skillsJson,
           pinned: input.pinned ? 1 : 0,
           dueAt: input.due_at ? toDateOnly(input.due_at) : null,
+          reviewMode,
         },
       });
       for (const dependsOn of [...new Set(input.depends_on)]) {
@@ -168,7 +173,7 @@ export class TasksService {
     return this.getDetail(id);
   }
 
-  async patch(id: string, input: TaskPatchInput): Promise<TaskDetailDto> {
+  async patch(id: string, input: UserTaskPatchInput): Promise<TaskDetailDto> {
     const before = await this.requireTask(id);
     if (before.status === 'RUNNING') {
       throw new ApiException('TASK_RUNNING', '执行中的任务不可编辑，请先强制停止');
@@ -196,7 +201,7 @@ export class TasksService {
   private async applyPatch(
     id: string,
     before: Task,
-    input: TaskPatchInput,
+    input: UserTaskPatchInput,
     actor: { actorType: 'user' | 'agent'; actorName?: string },
   ): Promise<TaskDetailDto> {
     const data: Prisma.TaskUpdateInput = { updatedAt: nowSql() };
@@ -230,6 +235,9 @@ export class TasksService {
       }
     }
     if (input.sort_order !== undefined) data.sortOrder = input.sort_order;
+    // 0020 草案 §3.1：审核方式只有这一条用户侧写入口（`patchAsAgent` 的入参类型里没这个键，
+    // Agent 面 `update_task` 的可写清单也从基底 shape 派生），执行者改不了自己的豁免位。
+    if (input.review_mode !== undefined) data.reviewMode = input.review_mode;
     if (input.tags !== undefined) data.tags = JSON.stringify(input.tags);
     if (input.required_capabilities !== undefined) {
       data.requiredCapabilities = JSON.stringify(input.required_capabilities);
@@ -1021,6 +1029,8 @@ export class TasksService {
             detail: review.detail,
             return_to: review.returnTo,
             priority_adj: review.priorityAdj,
+            reviewer_type: review.reviewerType,
+            reviewer_name: review.reviewerName,
             created_at: toIso(review.createdAt),
           };
         })(),
@@ -1094,6 +1104,9 @@ export class TasksService {
         detail: row.detail,
         return_to: row.returnTo,
         priority_adj: row.priorityAdj,
+        // 0020 §3.6：审核人身份随列表返回——A2 的自动审核记录靠它区分「谁审的」。
+        reviewer_type: row.reviewerType,
+        reviewer_name: row.reviewerName,
         created_at: toIso(row.createdAt),
       })),
     };
@@ -1273,8 +1286,14 @@ export class TasksService {
     if (to === 'DONE') await this.releaseDownstream(id);
   }
 
-  /** 5.5：任务转 DONE 后，全部 blocks 前置已满足的下游发 task.unblocked。 */
-  private async releaseDownstream(id: string): Promise<string[]> {
+  /**
+   * 5.5：任务转 DONE 后，全部 blocks 前置已满足的下游发 task.unblocked。
+   *
+   * 对外的原因只有一个：0020 §3.4 的 `review_mode=none` 直通路由在 `WritebackService.complete`
+   * 里落 DONE，那条链路必须跑完和人工审核通过**同一套** DONE 后置（解锁下游 + 完成通知），
+   * 否则免审核的任务会把下游永久卡在 READY。审核侧那条路（`submitReview` 通过）继续走这里。
+   */
+  async releaseDownstream(id: string): Promise<string[]> {
     const dependents = await this.prisma.$queryRaw<{ id: string }[]>`
       SELECT t.id FROM tasks t
       WHERE t.archived_at IS NULL AND t.status = 'READY'

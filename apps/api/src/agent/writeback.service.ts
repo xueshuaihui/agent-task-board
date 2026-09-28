@@ -210,6 +210,13 @@ export class WritebackService {
   /**
    * 4.3.2 表：正常持有 → 200 转 REVIEW；重复回写 → 200 幂等（不新增 Run、不重复通知）；
    * 孤儿回写 → Run 已由校验链置 ABANDONED，产物与摘要仍入库，任务状态不回滚。
+   *
+   * 0020 草案 §3.4：完成后的落点由任务上的 `review_mode` 三分（历史行与库默认都是 human）：
+   *  - `human` → REVIEW / track=human，**行为、文案、通知、事件与上一版逐字一致**；
+   *  - `auto`  → REVIEW / track=auto，通知换成 `review_auto_pending`（此刻只是「等待自动审核」，
+   *    还没通过；真正的通过通知 `review_auto_passed` 由 A2 的自动审核提交时推）；
+   *  - `none`  → 直接 DONE，不经 REVIEW，评论与审计显式写明「免审核直通（review_mode=none）」，
+   *    并且**照常跑完 DONE 的后置链**（下游解锁 + task.moved），直通路不许绕开它们。
    */
   async complete(input: CompleteInput, auth: RequestAuth) {
     const verdict = await this.leases.verify(input, auth, true);
@@ -228,6 +235,11 @@ export class WritebackService {
     const agent = agentOf(auth);
     const now = nowSql();
     const orphaned = verdict.kind === 'orphan';
+    // CHECK 约束（0020）保证只有这三个值；不在词表内的手改数据按 human 走保守路径。
+    const mode = verdict.task.reviewMode === 'none' || verdict.task.reviewMode === 'auto'
+      ? verdict.task.reviewMode
+      : 'human';
+    const directTo = mode === 'none' ? ('DONE' as const) : ('REVIEW' as const);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.taskRun.update({
@@ -247,10 +259,15 @@ export class WritebackService {
         await tx.task.update({
           where: { id: verdict.task.id },
           data: {
-            status: 'REVIEW',
+            status: directTo,
             // 4.3.2：租约随完成清空；current_run_id 保留，审核表单靠它定位被审的 Run。
+            // 免审核直通没有审核表单，DONE 是终态，与审核通过的出口对齐一并清空。
             leaseId: null,
             leaseExpiresAt: null,
+            ...(mode === 'none' ? { currentRunId: null } : {}),
+            // 轨道位：auto 交给 A2 的自动审核队列认领；human 沿用建表默认；
+            // none 不落 REVIEW，轨道无意义，不动它（免得把「没审过」写成「人审过」）。
+            ...(mode === 'auto' ? { reviewTrack: 'auto' } : {}),
             updatedAt: now,
           },
         });
@@ -261,9 +278,29 @@ export class WritebackService {
             runId: verdict.run.id,
             authorType: 'system',
             type: 'status_change',
-            content: `Agent 已完成执行，进入待审核${input.summary ? `：${input.summary.slice(0, 60)}` : ''}`,
+            content:
+              mode === 'none'
+                ? `Agent 已完成执行，免审核直通（review_mode=none）直接标记完成${input.summary ? `：${input.summary.slice(0, 60)}` : ''}`
+                : mode === 'auto'
+                  ? `Agent 已完成执行，进入待自动审核${input.summary ? `：${input.summary.slice(0, 60)}` : ''}`
+                  : `Agent 已完成执行，进入待审核${input.summary ? `：${input.summary.slice(0, 60)}` : ''}`,
           },
         });
+        // 直通的 DONE 是一次真实的状态流转，审计单独记一条：审核方式与「谁给的豁免」
+        // 都要能从审计里查出来（review_mode 由人在 UI 设定，不是执行者自己声明的）。
+        if (mode === 'none') {
+          await this.audit.record(
+            {
+              actorType: 'system',
+              action: 'task_transition',
+              targetType: 'task',
+              targetId: verdict.task.id,
+              before: { status: 'RUNNING' },
+              after: { status: 'DONE', review_mode: 'none', reason: '免审核直通（review_mode=none）' },
+            },
+            tx,
+          );
+        }
       }
 
       await this.audit.record(
@@ -276,7 +313,7 @@ export class WritebackService {
           before: { status: 'RUNNING', task_status: verdict.task.status },
           after: {
             status: orphaned ? 'ABANDONED' : 'SUCCESS',
-            task_status: orphaned ? verdict.task.status : 'REVIEW',
+            task_status: orphaned ? verdict.task.status : directTo,
             artifacts: input.artifacts.length,
           },
         },
@@ -285,12 +322,19 @@ export class WritebackService {
     });
 
     if (!orphaned) {
-      await this.notifications.push(
-        'review_pending',
-        verdict.task.id,
-        `任务 ${verdict.task.id} 已完成，等待审核`,
-      );
-      this.events.emit('task.moved', { id: verdict.task.id, from: 'RUNNING', to: 'REVIEW' });
+      if (mode === 'none') {
+        await this.tasks.releaseDownstream(verdict.task.id);
+        this.events.emit('task.moved', { id: verdict.task.id, from: 'RUNNING', to: 'DONE' });
+      } else {
+        await this.notifications.push(
+          mode === 'auto' ? 'review_auto_pending' : 'review_pending',
+          verdict.task.id,
+          mode === 'auto'
+            ? `任务 ${verdict.task.id} 已完成，等待自动审核`
+            : `任务 ${verdict.task.id} 已完成，等待审核`,
+        );
+        this.events.emit('task.moved', { id: verdict.task.id, from: 'RUNNING', to: 'REVIEW' });
+      }
     }
     this.events.emit('task.updated', { id: verdict.task.id });
 
@@ -298,8 +342,8 @@ export class WritebackService {
       task: await this.query.payload(verdict.task.id),
       run_id: verdict.run.id,
       run_status: orphaned ? 'ABANDONED' : 'SUCCESS',
-      // verdict.task 是回写前的快照：孤儿回写不回滚任务状态，正常回写则已转待审核。
-      task_status: (orphaned ? verdict.task.status : 'REVIEW') as TaskStatus,
+      // verdict.task 是回写前的快照：孤儿回写不回滚任务状态，正常回写则已转待审核/已完成。
+      task_status: (orphaned ? verdict.task.status : directTo) as TaskStatus,
       idempotent: false,
       orphaned,
     };

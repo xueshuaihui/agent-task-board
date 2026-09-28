@@ -111,6 +111,113 @@ describe('正常持有 → complete_task', () => {
   });
 });
 
+describe('审核方式三分流（0020 草案 §3.4）', () => {
+  /** 认领一支指定 `review_mode` 的任务：分流只看任务上那一列，其余链路与 human 支同源。 */
+  async function claimWithMode(mode: 'human' | 'auto' | 'none') {
+    await seedTask(h.prisma, 'T-1', { reviewMode: mode });
+    const key = tripleOf(await h.claims.claim(CLAIM, agent));
+    h.emitted.length = 0;
+    return key;
+  }
+
+  it('human：REVIEW + 轨道 human，通知与评论逐字沿用原口径', async () => {
+    const key = await claimWithMode('human');
+
+    const result = await h.writeback.complete(completeSchema.parse({ ...key, summary: '人审' }), agent);
+
+    expect(result.task_status).toBe('REVIEW');
+    const task = await h.prisma.task.findUniqueOrThrow({ where: { id: 'T-1' } });
+    expect(task.status).toBe('REVIEW');
+    expect(task.reviewMode).toBe('human');
+    expect(task.reviewTrack).toBe('human');
+    // 审核表单靠 current_run_id 定位被审 Run，human 支不能动它。
+    expect(task.currentRunId).toBe(key.run_id);
+    expect(await h.prisma.notification.count({ where: { kind: 'review_pending' } })).toBe(1);
+    expect(await h.prisma.notification.count({ where: { kind: 'review_auto_pending' } })).toBe(0);
+    expect(
+      await h.prisma.comment.count({ where: { content: 'Agent 已完成执行，进入待审核：人审' } }),
+    ).toBe(1);
+    expect(events('task.moved')[0]?.data).toEqual({ id: 'T-1', from: 'RUNNING', to: 'REVIEW' });
+  });
+
+  it('auto：REVIEW + 轨道 auto，推「等待自动审核」而不是 review_pending', async () => {
+    const key = await claimWithMode('auto');
+
+    const result = await h.writeback.complete(completeSchema.parse({ ...key, summary: '机审' }), agent);
+
+    // auto 此刻只是「等待自动审核」，还没通过——目标状态仍是 REVIEW（通过通知归 A2）。
+    expect(result.task_status).toBe('REVIEW');
+    const task = await h.prisma.task.findUniqueOrThrow({ where: { id: 'T-1' } });
+    expect(task.status).toBe('REVIEW');
+    expect(task.reviewTrack).toBe('auto');
+    expect(await h.prisma.notification.count({ where: { kind: 'review_auto_pending' } })).toBe(1);
+    expect(await h.prisma.notification.count({ where: { kind: 'review_pending' } })).toBe(0);
+    expect(
+      await h.prisma.comment.count({ where: { content: 'Agent 已完成执行，进入待自动审核：机审' } }),
+    ).toBe(1);
+    expect(events('task.moved')[0]?.data).toEqual({ id: 'T-1', from: 'RUNNING', to: 'REVIEW' });
+  });
+
+  it('none：直接 DONE 不经 REVIEW，评论与审计显式记录免审核直通', async () => {
+    const key = await claimWithMode('none');
+
+    const result = await h.writeback.complete(
+      completeSchema.parse({ ...key, summary: '免审直通' }),
+      agent,
+    );
+
+    expect(result.task_status).toBe('DONE');
+    const task = await h.prisma.task.findUniqueOrThrow({ where: { id: 'T-1' } });
+    expect(task.status).toBe('DONE');
+    expect(task.leaseId).toBeNull();
+    expect(task.leaseExpiresAt).toBeNull();
+    // 与审核通过出口对齐：DONE 是终态，不留指向已结案 Run 的 current_run_id。
+    expect(task.currentRunId).toBeNull();
+    expect(task.reviewTrack).toBe('human');
+
+    const comment = await h.prisma.comment.findFirstOrThrow({ where: { type: 'status_change' } });
+    expect(comment.content).toContain('免审核直通（review_mode=none）');
+    const transition = await h.prisma.auditLog.findFirstOrThrow({ where: { action: 'task_transition' } });
+    expect(JSON.parse(String(transition.after))).toMatchObject({
+      status: 'DONE',
+      review_mode: 'none',
+      reason: '免审核直通（review_mode=none）',
+    });
+    expect(await h.prisma.notification.count({ where: { kind: 'review_pending' } })).toBe(0);
+    expect(await h.prisma.notification.count({ where: { kind: 'review_auto_pending' } })).toBe(0);
+    expect(events('task.moved')[0]?.data).toEqual({ id: 'T-1', from: 'RUNNING', to: 'DONE' });
+  });
+
+  it('none：DONE 后置链照常跑——下游解锁与 task_unblocked 通知不被绕开', async () => {
+    const key = await claimWithMode('none');
+    await seedTask(h.prisma, 'T-2', { status: 'READY' });
+    await h.tasks.addDependency('T-2', 'T-1', 'blocks');
+    h.emitted.length = 0;
+    await h.prisma.notification.deleteMany();
+
+    await h.writeback.complete(completeSchema.parse({ ...key, summary: '直通' }), agent);
+
+    expect(await h.prisma.task.findUniqueOrThrow({ where: { id: 'T-1' } })).toMatchObject({
+      status: 'DONE',
+    });
+    expect(events('task.unblocked')).toHaveLength(1);
+    expect(events('task.moved')[0]?.data).toEqual({ id: 'T-1', from: 'RUNNING', to: 'DONE' });
+    expect(await h.prisma.notification.count({ where: { kind: 'task_unblocked' } })).toBe(1);
+  });
+
+  it('回写前快照的 review_mode 缺省（历史行）按 human 处理', async () => {
+    await seedTask(h.prisma, 'T-1');
+    // 0020 之前造的行走迁移默认值，回写路径不因为列缺失而改判分支。
+    expect((await h.prisma.task.findUniqueOrThrow({ where: { id: 'T-1' } })).reviewMode).toBe('human');
+    const key = tripleOf(await h.claims.claim(CLAIM, agent));
+
+    const result = await h.writeback.complete(completeSchema.parse(key), agent);
+
+    expect(result.task_status).toBe('REVIEW');
+    expect(await h.prisma.notification.count({ where: { kind: 'review_pending' } })).toBe(1);
+  });
+});
+
 describe('重复回写（验收 35）', () => {
   it('同 run_id 二次 complete 返回幂等成功：不新增 Run、不重复通知', async () => {
     const key = await claimOne();

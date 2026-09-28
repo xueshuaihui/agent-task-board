@@ -8,9 +8,11 @@ import {
   LIST_SORT_FIELDS,
   RETURN_TARGETS,
   REVIEW_CONCLUSIONS,
+  REVIEW_MODES,
   TAG_MAX_LENGTH,
   TAGS_MAX_PER_TASK,
   TASK_STATUS,
+  type ReviewMode,
 } from './enums';
 
 /** 20.5 能力标识：namespace:value，命名空间小写 ASCII。未约定的命名空间不校验取值。 */
@@ -93,30 +95,56 @@ export const taskCreateSchema = z.object({
   sort_order: z.number().int().optional(),
   // 创建即可绑定技能（与 PATCH 同一条校验路径，见 tasks.service create/applyPatch）。
   skills: taskSkillRefsSchema.default([]),
+  // 任务审核方式（草案 §3.1，0020 三值）：缺省=按全局默认键 default_review_mode 落（服务层解析）。
+  review_mode: z.enum(REVIEW_MODES).optional(),
 });
 export type TaskCreateInput = z.infer<typeof taskCreateSchema>;
 
-/** 8.1：创建后进 BACKLOG，status 不在可写字段内；RUNNING 一律由认领事务产生（4.3.1 规则 2）。 */
+/**
+ * 8.1：创建后进 BACKLOG，status 不在可写字段内；RUNNING 一律由认领事务产生（4.3.1 规则 2）。
+ *
+ * 这份 shape 是 **REST 用户面与 Agent 面共用的基底**：`taskPatchSchema` 直接由它建，
+ * Agent 的 `update_task` 可写键清单也从它的键派生（agent-schemas 的 TASK_PATCH_FIELDS）。
+ * `review_mode` 刻意**不在**这里（草案 §3.1/Q4 硬不变量：执行者不得自豁免），
+ * 只出现在用户侧那份 `userTaskPatchSchema` 的扩展位上。
+ */
+const taskPatchShape = {
+  title: z.string().trim().min(1).max(200).optional(),
+  type: z.string().trim().min(1).max(16).optional(),
+  priority: prioritySchema.optional(),
+  description: z.string().max(20000).nullable().optional(),
+  tags: tagsSchema.optional(),
+  required_capabilities: z.array(capabilitySchema).max(20).optional(),
+  custom_fields: customFieldsSchema.optional(),
+  due_at: dateInputSchema.nullable().optional(),
+  pinned: z.boolean().optional(),
+  group_id: z.string().trim().min(1).max(64).nullable().optional(),
+  /** 0919 跨分组移动：挂到需求 / 置 null 脱离需求（归属校验在服务层 assertParent）。 */
+  parent_task_id: idParam.nullable().optional(),
+  sort_order: z.number().int().optional(),
+  // 0919 10.3：技能绑定（引用由服务层校验归属/存在/版本，见 SkillsService.normalizeTaskBindings）。
+  skills: taskSkillRefsSchema.optional(),
+};
+
+const noPatchFields = { message: '没有需要更新的字段' } as const;
+
 export const taskPatchSchema = z
-  .object({
-    title: z.string().trim().min(1).max(200).optional(),
-    type: z.string().trim().min(1).max(16).optional(),
-    priority: prioritySchema.optional(),
-    description: z.string().max(20000).nullable().optional(),
-    tags: tagsSchema.optional(),
-    required_capabilities: z.array(capabilitySchema).max(20).optional(),
-    custom_fields: customFieldsSchema.optional(),
-    due_at: dateInputSchema.nullable().optional(),
-    pinned: z.boolean().optional(),
-    group_id: z.string().trim().min(1).max(64).nullable().optional(),
-    /** 0919 跨分组移动：挂到需求 / 置 null 脱离需求（归属校验在服务层 assertParent）。 */
-    parent_task_id: idParam.nullable().optional(),
-    sort_order: z.number().int().optional(),
-    // 0919 10.3：技能绑定（引用由服务层校验归属/存在/版本，见 SkillsService.normalizeTaskBindings）。
-    skills: taskSkillRefsSchema.optional(),
-  })
-  .refine((value) => Object.keys(value).length > 0, { message: '没有需要更新的字段' });
+  .object(taskPatchShape)
+  .refine((value) => Object.keys(value).length > 0, noPatchFields);
 export type TaskPatchInput = z.infer<typeof taskPatchSchema>;
+
+/**
+ * 用户侧 PATCH（REST `PATCH /tasks/:id` 专用）：基底 + `review_mode`（草案 §3.1，0020）。
+ *
+ * WHY 单独扩一份、不把 review_mode 加进基底：`update_task` 的可写键清单从基底 shape 的键
+ * **机械派生**（TASK_PATCH_FIELDS），加进基底等于把「执行者给自己免审核」的口子递给 Agent。
+ * Agent 面 `updateTaskSchema` 不吃这份扩展（`.strict()` 直接 422 点名未知键、MCP 通道先剥键），
+ * 有负向用例锁死。RUNNING 期间整条 PATCH 被既有「执行中不可编辑」守卫挡住（8.1）。
+ */
+export const userTaskPatchSchema = z
+  .object({ ...taskPatchShape, review_mode: z.enum(REVIEW_MODES).optional() })
+  .refine((value) => Object.keys(value).length > 0, noPatchFields);
+export type UserTaskPatchInput = TaskPatchInput & { review_mode?: ReviewMode };
 
 export const transitionSchema = z.object({
   to: z.enum(TASK_STATUS),

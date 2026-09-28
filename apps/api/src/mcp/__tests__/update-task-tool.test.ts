@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { RequestAuth } from '../../auth/auth.scope';
+import { TASK_PATCH_FIELDS } from '../../contract/agent-schemas';
 import { createAgentMcpServer, callAgentTool, type AgentToolContext } from '../../mcp/mcp.server';
 import { createAgentHarness, seedTask, type AgentHarness } from '../../agent/__tests__/temp-db';
 
@@ -325,14 +326,23 @@ describe('update_task 的校验复用与越权面', () => {
     expect(structured(result).code).toBe('VALIDATION_FAILED');
   });
 
-  it('越权面写不进来：status / assignee / 租约列都不在可写字段里（协议层剥掉、schema 层 422，两条通道都改不到）', async () => {
+  it('越权面写不进来：status / assignee / 租约列 / 审核方式都不在可写字段里（协议层剥掉、schema 层 422，两条通道都改不到）', async () => {
     const lease = await claimRunning('T-escalate');
     const forbidden = [
       { status: 'DONE' },
       { assignee: 'other-agent' },
       { current_run_id: 'R-9' },
       { lease_expires_at: '2999-01-01 00:00:00' },
+      // 草案 Q4 硬不变量：执行者不得给自己免审核。`review_mode` 只活在用户侧那份
+      // `userTaskPatchSchema` 上，`update_task` 的可写清单从基底 shape 派生，拿不到这个键；
+      // `review_track` 是服务端分流的结果位，任何写面都不该递出去。
+      { review_mode: 'none' },
+      { review_track: 'auto' },
     ];
+
+    // 结构面先锁死：可写字段名单里出现这两个键，上面两条通道的拒径就同时失效了。
+    expect(TASK_PATCH_FIELDS).not.toContain('review_mode');
+    expect(TASK_PATCH_FIELDS).not.toContain('review_track');
 
     // 通道一：tools/call 全链路。MCP SDK 在进 handler 前就按 inputSchema 剥掉了未声明键
     // （未知键到不了我们手里），所以这五个键一个都写不进库——不报错，但也绝生效。
@@ -356,6 +366,23 @@ describe('update_task 的校验复用与越权面', () => {
       lease.run_id,
       stored.leaseExpiresAt,
     ]);
+    expect([stored.reviewMode, stored.reviewTrack]).toEqual(['human', 'human']);
+
+    // 合法键 + 越权键混在一起发：SDK 只剥未知键、合法键照常生效，
+    // 关键是 `review_mode` 不能跟着混进库（否则执行者一次 self-exempt 就成功了）。
+    const mixed = await call('update_task', {
+      task_id: 'T-escalate',
+      run_id: lease.run_id,
+      lease_id: lease.lease_id,
+      title: '混着改',
+      review_mode: 'none',
+    });
+    expect(mixed.isError, JSON.stringify(mixed.structuredContent ?? mixed.content)).toBeFalsy();
+    const mixedTask = await h.prisma.task.findUniqueOrThrow({ where: { id: 'T-escalate' } });
+    expect(mixedTask.title).toBe('混着改');
+    expect([mixedTask.reviewMode, mixedTask.reviewTrack]).toEqual(['human', 'human']);
+    // 复位标题，别让下面的通道二断言背上这次副作用（任务仍在 RUNNING，走不了 REST patch）。
+    await h.prisma.task.update({ where: { id: 'T-escalate' }, data: { title: 'T-escalate 标题' } });
 
     // 通道二：脱离 HTTP 的直接调用（脚本/诊断走 callAgentTool）没有 SDK 那层剥离，
     // 由 updateTaskSchema 的 `.strict()` 硬拒，并点名未知字段（B6 的回显口径）。

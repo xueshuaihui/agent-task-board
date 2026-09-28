@@ -1,4 +1,10 @@
-import { STATUS_LABEL, type TaskStatus, type UnknownEnumReport } from '../contract/enums';
+import {
+  STATUS_LABEL,
+  type ReviewMode,
+  type ReviewTrack,
+  type TaskStatus,
+  type UnknownEnumReport,
+} from '../contract/enums';
 import { toIso } from '../contract/time';
 import { artifactUriBasename } from '../artifacts/artifact-storage';
 
@@ -35,6 +41,12 @@ export interface TaskRawRow {
   sort_order?: number;
   /** 0013/v0.0.4 §8.6：来源列（t.* 带回；建列前造的测试行可缺省，读侧回落 'user'）。 */
   origin_type?: string | null;
+  /**
+   * 0020 草案 §3.6：审核方式/审核轨道（t.* 带回；建列前造的测试行可缺省，
+   * 读侧回落默认 'human'，与迁移里 `DEFAULT 'human'` 同一个口径）。
+   */
+  review_mode?: string | null;
+  review_track?: string | null;
 }
 
 /** tasks 行 + 卡片需要的聚合列（当前 Run 的进度、阻塞数、产物数、上一次时长）。 */
@@ -118,6 +130,12 @@ export interface TaskCardDto {
   parent?: { id: string; title: string; done: number; total: number } | null;
   /** v0.0.4 §8.6 读侧最小集：'user' | 'agent'，前端按它给 agent 直建任务挂 5 秒撤销入口。 */
   origin_type: string;
+  /**
+   * 0020 草案 §3.6：审核方式与当前审核轨道，卡片快照与详情同源常返（看板角标、A2 的
+   * 「等待自动审核」队列入口都读这两个键，不再另发一次请求）。
+   */
+  review_mode: ReviewMode;
+  review_track: ReviewTrack;
 }
 
 export interface TaskDetailDto extends TaskCardDto {
@@ -245,5 +263,8 @@ export function toCardDto(
     group_id: row.group_id ?? null,
     parent: extra.parent ?? null,
     origin_type: row.origin_type ?? 'user',
+    // 缺列只可能是 0020 之前造的测试行：回落库默认值，不凭空造第三种口径（同 origin_type）。
+    review_mode: (row.review_mode ?? 'human') as ReviewMode,
+    review_track: (row.review_track ?? 'human') as ReviewTrack,
   };
 }

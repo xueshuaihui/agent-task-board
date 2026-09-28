@@ -82,6 +82,13 @@ model Task {
   leaseExpiresAt       String? @map("lease_expires_at")
   leaseRevokedAt       String? @map("lease_revoked_at")
   stopReason           String? @map("stop_reason")
+  // 任务审核方式（0020 加列，草案 §3.1/§3.4）：human=人工审核（默认）/ auto=待自动审核队列 /
+  // none=免审核直通。取值 CHECK 的权威在迁移；写面只有 REST create/PATCH 与全局默认键
+  // default_review_mode——Agent 面 update_task 的可写键清单恒不含它（执行者不得自豁免，Q4）。
+  reviewMode       String @default("human") @map("review_mode")
+  // REVIEW 列内的换轨位（0020 加列）：auto=等审核器 / human=人工待审（含「转人工」升级位）。
+  // 只在 REVIEW 状态有意义，其余状态是遗留值；读面恒返回。换轨触发点（ESCALATE/转人工）在 A2。
+  reviewTrack      String @default("human") @map("review_track")
   currentRunId         String? @map("current_run_id")
   claimedAt            String? @map("claimed_at")
   runCount             Int     @default(0) @map("run_count")
@@ -202,6 +209,10 @@ model Review {
   detail      String
   returnTo    String? @map("return_to")
   priorityAdj Int?    @map("priority_adj")
+  // 审核人两列（0020 加列，草案 §3.2）：user=人 / agent=自动审核器（A2 的 submit_review 写入）；
+  // reviewer_name 可空（人侧现在不署名，agent 侧记 Token 名）。存量行回填 user 由迁移默认值保证。
+  reviewerType String  @default("user") @map("reviewer_type")
+  reviewerName String? @map("reviewer_name")
   createdAt   String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
   task        Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
@@ -268,7 +279,9 @@ model IdSequence {
 
 model Notification {
   id        String  @id
-  // 词表权威在迁移 CHECK（0001 五类 + 0014 追加 creation_request，§13.9 r3）；镜像列保持无约束 String。
+  // 词表权威在迁移 CHECK（0001 五类 + 0014 追加 creation_request，§13.9 r3；
+  // 0020 追加 review_auto_pending / review_auto_passed，自动审核链路草案 §3.4/§3.6）；
+  // 镜像列保持无约束 String。
   kind      String
   taskId    String? @map("task_id")
   message   String

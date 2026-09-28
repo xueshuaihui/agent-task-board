@@ -48,6 +48,27 @@ export type TriggerType = (typeof TRIGGER_TYPES)[number];
 export const REVIEW_CONCLUSIONS = ['APPROVE', 'REJECT'] as const;
 export type ReviewConclusion = (typeof REVIEW_CONCLUSIONS)[number];
 
+/**
+ * 任务审核方式（草案 §3.1，迁移 0020 的 tasks.review_mode CHECK 同值）：
+ * human=人工审核（默认，Q1「默认强制人工审核、任务级显式豁免」）/ auto=审核后入待自动审核队列 /
+ * none=免审核直通。写面只有 REST create/PATCH 与全局默认键——update_task 的可写键清单恒不含它
+ * （Q4 硬不变量：执行者不得自豁免）。
+ */
+export const REVIEW_MODES = ['human', 'auto', 'none'] as const;
+export type ReviewMode = (typeof REVIEW_MODES)[number];
+
+/**
+ * REVIEW 列内的换轨位（草案 §3.4，迁移 0020 的 tasks.review_track CHECK 同值）：
+ * auto=等审核器（claim_next_review 可领）/ human=人工待审（人优先，审核器不领）。
+ * 只在 REVIEW 状态有意义，其余状态是遗留值、读面恒返回；换轨触发点（ESCALATE/转人工）在 A2。
+ */
+export const REVIEW_TRACKS = ['auto', 'human'] as const;
+export type ReviewTrack = (typeof REVIEW_TRACKS)[number];
+
+/** reviews 行的结论来源（草案 §3.2，迁移 0020 的 reviews.reviewer_type CHECK 同值；存量行回填 user）。 */
+export const REVIEWER_TYPES = ['user', 'agent'] as const;
+export type ReviewerType = (typeof REVIEWER_TYPES)[number];
+
 export const RETURN_TARGETS = ['BACKLOG', 'READY'] as const;
 
 export const DEP_TYPES = ['blocks', 'relates'] as const;
@@ -82,6 +103,12 @@ export const NOTIFICATION_KINDS = [
   // v0.0.4 W8-a3 §13.9（r3）：会话创建通知规则键（light 待决请求 / silent·direct 创建成功）；
   // 落库词表权威在迁移 0014 的 notifications.kind CHECK。
   'creation_request',
+  // 自动审核链路两枚（草案 §3.4/§3.6，词表权威在迁移 0020 的 notifications.kind CHECK）：
+  // review_auto_pending = complete 分流进 REVIEW/track=auto（等待审核器认领）；
+  // review_auto_passed  = 审核器判通过、任务转 DONE 时通知——触发点在第二片 A2，
+  // 契约定稿与 CHECK 扩容在本片一次做完，A2 不再动 kind 枚举。
+  'review_auto_pending',
+  'review_auto_passed',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 

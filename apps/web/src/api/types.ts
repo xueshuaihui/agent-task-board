@@ -70,6 +70,9 @@ export const NOTIFICATION_KINDS = [
   'lease_expired',
   'review_rejected',
   'task_unblocked',
+  // 0020 草案 §3.4：自动审核轨道的两段通知——前者在 complete_task 分流时推，后者由自动审核通过后推。
+  'review_auto_pending',
+  'review_auto_passed',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 

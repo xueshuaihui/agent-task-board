@@ -97,6 +97,9 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   lease_expired: '租约过期',
   review_rejected: '审核被驳回',
   task_unblocked: '依赖已解锁',
+  // 0020 §3.4：自动审核轨道的两段——「等待自动审核」与「自动审核已通过」。
+  review_auto_pending: '等待自动审核',
+  review_auto_passed: '自动审核通过',
 };
 
 export const FIELD_TYPE_LABEL: Record<FieldType, string> = {

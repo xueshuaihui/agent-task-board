@@ -13,8 +13,8 @@ import {
   reviewSchema,
   stopSchema,
   taskCreateSchema,
-  taskPatchSchema,
   transitionSchema,
+  userTaskPatchSchema,
   type BatchIdsInput,
   type BatchTagsInput,
   type BatchTransitionInput,
@@ -27,8 +27,8 @@ import {
   type ReviewInput,
   type StopInput,
   type TaskCreateInput,
-  type TaskPatchInput,
   type TransitionInput,
+  type UserTaskPatchInput,
 } from '../contract/schemas';
 import { Auth, AuthScope, type RequestAuth } from '../auth/auth.scope';
 import { zod } from '../infra/zod.pipe';
@@ -91,8 +91,12 @@ export class TasksController {
     return this.tasks.getDetail(id);
   }
 
+  /**
+   * 用户面专用 `userTaskPatchSchema`（比 Agent 面基底多一个 `review_mode`）：
+   * 本控制器整条 REST 面都是 UI 凭证组，所以这里是唯一合法的模式写入口。
+   */
   @Patch('tasks/:id')
-  patch(@Param('id') id: string, @Body(zod(taskPatchSchema)) body: TaskPatchInput) {
+  patch(@Param('id') id: string, @Body(zod(userTaskPatchSchema)) body: UserTaskPatchInput) {
     return this.tasks.patch(id, body);
   }
 

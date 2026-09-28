@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AGENT_CONFIRMATION_MODES, DEFAULT_TASK_TYPES, LOG_LINES_MAX } from './enums';
+import { AGENT_CONFIRMATION_MODES, DEFAULT_TASK_TYPES, LOG_LINES_MAX, REVIEW_MODES } from './enums';
 
 /**
  * 20.9 settings 键总表：类型、区间、默认值与「热生效」标记的单一来源。
@@ -34,6 +34,9 @@ export const SETTINGS_SPECS = {
   },
   ui_theme: { schema: z.enum(['system', 'light', 'dark']), default: 'system', hot: true },
   review_reuse_last_opinion: { schema: z.boolean(), default: true, hot: true },
+  // 任务审核方式可配置（草案 §3.1）：建任务未显式选 review_mode 时的全局兜底；
+  // 取值词表与迁移 0020 的 tasks.review_mode CHECK 同值（REVIEW_MODES）。
+  default_review_mode: { schema: z.enum(REVIEW_MODES), default: 'human', hot: true },
   // v0.0.4 W8 §8.2/§8.8「设置 / Agent 创建任务」：创建模式（参数 > 此设置 > 默认轻确认）
   // 与轻确认卡片超时秒数（30s 是 PRD 口径；下限放宽只为测试演练超时路径）。
   agent_creation_mode: {
