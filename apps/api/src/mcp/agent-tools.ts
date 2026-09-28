@@ -286,14 +286,15 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
       name: 'get_vocabulary',
       description:
         '获取服务端当前全部词表口径（只读、无入参）：任务类型默认与生效词表（含自定义）、优先级 0-3 各级含义、' +
-        'confirmation_mode 三模式语义与缺省、任务状态机状态集与允许流转、capability 命名空间规则、' +
-        '技能类型/状态/来源、产物类型、日志级别。写 board.create_task / claim 类入参前先调用本工具拿取值，不要试错',
+        'confirmation_mode 三模式语义与缺省、任务状态机状态集与允许流转、审核方式 review_mode/review_track 与审核结论三值、' +
+        'capability 命名空间规则、技能类型/状态/来源、产物类型、日志级别。写 board.create_task / claim 类入参前先调用本工具拿取值，不要试错',
       input: getVocabularySchema,
       run: async (args, auth) => {
         agentOf(auth);
         return buildVocabulary({
           taskTypes: await ctx.settings.get('task_types'),
           agentCreationMode: await ctx.settings.get('agent_creation_mode'),
+          defaultReviewMode: await ctx.settings.get('default_review_mode'),
         });
       },
     },

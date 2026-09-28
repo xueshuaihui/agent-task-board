@@ -15,8 +15,11 @@ import {
   DEFAULT_TASK_TYPES,
   PRIORITIES,
   PRIORITY_LABEL,
+  REVIEW_MODES,
+  REVIEW_TRACKS,
   STATUS_LABEL,
   TASK_STATUS,
+  type ReviewMode,
 } from './enums';
 import { CAPABILITY_RE } from './schemas';
 import { classifyTransition } from './transitions';
@@ -98,6 +101,8 @@ export interface VocabularyInput {
   taskTypes: string[];
   /** 设置项 agent_creation_mode 当前值（确认模式缺省来源）。 */
   agentCreationMode: (typeof AGENT_CONFIRMATION_MODES)[number];
+  /** 设置项 default_review_mode 当前值（三条建单路共用的审核方式缺省来源）。 */
+  defaultReviewMode: ReviewMode;
 }
 
 /** 从 classifyTransition 派生「当前允许的人工/接口流转」表，不复制矩阵数据。 */
@@ -144,7 +149,31 @@ export function buildVocabulary(input: VocabularyInput) {
       values: [...TASK_STATUS],
       labels: { ...STATUS_LABEL },
       transitions: transitionTable(),
-      note: 'RUNNING 只能由 claim_next_task 认领事务产生；DONE 为终态；Agent 回写路径：complete_task→REVIEW、fail_task→FAILED、block_task→BLOCKED；任务已 BLOCKED 时 fail_task 走受控分支（同三元组同 Token 可再报失败结案）→FAILED',
+      note: 'RUNNING 只能由 claim_next_task 认领事务产生；DONE 为终态；Agent 回写路径：complete_task→REVIEW（review_mode=none 时直接 DONE）、fail_task→FAILED、block_task→BLOCKED；任务已 BLOCKED 时 fail_task 走受控分支（同三元组同 Token 可再报失败结案）→FAILED；REVIEW 之后的出口有两条：人工审核表单，或非执行者的审核者 Token 经 claim_next_review + submit_review 回结论',
+    },
+    // 0020 草案 §3.1/§3.4：审核方式是建单面字段（Agent 的 update_task 写不到它），
+    // 但审核队列的领取条件与 complete 分流都读它——agent 要能自证「这支任务在等谁」。
+    review_mode: {
+      values: [...REVIEW_MODES],
+      semantics: {
+        human: '人工审核：complete_task 落 REVIEW/review_track=human，等人提交审核结论',
+        auto: '等 Agent 审：complete_task 落 REVIEW/review_track=auto，进 claim_next_review 队列；审核者回 ESCALATE 或人点「转人工审核」后换轨 human，此后审核器不再领取（人优先）',
+        none: '免审核：complete_task 直接落 DONE，评论与审计显式记「免审核直通」',
+      },
+      default: input.defaultReviewMode,
+      precedence: '建单入参 review_mode > 设置项 default_review_mode > human',
+      tracks: { values: [...REVIEW_TRACKS] },
+      note: 'review_track 只在 REVIEW 状态有意义，读面恒返回；执行者不得自豁免——update_task 的可写键清单不含 review_mode，' +
+        '审核者 Token 若 == 被审 Run 的执行者 Token，submit_review 拒 SELF_REVIEW_FORBIDDEN',
+    },
+    review_conclusion: {
+      values: ['APPROVE', 'REJECT', 'ESCALATE'] as const,
+      semantics: {
+        APPROVE: '任务转 DONE，推 review_auto_passed',
+        REJECT: '与人工驳回同一条流转（退回 READY 或 BACKLOG），suggestion/reason/detail 三者必填',
+        ESCALATE: '不写审核记录，只把 review_track 换成 human 等人审',
+      },
+      source: 'submit_review 入参（APPROVE/REJECT 同时是 reviews.conclusion 的落库值；ESCALATE 不落 reviews 行）',
     },
     capability: {
       format: 'namespace:value',

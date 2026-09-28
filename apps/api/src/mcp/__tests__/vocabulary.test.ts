@@ -88,6 +88,25 @@ describe('get_vocabulary：一次调用拿全服务端词表', () => {
     expect(result.skill_categories.source).toContain('0018');
     expect(result.skill_categories.uncategorized).toBe('');
     expect(result.skill_categories.note).toContain('可选：');
+    // 0020 §3.7：审核口径进词表——agent 领到 auto 队列的活要能自证「这支任务在等谁」，
+    // 也要知道 update_task 写不到 review_mode（不可自豁免是硬不变量，写在 note 里）。
+    expect(result.review_mode.values).toEqual(['human', 'auto', 'none']);
+    expect(result.review_mode.default).toBe('human');
+    expect(result.review_mode.semantics.none).toContain('直接落 DONE');
+    expect(result.review_mode.tracks.values).toEqual(['auto', 'human']);
+    expect(result.review_mode.note).toContain('SELF_REVIEW_FORBIDDEN');
+    expect(result.review_conclusion.values).toEqual(['APPROVE', 'REJECT', 'ESCALATE']);
+    expect(result.task_status.note).toContain('submit_review');
+    expect(result.task_status.note).toContain('review_mode=none');
+  });
+
+  it('review_mode.default 跟着设置页的 default_review_mode 走（三条建单路同一口径来源）', async () => {
+    await h.settings.patch({ default_review_mode: 'auto' });
+    const result = (await callAgentTool(toolCtx(), agent, 'get_vocabulary', {})) as ReturnType<
+      typeof buildVocabulary
+    >;
+    expect(result.review_mode.default).toBe('auto');
+    await h.settings.patch({ default_review_mode: 'human' });
   });
 
   it('词表与服务端设置同源：改 task_types 后 current 跟随、default 仍是预置五类', async () => {
