@@ -10,6 +10,7 @@ import {
   breakdownProgressReportSchema,
   breakdownSessionActionSchema,
   checkMcpPolicySchema,
+  claimNextReviewSchema,
   claimSchema,
   completeSchema,
   createTaskSchema,
@@ -22,6 +23,7 @@ import {
   progressSchema,
   reportMcpCallSchema,
   reviewFeedbackQuerySchema,
+  submitReviewSchema,
   updateSkillSchema,
   updateTaskSchema,
   waitForResumeSchema,
@@ -44,6 +46,7 @@ import {
   type ProgressInput,
   type ReportMcpCallInput,
   type ReviewFeedbackInput,
+  type SubmitReviewToolInput,
   type UpdateSkillInput,
   type UpdateTaskInput,
   type WaitResumeInput,
@@ -53,6 +56,7 @@ import type { AgentQueryService } from '../agent/agent-query.service';
 import type { ClaimService } from '../agent/claim.service';
 import type { LeaseService } from '../agent/lease.service';
 import type { McpPolicyService } from '../agent/mcp-policy.service';
+import type { ReviewQueueService } from '../agent/review-queue.service';
 import type { WritebackService } from '../agent/writeback.service';
 import type { BreakdownService } from '../breakdown/breakdown.service';
 import type { CreationService } from '../creation/creation.service';
@@ -97,6 +101,8 @@ export interface AgentToolContext {
   creation: CreationService;
   /** B6 词表工具：get_vocabulary 需要读设置现值（task_types / agent_creation_mode），与校验同源。 */
   settings: SettingsService;
+  /** 0020 草案 §3.3（A2）：自动审核队列两工具（claim_next_review / submit_review）的落点。 */
+  reviewQueue: ReviewQueueService;
 }
 
 export interface AgentTool {
@@ -116,7 +122,9 @@ export interface AgentTool {
  * + v0.0.4 §16.1 的 update_task（全字段 PATCH：RUNNING 需持当前租约、BACKLOG/READY 免租约、
  * 其余状态拒并在错误里回显该走的链路；字段校验复用 TasksService 那一份，不写第二套）
  * + v0.0.4 §16.1 的 update_skill（技能全字段 PATCH：字段与守卫复用 SkillsService.patch 那一份，
- * status/mcp_dependencies 不在可写面，默认技能 SKILL_READONLY，同样不写第二套）。
+ * status/mcp_dependencies 不在可写面，默认技能 SKILL_READONLY，同样不写第二套）
+ * + 0020 草案 §3.3（A2）的自动审核队列两工具 claim_next_review / submit_review
+ * （结论落点与人工审核同一条 TasksService.submitReview，审核者 Token 认领、自审硬门禁）。
  * 业务逻辑全在 Agent 服务层，这里只做「工具名 → 服务方法」的映射，
  * 因此 REST 与 MCP 共用同一套校验与错误语义（13 章错误码只有一份实现）。
  */
@@ -133,6 +141,29 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
       description: '原子认领下一个可执行任务并建立租约（9.3）',
       input: claimSchema,
       run: (args, auth) => ctx.claims.claim(args as ClaimInput, auth),
+    },
+    // ------------------------------------------- 0020 草案 §3.3（A2）：自动审核队列（审核者 Token 认领，业务逻辑全在 ReviewQueueService）
+    {
+      name: 'claim_next_review',
+      description:
+        '原子领取一支「待自动审核」任务（只读、不产生占用位）：队列 = REVIEW ∧ review_mode=auto ∧ ' +
+        'review_track=auto（已换轨 human 的不再领取，人优先），并排除被审 Run 由本 Token 执行的任务（防自审）。' +
+        '返回 task（任务详情，形状同 get_task）+ review_run（被审 Run 摘要，含产物）+ logs（执行日志首页）；' +
+        '无可领时返回 {task:null, reason}，不报错。审完用 submit_review 回结论',
+      input: claimNextReviewSchema,
+      run: (args, auth) => ctx.reviewQueue.claimNextReview(auth),
+    },
+    {
+      name: 'submit_review',
+      description:
+        '回自动审核三值结论（0020 草案 §3.3/§3.4，字段对齐人工审核表单）：' +
+        'APPROVE=任务转已完成并推 review_auto_passed / REJECT=与人工驳回同一条流转（退回 READY 或 BACKLOG，' +
+        'suggestion/reason/detail 三者必填，通知走现行 review_rejected 链）/ ESCALATE=不写审核记录，' +
+        '只把任务换轨 review_track=human 并推 review_pending 等人审。' +
+        '审核者 Token == 被审 Run（任务 current_run_id）的执行者 Token 一律拒 SELF_REVIEW_FORBIDDEN；' +
+        '任务不在自动审核队列（非 REVIEW / review_mode≠auto / 已换轨 human）拒 409。结论落 reviews 行带 reviewer_type=agent + Token 名留痕',
+      input: submitReviewSchema,
+      run: (args, auth) => ctx.reviewQueue.submit(args as SubmitReviewToolInput, auth),
     },
     {
       name: 'get_task',

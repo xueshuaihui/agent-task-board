@@ -18,6 +18,7 @@ import { SkillsService } from '../../skills/skills.service';
 import { ClaimService } from '../claim.service';
 import { LeaseService } from '../lease.service';
 import { McpPolicyService } from '../mcp-policy.service';
+import { ReviewQueueService } from '../review-queue.service';
 import { WritebackService } from '../writeback.service';
 import { TasksService } from '../../tasks/tasks.service';
 import type { ArtifactsService } from '../../artifacts/artifacts.service';
@@ -47,6 +48,8 @@ export interface AgentHarness {
   breakdown: BreakdownService;
   /** W8 §8.7：board.create_task 的会话创建闭环上下文（直建/静默；light 占位）。 */
   creation: CreationService;
+  /** 0020 §3.3（A2）：自动审核队列两工具（claim_next_review / submit_review）的上下文。 */
+  reviewQueue: ReviewQueueService;
   /**
    * §16.1 `update_task`：Agent 侧编辑的落库与字段校验复用 TasksService 那一份 patch 实现，
    * 守卫在 WritebackService.updateTask（构造时注入进来，与真机 AgentModule import TasksModule 同形）。
@@ -88,7 +91,10 @@ export function createAgentHarness(): AgentHarness {
   );
   const writeback = new WritebackService(prisma, leases, audit, events, notifications, query, tasks);
   const policy = new McpPolicyService(prisma, audit);
-  const breakdown = new BreakdownService(prisma, audit, events);
+  // 0020 草案 §3.3（A2）：自动审核队列服务——构造与 AgentModule 的装配同形
+  // （prisma + TasksService 的人审同源通道 + AgentQueryService 的载荷读取）。
+  const reviewQueue = new ReviewQueueService(prisma, tasks, query);
+  const breakdown = new BreakdownService(prisma, settings, audit, events);
   const creation = new CreationService(prisma, settings, audit, events, skills, notifications);
 
   return {
@@ -106,6 +112,7 @@ export function createAgentHarness(): AgentHarness {
     policy,
     breakdown,
     creation,
+    reviewQueue,
     tasks,
     agent: async (name: string, capabilities: string[] = []) => {
       const id = newId();

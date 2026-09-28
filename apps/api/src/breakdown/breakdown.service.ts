@@ -11,6 +11,7 @@ import { BREAKDOWN_REVIEWING_TIMEOUT_MS } from '../jobs/breakdown-timeout.job';
 import { AuditService } from '../infra/audit.service';
 import { EventsService } from '../infra/events.service';
 import { PrismaService } from '../infra/prisma.service';
+import { SettingsService } from '../infra/settings.service';
 
 /** §7.2 阶段 1：begin_breakdown 入参（需求文本、分组、父任务标题、预估任务数）。 */
 export interface BreakdownBeginInput {
@@ -92,6 +93,7 @@ const SESSION_COLUMNS = `
 export class BreakdownService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly settings: SettingsService,
     private readonly audit: AuditService,
     private readonly events: EventsService,
   ) {}
@@ -327,16 +329,23 @@ export class BreakdownService {
           ).map((row) => row.id),
     );
 
+    // 0020 草案 §3.1 + 2026-09-28 用户拍板：拆解建的父单与子任务同样吃全局默认键
+    // `default_review_mode`——三条建单路（REST 人建、MCP 直建、拆解）口径必须一致，
+    // 否则用户在设置页选了 auto，Agent 拆出来的子任务还是全部堆在人工待审列。
+    // 必须在事务**外**取：settings 走的是主连接，SQLite 的写事务持锁期间跨连接读会阻塞到超时。
+    const reviewMode = await this.settings.resolveReviewMode();
+
     const created = await this.prisma.$transaction(async (tx) => {
       const parentTaskId = await nextTaskId(tx);
       await tx.$executeRawUnsafe(
-        `INSERT INTO tasks (id, group_id, type, title, description, status, priority, skills, breakdown_session_id)
-         VALUES (?, ?, '需求', ?, ?, 'BACKLOG', 3, '[]', ?)`,
+        `INSERT INTO tasks (id, group_id, type, title, description, status, priority, skills, breakdown_session_id, review_mode)
+         VALUES (?, ?, '需求', ?, ?, 'BACKLOG', 3, '[]', ?, ?)`,
         parentTaskId,
         session.group_id ?? DEFAULT_GROUP_ID,
         session.parent_title,
         session.parent_description,
         sessionId,
+        reviewMode,
       );
 
       const refToTask = new Map<string, string>();
@@ -347,8 +356,8 @@ export class BreakdownService {
         taskIds.push(taskId);
         const skills = parseSkillIdsColumn(draft.skill_ids).ids.filter((value) => skillIds.has(value));
         await tx.$executeRawUnsafe(
-          `INSERT INTO tasks (id, group_id, parent_task_id, sort_order, type, title, description, status, priority, skills, breakdown_session_id)
-           VALUES (?, ?, ?, ?, '子任务', ?, ?, 'BACKLOG', ?, ?, ?)`,
+          `INSERT INTO tasks (id, group_id, parent_task_id, sort_order, type, title, description, status, priority, skills, breakdown_session_id, review_mode)
+           VALUES (?, ?, ?, ?, '子任务', ?, ?, 'BACKLOG', ?, ?, ?, ?)`,
           taskId,
           session.group_id ?? DEFAULT_GROUP_ID,
           parentTaskId,
@@ -358,6 +367,7 @@ export class BreakdownService {
           draft.priority ?? 3,
           JSON.stringify(skills),
           sessionId,
+          reviewMode,
         );
         await this.audit.record(
           {

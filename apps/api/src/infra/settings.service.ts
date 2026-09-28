@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ApiException } from '../contract/errors';
+import type { ReviewMode } from '../contract/enums';
 import {
   DEFAULT_SETTINGS,
   decodeSetting,
@@ -37,6 +38,19 @@ export class SettingsService {
 
   async get<K extends SettingsKey>(key: K): Promise<Settings[K]> {
     return (await this.all())[key];
+  }
+
+  /**
+   * 建单面的审核方式取数（0020 草案 §3.1 + 2026-09-28 用户拍板「全局设置只管一处口径」）：
+   * 显式选值优先，缺省落 `default_review_mode`。
+   *
+   * 收在这一处而不是各建单面各写一遍 `?? settings.get(...)`：本产品有**三条**建单路
+   * ——REST 用户建单、MCP `board.create_task`（direct/silent/light）、拆解确认页建子任务。
+   * 三条若口径不一，用户设了 auto 却发现「Agent 建的子任务还是要我审」，全局键就成了假开关。
+   * 取值权威仍只有这个键与任务列 `review_mode`，不新增第三种来源。
+   */
+  async resolveReviewMode(explicit?: ReviewMode): Promise<ReviewMode> {
+    return explicit ?? (await this.get('default_review_mode'));
   }
 
   invalidate(): void {

@@ -8,6 +8,7 @@ import {
   commentSchema,
   commentsQuerySchema,
   dependencyCreateSchema,
+  escalateReviewSchema,
   listQuerySchema,
   paginationSchema,
   reviewSchema,
@@ -22,6 +23,7 @@ import {
   type CommentInput,
   type CommentsQuery,
   type DependencyCreateInput,
+  type EscalateReviewInput,
   type ListQuery,
   type Pagination,
   type ReviewInput,
@@ -118,6 +120,16 @@ export class TasksController {
   @Post('tasks/:id/review')
   review(@Param('id') id: string, @Body(zod(reviewSchema)) body: ReviewInput) {
     return this.tasks.submitReview(id, body);
+  }
+
+  /**
+   * 0020 草案 §3.4 的换轨出口（卡片「转人工审核」按钮）：把 REVIEW/track=auto 的任务
+   * 切成 track=human 并推 `review_pending`，任务留在待审核列。与上一条审核端点同组
+   * （本控制器整条 REST 面都是 UI 凭证，Agent 凭证打过来 403 由 AuthGuard 默认 scope 守住）。
+   */
+  @Post('tasks/:id/review/escalate')
+  escalateReview(@Param('id') id: string, @Body(zod(escalateReviewSchema)) body: EscalateReviewInput) {
+    return this.tasks.escalateToHuman(id, { type: 'user' }, body.reason);
   }
 
   @Post('tasks/:id/comments')

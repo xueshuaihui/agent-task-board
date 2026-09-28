@@ -2,6 +2,9 @@ export const ERROR_STATUS = {
   UNAUTHORIZED: 401,
   INVALID_BACKUP_NAME: 400,
   FORBIDDEN: 403,
+  // 0020 草案 §3.3/Q4：自动审核自审硬门禁——审核者 Token == 被审 Run 的执行者 Token 时拒。
+  // 13 章错误码只有一份实现，REST 与 MCP 共用（审核器在 MCP 面拿到的是 isError + 同一 code）。
+  SELF_REVIEW_FORBIDDEN: 403,
   NOT_FOUND: 404,
   ARTIFACT_LOST: 404,
   BACKUP_NOT_FOUND: 404,

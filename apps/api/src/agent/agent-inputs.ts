@@ -7,6 +7,7 @@ import {
   breakdownProgressReportSchema,
   breakdownSessionActionSchema,
   checkMcpPolicySchema,
+  claimNextReviewSchema,
   claimSchema,
   completeSchema,
   createTaskSchema,
@@ -18,6 +19,7 @@ import {
   progressSchema,
   reportMcpCallSchema,
   reviewFeedbackQuerySchema,
+  submitReviewSchema,
   updateSkillSchema,
   updateTaskSchema,
   waitForResumeSchema,
@@ -36,6 +38,8 @@ export type ReviewFeedbackInput = z.infer<typeof reviewFeedbackQuerySchema>;
 export type WaitResumeInput = z.infer<typeof waitForResumeSchema>;
 export type CheckMcpPolicyInput = z.infer<typeof checkMcpPolicySchema>;
 export type ReportMcpCallInput = z.infer<typeof reportMcpCallSchema>;
+// 0020 草案 §3.3（A2）：自动审核队列两工具的入参类型。
+export type SubmitReviewToolInput = z.infer<typeof submitReviewSchema>;
 export type {
   BreakdownBeginToolInput,
   BreakdownDraftReportInput,
@@ -65,6 +69,7 @@ export {
   breakdownProgressReportSchema,
   breakdownSessionActionSchema,
   checkMcpPolicySchema,
+  claimNextReviewSchema,
   claimSchema,
   completeSchema,
   createTaskSchema,
@@ -76,6 +81,7 @@ export {
   progressSchema,
   reportMcpCallSchema,
   reviewFeedbackQuerySchema,
+  submitReviewSchema,
   updateSkillSchema,
   updateTaskSchema,
   waitForResumeSchema,

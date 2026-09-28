@@ -6,7 +6,13 @@ import {
   TAG_MAX_LENGTH,
   TAGS_MAX_PER_TASK,
 } from './enums';
-import { capabilitySchema, idLike, taskPatchSchema, type TaskPatchInput } from './schemas';
+import {
+  capabilitySchema,
+  idLike,
+  reviewSchema,
+  taskPatchSchema,
+  type TaskPatchInput,
+} from './schemas';
 import { skillPatchSchema, type SkillPatchInput } from '../skills/skills.dto';
 import {
   ARTIFACT_TYPE_DESC,
@@ -254,6 +260,60 @@ export const reviewFeedbackQuerySchema = z.object({
     .default(5)
     .describe('返回条数，1-50，缺省 5'),
 });
+
+// ------------------------------------------- 0020 草案 §3.3：自动审核队列两工具（A2）
+
+/** `claim_next_review` 无入参：队列取哪一支由服务端定（pinned/priority/created_at 排序 + 自审排除），审核器不挑单。 */
+export const claimNextReviewSchema = z.object({});
+
+/**
+ * `submit_review` 三值结论。ESCALATE 只活在 Agent 面（草案 §4-Q3）：reviews 表的 CHECK
+ * 仍只允许 APPROVE/REJECT，ESCALATE 的落点是换轨 `review_track=human`，不写审核记录。
+ *
+ * 结论之外的字段**逐字取 REST `reviewSchema.shape` 的同一批 zod 实例**（照 `update_task`
+ * 的做法，不抄第二套校验）；REJECT 必填三字段这条表单级规则也**不在这里重写**——
+ * 服务层把 APPROVE/REJECT 的入参映射回 `ReviewInput` 后过同一个 `reviewSchema.parse`，
+ * 与人工审核共享同一份 superRefine（形状不锁在 tools/list 里，靠服务端那一道闸）。
+ * 不收 `run_id`：被审 Run 恒为任务的 `current_run_id`，允许自报 run_id 等于允许把自审门禁
+ * （SELF_REVIEW_FORBIDDEN 按 current_run 的执行者 Token 判定）指到别的 Run 上绕开。
+ */
+const reviewToolField = <K extends keyof typeof reviewSchema.shape>(key: K, desc: string) =>
+  reviewSchema.shape[key].describe(desc);
+
+export const AGENT_REVIEW_CONCLUSIONS = ['APPROVE', 'REJECT', 'ESCALATE'] as const;
+
+export const submitReviewSchema = z
+  .object({
+    task_id: idParam.describe(
+      '要审核的任务 ID（claim_next_review 领到的那支）：须处于 REVIEW 且 review_mode=auto、review_track=auto；被审 Run 固定取该任务的 current_run_id',
+    ),
+    conclusion: z
+      .enum(AGENT_REVIEW_CONCLUSIONS)
+      .describe(
+        '审核结论，三选一：APPROVE=通过（任务转已完成 DONE，落 reviews 行 reviewer_type=agent）/ ' +
+          'REJECT=驳回（退回需求池或待执行，必填 suggestion/reason/detail，口径与人工审核同一份表单校验）/ ' +
+          'ESCALATE=不确定升级人工（不写审核记录，只把任务换轨 review_track=human 并通知人，reason 写明依据）',
+      ),
+    suggestion: reviewToolField(
+      'suggestion',
+      '审核建议（≤5000 字符）：APPROVE 可省，REJECT 必填，ESCALATE 不用；落 reviews 行原样存储',
+    ),
+    reason: reviewToolField(
+      'reason',
+      '理由（≤5000 字符）：REJECT 必填；ESCALATE 时写「为什么要升级人工」（进系统评论与通知，不落 reviews 行）',
+    ),
+    detail: reviewToolField('detail', '细节补充（≤5000 字符）：REJECT 必填，其余可省'),
+    return_to: reviewToolField(
+      'return_to',
+      '驳回退回目标：BACKLOG（需求池）或 READY（待执行）；缺省 READY。仅 REJECT 生效，APPROVE/ESCALATE 传了会被表单校验拒',
+    ),
+    priority_adj: reviewToolField(
+      'priority_adj',
+      '审核时改优先级（0-3 整数，0 紧急 / 3 低）：可省，传了就覆盖任务当前优先级（与人工审核同口径）',
+    ),
+  })
+  .strict();
+export type SubmitReviewToolInput = z.infer<typeof submitReviewSchema>;
 
 /** v0.0.4 W6 §16.1 技能工具与策略工具里的技能 ID（`skl_` + uuidv7，最长 40，不放 idLike 的 24）。 */
 export const skillIdParam = z.string().trim().min(1).max(64);

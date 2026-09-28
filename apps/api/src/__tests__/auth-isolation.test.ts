@@ -99,6 +99,8 @@ describe('Agent Token 不能调用任何用户接口', () => {
         reason: 'r',
         detail: 'd',
       }),
+      // 0020 A2 §3.4 的换轨出口与 review 同组（UI scope）：Agent Token 打过来同样 403。
+      agent.claims.post(`${API}/tasks/${readyTaskId}/review/escalate`, {}),
       agent.claims.get(`${API}/settings`),
       agent.claims.get(`${API}/tokens`),
       agent.claims.get(`${API}/field-defs`),

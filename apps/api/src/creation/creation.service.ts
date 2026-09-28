@@ -516,12 +516,19 @@ export class CreationService implements OnModuleDestroy {
     const skillsJson =
       skillIds.length === 0 ? '[]' : await this.skills.normalizeTaskBindings(skillIds.map((id) => ({ skill_id: id })));
 
+    // 0020 草案 §3.1 + 2026-09-28 用户拍板：Agent 直建/轻确认建的单同样吃全局默认键。
+    // Agent 面**没有** review_mode 入参位（Q4：执行者不得自豁免），只能继承用户在设置页定的值，
+    // 所以这条继承递不出口子——豁免的决定权始终在人那一侧。
+    // 取数必须在事务**外**：settings 走主连接，SQLite 写事务持锁期间跨连接读会阻塞到超时
+    // （缓存冷启时正是首条建单，生产同样会撞）。
+    const reviewMode = await this.settings.resolveReviewMode();
+
     const taskId = await this.prisma.$transaction(async (tx) => {
       const id = await nextTaskId(tx);
       await tx.$executeRawUnsafe(
         `INSERT INTO tasks (id, group_id, type, title, description, status, priority, tags, skills,
-                            origin_type, origin_agent, origin_session_id, confirmation_mode)
-         VALUES (?, ?, ?, ?, ?, 'BACKLOG', ?, ?, ?, 'agent', ?, ?, ?)`,
+                            origin_type, origin_agent, origin_session_id, confirmation_mode, review_mode)
+         VALUES (?, ?, ?, ?, ?, 'BACKLOG', ?, ?, ?, 'agent', ?, ?, ?, ?)`,
         id,
         draft.group_id,
         draft.type,
@@ -533,6 +540,7 @@ export class CreationService implements OnModuleDestroy {
         agentName,
         draft.session_id,
         mode,
+        reviewMode,
       );
       // §8.7：按 session_id upsert——首见建会话（started_at/last_active_at 吃列默认值，
       // 首条创建即计 1），再见刷新活跃时刻并计数；task_count 只在真正建成任务时 +1（本事务内）。

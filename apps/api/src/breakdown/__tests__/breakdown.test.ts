@@ -3,7 +3,7 @@ import { ApiException } from '../../contract/errors';
 import { BreakdownService, type BreakdownDraftInput } from '../breakdown.service';
 import type { Task } from '@prisma/client';
 import { createTestApp, type TestApp } from '../../__tests__/helpers/http-app';
-import { uiSender } from '../../__tests__/helpers/seed';
+import { uiSender, API } from '../../__tests__/helpers/seed';
 
 /**
  * v0.0.4 W7 拆解服务层单测（§7.2 全生命周期 + §7.5 技能解析 + §7.8 边界）。
@@ -120,6 +120,36 @@ describe('拆解链路主路径：begin → progress → drafts → finish（技
 
     const audit = await t.prisma.auditLog.findMany({ where: { action: 'breakdown_confirm', targetId: session.id } });
     expect(audit).toHaveLength(1);
+  });
+
+  it('拆解建的父单与子任务吃全局默认键 `default_review_mode`（2026-09-28 拍板「三条建单路一处口径」）', async () => {
+    // 用户在设置页选了 auto，拆出来的子任务就必须进自动审核队列；这条路上没有 review_mode
+    // 入参位（Agent 不得自豁免），全局键是唯一决定权来源。
+    const ui = uiSender(t);
+    expect((await ui.patch(`${API}/settings`, { default_review_mode: 'auto' })).status).toBe(200);
+    try {
+      const session = await svc.begin({
+        requirement_text: '继承全局审核方式的拆解',
+        parent_title: '继承父单',
+        estimated_tasks: 1,
+        agent_name: 'qoder',
+      });
+      await svc.reportDraft(session.id, { ref: 'd1', title: '继承子任务' });
+      await svc.finish(session.id);
+      const confirmed = await svc.confirm(session.id);
+
+      const rows = await t.prisma.task.findMany({
+        where: { id: { in: [confirmed.parent_task_id, ...confirmed.task_ids] } },
+      });
+      expect(rows).toHaveLength(2);
+      for (const row of rows) {
+        expect(row.reviewMode).toBe('auto');
+        // 轨道位由 complete 分流写（草案 §3.4），建单期恒 human。
+        expect(row.reviewTrack).toBe('human');
+      }
+    } finally {
+      expect((await ui.patch(`${API}/settings`, { default_review_mode: 'human' })).status).toBe(200);
+    }
   });
 });
 

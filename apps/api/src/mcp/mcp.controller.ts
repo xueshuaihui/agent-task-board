@@ -7,6 +7,7 @@ import { AgentQueryService } from '../agent/agent-query.service';
 import { ClaimService } from '../agent/claim.service';
 import { LeaseService } from '../agent/lease.service';
 import { McpPolicyService } from '../agent/mcp-policy.service';
+import { ReviewQueueService } from '../agent/review-queue.service';
 import { WritebackService } from '../agent/writeback.service';
 import { BreakdownService } from '../breakdown/breakdown.service';
 import { CreationService } from '../creation/creation.service';
@@ -40,6 +41,8 @@ export class McpController {
     private readonly breakdown: BreakdownService,
     private readonly creation: CreationService,
     private readonly settings: SettingsService,
+    /** 0020 草案 §3.3（A2）：自动审核队列两工具。 */
+    private readonly reviewQueue: ReviewQueueService,
   ) {}
 
   @Post()
@@ -54,6 +57,7 @@ export class McpController {
       breakdown: this.breakdown,
       creation: this.creation,
       settings: this.settings,
+      reviewQueue: this.reviewQueue,
     };
     // 每请求一个 server：Token 上下文（tokenId / capabilities）是请求级的，复用会串能力集合。
     // 唤醒模式同样每请求现读：mcp_wake_mode 在 20.9 标了 hot，SettingsService 有进程内缓存，

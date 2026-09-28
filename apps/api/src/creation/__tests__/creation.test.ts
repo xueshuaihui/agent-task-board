@@ -36,6 +36,7 @@ const toolCtx = () => ({
   query: h.query,
   skills: h.skills,
   policy: h.policy,
+  reviewQueue: h.reviewQueue,
   breakdown: h.breakdown,
   creation: h.creation,
   settings: h.settings,
@@ -414,6 +415,34 @@ describe('board.create_task 直接创建（direct）', () => {
     );
     expect(JSON.parse(rows[0]!.skills)).toEqual([{ skill_id: seed.id, version: DEFAULT_SKILL_VERSION }]);
     expect(result.skill_resolution.unresolved).toEqual(['查无此技能']);
+  });
+
+  it('Agent 直建面吃全局默认键 `default_review_mode`（2026-09-28 拍板「三条建单路一处口径」）', async () => {
+    // 这条继承的意义：Agent 面**没有** review_mode 入参位（Q4 执行者不得自豁免），
+    // 所以豁免只能由人在设置页决定——全局键必须管到这一条路，否则设了 auto 也没用。
+    await h.settings.patch({ default_review_mode: 'auto' });
+    try {
+      const result = (await call('board.create_task', {
+        ...baseInput,
+        title: '为导出接口加分页游标',
+        session_id: 'conv-review-mode-default',
+        confirmation_mode: 'direct',
+      })) as { task_id: string };
+      const row = await h.prisma.task.findUnique({ where: { id: result.task_id } });
+      expect(row?.reviewMode).toBe('auto');
+      // 轨道位不在此处换：只有 complete 分流才写 review_track（草案 §3.4）。
+      expect(row?.reviewTrack).toBe('human');
+    } finally {
+      await h.settings.patch({ default_review_mode: 'human' });
+    }
+    // 复位后新建的单回到 human——缓存失效路径也在这条用例里（settings 读走内存缓存）。
+    const after = (await call('board.create_task', {
+      ...baseInput,
+      title: '为导出接口补单测',
+      session_id: 'conv-review-mode-reset',
+      confirmation_mode: 'direct',
+    })) as { task_id: string };
+    expect((await h.prisma.task.findUnique({ where: { id: after.task_id } }))?.reviewMode).toBe('human');
   });
 });
 

@@ -38,6 +38,7 @@ beforeAll(async () => {
     query: h.query,
     skills: h.skills,
     policy: h.policy,
+    reviewQueue: h.reviewQueue,
     breakdown: h.breakdown,
     creation: h.creation,
     settings: h.settings,
