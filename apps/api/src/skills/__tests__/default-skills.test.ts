@@ -3,6 +3,7 @@ import { createTestApp, errorCode, type Sender, type TestApp } from '../../__tes
 import { API, uiSender } from '../../__tests__/helpers/seed';
 import { DEFAULT_SKILL_SEEDS, ensureDefaultSkills } from '../default-skills';
 import { DEFAULT_SKILL_VERSION } from '../skills.dto';
+import { SkillsService } from '../skills.service';
 
 /**
  * v0.0.4 #19 ① 默认技能首次启动预置（PRD §20.5-15、验收 49）。
@@ -43,7 +44,7 @@ describe('默认技能预置种子（①）', () => {
       current_version: DEFAULT_SKILL_VERSION,
     });
     expect(detail.body.content.blocks.length).toBeGreaterThan(0);
-    // §9.6 默认技能无版本历史：预置不建 skill_versions 行。
+    // §9.6 默认技能无版本历史：预置不建 skill_versions 行（绑定侧的「可解析」口径见最后一条用例）。
     expect(await t.prisma.skillVersion.count({ where: { skillId: DEFAULT_SKILL_SEEDS[0]!.id } })).toBe(0);
     // 分类收口（C-2）：seed 提供的 category 必须真的写进 0015 的新列，tags 保持 §9.2 的纯自由标签。
     // 0925 树化：code-review 样例 category=「质量与安全」（作废旧值「质量保障」的语义续位）。
@@ -71,5 +72,38 @@ describe('默认技能预置种子（①）', () => {
     const defaults = await ui.get(`${API}/skills?source=default`);
     expect(defaults.body.total).toBe(DEFAULT_SKILL_SEEDS.length);
     expect(defaults.body.items.map((row: { id: string }) => row.id)).toContain(DEFAULT_SKILL_SEEDS[0]!.id);
+  });
+
+  /**
+   * 上一个用例锁住的 §9.6（默认技能不建 skill_versions 行）与任务绑定的版本校验相撞：
+   * 内置技能的 currentVersion='builtin' 在版本表里查无此行，绑定因此 422
+   * `unknown_version`——客户端表现为「编辑任务选技能就 toast 报错」，且首装库里
+   * 125 条内置技能全部命中（用户报障的那条链路）。修法是写侧与读侧同口径，
+   * 这里两端一起钉住：绑定能写进引用，下发能解析出内容。
+   */
+  it('内置默认技能可绑定到任务并随任务下发（无版本行不拦绑定）', async () => {
+    const seed = DEFAULT_SKILL_SEEDS[0]!;
+    const taskRes = await ui.post(`${API}/tasks`, { title: '绑内置技能', type: '需求' });
+    expect(taskRes.status).toBe(201);
+    const taskId = taskRes.body.id as string;
+
+    const patched = await ui.patch(`${API}/tasks/${taskId}`, { skills: [{ skill_id: seed.id }] });
+    expect(patched.status).toBe(200);
+    expect(patched.body.skills[0]).toMatchObject({ skill_id: seed.id, version: DEFAULT_SKILL_VERSION });
+
+    // 版本表确实没有这行——下发必须回落 skills 当前内容，而不是给出空载荷。
+    expect(await t.prisma.skillVersion.count({ where: { skillId: seed.id } })).toBe(0);
+    const skills = t.app.get(SkillsService);
+    const payloads = await skills.resolveForTask(JSON.stringify(patched.body.skills));
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]).toMatchObject({ skill_id: seed.id, version: DEFAULT_SKILL_VERSION });
+    expect(payloads[0]!.content.blocks.length).toBeGreaterThan(0);
+
+    // 显式传不存在的版本仍然拒（放松的只是「current 且无快照」这一态）。
+    const bad = await ui.patch(`${API}/tasks/${taskId}`, {
+      skills: [{ skill_id: seed.id, version: 'v9.9.9' }],
+    });
+    expect(bad.status).toBe(422);
+    expect(errorCode(bad)).toBe('VALIDATION_FAILED');
   });
 });

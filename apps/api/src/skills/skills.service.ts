@@ -582,8 +582,14 @@ export class SkillsService {
   // ---------------------------------------------------------------- 任务绑定（10.3）
 
   /**
-   * PATCH /tasks/:id 的 skills 校验：skill 存在、version 存在（缺省用 current）。
+   * PATCH /tasks/:id 的 skills 校验：skill 存在、version 可解析（缺省用 current）。
    * 返回补全 version 后的 JSON 串（存库口径：引用始终带显式版本，下发时不用再猜）。
+   *
+   * 「可解析」的判据必须与下发侧 resolveForTask 同源，而不是「非版本表不可」：
+   * §9.6 明文默认技能无版本历史，ensureDefaultSkills 只写 skills 行、不写 skill_versions，
+   * 其 currentVersion='builtin' 因此在版本表里查无此行。按旧判据这等于禁止绑定任何内置技能
+   * ——随包 125 条首装即全部命中（422 unknown_version，客户端表现为选技能就 toast 报错），
+   * 而下发链路本来就能把这条引用解析成技能行的当前内容。
    */
   async normalizeTaskBindings(refs: TaskSkillRef[]): Promise<string> {
     const resolved: TaskSkillRef[] = [];
@@ -598,7 +604,8 @@ export class SkillsService {
         ]);
       }
       const version = ref.version ?? skill.currentVersion;
-      if (!skill.versions.some((row) => row.version === version)) {
+      const resolvable = version === skill.currentVersion || skill.versions.some((row) => row.version === version);
+      if (!resolvable) {
         throw new ApiException(
           'VALIDATION_FAILED',
           `技能 ${ref.skill_id} 不存在版本 ${version}`,
