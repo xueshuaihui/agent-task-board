@@ -57,6 +57,8 @@ function card(status: TaskStatus, pinned = false): TaskCard {
     custom_fields: {},
     group_id: null,
     origin_type: 'user',
+    review_mode: 'human',
+    review_track: 'human',
   };
 }
 

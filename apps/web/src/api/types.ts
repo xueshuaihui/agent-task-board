@@ -38,6 +38,18 @@ export type StopReason = (typeof STOP_REASONS)[number];
 export const REVIEW_CONCLUSIONS = ['APPROVE', 'REJECT'] as const;
 export type ReviewConclusion = (typeof REVIEW_CONCLUSIONS)[number];
 
+/** 0020 草案 §3.1：任务级审核方式（human 人审 / auto 进自动审核队列 / none 免审直通）。 */
+export const REVIEW_MODES = ['human', 'auto', 'none'] as const;
+export type ReviewMode = (typeof REVIEW_MODES)[number];
+
+/** §3.4：当前由谁审——自动轨可被 Agent 换轨成人轨，换轨后 Agent 不再领取。 */
+export const REVIEW_TRACKS = ['auto', 'human'] as const;
+export type ReviewTrack = (typeof REVIEW_TRACKS)[number];
+
+/** §3.2：审核记录署名（人 = UI 操作者，不署名；Agent = Token 名）。 */
+export const REVIEWER_TYPES = ['user', 'agent'] as const;
+export type ReviewerType = (typeof REVIEWER_TYPES)[number];
+
 export const RETURN_TARGETS = ['BACKLOG', 'READY'] as const;
 export type ReturnTarget = (typeof RETURN_TARGETS)[number];
 
@@ -249,6 +261,12 @@ export interface TaskCard {
   parent?: { id: string; title: string; done: number; total: number } | null;
   /** v0.0.4 §8.6（W8-a4）：任务来源（'user' | 'agent'），与 api TaskCardDto 对齐；agent 直建任务挂 5 秒撤销入口。 */
   origin_type: string;
+  /**
+   * 0020 草案 §3.6：审核方式与当前审核轨道，卡片快照与详情同源常返。
+   * 看板 REVIEW 列的「等待自动审核 / 待你审核」两态、审核入口的显隐都读这两个键。
+   */
+  review_mode: ReviewMode;
+  review_track: ReviewTrack;
 }
 
 export interface CardArtifact {
@@ -391,6 +409,9 @@ export interface Review {
   detail: string;
   return_to: string | null;
   priority_adj: number | null;
+  /** 0020 §3.2：审核人身份位。人审不署名（reviewer_name 为 null），Agent 审记 Token 名。 */
+  reviewer_type: ReviewerType;
+  reviewer_name: string | null;
   created_at: string | null;
 }
 
@@ -580,6 +601,11 @@ export interface Settings {
   light_confirm_timeout_seconds: number;
   /** #46 唤醒词工作模式，经 initialize 的 instructions 与每次工具响应的模式行下发（hot：改后下一次工具调用即生效）。 */
   mcp_wake_mode: McpWakeMode;
+  /**
+   * 0020 §3.5（2026-09-28 拍板「三条建单路一处口径」）：REST 建单、Agent 直建、拆解确认页
+   * 建子任务共用的默认审核方式。任务级显式 `review_mode` 才覆盖它。
+   */
+  default_review_mode: ReviewMode;
 }
 export type SettingsKey = keyof Settings;
 
@@ -679,6 +705,11 @@ export interface TaskCreateInput {
    * 当前有效版本；未知技能/不可解析版本 → 422 `details[].code` = `unknown_skill` / `unknown_version`。
    */
   skills?: { skill_id: string; version?: string }[];
+  /**
+   * 0020 §3.1/§3.5：任务级审核方式。不传 = 吃设置项 `default_review_mode`（服务端
+   * `resolveReviewMode` 是唯一口径来源）；只有人这一侧能写，Agent 建单/改单没有这个入参位。
+   */
+  review_mode?: ReviewMode;
 }
 
 export type TaskPatchInput = Partial<Omit<TaskCreateInput, 'depends_on' | 'dependency_type'>> & {
@@ -705,6 +736,11 @@ export interface ReviewInput {
   return_to?: ReturnTarget;
   priority_adj?: number;
   run_id?: string;
+}
+
+/** 0020 §3.4：人侧「转人工审核」——只换轨不写审核结论，理由选填（落评论）。 */
+export interface EscalateReviewInput {
+  reason?: string;
 }
 
 export interface CommentInput {

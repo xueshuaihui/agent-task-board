@@ -21,6 +21,7 @@ import type {
   TaskPatchInput,
   TransitionInput,
   ReviewInput,
+  EscalateReviewInput,
   StopInput,
 } from '../types';
 
@@ -60,6 +61,12 @@ export const tasksApi = {
     http.post<TaskDetail>(`/tasks/${enc(id)}/stop`, body),
   review: (id: string, body: ReviewInput) =>
     http.post<TaskDetail>(`/tasks/${enc(id)}/review`, body),
+  /**
+   * 0020 §3.4：人主动接管一支自动轨任务（REVIEW ∧ track=auto → track=human）。
+   * 已换过轨或非待审核态 → 409，重复点不会写第二遍。
+   */
+  escalateReview: (id: string, body: EscalateReviewInput = {}) =>
+    http.post<TaskDetail>(`/tasks/${enc(id)}/review/escalate`, body),
   pin: (id: string) => http.post<TaskCard>(`/tasks/${enc(id)}/pin`),
   unpin: (id: string) => http.del<TaskCard>(`/tasks/${enc(id)}/pin`),
   archive: (id: string) =>
