@@ -8,7 +8,8 @@ import { applyMigrations, migrationsDir } from '../../infra/bootstrap';
 import { callAgentTool } from '../../mcp/mcp.server';
 import { createAgentHarness, type AgentHarness } from '../../agent/__tests__/temp-db';
 import { removeTempDirSync } from '../../__tests__/helpers/temp-dir';
-import { skillCreateSchema } from '../../skills/skills.dto';
+import { skillCreateSchema, DEFAULT_SKILL_VERSION } from '../../skills/skills.dto';
+import { DEFAULT_SKILL_SEEDS, ensureDefaultSkills } from '../../skills/default-skills';
 import type { ArtifactsService } from '../../artifacts/artifacts.service';
 import { AuditService } from '../../infra/audit.service';
 import type { AppLogger } from '../../infra/logger';
@@ -361,6 +362,30 @@ describe('board.create_task 直接创建（direct）', () => {
     expect(createdEvents.length).toBe(before + 1);
     // §8.6（W8-a4）：载荷带 origin_type，作为前端 5 秒撤销入口的观察通道。
     expect(createdEvents.at(-1)!.data).toMatchObject({ id: taskId, origin_type: 'agent' });
+  });
+
+  it('内置默认技能（§9.6 无版本历史）在 Agent 直建路径同样可绑：按名称解析、版本补 builtin', async () => {
+    // 这条链路曾按「必须有 skill_versions 行」校验，随包 125 条内置技能首装即全部 422；
+    // 写侧判据改回与下发侧 resolveForTask 同源之后，REST 面由 default-skills.test.ts 钉，
+    // Agent 面（`board.create_task` → 同一个 normalizeTaskBindings）在这里钉。
+    await ensureDefaultSkills(h.prisma);
+    const seed = DEFAULT_SKILL_SEEDS[0]!; // code-review：预置只写 skills 行，不建版本快照
+    expect(await h.prisma.skillVersion.count({ where: { skillId: seed.id } })).toBe(0);
+
+    const result = (await call('board.create_task', {
+      ...baseInput,
+      title: '为支付回调接口补幂等键', // 换标题：撞上一条用例的标题会升级轻确认（§8.2 重复检测）
+      session_id: 'conv-builtin-skill', // 换会话：baseInput 的会话计数由 silent 那条独占断言
+      skills: [seed.name, '查无此技能'],
+      confirmation_mode: 'direct',
+    })) as { task_id: string; skill_resolution: { unresolved: string[] } };
+
+    const rows = await h.prisma.$queryRawUnsafe<{ skills: string }[]>(
+      `SELECT skills FROM tasks WHERE id = ?`,
+      result.task_id,
+    );
+    expect(JSON.parse(rows[0]!.skills)).toEqual([{ skill_id: seed.id, version: DEFAULT_SKILL_VERSION }]);
+    expect(result.skill_resolution.unresolved).toEqual(['查无此技能']);
   });
 });
 
