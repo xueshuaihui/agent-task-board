@@ -21,7 +21,7 @@ import {
 } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { itemVariants, listVariants, springs } from '@/lib/motion';
-import { REVIEW_CONCLUSION_LABEL, labelOf, priorityText, statusLabel } from '@/lib/labels';
+import { REVIEW_CONCLUSION_LABEL, REVIEW_MODE_LABEL, labelOf, priorityText, statusLabel } from '@/lib/labels';
 import { formatRelative } from '@/lib/time';
 import { useIsFlashed } from '@/app/store/flash';
 import {
@@ -358,6 +358,10 @@ function PendingRow({ row, index, reduced }: { row: TaskListItem; index: number;
         <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 px-3 pb-2.5 pt-1">
           <TypeCell row={row} />
           <PriorityCell priority={row.priority} />
+          {/* 0020 §3.4：队列里混着自动轨的任务，不标出来人会以为都是等自己审的。 */}
+          {row.review_mode === 'auto' && row.review_track === 'auto' ? (
+            <Badge tone="outline">{REVIEW_MODE_LABEL.auto}</Badge>
+          ) : null}
           <AgentCell row={row} />
           <DurationCell ms={row.duration_ms} />
         </div>

@@ -136,6 +136,33 @@ export function blockedTip(by: readonly { id: string; title: string }[], count: 
   return names.length === 0 ? blockedText(count) : names.join('；') + (rest > 0 ? `；等 ${count} 个` : '');
 }
 
+/**
+ * 0020 §3.4：待审核列角标的两态判定。`auto ∧ track=auto` 才是「等 Agent 领审核」；
+ * 人接管过（track=human）的 auto 任务仍是 auto 方式，但已经不会再被领取了——这一格
+ * 必须与第三种（本来就是人审）分开写文案，否则用户分不清自己在等谁。
+ */
+export function reviewBadgeState(card: Pick<TaskCard, 'review_mode' | 'review_track'>): {
+  autoWaiting: boolean;
+  tip: string;
+  label: string;
+} {
+  if (card.review_mode === 'auto' && card.review_track === 'auto') {
+    return {
+      autoWaiting: true,
+      tip: '等待自动审核：非执行者的 Agent Token 领走审核，拿不准会转回人工',
+      label: '等待自动审核',
+    };
+  }
+  return {
+    autoWaiting: false,
+    tip:
+      card.review_mode === 'auto'
+        ? '已转由你审核：该任务不再进自动审核队列'
+        : '待你审核',
+    label: '待你审核',
+  };
+}
+
 /** 3.3：卡片产物图标最多 4 个，其余并 `+N`（N 用 `artifact_count` 真实总数）。 */
 export function artifactOverflow(artifacts: readonly CardArtifact[], total: number): { shown: CardArtifact[]; extra: number } {
   const shown = artifacts.slice(0, CARD_ARTIFACT_LIMIT);

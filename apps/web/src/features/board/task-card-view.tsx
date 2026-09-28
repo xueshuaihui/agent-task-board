@@ -2,6 +2,7 @@ import { memo, type KeyboardEvent, type MouseEvent, type ReactElement } from 're
 import { useReducedMotion } from 'motion/react';
 import {
   Bell,
+  Bot,
   CircleCheck,
   Clock,
   FileCode,
@@ -28,6 +29,7 @@ import {
   cardFieldEntries,
   knownStatus,
   LEASE_DANGER_MS,
+  reviewBadgeState,
   tagOverflow,
 } from './model';
 import { CardMenu } from './card-menu';
@@ -121,7 +123,7 @@ export const BoardCardView = memo(function BoardCardView({
         <span className="min-w-0 truncate font-mono text-code text-text-tertiary">{card.id}</span>
         <span className="min-w-0 flex-1" />
         {status === 'RUNNING' ? <LeaseBadge card={card} overlay={overlay} /> : null}
-        {status === 'REVIEW' ? <Bell className="size-3.5 shrink-0 text-status-review" aria-label="待审核" /> : null}
+        {status === 'REVIEW' ? <ReviewBadge card={card} /> : null}
         {status === 'DONE' ? <CircleCheck className="size-3.5 shrink-0 text-status-done" aria-label="已完成" /> : null}
         {status === 'FAILED' ? (
           <TriangleAlert className="size-3.5 shrink-0 text-status-failed" aria-label="异常或失败" />
@@ -276,6 +278,24 @@ function InlineAction({
     >
       {label}
     </button>
+  );
+}
+
+/**
+ * 0020 §3.4：待审核列的两态角标。`review_mode='auto' ∧ review_track='auto'` 是「等你的
+ * Agent Token 来领审核」（平台不起审核进程，所以不写「系统自动」）；换过轨或人审任务
+ * 是「等你审」。两者都在同一列，靠角标分开——不分开时人会把自动轨的任务一直等着。
+ */
+function ReviewBadge({ card }: { card: TaskCard }): ReactElement {
+  const { autoWaiting, tip, label } = reviewBadgeState(card);
+  return (
+    <Tooltip content={tip} side="bottom">
+      {autoWaiting ? (
+        <Bot className="size-3.5 shrink-0 text-status-review" aria-label={label} />
+      ) : (
+        <Bell className="size-3.5 shrink-0 text-status-review" aria-label={label} />
+      )}
+    </Tooltip>
   );
 }
 
