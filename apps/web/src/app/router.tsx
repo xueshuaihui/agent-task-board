@@ -14,7 +14,9 @@ import { skillsRouteCandidate } from '@/features/skills';
 
 export const ROUTES = {
   board: { path: '/board', label: '看板' },
-  groups: { path: '/groups', label: '分组' },
+  // r6（§19.15·87，2026-09-28）：「分组」概念从 UI 整体下线，第二导航项改「需求」，
+  // 页面主体是 type=需求 的任务列表（features/requirements/requirements-page.tsx）。
+  requirements: { path: '/requirements', label: '需求' },
   review: { path: '/review', label: '审核' },
   // 0919 十四章 IA：任务列表不再占顶栏入口，但路由保留（看板工具栏「列表视图」跳这里）。
   tasks: { path: '/tasks', label: '任务' },
@@ -31,7 +33,29 @@ const PATH_TO_NAME = new Map<string, RouteName>(
 );
 
 /** 17.2：「依赖图」是阶段二入口，阶段一不渲染该项（见 lib/phase.ts）。 */
-export const NAV_ORDER: readonly RouteName[] = ['board', 'groups', 'skills', 'review', 'settings'];
+export const NAV_ORDER: readonly RouteName[] = ['board', 'requirements', 'skills', 'review', 'settings'];
+
+/**
+ * r6（§19.15·87）「分组」概念下线的旧深链兼容表：文档、托盘、历史 hash 里残留的
+ * `#/groups`（含带 query 的 `/groups?x=1`）一律**重定向**到 `/requirements`，
+ * query 原样保留。旧 hash 不落 404、也不静默回落看板；`/groups` 不再是活动路由。
+ * 注意这只收口 hash 路由；REST 的 `GET /groups` 是数据真相，与此无关（§19.15·92）。
+ */
+export const LEGACY_PATH_REDIRECTS: Readonly<Record<string, string>> = {
+  '/groups': '/requirements',
+};
+
+/**
+ * 纯函数：把 location 串（形如 `/groups?x=1`）里的旧 path 换成新 path，query 原样保留；
+ * 非旧链原样返回。hash 读取（`readHash`）与程序化跳转（`normalize`）两条入口共用它。
+ */
+export function rewriteLegacyLocation(location: string): string {
+  const q = location.indexOf('?');
+  const path = q === -1 ? location : location.slice(0, q);
+  const target = LEGACY_PATH_REDIRECTS[path];
+  if (!target) return location;
+  return q === -1 ? target : `${target}${location.slice(q)}`;
+}
 
 interface RouterState {
   /** 形如 `/tasks?status=REVIEW`。 */
@@ -42,7 +66,8 @@ interface RouterState {
 function readHash(): string {
   const raw = window.location.hash.replace(/^#/, '');
   if (!raw || raw === '/') return ROUTES.board.path;
-  return raw;
+  // r6：旧 `#/groups` 深链在这里映射（query 保留），不静默回落看板。
+  return rewriteLegacyLocation(raw);
 }
 
 export const useRouterStore = create<RouterState>((set) => ({
@@ -52,11 +77,24 @@ export const useRouterStore = create<RouterState>((set) => ({
 
 function normalize(to: string): string {
   const path = to.startsWith('/') ? to : `/${to}`;
-  return path;
+  // 程序化跳转同口映射：即使有代码仍递 `/groups…`（旧书签回调、外部注入 hash），
+  //  store 里也只会出现新 path（§19.15·87）。
+  return rewriteLegacyLocation(path);
 }
 
 export function startRouter(): () => void {
-  const apply = () => useRouterStore.getState().locate(readHash());
+  const apply = () => {
+    const raw = window.location.hash.replace(/^#/, '');
+    const rewritten = rewriteLegacyLocation(raw);
+    if (rewritten !== raw) {
+      // 地址栏一并改写（replaceState 不增历史条目、不再触发 hashchange 自激，
+      // 下面直接 locate 同一条串）。用户看到的必须是 `#/requirements…` 新地址，
+      // 而不是「旧地址渲染了新页」。
+      window.history.replaceState(null, '', `#${rewritten}`);
+    }
+    // 仍经 readHash 取：它带「空 hash 回落看板」的一条腿（rewrite 后地址栏已是新串）。
+    useRouterStore.getState().locate(readHash());
+  };
   apply();
   window.addEventListener('hashchange', apply);
   // 2.1：不给用户留下「后退到上一个页面」的入口。

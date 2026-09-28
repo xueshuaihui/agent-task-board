@@ -1,8 +1,8 @@
 import {
   ClipboardList,
   Diamond,
-  FolderTree,
   Kanban,
+  ListChecks,
   ListTodo,
   PanelLeftClose,
   PanelLeftOpen,
@@ -20,13 +20,17 @@ import { springs } from '@/lib/motion';
  * v0.0.4 W9 13.1/13.2：左侧导航。宽度 200px、可折叠到 64px（13.2 表），
  * 导航项高度 44px（h-11），选中态「左侧 3px 主色条 + 主色浅底」。
  *
- * PRD 13.2 只列了「看板 / 技能 / 设置」三项，但存量还有分组/审核两个独立页面，
- * 为不丢入口这里保留 5 项导航（看板/分组/技能/审核/设置），路由与深链不变。
+ * PRD 13.2 只列了「看板 / 技能 / 设置」三项，但存量还有需求/审核两个独立页面，
+ * 为不丢入口这里保留 5 项导航（看板/需求/技能/审核/设置），路由与深链不变
+ * （r6 §19.15·87：第二项「分组」→「需求」，`#/groups` 旧深链由 router 重定向）。
  * 折叠态：手动偏好优先，未表过态时窗口 <win-lg 动态收成 64px 图标轨（`useNavCollapsed`）。
  */
 const NAV_ICON: Record<RouteName, ComponentType<SVGProps<SVGSVGElement>>> = {
   board: Kanban,
-  groups: FolderTree,
+  // r6：FolderTree（分组=树形容器语义）下线；需求页主体是「一页可勾选跟进的需求
+  // 列表卡」，ListChecks（列表 + 对勾）既贴合页面形态，又与 tasks 的 ListTodo 同形
+  // 不同义、和 board 的 Kanban 不撞形。
+  requirements: ListChecks,
   skills: Sparkles,
   review: ClipboardList,
   settings: SettingsIcon,

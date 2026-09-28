@@ -2,7 +2,7 @@ import { useEffect, type ComponentType } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { useSettings } from '@/api';
 import { BoardPage } from '@/features/board';
-import { GroupsPage } from '@/features/groups';
+import { RequirementsPage } from '@/features/requirements/requirements-page';
 import { ReviewPage } from '@/features/review';
 import { SettingsPage } from '@/features/settings';
 import { SkillLibraryPage } from '@/features/skills';
@@ -20,7 +20,7 @@ import { NotificationCenter } from './notification-center';
 
 /**
  * 2.1 应用外框：v0.0.4 W9 起为「左侧导航 + 顶部工具栏 + 内容区」（13.1）。
- * 左栏 `Sidebar`（看板/分组/技能/审核/设置，可折叠到 64px）常驻，右侧上下分「顶部工具栏 + 主内容区」。
+ * 左栏 `Sidebar`（看板/需求/技能/审核/设置，可折叠到 64px）常驻，右侧上下分「顶部工具栏 + 主内容区」。
  * 主内容区吃掉剩余高度、自带 padding 与纵向滚动，抽屉/弹窗/通知中心由 `OverlaySlot`/`NotificationCenter`
  * 挂在外框之上（portal 到 body，不受这里的 overflow 裁剪）。
  *
@@ -33,7 +33,7 @@ import { NotificationCenter } from './notification-center';
  */
 const PAGES: Record<RouteName, ComponentType> = {
   board: BoardPage,
-  groups: GroupsPage,
+  requirements: RequirementsPage,
   review: ReviewPage,
   tasks: TaskListPage,
   skills: SkillLibraryPage,
