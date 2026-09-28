@@ -1,6 +1,6 @@
 # Jarvis Workbench
 
-本地桌面任务看板：**人建任务，Agent 经 MCP / REST 认领执行，结果强制人工审核。**
+本地桌面任务看板：**人建任务，Agent 经 MCP / REST 认领执行，默认强制人工审核、任务级显式豁免。**
 
 整个应用以桌面客户端形态运行在用户本机：前端在 Tauri 主窗口内渲染，业务逻辑全部由本地托管的 Node sidecar 提供，数据保存在本地 SQLite 文件，不依赖任何远端服务。
 
@@ -67,7 +67,9 @@ hdiutil create -volname "Jarvis Workbench" \
 ### 一句话工作流
 
 **你在看板上建任务 → Agent 经 MCP / REST 认领并执行 → 结果进入「待审核」→ 你审核通过才生效。**
-Agent 永远不能替你把关；所有产出物（diff / 文件 / 链接）经人工审核后可见、可退回。
+默认由你把关；建单时可对单个任务显式选「等 Agent 审」（由非执行者的审核者 Token 领队列回结论）或「免审核」（执行完直接完成）——
+豁免是建单那一刻由你做的决定，且全程留痕（审核记录署名到 Token 名、评论与审计各记一笔）。
+所有产出物（diff / 文件 / 链接）经审核后可见、可退回。
 
 ### 界面速览（桌面端主窗口）
 
@@ -122,7 +124,7 @@ Agent 永远不能替你把关；所有产出物（diff / 文件 / 链接）经�
 
 - 桌面壳（`@atb/desktop`）只负责窗口、托盘、单实例、系统对话框与 sidecar 进程托管，**不承载任何业务数据**；所有读写均经过 sidecar 的 REST（见 `apps/desktop/src-tauri/Cargo.toml` 注释与 `apps/desktop/src-tauri/src/sidecar.rs`）。
 - API sidecar 仅绑定 `127.0.0.1`，不对外暴露端口（见 `apps/api/src/main.ts` 与 `apps/api/package.json` 描述）。
-- Agent 通过 MCP 与 REST 两种通道接入，任务产出物经人工审核后才生效。
+- Agent 通过 MCP 与 REST 两种通道接入，任务产出物默认经人工审核后才生效（任务级 `review_mode` 可显式豁免，执行者永远改不了自己任务的审核方式）。
 
 ---
 

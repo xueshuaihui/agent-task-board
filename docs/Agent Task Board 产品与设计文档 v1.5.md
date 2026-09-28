@@ -3,7 +3,7 @@
 
 
 
-> 一个桌面端任务看板（Tauri 原生主窗口 \+ 常驻本地服务）。用户手动创建任务；Agent 客户端（Codex、Qoder、Claude Code、Cursor 等）通过自身定时任务，经 MCP HTTP / REST API 领取任务并执行；执行结果回写看板；每个任务必须人工审核，填写建议、原因、详情后流转。支持任务依赖、模板、导入导出、批量归档。
+> 一个桌面端任务看板（Tauri 原生主窗口 \+ 常驻本地服务）。用户手动创建任务；Agent 客户端（Codex、Qoder、Claude Code、Cursor 等）通过自身定时任务，经 MCP HTTP / REST API 领取任务并执行；执行结果回写看板；任务默认强制人工审核，填写建议、原因、详情后流转（v0.0.4 0020 起可按任务显式选「等 Agent 审」或「免审核」，豁免留痕且执行者不可自豁免）。支持任务依赖、模板、导入导出、批量归档。
 > 
 > 
 
@@ -154,7 +154,7 @@ Codex、Qoder、Claude Code、Cursor 等 Agent 客户端已具备定时任务与
 
 3. 结果回写：Agent 回写进度、日志、产物。
 
-4. 人工审核：每个任务必须人工审核，填写建议、原因、详情。
+4. 人工审核：任务默认由人审核，填写建议、原因、详情；单个任务可显式改「等 Agent 审」（非执行者的审核者 Token 领队列回结论，拿不准转回人工）或「免审核」（执行完直接完成）。
 
 5. 审核反馈：审核意见保留，Agent 下次可读取。
 
@@ -245,7 +245,7 @@ Codex、Qoder、Claude Code、Cursor 等 Agent 客户端已具备定时任务与
 |Run|任务的一次执行尝试|
 |Lease|任务租约，防止重复执行|
 |Artifact|Agent 产物（diff、报告、日志、PR 链接）|
-|Review|人工审核记录（建议、原因、详情）|
+|Review|审核记录（建议、原因、详情）＋ 结论来源（`reviewer_type`：user / agent，agent 记 Token 名）|
 |Token|Agent 接入凭证|
 |Custom Field|用户自定义任务字段|
 |Field Def|自定义字段定义|
@@ -282,7 +282,7 @@ Codex、Qoder、Claude Code、Cursor 等 Agent 客户端已具备定时任务与
 |需求池|`BACKLOG`|新建任务、驳回回退的任务|
 |待执行|`READY`|可被 Agent 领取（含被阻塞任务，显示阻塞角标）|
 |执行中|`RUNNING`|Agent 已认领，正在执行；**不可由拖拽产生**|
-|待审核|`REVIEW`|Agent 执行完，等待人工审核|
+|待审核|`REVIEW`|Agent 执行完，等待出结论（列内两轨：等人工 / 等 Agent 审，见 6.5）|
 |已完成|`DONE`|审核通过|
 |异常/失败|`FAILED`|Agent 上报失败、租约超时、或用户强制停止|
 
@@ -341,6 +341,7 @@ Codex、Qoder、Claude Code、Cursor 等 Agent 客户端已具备定时任务与
 |审核通过|待审核 → 已完成|审核表单，必填建议、原因、详情|
 |驳回|待审核 → 待执行（默认）/ 需求池|审核表单，必填建议、原因、详情；可选调整优先级|
 |**退回重跑**|待审核 → 待执行|等价于「驳回」：弹审核表单并预填 结论=驳回、退回目标=待执行，三字段仍必填（可「复用上次意见」一键填充）|
+|**转人工审核**|不改状态（`review_track` auto → human）|任务在「等 Agent 审」轨上时可用：卡片/审核表单的「转人工审核」，此后自动审核队列不再领取该任务（人优先）；不写审核结论|
 |重试|异常/失败 → 待执行 / 需求池|无|
 |置顶 / 取消置顶|不改状态|任意状态可用，影响抓取顺序（5\.6）|
 |归档|不改状态，置 `archived_at`|**仅 `DONE`**，且无未完成的前置任务引用它（4\.3\.1 规则 3）|
@@ -355,7 +356,9 @@ Codex、Qoder、Claude Code、Cursor 等 Agent 客户端已具备定时任务与
 
 - 待执行 → 执行中：原子认领（依赖已满足）
 
-- 执行中 → 待审核：完成回写
+- 执行中 → 待审核：完成回写（任务 `review_mode = none` 时直接 → 已完成；`auto` 时落待审核的自动轨）
+
+- 待审核 → 已完成 / 待执行：审核者 Token（**非该 Run 的执行者**）领取并回结论，见 6\.5
 
 - 执行中 → 异常/失败：上报失败
 
@@ -868,11 +871,25 @@ ORDER BY pinned DESC, priority ASC, created_at ASC
 
     - **退回重跑**与从「待审核」列拖拽到需求池／待执行，走的是同一张表单与同一套校验（4\.3、4\.5），不另设轻量入口，否则三字段必填会被绕过。
 
-4. 三字段必填的口径：去首尾空白后非空即可，无最短字数；单字段 ≤ 2000 字，超出前端截断提示。必填是产品底线（每个任务都要人工留痕），本期不做"一键通过"。
+4. 三字段必填的口径：去首尾空白后非空即可，无最短字数；单字段 ≤ 2000 字，超出前端截断提示。必填是产品底线（**凡是经过审核这一步的任务都要留痕**），本期不做"一键通过"。
 
 5. **降低重复成本的本期做法**：`review_reuse_last_opinion`（默认开，20\.9）在打开表单时预填该任务**上一次**审核的三字段并聚焦「建议」；`⌘/Ctrl + Enter` 提交；表单草稿按任务存内存，切走再回来不丢。不做模板库、不做批量通过。
 
 6. 审核意见保留在任务上，Agent 下次可读取（6\.6）。审核记录只增不改不删，改判 = 再提交一条，历史按时间倒序全部可见。
+
+7. **审核方式可按任务配置**（v0\.0\.4 0020）：`tasks.review_mode` 三值 —— `human`（默认，等人工）/ `auto`（等 Agent 审）/ `none`（免审核直通）。
+   缺省值由设置项 `default_review_mode` 统一供给三条建单路（REST 建单、Agent 直建、拆解确认页建子任务），建单时显式选择才覆盖。
+   `none` 不产生审核记录，评论与审计各记一笔「免审核直通」。
+
+8. **自动审核链路（Q2：审核者 Token 认领队列，平台不起任何进程）**：`review_mode = auto` 的任务完成回写后落待审核的自动轨
+   （`review_track = auto`），由调用方另起的**非执行者** Agent Token 经 `claim_next_review`（只读领取：任务 \+ 被审 Run \+ 日志）
+   与 `submit_review`（`APPROVE` / `REJECT` / `ESCALATE`）出结论。硬门禁两条：
+   审核者 == 被审 Run 的执行者 → 拒 `SELF_REVIEW_FORBIDDEN`；`review_mode` 不在 Agent 的 `update_task` 可写键清单里（执行者不可自豁免）。
+   结论落库与人工审核走同一条实现，`reviews.reviewer_type = agent` \+ Token 名留痕，界面署名 `Agent · <Token 名>`。
+
+9. **兜底：不确定 → 升级人工，不设超时定时器**（Q3）。两个入口等价：审核器回 `ESCALATE`、人点「转人工审核」
+   （4\.3）——都只把 `review_track` 换成 `human` 并推 `review_pending`，不写审核结论。
+   此后自动队列不再领取该任务（**人优先**）；没人在线时任务就一直等在列里，不产生任何不可预期的自动流转。
 
     
 
@@ -900,11 +917,24 @@ Agent 下次领取该任务时，`get_task` / `get_review_feedback` 返回最近
 
 
 
+自动审核（6\.5 第 8 条 `submit_review`）的结论走同一份 `reviews` 表与同一条回写链，因此审核器驳回的三字段
+同样出现在这里——执行侧不需要区分「上一条是谁判的」。
+
+
+
 ## 6\.7 通知
 
 
 
 事件：任务进入待审核、执行失败、租约超时、审核驳回、依赖解锁（对应 `notifications.kind`，见 20\.2）。
+
+自动审核链路（6\.5 第 7、8 条）另加两枚 kind，口径与上面同一条链，只是「等谁」不同：
+
+- `review_auto_pending`：`review_mode = auto` 的任务完成回写后落待审核的自动轨时推——此刻在等审核器，不占用人；
+  **它不进「待处理」白名单**（通知中心 13\.9），因为要人做的事还没落到人头上；人随时可在卡片上「转人工审核」抢跑，
+  换轨那一步推的是 `review_pending`（那条才是等你的）。
+- `review_auto_passed`：审核器回 `APPROVE`、任务转 DONE 时推，点开看结论——自动通过不再推 `review_pending`。
+  审核器驳回（`REJECT`）复用现行 `review_rejected`，与人工驳回同一份字段、同一条通知链，执行侧不需要区分上一条是谁判的。
 
 渠道与形态：
 
@@ -1401,7 +1431,7 @@ Agent 下次领取该任务时，`get_task` / `get_review_feedback` 返回最近
 
 |Tab|内容|写入的 `settings` 键（20\.9）|
 |---|---|---|
-|通用|界面主题、任务类型词表增删（20\.3）、审核意见预填开关、产物单文件上限、看板每列渲染上限、租约时长、建议轮询周期|`ui_theme`、`task_types`、`review_reuse_last_opinion`、`artifact_max_mb`、`board_column_limit`、`lease_ttl_minutes`、`heartbeat_interval_seconds`|
+|通用|界面主题、任务类型词表增删（20\.3）、审核意见预填开关、默认审核方式（6\.5）、产物单文件上限、看板每列渲染上限、租约时长、建议轮询周期|`ui_theme`、`task_types`、`review_reuse_last_opinion`、`default_review_mode`、`artifact_max_mb`、`board_column_limit`、`lease_ttl_minutes`、`heartbeat_interval_seconds`|
 |Token|Token 列表（名称、能力集、创建时间、最后使用、状态）\+ 生成对话框（**仅**名称与可选 `capabilities` 默认集，20\.5；平台不设并发上限，4\.4）；明文只在生成成功时显示一次，关闭后不再可读|`api_tokens` 表，非 `settings`。「吊销」= 置 `enabled = 0`（不删行，保留 Run 归属），列表中标「已吊销」且**不提供重新启用**——要恢复就新建一个 Token|
 |字段定义|字段列表 \+ 新建/编辑（5 类控件）\+ 必填与卡片展示开关|`custom_field_defs` 表|
 |模板|模板列表 \+ 预填字段编辑|`task_templates` 表|
@@ -2045,7 +2075,7 @@ CREATE TABLE id_sequences (
 CREATE TABLE notifications (
   id          TEXT PRIMARY KEY,
   kind        TEXT NOT NULL
-                CHECK (kind IN ('review_pending','run_failed','lease_expired','review_rejected','task_unblocked')),
+                CHECK (kind IN ('review_pending','run_failed','lease_expired','review_rejected','task_unblocked','creation_request','review_auto_pending','review_auto_passed')),
   task_id     TEXT REFERENCES tasks(id) ON DELETE CASCADE,
   message     TEXT NOT NULL,
   read_at     TEXT,
@@ -2405,7 +2435,7 @@ CREATE INDEX idx_notif_unread ON notifications(read_at) WHERE read_at IS NULL;
 
 
 
-`notification.created` 在 6\.7 的五类事件（`review_pending` / `run_failed` / `lease_expired` / `review_rejected` / `task_unblocked`）落库时各发一条，载荷里的 `unread_count` 由服务端算好带上。顶栏铃铛与托盘角标**只**订阅这一个事件，不从不相关的 `task.*` 里猜计数；`lease.expired` 仍单独保留，因为看板卡片的倒计时要变红（原型 3\.3），那是渲染态而非通知。
+`notification.created` 在 6\.7 的各类事件（`review_pending` / `run_failed` / `lease_expired` / `review_rejected` / `task_unblocked`，W8 的 `creation_request`，0020 的 `review_auto_pending` / `review_auto_passed`）落库时各发一条，载荷里的 `unread_count` 由服务端算好带上。顶栏铃铛与托盘角标**只**订阅这一个事件，不从不相关的 `task.*` 里猜计数；`lease.expired` 仍单独保留，因为看板卡片的倒计时要变红（原型 3\.3），那是渲染态而非通知。
 
 
 
@@ -2963,7 +2993,7 @@ while True:
 |`comments.type`|`comment` `log` `status_change`|`comment`|`log` 只能由 Agent 追加|见 20\.8|
 |`artifacts.type`|`diff` `image` `text` `log` `markdown` `json` `html` `pdf` `link` `file`|服务端推导|与 6\.10\.1 的预览器一一对应|服务端|
 |`api_tokens.enabled`|`1` `0`|`1`|`0` 时该 Token 全部调用返回 `401`，不删行以保留 Run 归属|UI|
-|`notifications.kind`|`review_pending` `run_failed` `lease_expired` `review_rejected` `task_unblocked`|—|对应 6\.7 的五类事件|服务端|
+|`notifications.kind`|`review_pending` `run_failed` `lease_expired` `review_rejected` `task_unblocked` `creation_request` `review_auto_pending` `review_auto_passed`|—|对应 6\.7 的各类事件（后三枚分别来自 W8 会话创建、0020 自动审核队列）；词表权威在迁移 0014 / 0020 的 CHECK|服务端|
 |`audit_logs.actor_type`|`user` `agent` `system`|—|—|服务端|
 |`audit_logs.action`|`task_create` `task_update` `task_transition` `task_stop` `task_delete` `task_archive` `archive_skipped` `run_claim` `run_writeback` `lease_expire` `review_submit` `dep_add` `dep_remove` `field_def_change` `template_change` `token_issue` `token_revoke` `token_use` `import` `export` `backup` `restore` `settings_change`|—|6\.8 的记录范围|服务端|
 |`audit_logs.target_type`|`task` `run` `review` `dependency` `field_def` `template` `token` `settings` `data`|—|—|服务端|
@@ -3093,6 +3123,7 @@ effective = 入参 capabilities 非空 ? 入参 : api_tokens.capabilities
 |`task_types`|string[]|`["需求","缺陷","子任务","巡检","重构"]`|✅|20\.3|
 |`ui_theme`|`system` `light` `dark`|`system`|✅|—|
 |`review_reuse_last_opinion`|bool|`true`|✅|审核表单预填上次意见（6\.5）|
+|`default_review_mode`|`human` `auto` `none`|`human`|✅|新建任务的审核方式缺省值，三条建单路共用（6\.5 第 7 条）|
 
 
 **端口不在本表**：端口由 `ATB_PORT` 环境变量 → `~/.agent-board/config.json` 的 `port` → 默认 `7788` 三级决定（10\.3），**不写进 `settings`**，也不在设置页开放修改——改端口会让四家已配置的 MCP URL 全部失效，只能走「端口被占用」流程由用户显式确认（10\.3）。同理，开机自启本期不做（10\.3），因此也没有对应设置项。

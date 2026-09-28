@@ -18,7 +18,7 @@
     "targets": ["app", "dmg", "nsis"],
     "publisher": "Jarvis Workbench",
     "category": "Productivity",
-    "shortDescription": "本地桌面任务看板：人建任务，Agent 认领执行，结果强制人工审核",
+    "shortDescription": "本地桌面任务看板：人建任务，Agent 认领执行，默认强制人工审核、任务级显式豁免",
     "longDescription": "Jarvis Workbench 桌面壳：Tauri 2 主窗口 + 托盘，托管仅监听 127.0.0.1 的 Node sidecar（REST / MCP / WebSocket）。",
     "copyright": "© Jarvis Workbench",
     "icon": [
