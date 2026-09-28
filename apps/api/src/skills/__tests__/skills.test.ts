@@ -408,6 +408,31 @@ describe('技能管理', () => {
     expect(stats.body.stats.bound_task_count).toBe(1);
   });
 
+  it('创建即绑定：POST /tasks 带 skills 一次落库，版本补全、非法引用不建半成品', async () => {
+    const skill = await createSkill(admin);
+    const created = await admin.post(`${API}/tasks`, {
+      title: '建时就带技能',
+      type: '需求',
+      skills: [{ skill_id: skill.id }],
+    });
+    expect(created.status).toBe(201);
+    // 存库口径与 PATCH 一致：引用始终带显式版本（服务端补 current）。
+    expect(created.body.skills).toEqual([{ skill_id: skill.id, version: 'v0.1.0' }]);
+
+    const before = await admin.get(`${API}/tasks?limit=1`);
+    const bad = await admin.post(`${API}/tasks`, {
+      title: '引用坏技能不该落库',
+      type: '需求',
+      skills: [{ skill_id: 'skl_not_exist' }],
+    });
+    expect(bad.status).toBe(422);
+    expect(bad.body.error.code).toBe('VALIDATION_FAILED');
+    expect(bad.body.error.details[0].code).toBe('unknown_skill');
+    // 校验在事务之前：422 不留「建好了但技能没挂上」的半成品任务。
+    const after = await admin.get(`${API}/tasks?limit=1`);
+    expect(after.body.total).toBe(before.body.total);
+  });
+
   it('绑定校验：未知技能 / 未知版本 422', async () => {
     const taskRes = await admin.post(`${API}/tasks`, {
       title: '校验用任务',

@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { Plus, X } from 'lucide-react';
 import type { TaskCreateInput, TaskStatus, TemplatePreset } from '@/api/types';
 import { errorMessage, fieldErrorsOf, isApiError, useFieldDefs, useSettings } from '@/api';
 import {
@@ -6,6 +7,11 @@ import {
   useRequirementOptions,
   type RequirementOption,
 } from '@/features/requirements/use-requirement-options';
+// 走 hooks 子路径而不是 `@/features/skills` 桶口：桶口会连带引出 skill-library-page，
+// 后者回头 import app/router 的路由候选，而 router 的 ROUTES 又来自这个桶口——
+// vitest 下这条环会让 ROUTES 项在求值时还是 undefined（真机靠打包顺序侥幸）。
+import { useSkills } from '@/features/skills/hooks';
+import { SkillPickerPopover } from '@/features/skills/skill-picker';
 import { useFilterStore } from '@/app/store/filters';
 import { priorityText, STATUS_LABEL } from '@/lib/labels';
 import { clearFieldError } from '@/lib/forms';
@@ -17,11 +23,13 @@ import { cardDefs, CustomFieldInputs, requiredDefs, toSubmitValues, type CustomV
 /**
  * 3.1 / 8.1 的列底快速新建：需求池与待执行两列的入口，加上已完成卡片的「新建后续任务」。
  *
- * 三条硬规则：
+ * 四条硬规则：
  * - 服务端 `create` 恒落 `BACKLOG`（20.2 默认值 + 8.1「不自动跳到待执行」），
  *   所以「建在待执行」= create → transition(READY) 两步；
  * - 必填自定义字段未填 → 服务端 422，任务留在需求池，`details[]` 按字段逐条回显（6.9.2）；
- * - 已建行的第二次提交走 PATCH + transition，不再 create 一遍（避免重复卡片）。
+ * - 已建行的第二次提交走 PATCH + transition，不再 create 一遍（避免重复卡片）；
+ * - 技能可在建时就绑（10.2）：`skills` 随 create 一起提交，服务端在落库前校验，
+ *   坏引用 422 回显在「技能」字段下、不会留下没挂技能的半成品。
  *
  * 3.4 的模板只作为**预填**（类型/优先级/标签/描述/自定义字段/到期），
  * 标题仍由人写——模板若连标题一起填死，一列里会出现同名卡片。
@@ -91,6 +99,15 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
   const [custom, setCustom] = useState<CustomValues>(preset?.custom_fields ?? {});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [createdId, setCreatedId] = useState<string | null>(null);
+  // 10.2 创建即绑定：技能一次性全量在手（§9.11 匹配纯前端本地），候选排除 ARCHIVED，
+  // 草稿与已发布都可选（服务端按绑定版本下发，10.1 未限制草稿）。
+  const skills = useSkills();
+  const skillItems = useMemo(() => skills.data?.items ?? [], [skills.data?.items]);
+  const skillCandidates = useMemo(
+    () => skillItems.filter((skill) => skill.status !== 'ARCHIVED'),
+    [skillItems],
+  );
+  const [skillIds, setSkillIds] = useState<string[]>([]);
 
   // §19.14·86（W2-a）：创建时的唯一归属选择是「需求」——选中即同写 parent_task_id +
   // 回填该需求的 group_id（Group 概念已从看板 UI 下线，不再直接选它）。
@@ -128,6 +145,8 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
           tags: parseTags(tagText),
         };
         if (description.trim()) body.description = description.trim();
+        // 版本一律不传：服务端补当前有效版本（与详情「技能」Tab 同一口径）。
+        if (skillIds.length) body.skills = skillIds.map((skill_id) => ({ skill_id }));
         // §19.14·86：选需求 → 同写 parent_task_id + 回填 group_id；未选 → 两字段都不发。
         Object.assign(body, requirementCreateBody(selectedRequirement));
         if (preset?.required_capabilities?.length) body.required_capabilities = preset.required_capabilities;
@@ -246,6 +265,62 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
               clearFieldError(setErrors, 'tags');
             }}
           />
+        </Field>
+
+        {/* 10.2 创建即绑定：候选区必须是共享 SkillPicker（§19.13-83），形态同拆解草案
+            ——多选、选中后面板不关、点击已选项做增删切换；已选 chips 挂在触发器左侧。 */}
+        <Field
+          label="技能"
+          hint="可选；随任务下发给领取的 Agent（10.3），建完仍可在详情「技能」Tab 增删"
+          error={errors.skills}
+        >
+          <div className="flex flex-wrap items-center gap-1.5">
+            {skillIds.map((id) => {
+              const name = skillItems.find((item) => item.id === id)?.name ?? id;
+              return (
+                <span
+                  key={id}
+                  className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-control bg-bg-muted px-1.5 py-0.5 text-aux text-text-primary"
+                >
+                  <span className="truncate">{name}</span>
+                  <button
+                    type="button"
+                    aria-label={`移除技能 ${name}`}
+                    className="shrink-0 text-text-tertiary hover:text-text-primary"
+                    onClick={() => setSkillIds((prev) => prev.filter((item) => item !== id))}
+                  >
+                    <X className="size-3" aria-hidden />
+                  </button>
+                </span>
+              );
+            })}
+            <SkillPickerPopover
+              multiple
+              candidates={skillCandidates}
+              selectedIds={skillIds}
+              disambiguateOver={skillItems}
+              onSelect={(skill) =>
+                setSkillIds((prev) =>
+                  prev.includes(skill.id)
+                    ? prev.filter((item) => item !== skill.id)
+                    : [...prev, skill.id],
+                )
+              }
+              disabled={skills.isPending || skillCandidates.length === 0}
+              emptyText={skills.isPending ? '技能加载中…' : '没有可添加的技能'}
+              placeholder="搜索技能（名称 / 分类 / 类型 / 标签 / ID，草稿与已发布）"
+              ariaLabel="创建时绑定技能"
+              triggerContent={() => (
+                <span
+                  className="inline-flex min-w-0 items-center gap-1.5 text-aux text-text-secondary"
+                  data-testid="quick-create-skill-add"
+                >
+                  <Plus className="size-3.5" aria-hidden />
+                  添加技能
+                </span>
+              )}
+            />
+          </div>
         </Field>
 
         {state.dependsOn ? (

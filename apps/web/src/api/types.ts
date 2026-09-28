@@ -671,6 +671,11 @@ export interface TaskCreateInput {
    * 违规 → 422 `VALIDATION_FAILED`，`details[].code` 为 `parent_type` / `too_deep`。
    */
   parent_task_id?: string | null;
+  /**
+   * 创建即绑定技能（10.3，与 PATCH 同一条服务端校验）：只传 `skill_id` 时版本由服务端补
+   * 当前有效版本；未知技能/不可解析版本 → 422 `details[].code` = `unknown_skill` / `unknown_version`。
+   */
+  skills?: { skill_id: string; version?: string }[];
 }
 
 export type TaskPatchInput = Partial<Omit<TaskCreateInput, 'depends_on' | 'dependency_type'>> & {

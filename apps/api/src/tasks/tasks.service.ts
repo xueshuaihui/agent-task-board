@@ -118,6 +118,11 @@ export class TasksService {
     const customFields = await this.normalizeCustomFields(input.type, input.custom_fields, false);
     const parentId = input.parent_task_id ? await this.assertParent(input.parent_task_id) : null;
     if (input.group_id) await this.assertGroup(input.group_id);
+    // 10.3 建时绑定：与 PATCH 同一个校验函数（存在性 + 版本可解析，缺省补 current），
+    // 传了非法引用就在落库前 422，不留「建好了但技能没挂上」的半成品任务。
+    const skillsJson = input.skills?.length
+      ? await this.skillsService.normalizeTaskBindings(input.skills)
+      : '[]';
 
     const id = await this.prisma.$transaction(async (tx) => {
       const taskId = await nextTaskId(tx);
@@ -137,6 +142,7 @@ export class TasksService {
           tags: JSON.stringify(input.tags),
           requiredCapabilities: JSON.stringify(input.required_capabilities),
           customFields: JSON.stringify(customFields),
+          skills: skillsJson,
           pinned: input.pinned ? 1 : 0,
           dueAt: input.due_at ? toDateOnly(input.due_at) : null,
         },

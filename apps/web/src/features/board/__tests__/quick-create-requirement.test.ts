@@ -34,3 +34,18 @@ describe('quick-create.tsx 源码闸：指 Group 的「分组」字样不再出�
     expect(source).toContain('parent_task_id');
   });
 });
+
+/**
+ * 10.2 创建即绑定：候选区必须是共享 SkillPicker（§19.13-83 的「同一个组件」口径），
+ * 且引用只带 skill_id——版本由服务端补（与详情「技能」Tab 同一口径，前端不猜版本）。
+ */
+describe('quick-create.tsx 源码闸：技能随创建提交', () => {
+  it('候选区用共享 SkillPickerPopover（多选），不是自绘搜索框', () => {
+    expect(source).toContain('SkillPickerPopover');
+    expect(source).toMatch(/<SkillPickerPopover[\s\S]*?multiple/);
+  });
+
+  it('提交体只传 skill_id、不传版本', () => {
+    expect(source).toMatch(/body\.skills\s*=\s*skillIds\.map\(\(skill_id\)\s*=>\s*\(\{\s*skill_id\s*\}\)/);
+  });
+});

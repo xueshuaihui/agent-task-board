@@ -62,6 +62,19 @@ const priorityListSchema = stringListSchema
   .transform((list) => list.map(Number))
   .pipe(z.array(z.number().int().min(0).max(3)));
 
+/**
+ * 0919 10.3：任务技能绑定引用（建与改共用一条入参形态，少一处两份 schema 各自漂移的口子）。
+ * 存在性/版本可解析性都在服务层 `SkillsService.normalizeTaskBindings` 校验，这里只管形状。
+ */
+export const taskSkillRefsSchema = z
+  .array(
+    z.object({
+      skill_id: z.string().trim().min(1).max(64),
+      version: z.string().trim().max(20).optional(),
+    }),
+  )
+  .max(20);
+
 export const taskCreateSchema = z.object({
   title: z.string().trim().min(1).max(200),
   type: z.string().trim().min(1).max(16),
@@ -78,6 +91,8 @@ export const taskCreateSchema = z.object({
   group_id: z.string().trim().min(1).max(64).optional(),
   parent_task_id: idParam.optional(),
   sort_order: z.number().int().optional(),
+  // 创建即可绑定技能（与 PATCH 同一条校验路径，见 tasks.service create/applyPatch）。
+  skills: taskSkillRefsSchema.default([]),
 });
 export type TaskCreateInput = z.infer<typeof taskCreateSchema>;
 
@@ -98,10 +113,7 @@ export const taskPatchSchema = z
     parent_task_id: idParam.nullable().optional(),
     sort_order: z.number().int().optional(),
     // 0919 10.3：技能绑定（引用由服务层校验归属/存在/版本，见 SkillsService.normalizeTaskBindings）。
-    skills: z.array(z.object({
-      skill_id: z.string().trim().min(1).max(64),
-      version: z.string().trim().max(20).optional(),
-    })).max(20).optional(),
+    skills: taskSkillRefsSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: '没有需要更新的字段' });
 export type TaskPatchInput = z.infer<typeof taskPatchSchema>;
