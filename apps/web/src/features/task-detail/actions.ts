@@ -58,6 +58,8 @@ const TRANSITION_SLOT: Record<TransitionKey, { slot: TaskAction['slot']; hint?: 
   withdraw: { slot: 'secondary', hint: '→ 需求池' },
   retry: { slot: 'primary', hint: '→ 待执行' },
   back_to_backlog: { slot: 'secondary' },
+  // 廿二 B：结案出口不是主按钮（与「重试」抢主次会诱导误点），放次级。
+  close_failed: { slot: 'secondary', hint: '→ 异常/失败' },
 };
 
 /** 4.5「将同时删除 {n} 条执行记录及其产物…」的 n / m 两个数字。 */
@@ -76,6 +78,9 @@ function transitionActions(status: string): TaskAction[] {
       slot: placement.slot,
       hint: placement.hint,
       danger: rule.danger,
+      // 廿二 B：danger 的 ✅ 边在抽屉里补确认文案（`run()` 只认 `confirm` 才弹二次确认）；
+      // 目前唯一的 danger 边是 BLOCKED「按失败结案」，将来新增时按 key 分支给各自措辞。
+      confirm: rule.danger ? { title: rule.label, body: COPY.closeFailedConfirm } : undefined,
       to: rule.to,
     };
   });

@@ -3,6 +3,7 @@ import { ApiException } from '../../contract/errors';
 import type { RequestAuth } from '../../auth/auth.scope';
 import {
   appendLogSchema,
+  blockedSchema,
   claimSchema,
   completeSchema,
   failSchema,
@@ -351,5 +352,141 @@ describe('进度、日志与心跳', () => {
     // 文本时间戳同为 UTC（`YYYY-MM-DD HH:MM:SS`），字典序即时间序。
     const threshold = new Date(Date.now() + 25 * 60_000).toISOString().slice(0, 19).replace('T', ' ');
     expect(task.leaseExpiresAt! > threshold).toBe(true);
+  });
+});
+
+/**
+ * 廿二 A（2026-09-28 拍板）：fail_task 的 BLOCKED 受控分支。
+ * 根因：blocked() 把 task.lease_id 清成 NULL 后，verify() 的 `task.leaseId !== input.lease_id`
+ * 对 BLOCKED 恒 410——Agent 继续同一会话再判失败时结论写不回（需求.md 廿二章根因链 2）。
+ * 受控分支四条件：run 属本任务 ∧ run.lease_id == 入参 ∧ run 由本次 Token 持有 ∧ 任务 BLOCKED；
+ * 任一不满足必须维持既有 410 语义，不新造错误码。
+ */
+describe('BLOCKED 受控分支的 fail_task（廿二 A）', () => {
+  /** 先认领再 block，返回 block 前那份三元组——受控分支吃的就是它。 */
+  async function claimAndBlock(id = 'T-1') {
+    await seedTask(h.prisma, id);
+    const key = tripleOf(await h.claims.claim(CLAIM, agent));
+    await h.writeback.blocked(
+      blockedSchema.parse({
+        ...key,
+        block_id: 'h1',
+        block_title: '人工确认',
+        instruction: '等人工回话',
+      }),
+      agent,
+    );
+    h.emitted.length = 0;
+    return key;
+  }
+
+  it('block 后同三元组同 Token fail_task：BLOCKED→FAILED，评论/审计/通知/事件全链落地', async () => {
+    const key = await claimAndBlock();
+
+    const result = await h.writeback.fail(
+      failSchema.parse({ ...key, error: '确认无解，判定失败', summary: '窗口等不到' }),
+      agent,
+    );
+    expect(result).toMatchObject({
+      task_id: 'T-1',
+      run_id: key.run_id,
+      run_status: 'FAILED',
+      task_status: 'FAILED',
+      orphaned: false,
+    });
+
+    const task = await h.prisma.task.findUniqueOrThrow({ where: { id: 'T-1' } });
+    // 看板列归属：6.1 的「异常/失败」列（status 即列，FAILED 不再滞留在阻塞列）。
+    expect(task.status).toBe('FAILED');
+    expect(task.stopReason).toBe('agent_reported');
+    // 租约三元组在 block 时已清空，本分支不写它们（也不该被写回）。
+    expect([task.leaseId, task.leaseExpiresAt, task.currentRunId]).toEqual([null, null, null]);
+
+    const run = await h.prisma.taskRun.findUniqueOrThrow({ where: { id: key.run_id } });
+    // Run 不回写状态（block 已 FAILED 收口），error 是追加式：block 原文与失败结论都在。
+    expect(run.status).toBe('FAILED');
+    expect(run.error).toContain('人工块「人工确认」等待人工处理：等人工回话');
+    expect(run.error).toContain('Agent 在阻塞中上报失败：确认无解，判定失败');
+
+    const statusComments = await h.prisma.comment.findMany({ where: { type: 'status_change' } });
+    expect(statusComments).toHaveLength(2);
+    expect(statusComments.map((row) => row.content).join('\n')).toContain(
+      'Agent 在阻塞中上报失败，任务由「人工阻塞」转「异常/失败」：确认无解，判定失败',
+    );
+
+    const audits = await h.prisma.auditLog.findMany({ where: { action: 'run_writeback' } });
+    const closing = audits.map((row) => ({
+      before: JSON.parse(row.before ?? '{}'),
+      after: JSON.parse(row.after ?? '{}'),
+      actorType: row.actorType,
+      targetType: row.targetType,
+      targetId: row.targetId,
+    }));
+    expect(closing).toEqual(
+      expect.arrayContaining([
+        {
+          before: { task_status: 'BLOCKED' },
+          after: { task_status: 'FAILED' },
+          actorType: 'agent',
+          targetType: 'run',
+          targetId: key.run_id,
+        },
+      ]),
+    );
+
+    expect(await h.prisma.notification.count({ where: { kind: 'run_failed' } })).toBe(1);
+    expect(events('task.moved')).toHaveLength(1);
+    expect(events('task.moved')[0]!.data).toMatchObject({ id: 'T-1', from: 'BLOCKED', to: 'FAILED' });
+    expect(events('task.updated')).toHaveLength(1);
+  });
+
+  it('四条件各破一个仍 410：错 lease_id / 错 Token / run 不属本任务，任务留在 BLOCKED', async () => {
+    const key = await claimAndBlock();
+    // 错 run 归属需要另一条任务的真 Run（同 Token 也越不过 run.taskId 这一查）。
+    await seedTask(h.prisma, 'T-2');
+    const other = tripleOf(await h.claims.claim(CLAIM, agent));
+    const otherAgent = await h.agent('other-bot', ['tool:git']);
+    // 认领 T-2 自身会广播一条 task.moved，清掉——下面只数三次被拒的 fail 有没有偷发事件。
+    h.emitted.length = 0;
+
+    const attempts: Array<{ label: string; run: typeof key; auth: RequestAuth }> = [
+      { label: '错 lease_id', run: { ...key, lease_id: '00000000-0000-4000-8000-000000000000' }, auth: agent },
+      { label: '错 Token', run: key, auth: otherAgent },
+      { label: 'run 属另一任务', run: { ...other, task_id: 'T-1' }, auth: agent },
+    ];
+    for (const { label, run, auth } of attempts) {
+      const error = await h.writeback
+        .fail(failSchema.parse({ ...run, error: `${label} 的失败上报` }), auth)
+        .catch((thrown: unknown) => thrown);
+      expect((error as ApiException).code, label).toBe('LEASE_EXPIRED');
+      expect((error as ApiException).status, label).toBe(410);
+    }
+    // 三次拒绝都是零写入：任务还停在阻塞列，结案痕迹一条没有。
+    const task = await h.prisma.task.findUniqueOrThrow({ where: { id: 'T-1' } });
+    expect(task.status).toBe('BLOCKED');
+    expect(task.stopReason).toBeNull();
+    expect(await h.prisma.notification.count({ where: { kind: 'run_failed' } })).toBe(0);
+    expect(events('task.moved')).toHaveLength(0);
+  });
+
+  it('结案后重复 fail_task：任务已非 BLOCKED，落回 verify() 的 410 普通拒径（不做幂等回放）', async () => {
+    const key = await claimAndBlock();
+    await h.writeback.fail(failSchema.parse({ ...key, error: '第一次结案' }), agent);
+    h.emitted.length = 0;
+
+    // 裁量（廿二 A 未拍重复语义）：与 blocked()「不做幂等回放」同口径——FAILED 不在受控
+    // 分支的入口条件里，直接落回 verify()（lease 已空 → 410），不给已结案任务再开写入窗口。
+    const error = await h.writeback
+      .fail(failSchema.parse({ ...key, error: '第二次上报' }), agent)
+      .catch((thrown: unknown) => thrown);
+    expect((error as ApiException).code).toBe('LEASE_EXPIRED');
+    expect((error as ApiException).status).toBe(410);
+
+    const task = await h.prisma.task.findUniqueOrThrow({ where: { id: 'T-1' } });
+    expect(task.status).toBe('FAILED');
+    expect(await h.prisma.notification.count({ where: { kind: 'run_failed' } })).toBe(1);
+    expect(events('task.moved')).toHaveLength(0);
+    const run = await h.prisma.taskRun.findUniqueOrThrow({ where: { id: key.run_id } });
+    expect(run.error).not.toContain('第二次上报');
   });
 });

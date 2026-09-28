@@ -38,7 +38,7 @@ import {
   TR,
 } from '@/components/ui';
 import type { MenuItem, MenuProps } from '@/components/ui';
-import { directTransitions } from '@/features/board/matrix';
+import { directTransitions, type TransitionRule } from '@/features/board/matrix';
 import {
   GROUPABLE_KEYS,
   GROUP_DIMENSIONS,
@@ -46,6 +46,7 @@ import {
   type GroupDimensionKey,
 } from '@/features/board/grouping/dimensions';
 import { statusLabel } from '@/lib/labels';
+import { COPY } from '@/lib/copy';
 import { cn } from '@/lib/cn';
 import {
   AgentCell,
@@ -580,7 +581,7 @@ function TaskRow({
  * 原型 3.8：`⋯` 与卡片是**同一份按状态生成的动作集**（4.3 操作表 + 4.5 矩阵），
  * 列表页不自立一套——✅ 的落点由矩阵的 `directTransitions()` 给（见文件末尾的
  * `allowedTransitions()`），本页只负责措辞与图标。这里只挂列表页能安全直发的三类：
- * `✅` 流转、归档/恢复、置顶；
+ * `✅` 流转（廿二 B 起 danger 边先过 `window.confirm`，见下方 onSelect）、归档/恢复、置顶；
  * 「强制停止」要二次确认、「删除」要先拿 run/下游计数（4.3.1 规则 4）、
  * 审核必须走 720px 表单（6.5 三字段必填），三者都由抽屉与审核表单承担，
  * 本页给的是入口（查看详情 / 审核 →），不是第二套实现。
@@ -615,11 +616,18 @@ function RowMenu({ row, onlyArchived, onAction, actionBusy }: RowMenuProps) {
           },
         ]
       : []),
-    ...transitions.map((target) => ({
-      id: `to-${target}`,
-      label: `移动到${statusLabel(target)}`,
+    ...transitions.map((rule) => ({
+      id: `to-${rule.to}`,
+      // 非 danger 边沿用本页措辞（「移动到X」）；danger 边直接给矩阵的 menuLabel，
+      // 让「按失败结案」这一动作名在列表页也点明性质（廿二 B）。
+      label: rule.danger ? rule.menuLabel : `移动到${statusLabel(rule.to)}`,
       icon: <Undo2 className="size-3.5" aria-hidden />,
-      onSelect: () => onAction({ id: row.id, send: () => api.tasks.transition(row.id, { to: target }) }),
+      danger: rule.danger,
+      onSelect: () => {
+        // 廿二 B：danger 的 ✅ 边先二次确认，取消零请求（确认语与抽屉同源，见 lib/copy）。
+        if (rule.danger && !window.confirm(COPY.closeFailedConfirm)) return;
+        onAction({ id: row.id, send: () => api.tasks.transition(row.id, { to: rule.to }) });
+      },
     })),
     {
       id: 'pin',
@@ -681,13 +689,18 @@ function RowMenu({ row, onlyArchived, onAction, actionBusy }: RowMenuProps) {
  * 4.5 矩阵里 `✅` 的那几格——**落点只有矩阵一份**（`features/board/matrix.ts`），
  * 本页不再抄第二遍 `to:` 字面量。`🔒` 要走表单（强制停止/审核都在抽屉与审核表单里承担，
  * 本页只给「查看详情 / 审核 →」入口）、`❌` 由服务端拒，两者都不进这个菜单，
- * 所以矩阵的 ✅ 集合就是本页能安全直发的那一批。
+ * 所以矩阵的 ✅ 集合就是本页的流转菜单全集——廿二 B 起其中的 danger 边
+ * （BLOCKED「按失败结案」）不再是「安全直发」：直发前先过 `window.confirm` 二次确认。
  * 顺序按看板列序（`BOARD_COLUMN_ORDER` = 4.1 六列序）排一遍，与卡片 `⋯` 菜单读到的顺序同源。
  * 表外状态（20.2 末段）`directTransitions()` 返回空数组 = 一个写入口都不给。
  */
-function allowedTransitions(status: string): TaskStatus[] {
-  const targets = new Set<TaskStatus>(directTransitions(status).map((rule) => rule.to));
-  return BOARD_COLUMN_ORDER.filter((to) => targets.has(to));
+function allowedTransitions(status: string): TransitionRule[] {
+  const byTarget = new Map<TaskStatus, TransitionRule>(
+    directTransitions(status).map((rule) => [rule.to, rule]),
+  );
+  return BOARD_COLUMN_ORDER.map((to) => byTarget.get(to)).filter(
+    (rule): rule is TransitionRule => rule !== undefined,
+  );
 }
 
 /** 空态文案判据（原型 3.8）：只看**列表查询真的带上去了**的条件，`view` 是看板预设、不算。 */

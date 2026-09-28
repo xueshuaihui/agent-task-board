@@ -32,7 +32,12 @@ export type DragForm = 'review' | 'stop';
 export const FORM_ACTION = { stop: '强制停止', review: '审核', reject: '驳回' } as const;
 
 /** ✅ 流转的稳定键：矩阵给键与目标列，各处只按键贴自己那套措辞，不另写落点。 */
-export type TransitionKey = 'confirm_ready' | 'withdraw' | 'retry' | 'back_to_backlog';
+export type TransitionKey =
+  | 'confirm_ready'
+  | 'withdraw'
+  | 'retry'
+  | 'back_to_backlog'
+  | 'close_failed';
 
 declare const issuedByMatrix: unique symbol;
 
@@ -60,7 +65,8 @@ export interface TransitionRule {
   readonly label: string;
   /** 原型 3.3 卡片 `⋯` 菜单的措辞（菜单里要点明落到哪一列）。 */
   readonly menuLabel: string;
-  /** 需要二次确认的流转。今天没有 ✅ 格是危险项；🔒 的「强制停止」在放置处标 danger。 */
+  /** 需要二次确认的流转。廿二 B 起 BLOCKED 的「按失败结案」是第一格 danger ✅（菜单红字 + 确认弹窗）；
+   *  🔒 的「强制停止」仍在放置处标 danger。 */
   readonly danger?: boolean;
 }
 
@@ -74,9 +80,12 @@ export const DIRECT_TRANSITIONS = {
   READY: [{ key: 'withdraw', to: 'BACKLOG', label: '撤回', menuLabel: '移回需求池' }],
   RUNNING: [],
   // 8.4：人工阻塞由 Agent 端 blocked 端点产生，人工处理后的出路与异常/失败一致。
+  // 廿二 B（2026-09-28 拍板）：补「按失败结案」danger ✅ 边——Agent 在阻塞中判定失败、
+  // 人确认按失败结案时，BLOCKED 不再只有重试/退回两条出路（与后端 contract/transitions.ts 同格）。
   BLOCKED: [
     { key: 'retry', to: 'READY', label: '重试', menuLabel: '重试到待执行' },
     { key: 'back_to_backlog', to: 'BACKLOG', label: '退回需求池', menuLabel: '移回需求池' },
+    { key: 'close_failed', to: 'FAILED', label: '按失败结案', menuLabel: '按失败结案', danger: true },
   ],
   REVIEW: [],
   DONE: [],
@@ -117,7 +126,8 @@ const RESTRICTIONS: { [F in TaskStatus]: Row<F> } = {
     DONE: RUNNING_ONLY,
     FAILED: { kind: 'form', form: 'stop', action: FORM_ACTION.stop },
   },
-  BLOCKED: { RUNNING: RUNNING_ONLY, REVIEW: FORBIDDEN, DONE: FORBIDDEN, FAILED: FORBIDDEN },
+  // 廿二 B：FAILED 已升为 ✅（按失败结案），此行不再声明它——行类型本就不允许重复占格。
+  BLOCKED: { RUNNING: RUNNING_ONLY, REVIEW: FORBIDDEN, DONE: FORBIDDEN },
   REVIEW: {
     BACKLOG: { kind: 'form', form: 'review', action: FORM_ACTION.reject },
     READY: { kind: 'form', form: 'review', action: FORM_ACTION.reject },

@@ -144,7 +144,7 @@ export function buildVocabulary(input: VocabularyInput) {
       values: [...TASK_STATUS],
       labels: { ...STATUS_LABEL },
       transitions: transitionTable(),
-      note: 'RUNNING 只能由 claim_next_task 认领事务产生；DONE 为终态；Agent 回写路径：complete_task→REVIEW、fail_task→FAILED、block_task→BLOCKED',
+      note: 'RUNNING 只能由 claim_next_task 认领事务产生；DONE 为终态；Agent 回写路径：complete_task→REVIEW、fail_task→FAILED、block_task→BLOCKED；任务已 BLOCKED 时 fail_task 走受控分支（同三元组同 Token 可再报失败结案）→FAILED',
     },
     capability: {
       format: 'namespace:value',

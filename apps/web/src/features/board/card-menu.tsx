@@ -106,6 +106,8 @@ function flowItems(card: TaskCard, status: TaskStatus, actions: CardActions): Me
         id: `move:${to}`,
         label: verdict.rule.menuLabel,
         icon: <RotateCw className="size-3.5" />,
+        // 廿二 B：danger 的 ✅ 边在菜单里标红；二次确认弹窗由 `actions.move` 统一承担。
+        danger: verdict.rule.danger,
         onSelect: () => actions.move(card, to),
       });
       continue;

@@ -21,7 +21,7 @@ import { Button, EmptyState, useToast, type ToastApi } from '@/components/ui';
 import { useBoardWithGroups } from '@/features/groups';
 import { BoardColumnView } from './board-column';
 import type { CardActions } from './card-actions';
-import { DeleteDialog, StopDialog } from './dialogs';
+import { DeleteDialog, DangerMoveDialog, StopDialog, type DangerMoveTarget } from './dialogs';
 import { FLY_BATCH_LIMIT, FLY_BATCH_SUPPRESS_MS, FLY_DROP_SUPPRESS_MS, markPendingMove, suppressFly } from './fly-motion';
 import { dropStates, dropVerdict } from './matrix';
 import { COLUMN_ORDER, isDefaultBoardView } from './model';
@@ -106,8 +106,10 @@ export function BoardPage() {
   const [quick, setQuick] = useState<QuickCreateTarget | null>(null);
   const [stopTarget, setStopTarget] = useState<TaskCard | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TaskCard | null>(null);
+  // 廿二 B：danger 的 ✅ 流转（按失败结案）先过确认弹窗，确认才进 mutation。
+  const [dangerMove, setDangerMove] = useState<DangerMoveTarget | null>(null);
 
-  const actions = useCardActions(toast, mutations, setStopTarget, setDeleteTarget, setQuick);
+  const actions = useCardActions(toast, mutations, setStopTarget, setDeleteTarget, setQuick, setDangerMove);
 
   // 拖拽开始时按源卡片状态一次性算出六列的可放置态（PRD 7.2 首条：不在每次 hover 重算）。
   const activeCard = activeId ? cards.get(activeId) : undefined;
@@ -246,6 +248,7 @@ export function BoardPage() {
       <QuickCreateDialog state={quick} mutations={mutations} onClose={closeQuick} />
       <StopDialog card={stopTarget} mutations={mutations} onClose={() => setStopTarget(null)} />
       <DeleteDialog card={deleteTarget} mutations={mutations} onClose={() => setDeleteTarget(null)} />
+      <DangerMoveDialog target={dangerMove} mutations={mutations} onClose={() => setDangerMove(null)} />
     </div>
   );
 }
@@ -265,6 +268,7 @@ function useCardActions(
   setStopTarget: Setter<TaskCard | null>,
   setDeleteTarget: Setter<TaskCard | null>,
   setQuick: Setter<QuickCreateTarget | null>,
+  setDangerMove: Setter<DangerMoveTarget | null>,
 ): CardActions {
   const latest = useRef(mutations);
   latest.current = mutations;
@@ -292,10 +296,16 @@ function useCardActions(
           () => toast.error('复制失败', `请手动选中 ${card.id}`),
         );
       },
-      /** 4.5 的三种反馈都在这一处：✅ 才发请求，🔒 弹表单，❌ 只 Toast。 */
+      /** 4.5 的三种反馈都在这一处：✅ 才发请求（danger 的 ✅ 先过确认），🔒 弹表单，❌ 只 Toast。 */
       move: (card, to) => {
         const verdict = dropVerdict(card.status, to);
         if (verdict.kind === 'direct') {
+          // 廿二 B：danger 的 ✅ 边（按失败结案）先弹确认——确认弹窗里才登记飞行标记并
+          // 发请求，取消等于什么都没发生（与 🔒 的 StopDialog 同构）。
+          if (verdict.rule.danger) {
+            setDangerMove({ card, to, label: verdict.rule.label });
+            return;
+          }
           // §5.2 方案 A：用户发起的 ✅ 换列在此登记 pending-move（拖拽释放路径已被规则 5
           // 抑制）。旧列在快照回来前的每次渲染据此撤掉 exit、预挂 layoutId，
           // 数据落地同帧瞬时让位 → 新列挂载即飞行；服务端确认后标记过期，不再重放（§5.1）。
@@ -312,7 +322,7 @@ function useCardActions(
         if (verdict.kind === 'forbidden') toast.warning('不允许的流转', verdict.copy);
       },
     };
-  }, [setQuick, setStopTarget, setDeleteTarget, toast]);
+  }, [setQuick, setStopTarget, setDeleteTarget, setDangerMove, toast]);
 }
 
 /* --------------------------------------------------------------- 布局件 */

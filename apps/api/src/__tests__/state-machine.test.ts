@@ -68,7 +68,8 @@ const MATRIX_45: Record<TaskStatus, Record<TaskStatus, Cell>> = {
     BLOCKED: 'forbid:self',
     REVIEW: 'forbid:illegal',
     DONE: 'forbid:illegal',
-    FAILED: 'forbid:illegal',
+    // 廿二 B（2026-09-28 拍板）：BLOCKED→FAILED 补人工结案直边（Agent 侧受控回写见 writeback.fail）。
+    FAILED: 'direct',
   },
   REVIEW: {
     BACKLOG: 'form:review',

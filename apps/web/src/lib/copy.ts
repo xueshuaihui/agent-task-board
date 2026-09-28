@@ -13,6 +13,10 @@ export const COPY = {
   deleteConfirm: (n: number, m: number) =>
     `将同时删除 ${n} 条执行记录及其产物。${m > 0 ? `下游 ${m} 个任务将立即变为可执行。` : ''}`,
   stopConfirm: 'Agent 可能仍在继续执行，平台不再接受它的结果。',
+  // 廿二 B：BLOCKED「按失败结案」的二次确认语（目前矩阵里唯一的 danger ✅ 边；
+  // 再新增 danger 流转时按 key 各给一句，别复用这条）。
+  closeFailedConfirm:
+    '确认 Agent 已判定执行失败？任务将由「人工阻塞」按失败结案，移入「异常/失败」。',
   leaseExpired: '租约已过期，结果未写入',
   leaseRevoked: '租约已被强制停止吊销，结果未写入',
   dependencyCycle: (chain: string) => `依赖关系形成环：${chain}，已取消保存`,

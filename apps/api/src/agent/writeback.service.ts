@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type { Prisma, Task, TaskRun } from '@prisma/client';
 import { ApiException } from '../contract/errors';
 import {
   LOG_LINES_HEAD,
@@ -19,7 +19,7 @@ import { AuditService } from '../infra/audit.service';
 import { EventsService } from '../infra/events.service';
 import { NotificationsService } from '../infra/notifications.service';
 import { PrismaService } from '../infra/prisma.service';
-import { agentOf } from './agent-auth';
+import { agentOf, type AgentAuth } from './agent-auth';
 import { AgentQueryService } from './agent-query.service';
 import type {
   AppendLogInput,
@@ -38,9 +38,10 @@ import { LeaseService } from './lease.service';
  * 但每个状态都有它自己的那条链路——错误里直接指名，Agent 一次改对而不是试错。
  */
 const NOT_EDITABLE_ROUTE: Partial<Record<TaskStatus, { route: string; via: string }>> = {
+  // 廿二 A：BLOCKED 不再是失败上报的死路——同三元组同 Token 的 fail_task 走受控分支结案。
   BLOCKED: {
     route: 'manual_resume',
-    via: '人工处理后由 UI 把任务转回「待执行」（READY）或需求池，再 claim_next_task 拿新三元组（block_task 已把租约清空，本任务不存在可用租约）；等待解除可用 wait_for_resume',
+    via: '人工处理后由 UI 把任务转回「待执行」（READY）或需求池，再 claim_next_task 拿新三元组（block_task 已把租约清空，本任务不存在可用租约）；等待解除可用 wait_for_resume；若你已判定失败，可直接调 fail_task（BLOCKED 受控分支）',
   },
   REVIEW: {
     route: 'review_form',
@@ -305,6 +306,27 @@ export class WritebackService {
   }
 
   async fail(input: FailInput, auth: RequestAuth) {
+    // 廿二 A（2026-09-28 拍板）：BLOCKED 受控分支。
+    // blocked() 已把 task.lease_id/current_run_id 清成 NULL，verify() 的
+    // `task.leaseId !== input.lease_id` 对 BLOCKED 恒 410——Agent 继续同一会话再宣告
+    // 失败时结论永远写不回（需求.md 廿二章的根因链 2）。这里只放行四条件全查的调用：
+    // run 属本任务 ∧ run.lease_id == 入参 lease_id ∧ run 由本次调用的 Token 持有
+    // ∧ 任务当前 BLOCKED。条件任一不满足就落回 verify() 的既有校验序
+    // （吊销/过期优先），维持 410 LEASE_EXPIRED 语义，不新造错误码。
+    const current = await this.prisma.task.findUnique({ where: { id: input.task_id } });
+    if (current && current.status === 'BLOCKED') {
+      const agent = agentOf(auth);
+      const run = await this.prisma.taskRun.findUnique({ where: { id: input.run_id } });
+      if (
+        run &&
+        run.taskId === current.id &&
+        run.leaseId === input.lease_id &&
+        run.tokenId === agent.tokenId
+      ) {
+        return this.failFromBlocked(current, run, input, agent);
+      }
+    }
+
     const verdict = await this.leases.verify(input, auth);
     const agent = agentOf(auth);
     const now = nowSql();
@@ -382,11 +404,95 @@ export class WritebackService {
   }
 
   /**
+   * 廿二 A：BLOCKED→FAILED 的受控回写（fail_task 专用分支，四条件已在 fail() 查全）。
+   * 口径逐条对齐既有形状、最小差异：
+   *  - 任务：BLOCKED→FAILED、stop_reason='agent_reported'（与 fail() 同一自报语义）；
+   *    lease_id/lease_expires_at/current_run_id 在 block 时已清空，这里不再写它们。
+   *    流转合法性由 4.5 矩阵的 BLOCKED 行 ✅ 边背书（contract/transitions.ts 同格已放行，
+   *    人工侧走 tasks.service.transition 的 classifyTransition 守卫，两侧读同一张表）。
+   *  - Run：**不回写 status**——block 时已按 FAILED 收口（blocked() 的裁定）；error/summary
+   *    做追加式补写，保留人工块原文再补上失败结论，供审核与排查回读完整链路。
+   *  - 评论/审计/通知/事件仿 blocked() 与 fail()：status_change 评论写明「由阻塞中上报失败」，
+   *    审计 before/after 各带 task_status，通知 run_failed，事件 task.moved（from=BLOCKED）。
+   *  - 成功后再调 fail_task：任务已非 BLOCKED，落回 verify() 的 410 普通拒径
+   *    （与 blocked()「不做幂等回放」同口径，不给结案后的任务再开写入窗口）。
+   */
+  private async failFromBlocked(
+    task: Task,
+    run: TaskRun,
+    input: FailInput,
+    agent: AgentAuth,
+  ) {
+    const now = nowSql();
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.task.update({
+        where: { id: task.id },
+        data: {
+          status: 'FAILED',
+          // 4.3.2：Agent 自报失败只写 agent_reported，不冒充 user_stop / lease_expired。
+          stopReason: 'agent_reported',
+          updatedAt: now,
+        },
+      });
+      await tx.taskRun.update({
+        where: { id: run.id },
+        data: {
+          error: appendBlockedFailure(run.error, `Agent 在阻塞中上报失败：${input.error}`),
+          summary: input.summary
+            ? appendBlockedFailure(run.summary, `Agent 在阻塞中上报失败：${input.summary}`)
+            : run.summary,
+        },
+      });
+      await tx.comment.create({
+        data: {
+          id: newId(),
+          taskId: task.id,
+          runId: run.id,
+          authorType: 'system',
+          type: 'status_change',
+          content: `Agent 在阻塞中上报失败，任务由「人工阻塞」转「异常/失败」：${input.error.slice(0, 120)}`,
+        },
+      });
+      await this.audit.record(
+        {
+          actorType: 'agent',
+          actorName: agent.tokenName,
+          action: 'run_writeback',
+          targetType: 'run',
+          targetId: run.id,
+          before: { task_status: 'BLOCKED' },
+          after: { task_status: 'FAILED' },
+        },
+        tx,
+      );
+    });
+
+    await this.notifications.push(
+      'run_failed',
+      task.id,
+      `任务 ${task.id} 执行失败（阻塞中上报）：${input.error.slice(0, 80)}`,
+    );
+    this.events.emit('task.moved', { id: task.id, from: 'BLOCKED', to: 'FAILED' });
+    this.events.emit('task.updated', { id: task.id });
+
+    return {
+      task_id: task.id,
+      run_id: run.id,
+      // Run 保持 block 时的 FAILED 收口，本分支不回写其状态。
+      run_status: run.status,
+      task_status: 'FAILED' as TaskStatus,
+      orphaned: false,
+    };
+  }
+
+  /**
    * 8.4 人工块：Agent 执行到人工块时上报，任务转 BLOCKED 等人工处理。
    * Run 置 FAILED 收口（否则任务回 READY 重新认领后它会永远挂在 RUNNING，占住
    * 「单任务一个活动 Run」的部分唯一索引），error 记人工块指令；租约随转 BLOCKED 清空，
    * 人工处理完成、BLOCKED→READY 之后由新的认领产生新租约。
-   * 租约已清空，重试的旧三元组与 complete/fail 一样回 410（不做幂等回放）。
+   * 租约已清空，重试的旧三元组与 complete 一样回 410（不做幂等回放）；
+   * fail 是唯一例外——廿二 A 的 BLOCKED 受控分支放行「同三元组同 Token 上报失败」。
    */
   async blocked(input: BlockedInput, auth: RequestAuth) {
     const verdict = await this.leases.verify(input, auth);
@@ -646,3 +752,11 @@ export class WritebackService {
 }
 
 const TRUNCATION_MARKER = `日志超过 ${LOG_LINES_MAX} 行，中间部分已截断（保留首 ${LOG_LINES_HEAD} 行与最近 ${LOG_LINES_TAIL - 1} 行）`;
+
+/**
+ * 廿二 A：BLOCKED 受控分支的 Run 字段是**追加式**补写——block 记下的 error/summary
+ * 是「为什么阻塞」，这次上报的是「为什么失败」，两段都要留得下，不能像普通 fail() 那样覆盖。
+ */
+function appendBlockedFailure(existing: string | null, addition: string): string {
+  return existing ? `${existing}\n${addition}` : addition;
+}
