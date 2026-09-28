@@ -10,7 +10,15 @@ import {
   SquareKanban,
   Trash2,
 } from 'lucide-react';
-import { api, errorMessage, qk, useApiMutation, useTaskList, useTaskOverview } from '@/api';
+import {
+  api,
+  errorMessage,
+  qk,
+  useApiMutation,
+  useBoard,
+  useTaskList,
+  useTaskOverview,
+} from '@/api';
 import type { TaskCreateInput, TaskListItem, TaskPatchInput } from '@/api/types';
 import { navigate } from '@/app/router';
 import { useFilterStore } from '@/app/store/filters';
@@ -35,7 +43,6 @@ import {
 } from '@/components/ui';
 import { REQUIREMENT_TYPE } from './use-requirement-options';
 import {
-  SUBTASK_TYPE,
   aggregateRequirementProgress,
   requirementProgressPercent,
   type RequirementProgress,
@@ -50,10 +57,14 @@ import { useRequirementDrawerStore } from './requirement-store';
  * `keyword` 同一条请求），点行打开**既有需求抽屉**（不新造第二套详情视图），
  * 「在看板中打开」写统一过滤 store 的 `requirements` 维后跳看板（**不写 `groups` 维**）。
  *
- * 完成度（§19.15·88 追加段）：列表 DTO 不带 `aggregate`/`children`，行上的
- * 「子任务完成度 x/y + 进度」由第二条既有请求 `GET /tasks?type=子任务&page_size=200`
- * 按 `card.parent.id` 前端聚合（纯函数见 `requirement-progress.ts`）；未命中的行
- * **整块不显示**，不渲染 `0/0` 或猜测值。
+ * 完成度（§19.15·88 追加段·2026-09-28 定稿口径）：列表 DTO 不带 `aggregate`/`children`，
+ * 行上的「子任务完成度 x/y + 进度」由第二条既有请求
+ * `GET /board?requirements=<本页需求 ids>` 补齐——该维在服务端就是
+ * `parent_task_id IN (…)`（子任务的真值是父任务指向，**不是** `type=子任务`，
+ * 按 type 取会把「类型=缺陷 + 所属需求=X」这类子卡整批漏掉），列内卡片按
+ * `card.parent.id` 前端聚合（纯函数见 `requirement-progress.ts`）；`done/total`
+ * 直读服务端权威值。无子任务 / 未命中（被 `board_column_limit` 截断、整批落在
+ * 归档组被剔除）的行**整块不显示**，不渲染 `0/0` 或猜测值。零服务端改动。
  *
  * 生命周期全走任务级端点（§19.15·89）：新建 `POST /tasks {type:'需求'}`（**不发
  * `group_id`/`parent_task_id`**，服务端按 §5.2 落默认分组兜底）、编辑/归档/恢复/
@@ -63,8 +74,6 @@ import { useRequirementDrawerStore } from './requirement-store';
 
 /** 需求列表每页 50（口径给定的默认档）。 */
 const PAGE_SIZE = 50;
-/** 子任务聚合腿一次性拉满服务端上限 200；超出部分命中不到即按「不显示」处理。 */
-const SUBTASK_FETCH_SIZE = 200;
 /** 20.3：`keyword` 服务端上限 120，超长前端先截。 */
 const KEYWORD_MAX = 120;
 /** 原型 3.8 同款：搜索框防抖 300ms。 */
@@ -134,18 +143,29 @@ export function RequirementsPage() {
     order: 'desc',
     ...(keyword ? { keyword } : {}),
   });
-  /** 完成度聚合腿：第二条既有请求，不吃 keyword（否则命中面被搜索词裁掉、进度会假缺失）。 */
-  const subtasks = useTaskList({
-    type: [SUBTASK_TYPE],
-    page: 1,
-    page_size: SUBTASK_FETCH_SIZE,
-  });
-
   const items = list.data?.items ?? [];
   const total = list.data?.total ?? 0;
+  /** 本页需求 ids：完成度腿的唯一过滤维。 */
+  const requirementIds = useMemo(() => items.map((item) => item.id), [items]);
+  /**
+   * 完成度取数腿（§19.15·88 定稿口径）：`GET /board?requirements=<本页 ids>`，
+   * 服务端该维即 `parent_task_id IN (…)`——子任务按父任务指向取，不按 type。
+   * 三条硬约束：①**ids 为空必须 `enabled:false` 不发请求**（`requirements` 传空
+   * 数组 = 不带过滤 = 全量看板，是错误数据源）；②只带 `requirements`、**不带
+   * `keyword`**（搜索词只裁需求列表腿，不能裁完成度来源）；③返回卡片展平后喂
+   * 纯聚合，`done/total` 直读服务端权威值，前端不计数。
+   */
+  const board = useBoard(
+    { view: 'all', requirements: requirementIds },
+    { enabled: requirementIds.length > 0 },
+  );
   const progressByRequirement = useMemo(
-    () => aggregateRequirementProgress(items, subtasks.data?.items ?? []),
-    [items, subtasks.data],
+    () =>
+      aggregateRequirementProgress(
+        items,
+        board.data?.columns.flatMap((column) => column.tasks) ?? [],
+      ),
+    [items, board.data],
   );
 
   /** 表单对话框目标：'create' = 新建，对象 = 编辑；null = 关闭。 */
@@ -263,7 +283,7 @@ function RequirementCard({
   onDelete,
 }: {
   task: TaskListItem;
-  /** 聚合命中值；`undefined` = 本页子任务请求没捞到它的任何子卡（含超 200 截断）→ 完成度整块不显示（§19.15·88）。 */
+  /** 聚合命中值；`undefined` = 完成度腿没捞到它的任何子卡（无子任务、被子列 `board_column_limit` 截断或整批落在归档组被剔除）→ 完成度整块不显示，绝不落 `0/0`（§19.15·88）。 */
   progress: RequirementProgress | undefined;
   mutations: RequirementMutations;
   onEdit: () => void;
