@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Pencil } from 'lucide-react';
 import { fieldErrorsOf, useFieldDefs, useSettings, useTags } from '@/api';
-import type { FieldDef, TaskDetail, TaskTab } from '@/api';
+import type { FieldDef, ReviewMode, TaskDetail, TaskTab } from '@/api';
 import { Badge, Button, Field, Input, Progress, Select, TagBadge, Textarea } from '@/components/ui';
-import { priorityText, statusLabel } from '@/lib/labels';
+import { priorityText, REVIEW_MODE_LABEL, statusLabel } from '@/lib/labels';
 import { formatDateTime } from '@/lib/time';
 import { useShellStore } from '@/app/store/shell';
 import {
@@ -11,6 +11,7 @@ import {
   useRequirementOptions,
 } from '@/features/requirements/use-requirement-options';
 import { useRequirementDrawerStore } from '@/features/requirements/requirement-store';
+import { ReviewModeField } from '@/features/review/review-mode-field';
 import {
   applicableFieldDefs,
   CapabilityEditor,
@@ -136,6 +137,15 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
             rows={[
               { label: '类型', value: detail.type },
               { label: '优先级', value: priorityText(detail.priority) },
+              {
+                // 0020 §3.4：换过轨的 auto 任务要说明「Agent 不再领它」，否则用户会一直等；
+                // 但 review_mode 仍是 auto（PATCH 只改轨道位，不改方式）。
+                label: '审核方式',
+                value:
+                  detail.review_mode === 'auto' && detail.review_track === 'human'
+                    ? `${REVIEW_MODE_LABEL.auto}（已转由你审核）`
+                    : REVIEW_MODE_LABEL[detail.review_mode],
+              },
               {
                 // §19.14·86（W2-b）：只读行从「分组」改为「所属需求」——看板可见面
                 // 不再展示 Group 归属；卡片有组但无需求时如实显示「未分配」。
@@ -305,6 +315,9 @@ function OverviewEditForm({
   const [tagsValue, setTagsValue] = useState<string[]>(detail.tags);
   const [capabilities, setCapabilities] = useState<string[]>(detail.required_capabilities);
   const [dueAt, setDueAt] = useState(detail.due_at ?? '');
+  // 编辑态取值域就是三枚实值（`''` 只属于建单态的「跟随全局默认」）。
+  const [reviewMode, setReviewMode] = useState<ReviewMode>(detail.review_mode);
+  const settings = useSettings();
   const [custom, setCustom] = useState<FieldDraft>(() => draftFromValues(defs, detail.custom_fields ?? {}));
 
   /* §19.15·91（v0.0.4 r6，推翻 §19.14·86 双写）：归属唯一入口 = 「所属需求」下拉。
@@ -343,6 +356,9 @@ function OverviewEditForm({
       body.required_capabilities = capabilities;
     }
     if (dueAt !== (detail.due_at ?? '')) body.due_at = dueAt === '' ? null : dueAt;
+    // 0020 §3.1：编辑态只有三枚实值（行里已存具体值），不给「跟随全局默认」——
+    // 回落会把「这条任务当初显式选过免审核」的既有事实改写掉。
+    if (reviewMode !== detail.review_mode) body.review_mode = reviewMode;
     if (requirementId !== initialRequirementId) {
       const option = requirements.data.find((item) => item.id === requirementId) ?? null;
       // 选中项必须仍在候选里才发（候选未就绪/数据竞态时不误改归属）。
@@ -391,6 +407,14 @@ function OverviewEditForm({
           onChange={(event) => setRequirementId(event.target.value)}
         />
       </Field>
+      <ReviewModeField
+        value={reviewMode}
+        onChange={(next) => {
+          if (next !== '') setReviewMode(next);
+        }}
+        allowDefault={false}
+        globalDefault={settings.data?.default_review_mode}
+      />
       <Field label="标签" hint="回车添加；候选来自历史标签的实时聚合（20.3）">
         <TagEditor value={tagsValue} candidates={tagCandidates} onChange={setTagsValue} />
       </Field>

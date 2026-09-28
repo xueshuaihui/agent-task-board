@@ -3,6 +3,11 @@ import { api, fieldErrorsOf, isApiError, qk, useApiMutation, useSettings, useTas
 import { useActiveGroups } from '@/features/groups';
 import type { TaskCreateInput } from '@/api';
 import { Button, Dialog, Field, Input, Select, Textarea } from '@/components/ui';
+import {
+  ReviewModeField,
+  reviewModeBody,
+  type ReviewModeChoice,
+} from '@/features/review/review-mode-field';
 import { errorMessage } from '@/api';
 import { clearFieldError } from '@/lib/forms';
 import { priorityText } from '@/lib/labels';
@@ -76,6 +81,7 @@ function TaskCreateForm({
   const [parentId, setParentId] = useState(initialParent);
   const [groupId, setGroupId] = useState('');
   const [tagText, setTagText] = useState('');
+  const [reviewMode, setReviewMode] = useState<ReviewModeChoice>('');
   const [description, setDescription] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -112,6 +118,7 @@ function TaskCreateForm({
     if (description.trim()) body.description = description.trim();
     if (groupId) body.group_id = groupId;
     if (!asRequirement && parentId) body.parent_task_id = parentId;
+    Object.assign(body, reviewModeBody(reviewMode));
     create.mutate(body, {
       onError: (error) => {
         const issues = fieldErrorsOf(error);
@@ -224,6 +231,13 @@ function TaskCreateForm({
             onChange={(event) => setGroupId(event.target.value)}
           />
         </Field>
+
+        <ReviewModeField
+          value={reviewMode}
+          onChange={setReviewMode}
+          allowDefault
+          globalDefault={settings.data?.default_review_mode}
+        />
 
         <Field label="标签" hint="逗号分隔，单个 ≤ 16 字、最多 10 个（20.3）" error={errors.tags}>
           <Input

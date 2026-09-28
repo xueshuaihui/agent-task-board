@@ -12,6 +12,11 @@ import {
 // vitest 下这条环会让 ROUTES 项在求值时还是 undefined（真机靠打包顺序侥幸）。
 import { useSkills } from '@/features/skills/hooks';
 import { SkillPickerPopover } from '@/features/skills/skill-picker';
+import {
+  ReviewModeField,
+  reviewModeBody,
+  type ReviewModeChoice,
+} from '@/features/review/review-mode-field';
 import { useFilterStore } from '@/app/store/filters';
 import { priorityText, STATUS_LABEL } from '@/lib/labels';
 import { clearFieldError } from '@/lib/forms';
@@ -108,6 +113,7 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
     [skillItems],
   );
   const [skillIds, setSkillIds] = useState<string[]>([]);
+  const [reviewMode, setReviewMode] = useState<ReviewModeChoice>('');
 
   // §19.15·91（r6）：创建时的唯一归属选择是「需求」——选中即只写 parent_task_id，
   // 不再回填组字段（Group 概念已从看板 UI 与写入侧整体下线）。
@@ -149,6 +155,7 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
         if (skillIds.length) body.skills = skillIds.map((skill_id) => ({ skill_id }));
         // §19.15·91：选需求 → 只发 parent_task_id；未选 → 两字段都不发（服务端按 §5.2 落默认组兜底）。
         Object.assign(body, requirementCreateBody(selectedRequirement));
+        Object.assign(body, reviewModeBody(reviewMode));
         if (preset?.required_capabilities?.length) body.required_capabilities = preset.required_capabilities;
         if (typeof preset?.due_offset_days === 'number' && preset.due_offset_days > 0) {
           body.due_at = new Date(Date.now() + preset.due_offset_days * 86_400_000).toISOString();
@@ -255,6 +262,13 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
             onChange={(event) => setRequirementId(event.target.value)}
           />
         </Field>
+
+        <ReviewModeField
+          value={reviewMode}
+          onChange={setReviewMode}
+          allowDefault
+          globalDefault={settings.data?.default_review_mode}
+        />
 
         <Field label="标签" hint="逗号分隔，单个 ≤ 16 字、最多 10 个（20.3）" error={errors.tags}>
           <Input
