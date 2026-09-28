@@ -51,7 +51,7 @@ import {
   isArchivedRow,
   useNowTick,
 } from './cells';
-import { ActiveFilterSummary, ActiveGroupScope, FilterChips, FilterPanel } from './filter-panel';
+import { ActiveFilterSummary, ActiveRequirementScope, FilterChips, FilterPanel } from './filter-panel';
 import { BatchBar } from './batch-bar';
 import { TASK_TABLE_COLUMNS, TASK_TABLE_MIN_WIDTH_CLASS } from './columns';
 import { CreateTaskMenu } from './create-menu';
@@ -107,6 +107,8 @@ export function TaskListPage() {
 
   /* ------------------------------------------------- URL 查询串 → 筛选 store */
 
+  // §19.15·90：`filtersFromSearch` 已不水合 `groups`（读取时剥离丢弃、不回写本页 URL），
+  // 旧书签里的 groups 值在这里等于未知参数，直接忽略。
   useEffect(() => {
     const patch = filtersFromSearch(search);
     if (patch) useFilterStore.setState(patch);
@@ -146,7 +148,9 @@ export function TaskListPage() {
     () => toListQuery(filters, { page, page_size: pageSize, sort: sort.field, order: sort.order }),
     [filters, page, pageSize, sort],
   );
-  // 7.8：分组多选时每分组一次 `group_id` 服务端过滤请求再按页合并（useGroupScoped）。
+  // 数据源仍是 useTaskListWithGroups（7.8 的「每分组一次 group_id 请求 + 前端合页」存量壳）。
+  // §19.15·90 后 store 的 groups 维不再被任何 UI 写入、URL 读取时剥离，因此它恒退化为
+  // 单请求直传；包装本身按消费者清点结论保留（见 features/groups/use-group-scoped.ts）。
   const list = useTaskListWithGroups(params);
   const rows = useMemo(() => list.data?.items ?? [], [list.data]);
   const total = list.data?.total ?? 0;
@@ -310,7 +314,7 @@ export function TaskListPage() {
             {sort.order === 'asc' ? '升序' : '降序'}
           </p>
         </div>
-        <ActiveGroupScope />
+        <ActiveRequirementScope />
         <ActiveFilterSummary />
       </header>
 

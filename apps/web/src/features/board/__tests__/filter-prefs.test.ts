@@ -161,7 +161,7 @@ describe('B15-② 偏好迁移 → v2 扁平（§19.14：groups 读取时丢弃�
     await vi.waitFor(() => {
       expect(useFilterStore.getState().priority).toEqual([1]);
     });
-    // 看板侧不再把 groups 水合进 store（store 键保留给列表作用域，初值恒空）。
+    // 两条路由都不再把 groups 水合进 store（§19.15·90：store 键只给 use-group-scoped 的存量壳，初值恒空）。
     expect(useFilterStore.getState().groups).toEqual([]);
     const written = JSON.parse(localStorage.store.get(BOARD_FILTER_LOCAL_KEY) ?? '{}') as Record<string, unknown>;
     expect(written.priority).toEqual([1]);
@@ -189,21 +189,24 @@ describe('B15-② URL 查询串 ←→ 过滤态', () => {
       type: ['Bug'],
       agents: ['atb'],
     });
-    expect(patch?.groups).toBeUndefined();
+    expect(patch && 'groups' in patch).toBe(false);
     expect(patch?.view).toBeUndefined();
   });
 
-  it('看板解析 URL 前剥离 groups=（stripLegacyGroupsParam）；列表路由的 filtersFromSearch 照旧认 groups', () => {
+  it('§19.15·90 两条路由同口径剥离 groups：看板先 stripLegacyGroupsParam，列表腿 filtersFromSearch 读取时丢弃', () => {
     const search = new URLSearchParams('priority=1&groups=g-1%2Cnone&type=Bug');
     const stripped = stripLegacyGroupsParam(search);
     expect(stripped.has('groups')).toBe(false);
     expect(stripped.get('priority')).toBe('1');
     expect(stripped.get('type')).toBe('Bug');
-    const patch = filtersFromSearch(stripped);
-    expect(patch?.groups).toBeUndefined();
-    // 原 search 不被改动（新对象），且直接喂 filtersFromSearch 仍能得到 groups（列表口径不变）。
+    const boardPatch = filtersFromSearch(stripped);
+    expect(boardPatch && 'groups' in boardPatch).toBe(false);
+    // 列表路由直喂原始 search：groups 位同样不进 store（旧书签残留 = 未知参数）。
+    const listPatch = filtersFromSearch(search);
+    expect(listPatch && 'groups' in listPatch).toBe(false);
+    expect(listPatch).toMatchObject({ priority: [1], type: ['Bug'] });
+    // 原 search 不被改动（剥离只发生在解析侧；列表页不把过滤态回写 URL）。
     expect(search.has('groups')).toBe(true);
-    expect(filtersFromSearch(search)?.groups).toEqual(['g-1', 'none']);
   });
 
   it('无过滤参数 → boardFilterSearch 给空串', () => {

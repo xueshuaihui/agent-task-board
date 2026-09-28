@@ -18,9 +18,10 @@ export interface FilterState {
   tags: string[];
   /**
    * B15：统一过滤维度（服务端多值参数，维内 OR；`none` = 该维未设置）。
-   * §19.14（2026-09-24 拍板）：键**保留但只服务列表路由**——分组作用域
-   * （useTaskListWithGroups / ActiveGroupScope 消费）；看板可见面已下线 groups 维，
-   * 看板侧（toBoardQuery/boardFilterSearch/filter-prefs 切片）不再读写它。
+   * §19.14（2026-09-24）把键收窄为「只服务列表路由」；**§19.15·90（r6）进一步下线**：
+   * 「分组」概念从 web 可见面清零后，UI 不再写这一维、URL/偏好读取时剥离丢弃（见
+   * `filtersFromSearch`），键与初值保留只给 `use-group-scoped` 这条数据腿的存量形状
+   * （`GET /tasks?group_id=` 仍是 REST/Agent 面能力，见 §19.15·92）。
    */
   groups: string[];
   requirements: string[];
@@ -40,7 +41,7 @@ export interface FilterState {
     key: 'type' | 'tags' | 'status' | 'groups' | 'requirements' | 'agents',
     value: string,
   ) => void;
-  /** 程序化批量设值（URL 水合、筛选弹层整维设置、分组页直达）；数组空 = 该维不过滤。 */
+  /** 程序化批量设值（URL 水合、筛选弹层整维设置）；数组空 = 该维不过滤。 */
   setDimension: (key: 'groups' | 'requirements' | 'agents', values: string[]) => void;
   setCustomField: (fieldKey: string, values: string[]) => void;
   clearGroup: (
@@ -170,8 +171,10 @@ export function activeFilterCount(state: FilterState): number {
 
 /**
  * 从 hash 的查询串水合筛选（跳入列表页时用）；无相关参数时返回 null，调用方就别 reset。
- * `groups` 参数只对列表路由有意义（作用域 chip / 分组方式消费）；看板侧在
- * `features/board/filter-url-sync.ts` 已先行剥离，不会把 groups 水合进 store。
+ * §19.15·90（r6）：**`groups` 参数在读取时剥离丢弃**——「分组」概念从 web 可见面清零后，
+ * 两条路由都不再把它水合进 store（看板侧另有 `features/board/filter-url-sync.ts` 的
+ * `stripLegacyGroupsParam`，两条腿同口径）。列表页不把过滤态回写 URL，因此「不回写」
+ * 天然成立：旧书签里的 `groups=` 只作为未知参数被忽略。
  */
 export function filtersFromSearch(
   search: URLSearchParams,
@@ -182,7 +185,6 @@ export function filtersFromSearch(
     | 'priority'
     | 'type'
     | 'tags'
-    | 'groups'
     | 'requirements'
     | 'agents'
     | 'status'
@@ -208,8 +210,7 @@ export function filtersFromSearch(
   if (type.length) patch.type = type;
   const tags = listFrom(search, 'tags');
   if (tags.length) patch.tags = tags;
-  const groups = listFrom(search, 'groups');
-  if (groups.length) patch.groups = groups;
+  // §19.15·90：这里**不再读** `groups`（旧书签/跳转串残留 → 直接丢弃）。
   const requirements = listFrom(search, 'requirements');
   if (requirements.length) patch.requirements = requirements;
   const agents = listFrom(search, 'agents');

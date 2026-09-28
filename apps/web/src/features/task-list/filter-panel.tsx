@@ -8,7 +8,8 @@ import { transitions } from '@/lib/motion';
 import { Badge, Button, Checkbox, Input, Menu, MenuCaret, RadioGroup } from '@/components/ui';
 import type { MenuItem } from '@/components/ui';
 import { cn } from '@/lib/cn';
-import { useActiveGroups } from '@/features/groups';
+import { NONE_VALUE } from '@/features/board/filter/options';
+import { useRequirementOptions } from '@/features/requirements/use-requirement-options';
 import { PHASE_ONE_FIELD_TYPES, PRIORITY_LABEL, STATUS_LABEL, labelOf } from '@/lib/labels';
 
 /**
@@ -465,33 +466,41 @@ export function ActiveFilterSummary() {
 }
 
 /**
- * 列表页的分组作用域提示。
+ * 列表页的需求作用域提示（§19.15·90 r6：原「分组：xxx」chip 改走 `requirements` 维）。
  *
- * 7.8 的分组切换器与列表页共用 `groupIds`，但切换器只长在看板工具栏（board/toolbar）。
- * 从看板带着「只看某个分组」跳进列表时，这里不说清楚作用域，用户看到「共 0 条」会以为任务被删了。
+ * 它一直是「共享筛选 store 的当前作用域」指示器：7.8 时代读 `groups` 维、由
+ * useTaskListWithGroups 把它落成真实过滤；r6 后分组概念下线，这里改读 `requirements` 维
+ * （看板筛选与需求页「在看板中打开」写的那一份），✕ 是清作用域的入口。
+ * 如实记档一条边界：`GET /tasks` 的服务端契约里**没有**需求/父任务参数
+ * （`listQuerySchema` 只有 `group_id`，本批零服务端改动），所以这一维不会裁剪列表请求本身
+ * ——它裁剪的是跳转链路上的看板过滤态；列表侧真正生效的过滤仍以 chip 条与面板为准。
+ * 名字反查用既有 `GET /tasks?type=需求` 候选（`useRequirementOptions`，与归属下拉同源），
+ * 不再查分组缓存。
  */
-export function ActiveGroupScope() {
-  const groupIds = useFilterStore((state) => state.groups);
+export function ActiveRequirementScope() {
+  const requirementIds = useFilterStore((state) => state.requirements);
   const setDimension = useFilterStore((state) => state.setDimension);
-  const groups = useActiveGroups();
-  if (groupIds.length === 0) return null;
+  const requirements = useRequirementOptions();
+  if (requirementIds.length === 0) return null;
 
-  const items = groups.data?.items ?? [];
+  const items = requirements.data;
   const label =
-    groupIds.length === 1
-      ? (items.find((group) => group.id === groupIds[0])?.name ?? '1 个分组')
-      : `${groupIds.length} 个分组`;
+    requirementIds.length === 1
+      ? (requirementIds[0] === NONE_VALUE
+          ? '未归属需求'
+          : (items.find((requirement) => requirement.id === requirementIds[0])?.title ?? '1 个需求'))
+      : `${requirementIds.length} 个需求`;
 
   return (
     <div className="flex flex-wrap items-center gap-2 text-aux text-text-secondary">
       <button
         type="button"
-        title="点击恢复全部分组"
-        className="inline-flex items-center gap-1 rounded-tag border border-primary bg-primary-light px-1.5 py-px text-badge text-primary hover:text-primary-hover"
-        onClick={() => setDimension('groups', [])}
+        title="点击恢复全部需求"
+        className="inline-flex max-w-[260px] items-center gap-1 rounded-tag border border-primary bg-primary-light px-1.5 py-px text-badge text-primary hover:text-primary-hover"
+        onClick={() => setDimension('requirements', [])}
       >
-        分组：{label}
-        <X className="size-3" aria-hidden />
+        <span className="truncate">需求：{label}</span>
+        <X className="size-3 shrink-0" aria-hidden />
       </button>
     </div>
   );
