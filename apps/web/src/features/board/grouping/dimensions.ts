@@ -2,12 +2,13 @@ import type { TaskCard, TaskStatus } from '@/api/types';
 import { STATUS_LABEL, PRIORITY_LABEL } from '@/lib/labels';
 
 /**
- * 7.2 分组维度定义。取值函数只从卡片 DTO 读字段；group / requirement 两维
- * 20.7 的 TaskCard 还没有——先在 GroupableTask 上补可选字段（接缝：
- * 等 board 接口带上 group_id / requirement_* 后删掉本地扩展即可，下游不用改）。
+ * 7.2 分节维度定义（r6 §19.15·90：**`group` 维候选已删**——「分组」概念从 web 可见面
+ * 清零，「按需求分节」由本来就在七维内的 `requirement` 维承载；`group_id` 仍是数据模型与
+ * REST/Agent 面真值，只是不再作为分节维度暴露）。取值函数只从卡片 DTO 读字段；
+ * requirement 维的归属字段 20.7 的 TaskCard 还没有——先在 GroupableTask 上补可选字段
+ * （接缝：等 board 接口带上 requirement_* 后删掉本地扩展即可，下游不用改）。
  */
 export type GroupDimensionKey =
-  | 'group'
   | 'requirement'
   | 'type'
   | 'priority'
@@ -60,7 +61,7 @@ export interface GroupLaneMeta {
 /** 7.2：未归属需求的任务归入统一泳道。key 用不可能与真实 id 撞车的前缀。 */
 export const UNASSIGNED_KEY = '__unassigned__';
 export const UNASSIGNED_LABEL = '未归属需求';
-/** 「不分组」维度的唯一泳道。 */
+/** 「不分节」维度的唯一泳道。 */
 export const NONE_KEY = '__none__';
 export const NONE_LABEL = '全部任务';
 /** 无归属标签/Agent 等的兜底泳道名。 */
@@ -69,15 +70,6 @@ export const FALLBACK_LABEL = '未设置';
 const single = (key: string, label: string): GroupValue[] => [{ key, label }];
 
 export const GROUP_DIMENSIONS: Record<Exclude<GroupDimensionKey, 'none'>, GroupDimension> = {
-  group: {
-    key: 'group',
-    label: '分组',
-    icon: '📁',
-    getValues: (task) =>
-      task.group_id
-        ? single(task.group_id, task.group_name ?? task.group_id)
-        : single(UNASSIGNED_KEY, FALLBACK_LABEL),
-  },
   requirement: {
     key: 'requirement',
     label: '需求',
@@ -134,9 +126,8 @@ export const GROUP_DIMENSIONS: Record<Exclude<GroupDimensionKey, 'none'>, GroupD
   },
 };
 
-/** 分组选择器的候选顺序（7.7），「不分组」单独处理。 */
+/** 分节维度的候选顺序（7.7；§19.15·90 起不含 group），「不分节」单独处理。 */
 export const GROUPABLE_KEYS = [
-  'group',
   'requirement',
   'type',
   'priority',
@@ -150,10 +141,12 @@ export function dimensionOf(key: GroupDimensionKey): GroupDimension | null {
 }
 
 /**
- * 20.7 卡片 to GroupableTask：group / requirement（父任务）摘要在接缝处对齐。
+ * 20.7 卡片 to GroupableTask：requirement（父任务）摘要在接缝处对齐。
  * 后端 TaskCardDto 带的是 `group_id` 与 `parent { id, title, done, total }`
- * （apps/api/src/tasks/task.dto.ts）；grouping 引擎读的 group / requirement 系列
- * 字段在这里只做一次翻译。卡片 DTO 直接带这几个字段后可整体删掉本函数。
+ * （apps/api/src/tasks/task.dto.ts）；grouping 引擎读的 requirement 系列字段在这里
+ * 只做一次翻译。卡片 DTO 直接带这几个字段后可整体删掉本函数。
+ * §19.15·90：group 维已删，`group_name` 不再是任何节标题的来源（裸 `group_id` 当标题的
+ * 兜底随之退场），这里只把它当存量展示字段翻译给 requirement 维的 lane meta。
  */
 export function toGroupable(card: TaskCard): GroupableTask {
   return {

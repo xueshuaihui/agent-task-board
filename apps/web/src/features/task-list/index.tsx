@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ChevronDown, ChevronRight, MoreHorizontal, Search } from 'lucide-react';
 import { errorMessage } from '@/api';
-import { useGroups, useTaskListWithGroups } from '@/features/groups';
+import { useTaskListWithGroups } from '@/features/groups';
 import type { ListSortField, TaskCard, TaskListItem } from '@/api/types';
 import { navigate, useRouteSearchParams } from '@/app/router';
 import { filtersFromSearch, toListQuery, useFilterStore } from '@/app/store/filters';
@@ -155,33 +155,29 @@ export function TaskListPage() {
   const rows = useMemo(() => list.data?.items ?? [], [list.data]);
   const total = list.data?.total ?? 0;
 
-  /* ----------------------------------------------- 分组分节（本页自己的显示偏好） */
+  /* ----------------------------------------------- 分节（本页自己的显示偏好） */
 
-  // B15-③：分节维度存在 `atb.tasks.groupBy`（`group-pref.ts`）；「不分组」时退回平铺表格。
+  // B15-③：分节维度存在 `atb.tasks.groupBy`（`group-pref.ts`）；「不分节」时退回平铺表格。
+  // §19.15·90：`group` 维候选已删（分组概念从可见面清零），「按需求分节」走 `requirement` 维。
   const [listPrimary, setListPrimary] = useState<GroupDimensionKey>(readGroupBy);
   const changeGroupBy = useCallback((key: GroupDimensionKey) => {
     setListPrimary(key);
     rememberGroupBy(key);
   }, []);
-  // toGroupable 的 group_name 兜底是裸 group_id；节标题要显示真名，和看板一样查分组缓存。
-  const groups = useGroups();
-  const groupById = useMemo(
-    () => new Map((groups.data?.items ?? []).map((group) => [group.id, group])),
-    [groups.data?.items],
-  );
+  // 节标题直接用维度取值函数给的 label：`GET /tasks` 的卡片自带 `parent` 摘要
+  // （apps/api/src/tasks/task.dto.ts），需求维因此天然显示真需求标题，不再查分组缓存富化。
   const sections = useMemo(() => {
     if (listPrimary === 'none') return null;
     const dim = GROUP_DIMENSIONS[listPrimary];
     const map = new Map<string, { key: string; label: string; icon: string; rows: TaskListItem[] }>();
     for (const row of rows) {
-      // 标签维一张卡可归属多个分组 → 同一行会在多个节出现（与看板泳道口径一致）。
+      // 标签维一张卡可落进多个节 → 同一行会在多个节出现（与看板泳道口径一致）。
       for (const value of dim.getValues(toGroupable(row))) {
         let section = map.get(value.key);
         if (!section) {
-          const group = dim.key === 'group' ? groupById.get(value.key) : undefined;
           section = {
             key: value.key,
-            label: group ? group.name : value.label,
+            label: value.label,
             icon: dim.icon,
             rows: [],
           };
@@ -191,7 +187,7 @@ export function TaskListPage() {
       }
     }
     return [...map.values()];
-  }, [rows, listPrimary, groupById]);
+  }, [rows, listPrimary]);
   const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<string>>(new Set());
   const toggleSection = useCallback((key: string) => {
     setCollapsedSections((current) => {
@@ -662,8 +658,11 @@ function hasListFilters(filters: {
 /* ------------------------------------------------------------ 分节维度菜单 */
 
 /**
- * B15-③：列表页「分组方式」——分节维度的唯一入口（看板筛选弹层管过滤，这里管显示）。
- * 候选沿用 grouping 的七维 + 不分组；选中值存 `atb.tasks.groupBy`，刷新后仍在。
+ * B15-③：列表页「分节方式」——分节维度的唯一入口（看板筛选弹层管过滤，这里管显示）。
+ * §19.15·90（r6）：触发器与「不分节」项的措辞统一为分节口径（旧文案看本文件 git 史）；
+ * 候选 = grouping 的六维（`group` 维候选已删，「按需求分节」由 `requirement` 维承载）+ 不分节；
+ * 选中值存 `atb.tasks.groupBy`（键名不改：它是「分节维度」的历史键，与 Group 实体无关），
+ * 刷新后仍在。
  */
 function GroupByMenu({
   value,
@@ -672,11 +671,12 @@ function GroupByMenu({
   value: GroupDimensionKey;
   onChange: (key: GroupDimensionKey) => void;
 }) {
+  // `MenuProps['groups']` 的属性名指「菜单的分节排版」，同词不同义（§19.15·90 裁剪口径），不改名。
   const groups: MenuProps['groups'] = [
     {
       label: '分节维度',
       items: [
-        { id: 'none', label: '不分组', onSelect: () => onChange('none') },
+        { id: 'none', label: '不分节', onSelect: () => onChange('none') },
         ...GROUPABLE_KEYS.map((key) => ({
           id: key as string,
           label: `${GROUP_DIMENSIONS[key].icon} ${GROUP_DIMENSIONS[key].label}`,
@@ -702,7 +702,7 @@ function GroupByMenu({
               : 'border-primary bg-primary-light text-primary',
           )}
         >
-          分组方式{value === 'none' ? '' : `：${GROUP_DIMENSIONS[value].label}`}
+          分节方式{value === 'none' ? '' : `：${GROUP_DIMENSIONS[value].label}`}
           <ChevronDown
             className={cn('size-3.5 transition-transform duration-140 ease-settle', open && 'rotate-180')}
             aria-hidden

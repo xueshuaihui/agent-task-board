@@ -12,6 +12,11 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
  *    旧深链重定向映射（兼容表 + 纯函数直测，query 必须原样保留）；
  * ③ 导航第二项是 requirements、label 是「需求」，集合与顺序不变。
  *
+ * **R3 追加（§19.15·90，2026-09-28）**：同一闸文件继续钉「分组」可见面清零的三件事——
+ * 列表作用域 chip 改走 `requirements` 维、`filtersFromSearch` 不再水合 `groups`、
+ * 分节菜单删 `group` 维候选并改措辞「分节方式 / 不分节」（末尾两个 describe）。
+ * C 段（归属下拉 / 组名 badge）与 D 段（labels/errors 中文）见后续提交。
+ *
  * 环境口径同 W2 各闸：本仓 vitest 无 jsdom，文件存在性/源码字符串用
  * `readFileSync`/`existsSync`；router 模块装配期读一次 hash（`create` 初值跑
  * `readHash`），与 `filter-prefs.test.ts` 同法先 stub 最小 `window` 再动态 import，
@@ -19,6 +24,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
  */
 
 const GROUPS_DIR = join(__dirname, '..');
+const FEATURES_DIR = join(GROUPS_DIR, '..');
 const APP_DIR = join(GROUPS_DIR, '..', '..', 'app');
 
 vi.stubGlobal('window', {
@@ -94,5 +100,71 @@ describe('r6 路由闸：#/groups 旧深链重定向而非活动路由/静默回
   it('NAV_ORDER 集合与顺序不变，第二位是 requirements（看板/需求/技能/审核/设置）', () => {
     expect([...NAV_ORDER]).toEqual(['board', 'requirements', 'skills', 'review', 'settings']);
     expect(NAV_ORDER[1]).toBe('requirements');
+  });
+});
+
+/**
+ * §19.15·90（r6 R3-B）：列表页分节维度与作用域 chip 的清零闸。
+ * 只钉**概念可见面**：菜单措辞、group 维候选、历史偏好词表、chip 读的维度。
+ * `MenuProps['groups']` 这个属性名是菜单分节排版（同词不同义），显式钉它**不许**被改名带走。
+ */
+describe('r6 分节菜单闸：group 维候选删除、措辞改「分节方式 / 不分节」（§19.15·90）', () => {
+  const dimensions = readFileSync(
+    join(FEATURES_DIR, 'board', 'grouping', 'dimensions.ts'),
+    'utf8',
+  );
+  const listPage = readFileSync(join(FEATURES_DIR, 'task-list', 'index.tsx'), 'utf8');
+  const groupPref = readFileSync(join(FEATURES_DIR, 'task-list', 'group-pref.ts'), 'utf8');
+
+  it('维度词表里没有 group：类型联合、GROUP_DIMENSIONS 条目、候选顺序三处都退场', () => {
+    expect(dimensions).not.toMatch(/type GroupDimensionKey =[\s\S]*?'group'/);
+    expect(dimensions).not.toMatch(/^\s{2}group:\s*\{/m);
+    expect(dimensions).not.toMatch(/GROUPABLE_KEYS = \[[\s\S]*?'group'/);
+    expect(dimensions).toContain("key: 'requirement'");
+  });
+
+  it('菜单触发器与「不分节」项用新措辞；不再出现「分组方式」「不分组」', () => {
+    expect(listPage).toContain('分节方式');
+    expect(listPage).toContain("label: '不分节'");
+    expect(listPage).not.toContain('分组方式');
+    expect(listPage).not.toContain('不分组');
+  });
+
+  it('菜单结构仍走 MenuProps[\'groups\'] 属性名（同词不同义，禁止为清零而改名）', () => {
+    expect(listPage).toContain("MenuProps['groups']");
+    expect(listPage).toContain('groups={groups}');
+  });
+
+  it('分节维度偏好词表去掉 group（历史值读取即回落不分节）', () => {
+    expect(groupPref).not.toMatch(/VALID[^=]*=\s*\[[^\]]*'group'/);
+    expect(groupPref).toContain("'requirement'");
+  });
+
+  it('节标题不再查分组缓存富化：task-list 只留 useTaskListWithGroups 一条数据腿引用', () => {
+    expect(listPage).toContain("from '@/features/groups'");
+    expect(listPage).not.toMatch(/\buseGroups\b/);
+    expect(listPage).not.toMatch(/import \{ useGroups,/);
+  });
+});
+
+/**
+ * §19.15·90（r6 R3-A）：列表作用域 chip 改走 requirements 维。
+ */
+describe('r6 作用域 chip 闸：从 groups 维改走 requirements 维（§19.15·90）', () => {
+  const panel = readFileSync(join(FEATURES_DIR, 'task-list', 'filter-panel.tsx'), 'utf8');
+  const store = readFileSync(join(FEATURES_DIR, '..', 'app', 'store', 'filters.ts'), 'utf8');
+
+  it('chip 文案 =「需求：」，读 requirements 维、清除也走 requirements 维', () => {
+    expect(panel).toContain('需求：');
+    expect(panel).toContain('state.requirements');
+    expect(panel).toContain("setDimension('requirements', [])");
+    expect(panel).not.toMatch(/state\.groups/);
+    expect(panel).not.toContain("setDimension('groups'");
+    expect(panel).not.toContain('个分组');
+  });
+
+  it('filtersFromSearch 不再水合 groups（列表腿与看板腿同口径剥离）', () => {
+    expect(store).not.toMatch(/patch\.groups\s*=/);
+    expect(store).not.toContain("listFrom(search, 'groups')");
   });
 });
