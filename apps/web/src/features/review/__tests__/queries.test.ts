@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RunArtifact, TaskRun } from '@/api/types';
-import { artifactsSourceRun, reviewTargetRun } from '../queries';
+import { artifactsSourceRun, reviewerSignature, reviewTargetRun } from '../queries';
 
 /** beta.6 B8：审核弹窗的产物回退——目标 Run 无产物时取最近一次有产物的 Run。 */
 
@@ -69,5 +69,19 @@ describe('artifactsSourceRun', () => {
     const target = reviewTargetRun(items, null);
     expect(target).toBe(r2);
     expect(artifactsSourceRun(items, target)?.artifacts).toHaveLength(1);
+  });
+});
+
+describe('reviewerSignature（0020 §3.2 的审核记录署名）', () => {
+  it('Agent 审的记 Token 名；名字缺失（历史行）也不写成空字符串', () => {
+    expect(reviewerSignature({ reviewer_type: 'agent', reviewer_name: 'reviewer-b' })).toBe(
+      'Agent · reviewer-b',
+    );
+    expect(reviewerSignature({ reviewer_type: 'agent', reviewer_name: null })).toBe('Agent 审核');
+  });
+
+  it('人工审核不署名：单用户本地应用里署操作者名只是噪声', () => {
+    expect(reviewerSignature({ reviewer_type: 'user', reviewer_name: null })).toBe('人工审核');
+    expect(reviewerSignature({ reviewer_type: 'user', reviewer_name: 'xuesh' })).toBe('人工审核');
   });
 });

@@ -60,6 +60,17 @@ export function lastReview(reviews: readonly Review[] | undefined): Review | nul
   return reviews && reviews.length > 0 ? (reviews[0] ?? null) : null;
 }
 
+/**
+ * 0020 §3.2 审核记录的署名口径：Agent 记 Token 名（谁审的要可追责），人由本地 UI 操作、
+ * 这台机器上只有你一个操作者，所以不署名——避免出现「人工 · xuesh」这种噪声。
+ */
+export function reviewerSignature(review: Pick<Review, 'reviewer_type' | 'reviewer_name'>): string {
+  if (review.reviewer_type === 'agent') {
+    return review.reviewer_name ? `Agent · ${review.reviewer_name}` : 'Agent 审核';
+  }
+  return '人工审核';
+}
+
 /** 6.5 第 6 条：审核记录只增不改不删，历史按时间倒序全部可见（服务端已按 createdAt DESC）。 */
 export function reviewHistory(reviews: readonly Review[] | undefined): Review[] {
   return [...(reviews ?? [])];

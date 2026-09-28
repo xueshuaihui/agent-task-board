@@ -34,7 +34,7 @@ import {
   UpdatedCell,
 } from '@/features/task-list/cells';
 import { bindReviewQueue } from './queue';
-import { useTaskReviews } from './queries';
+import { reviewerSignature, useTaskReviews } from './queries';
 
 /**
  * 8.4 / 原型 5.1 审核页：待审核队列 + 历史审核。
@@ -436,7 +436,8 @@ function HistoryRow({ entry }: { entry: AuditEntry }) {
                   <Opinion label="原因" value={review.reason} />
                   <Opinion label="详情" value={review.detail} />
                   <p className="mt-1 text-aux text-text-tertiary">
-                    {formatRelative(review.created_at)} · {review.run_id ?? '无关联 Run'}
+                    {/* §3.2 署名与详情抽屉同一份口径：Agent 记 Token 名，人不署名。 */}
+                    {reviewerSignature(review)} · {formatRelative(review.created_at)} · {review.run_id ?? '无关联 Run'}
                     {review.return_to ? ` · 退回 ${statusLabel(review.return_to)}` : ''}
                     {review.priority_adj !== null && review.priority_adj !== undefined
                       ? ` · 优先级调为 ${priorityText(review.priority_adj)}`

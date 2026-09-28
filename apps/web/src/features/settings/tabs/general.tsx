@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { RadioGroup, Select, Switch } from '@/components/ui';
 import type { Settings } from '@/api/types';
+import { REVIEW_MODE_LABEL } from '@/lib/labels';
 import { ChipEditor } from '../components/chip-editor';
 import { ConfirmDialog } from '../components/confirm-dialog';
 import { FormError, SettingRow, SettingSection, TabHeader } from '../components/settings-ui';
@@ -33,6 +34,20 @@ const CREATION_MODE_OPTIONS = [
   { value: 'direct', label: '直接创建', description: 'Agent 调用即创建，无确认' },
   { value: 'light', label: '轻确认', description: 'Board 弹出轻量确认卡片（默认）' },
   { value: 'silent', label: '静默创建', description: '创建后仅通知' },
+] as const;
+
+/**
+ * 0020 §3.5 的默认审核方式。措辞必须点明「谁来审」：自动队列由用户自己起的 Agent Token
+ * 领取（§3.2），平台不起审核进程，所以不写「系统自动审核」这种会让人以为产品在后台跑模型的字。
+ */
+const REVIEW_MODE_OPTIONS = [
+  { value: 'human', label: REVIEW_MODE_LABEL.human, description: '执行完落「待审核」，由你给结论（默认）' },
+  {
+    value: 'auto',
+    label: REVIEW_MODE_LABEL.auto,
+    description: '落「待审核」后进自动队列：非执行者的 Agent Token 领走审核，拿不准会转回人工',
+  },
+  { value: 'none', label: REVIEW_MODE_LABEL.none, description: '执行完直接落「已完成」，不经审核' },
 ] as const;
 
 export function GeneralTab() {
@@ -113,6 +128,21 @@ export function GeneralTab() {
             />
             <span className="text-aux text-text-tertiary">预填上一次填写的意见</span>
           </div>
+        </SettingRow>
+
+        <SettingRow
+          label="默认审核方式"
+          width="fluid"
+          hint="三条建单路（界面新建、Agent 直建、拆解确认页建子任务）共用的默认值（0020 §3.5）；任务级显式选过的不被它覆盖，Agent 侧没有豁免审核的入参位。"
+        >
+          <RadioGroup
+            layout="column"
+            value={settings?.default_review_mode ?? 'human'}
+            options={REVIEW_MODE_OPTIONS}
+            onChange={(value) =>
+              set('default_review_mode', value as Settings['default_review_mode'])
+            }
+          />
         </SettingRow>
       </SettingSection>
 
