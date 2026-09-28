@@ -115,8 +115,8 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
   const [skillIds, setSkillIds] = useState<string[]>([]);
   const [reviewMode, setReviewMode] = useState<ReviewModeChoice>('');
 
-  // §19.15·91（r6）：创建时的唯一归属选择是「需求」——选中即只写 parent_task_id，
-  // 不再回填组字段（Group 概念已从看板 UI 与写入侧整体下线）。
+  // §19.15·91（r6）：创建时的唯一归属选择是「所属需求」（label 与抽屉同口径，§19.15·90）——
+  // 选中即只写 parent_task_id，不再回填组字段（Group 概念已从看板 UI 与写入侧整体下线）。
   // 默认值取看板需求筛选「恰好只选了一个需求」的场景，其他情况留空（不选）——
   // 归属是弱约束，不该在快速新建里替用户做主。
   const requirementOptions = useRequirementOptions();
@@ -251,7 +251,7 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
           </Field>
         </div>
 
-        <Field label="需求" hint="可选；选中后自动跟随该需求的归属（§19.14）">
+        <Field label="所属需求" hint="可选；选中后自动跟随该需求的归属（§19.14）">
           <Select
             value={requirementId}
             placeholder="未分配需求"

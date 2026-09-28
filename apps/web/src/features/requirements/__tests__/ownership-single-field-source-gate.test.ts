@@ -73,6 +73,20 @@ describe('§19.15·90/91 r6 R3-C 闸：两处归属下拉退场后，全文件�
   });
 });
 
+describe('§19.15·90 建单归属字段 label 与抽屉同口径：钉死「所属需求」（2026-09-28 走查偏差收口）', () => {
+  it('quick-create（快捷新建弹窗）归属字段 label=「所属需求」，不再出现 label=「需求」', () => {
+    const source = readFileSync(join(FEATURES_DIR, 'board', 'quick-create.tsx'), 'utf8');
+    // 抽屉真值在 task-detail/tabs/overview.tsx 的编辑表单 `label="所属需求"`（§19.15·90「同口径」）。
+    expect(source).toContain('label="所属需求"');
+    expect(source).not.toMatch(/label="需求"/);
+  });
+
+  it('create-task-dialog（新建任务弹窗）不再出现 label=「需求」的裸归属字段', () => {
+    const source = readFileSync(join(FEATURES_DIR, 'task-detail', 'create-task-dialog.tsx'), 'utf8');
+    expect(source).not.toMatch(/label="需求"/);
+  });
+});
+
 describe('§19.15·91 构造器函数体闸：requirementCreateBody / requirementMoveBody 不回吐 group_id', () => {
   const hook = readFileSync(join(FEATURES_DIR, 'requirements', 'use-requirement-options.ts'), 'utf8');
 
