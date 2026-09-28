@@ -16,16 +16,15 @@ import type { BoardColumn, TaskCard, TaskStatus } from '@/api/types';
 import { errorMessage, useFieldDefs } from '@/api';
 import { navigate } from '@/app/router';
 import { toBoardQuery, useFilterStore } from '@/app/store/filters';
-import { useShellStore, type ReviewPrefill } from '@/app/store/shell';
-import { Button, EmptyState, useToast, type ToastApi } from '@/components/ui';
+import { Button, EmptyState, useToast } from '@/components/ui';
 import { useBoardWithGroups } from '@/features/groups';
 import { BoardColumnView } from './board-column';
-import type { CardActions } from './card-actions';
+import { useCardActions } from './card-actions';
 import { DeleteDialog, DangerMoveDialog, StopDialog, type DangerMoveTarget } from './dialogs';
-import { FLY_BATCH_LIMIT, FLY_BATCH_SUPPRESS_MS, FLY_DROP_SUPPRESS_MS, markPendingMove, suppressFly } from './fly-motion';
-import { dropStates, dropVerdict } from './matrix';
+import { FLY_BATCH_LIMIT, FLY_BATCH_SUPPRESS_MS, FLY_DROP_SUPPRESS_MS, suppressFly } from './fly-motion';
+import { dropStates } from './matrix';
 import { COLUMN_ORDER, isDefaultBoardView } from './model';
-import { useBoardMutations, type BoardMutations } from './mutations';
+import { useBoardMutations } from './mutations';
 import { QuickCreateDialog, type QuickCreateTarget } from './quick-create';
 import { FlowBoardView } from './flow/FlowBoardView';
 import './filter-prefs';
@@ -253,78 +252,6 @@ export function BoardPage() {
   );
 }
 
-/* --------------------------------------------------------------- 动作集 */
-
-type Setter<T> = (value: T) => void;
-
-/**
- * 卡片的动作集（4.3 操作表）。`useMemo` 里通过 ref 取最新 mutation 结果：
- * mutation 对象每次渲染都是新的，直接进依赖会让 `actions` 每次都换身份，
- * 卡片上的 `memo` 就白写了（一次 WS 刷新要重渲上百张卡）。
- */
-function useCardActions(
-  toast: ToastApi,
-  mutations: BoardMutations,
-  setStopTarget: Setter<TaskCard | null>,
-  setDeleteTarget: Setter<TaskCard | null>,
-  setQuick: Setter<QuickCreateTarget | null>,
-  setDangerMove: Setter<DangerMoveTarget | null>,
-): CardActions {
-  const latest = useRef(mutations);
-  latest.current = mutations;
-
-  return useMemo<CardActions>(() => {
-    const shell = () => useShellStore.getState();
-    const run = () => latest.current;
-    return {
-      open: (card) => shell().openTask(card.id),
-      togglePin: (card) => run().togglePin.mutate(card),
-      archive: (card) => run().archive.mutate(card.id),
-      stop: (card) => setStopTarget(card),
-      remove: (card) => setDeleteTarget(card),
-      review: (card) => shell().openReview(card.id),
-      followUp: (card) => setQuick({ target: 'BACKLOG', dependsOn: { id: card.id, title: card.title } }),
-      create: (target, template) => setQuick({ target, preset: template?.preset }),
-      copyId: (card) => {
-        const write = navigator.clipboard?.writeText(card.id);
-        if (!write) {
-          toast.error('复制失败', `请手动选中 ${card.id}`);
-          return;
-        }
-        void write.then(
-          () => toast.success('已复制任务 ID', card.id),
-          () => toast.error('复制失败', `请手动选中 ${card.id}`),
-        );
-      },
-      /** 4.5 的三种反馈都在这一处：✅ 才发请求（danger 的 ✅ 先过确认），🔒 弹表单，❌ 只 Toast。 */
-      move: (card, to) => {
-        const verdict = dropVerdict(card.status, to);
-        if (verdict.kind === 'direct') {
-          // 廿二 B：danger 的 ✅ 边（按失败结案）先弹确认——确认弹窗里才登记飞行标记并
-          // 发请求，取消等于什么都没发生（与 🔒 的 StopDialog 同构）。
-          if (verdict.rule.danger) {
-            setDangerMove({ card, to, label: verdict.rule.label });
-            return;
-          }
-          // §5.2 方案 A：用户发起的 ✅ 换列在此登记 pending-move（拖拽释放路径已被规则 5
-          // 抑制）。旧列在快照回来前的每次渲染据此撤掉 exit、预挂 layoutId，
-          // 数据落地同帧瞬时让位 → 新列挂载即飞行；服务端确认后标记过期，不再重放（§5.1）。
-          markPendingMove(card.id, card.status, to);
-          run().move.mutate({ id: card.id, to });
-          return;
-        }
-        if (verdict.kind === 'form') {
-          // 松手弹表单，取消即回原列：这一步没发过任何请求。
-          if (verdict.form === 'stop') setStopTarget(card);
-          else shell().openReview(card.id, reviewPrefillForDrop(to));
-          return;
-        }
-        if (verdict.kind === 'forbidden') toast.warning('不允许的流转', verdict.copy);
-      },
-    };
-  }, [setQuick, setStopTarget, setDeleteTarget, setDangerMove, toast]);
-}
-
 /* --------------------------------------------------------------- 布局件 */
 
 function ColumnRow({ children }: { children: ReactNode }) {
@@ -369,17 +296,6 @@ function BoardEmpty({ onCreate }: { onCreate: () => void }) {
 
 function columnDropId(status: TaskStatus): string {
   return `column:${status}`;
-}
-
-/**
- * 4.5 末段 + 原型 3.7：`REVIEW → BACKLOG/READY` 是「驳回表单 + 退回目标＝拖放目标列」，
- * `REVIEW → DONE` 是「审核（结论预填通过）」。矩阵的 action 文案已经这么写，
- * 表单这边的预填由这一个映射喂，两处不再各判一次。
- */
-function reviewPrefillForDrop(to: TaskStatus): ReviewPrefill | null {
-  if (to === 'BACKLOG' || to === 'READY') return { conclusion: 'REJECT', returnTo: to };
-  if (to === 'DONE') return { conclusion: 'APPROVE' };
-  return null;
 }
 
 /** droppable id 反解出列状态；列外区域与卡片自身（不是 droppable）都会得到 null。 */

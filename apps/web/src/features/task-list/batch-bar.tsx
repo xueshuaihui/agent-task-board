@@ -22,7 +22,8 @@ import {
 } from '@/components/ui';
 import type { MenuItem } from '@/components/ui';
 import { statusLabel } from '@/lib/labels';
-import { failuresOf, failureText, type BatchFailure } from './reason';
+import { failuresOf, type BatchFailure } from './reason';
+import { failureText } from '@/lib/archive-error';
 
 /**
  * 原型 3.8 的批量条：`已选 N 项  [移动到 ▾] [打标签] [归档] [清除选择]`。

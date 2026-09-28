@@ -1,22 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Archive,
-  ArchiveRestore,
-  ArrowLeft,
-  ChevronDown,
-  ChevronRight,
-  Eye,
-  Gavel,
-  MoreHorizontal,
-  Pin,
-  PinOff,
-  Search,
-  Undo2,
-} from 'lucide-react';
-import { api, errorMessage, qk, useApiMutation } from '@/api';
+import { ArrowLeft, ChevronDown, ChevronRight, MoreHorizontal, Search } from 'lucide-react';
+import { errorMessage } from '@/api';
 import { useGroups, useTaskListWithGroups } from '@/features/groups';
-import type { ListSortField, TaskListItem, TaskStatus } from '@/api/types';
-import { BOARD_COLUMN_ORDER } from '@/api/types';
+import type { ListSortField, TaskCard, TaskListItem } from '@/api/types';
 import { navigate, useRouteSearchParams } from '@/app/router';
 import { filtersFromSearch, toListQuery, useFilterStore } from '@/app/store/filters';
 import { useIsFlashed } from '@/app/store/flash';
@@ -36,17 +22,20 @@ import {
   TH,
   THead,
   TR,
+  useToast,
 } from '@/components/ui';
-import type { MenuItem, MenuProps } from '@/components/ui';
-import { directTransitions, type TransitionRule } from '@/features/board/matrix';
+import type { MenuProps } from '@/components/ui';
+import { useCardActions, type CardActions } from '@/features/board/card-actions';
+import { cardMenuGroups } from '@/features/board/card-menu';
+import { DeleteDialog, DangerMoveDialog, StopDialog, type DangerMoveTarget } from '@/features/board/dialogs';
+import { useBoardMutations } from '@/features/board/mutations';
+import { QuickCreateDialog, type QuickCreateTarget } from '@/features/board/quick-create';
 import {
   GROUPABLE_KEYS,
   GROUP_DIMENSIONS,
   toGroupable,
   type GroupDimensionKey,
 } from '@/features/board/grouping/dimensions';
-import { statusLabel } from '@/lib/labels';
-import { COPY } from '@/lib/copy';
 import { cn } from '@/lib/cn';
 import {
   AgentCell,
@@ -66,7 +55,6 @@ import { ActiveFilterSummary, ActiveGroupScope, FilterChips, FilterPanel } from 
 import { BatchBar } from './batch-bar';
 import { TASK_TABLE_COLUMNS, TASK_TABLE_MIN_WIDTH_CLASS } from './columns';
 import { CreateTaskMenu } from './create-menu';
-import { archiveErrorText } from './reason';
 import { PAGE_SIZES, readPageSize, rememberPageSize } from './page-pref';
 import { readGroupBy, rememberGroupBy } from './group-pref';
 
@@ -74,13 +62,15 @@ import { readGroupBy, rememberGroupBy } from './group-pref';
  * 任务列表页 `#/tasks`（PRD 6.1 第 8 条 / 原型 3.8）：全应用**唯一**的表格实现，
  * 看板「查看全部 →」、通知铃铛、设置页「已归档任务」三处都跳到这里并带上筛选。
  *
- * 三条口径落在本文件：
+ * 四条口径落在本文件：
  * 1. **筛选只有一份真值** —— `useFilterStore`，URL 查询串只在挂载/跳转时水合它
  *    （原型 2.2 反对的正是「两个筛选器谁覆盖谁」），页面自己不留第二套 state。
  * 2. **排序只发服务端白名单字段**（20.3：`id`/`priority`/`status`/`created_at`/`updated_at`），
  *    Agent 与时长两列不可排序——它们要聚合 `task_runs`，阶段一不做。
  * 3. **选择集跨页不清空**（原型 3.8 选择框列），所以存的是 `id → 行数据`，
  *    批量条才能报出真实条数、并拿到全部已选行的标签做「移除候选」。
+ * 4. **行 `⋯` 的动作集与动词都来自看板那一份**（`cardMenuGroups` + `useCardActions`，
+ *    原型 3.8 第 822 行），本页不写第二套——见 `RowMenu` 的注释。
  */
 
 /** 20.3：`keyword` 上限 120（服务端 `listQuerySchema`），超长先在前端截掉。 */
@@ -269,18 +259,32 @@ export function TaskListPage() {
   }, []);
 
   /**
-   * 行 `⋯` 的动作共用**一个** mutation：每行各挂一个 `useMutation` 的话，
-   * 一页 200 行就是 200 份订阅，而它们要做的只是「发一条写请求 + 三处失效」。
+   * 行 `⋯` 的动词与看板卡片**共用同一份实现**（原型 3.8 第 822 行）：mutations 来自
+   * `useBoardMutations`，动作集来自 `cardMenuGroups`。它们本来就把 `qk.tasksRoot` 一起失效，
+   * 所以列表页写完会重取；危险动作的四个弹窗也在本页挂载（见文件末尾）。
    */
-  const rowAction = useApiMutation<{ id: string; send: () => Promise<unknown> }, unknown>(
-    (vars) => vars.send(),
-    {
-      // 单行改动也要三处失效：看板列、本页/审核页表格、可能正开着的抽屉。
-      invalidate: ({ vars }) => [qk.boardRoot, qk.tasksRoot, qk.taskRoot(vars.id)],
-      // 归档被下游挡住的 409 走 4.5 统一文案（`reason.ts`），其余仍是服务端 message。
-      errorText: archiveErrorText,
-    },
+  const toast = useToast();
+  const mutations = useBoardMutations();
+  const [quick, setQuick] = useState<QuickCreateTarget | null>(null);
+  const [stopTarget, setStopTarget] = useState<TaskCard | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TaskCard | null>(null);
+  const [dangerMove, setDangerMove] = useState<DangerMoveTarget | null>(null);
+  const actions = useCardActions(
+    toast,
+    mutations,
+    setStopTarget,
+    setDeleteTarget,
+    setQuick,
+    setDangerMove,
   );
+  // 每行各挂一份 mutation 只是白占订阅（一页 200 行 = 200 份），所以 spinner 从共用
+  // mutation 的 variables 里归一出行 id。
+  const busyRow = pendingRowId([
+    mutations.move,
+    mutations.togglePin,
+    mutations.archive,
+    mutations.restore,
+  ]);
 
   const onlyArchived = filters.archived === 'true';
 
@@ -454,8 +458,8 @@ export function TaskListPage() {
                             onlyArchived={onlyArchived}
                             selected={selected[row.id] !== undefined}
                             onToggle={() => toggleRow(row)}
-                            onAction={rowAction.mutate}
-                            actionBusy={rowAction.isPending && rowAction.variables?.id === row.id}
+                            actions={actions}
+                            actionBusy={busyRow === row.id}
                           />
                         )),
                       ];
@@ -468,8 +472,8 @@ export function TaskListPage() {
                         onlyArchived={onlyArchived}
                         selected={selected[row.id] !== undefined}
                         onToggle={() => toggleRow(row)}
-                        onAction={rowAction.mutate}
-                        actionBusy={rowAction.isPending && rowAction.variables?.id === row.id}
+                        actions={actions}
+                        actionBusy={busyRow === row.id}
                       />
                     ))}
               </TBody>
@@ -494,8 +498,31 @@ export function TaskListPage() {
       {/* 选择集跨页不清空，所以加载/错误/空态三种分支下也要能对手上的任务发起批量动作。
           视觉层（DESIGN §4）：批量条是底部浮动胶囊条，fixed 定位挂在页面根部而非卡片内。 */}
       {selectedRows.length > 0 ? <BatchBar rows={selectedRows} onKeep={keepSelection} /> : null}
+
+      {/* 危险动作的确认弹窗与看板同一份组件（4.3.1 规则 2/4、廿二 B）：
+          常驻挂载、由 `card`/`target` 受控开合，取消即关闭、不发请求。 */}
+      <StopDialog card={stopTarget} mutations={mutations} onClose={() => setStopTarget(null)} />
+      <DeleteDialog card={deleteTarget} mutations={mutations} onClose={() => setDeleteTarget(null)} />
+      <DangerMoveDialog target={dangerMove} mutations={mutations} onClose={() => setDangerMove(null)} />
+      <QuickCreateDialog state={quick} mutations={mutations} onClose={() => setQuick(null)} />
     </div>
   );
+}
+
+/**
+ * 从共用 mutation 的 `variables` 里归一出正在写行的 id（各动作入参形态不同：
+ * `archive`/`restore` 收裸 id，`move` 收 `{id,to}`，`togglePin` 收整张卡片）。
+ */
+function pendingRowId(
+  mutations: Array<{ isPending: boolean; variables: unknown }>,
+): string | undefined {
+  for (const mutation of mutations) {
+    if (!mutation.isPending) continue;
+    const vars = mutation.variables;
+    if (typeof vars === 'string') return vars;
+    if (vars && typeof vars === 'object' && 'id' in vars && typeof vars.id === 'string') return vars.id;
+  }
+  return undefined;
 }
 
 /* -------------------------------------------------------------------- 行 */
@@ -511,7 +538,7 @@ function TaskRow({
   onlyArchived,
   selected,
   onToggle,
-  onAction,
+  actions,
   actionBusy,
 }: {
   row: TaskListItem;
@@ -519,7 +546,7 @@ function TaskRow({
   onlyArchived: boolean;
   selected: boolean;
   onToggle: () => void;
-  onAction: RowMenuProps['onAction'];
+  actions: CardActions;
   actionBusy: boolean;
 }) {
   const flashed = useIsFlashed(row.id);
@@ -564,12 +591,7 @@ function TaskRow({
         <UpdatedCell value={row.updated_at} />
       </TD>
       <TD onClick={(event) => event.stopPropagation()}>
-        <RowMenu
-          row={row}
-          onlyArchived={onlyArchived}
-          onAction={onAction}
-          actionBusy={actionBusy}
-        />
+        <RowMenu row={row} onlyArchived={onlyArchived} actions={actions} actionBusy={actionBusy} />
       </TD>
     </TR>
   );
@@ -578,99 +600,26 @@ function TaskRow({
 /* -------------------------------------------------------------- 行操作菜单 */
 
 /**
- * 原型 3.8：`⋯` 与卡片是**同一份按状态生成的动作集**（4.3 操作表 + 4.5 矩阵），
- * 列表页不自立一套——✅ 的落点由矩阵的 `directTransitions()` 给（见文件末尾的
- * `allowedTransitions()`），本页只负责措辞与图标。这里只挂列表页能安全直发的三类：
- * `✅` 流转（廿二 B 起 danger 边先过 `window.confirm`，见下方 onSelect）、归档/恢复、置顶；
- * 「强制停止」要二次确认、「删除」要先拿 run/下游计数（4.3.1 规则 4）、
- * 审核必须走 720px 表单（6.5 三字段必填），三者都由抽屉与审核表单承担，
- * 本页给的是入口（查看详情 / 审核 →），不是第二套实现。
+ * 原型 3.8 第 822 行：行 `⋯` 与看板卡片是**同一份按状态生成的动作集**——条目全部由
+ * `cardMenuGroups` 生成（4.5 矩阵 + 4.3 操作表），本页只保留触发按钮与行 id 的无障碍标签。
+ * 这里曾经挂着第二套实现：没有删除/强制停止/复制 ID，归档从「置灰 + 说明」漂成「非 DONE 不显示」，
+ * danger 流转用 `window.confirm` 而不是共用确认弹窗。`archived` 只有本页会给真值
+ * （看板不渲染归档卡片，6.13.1），多出来的动作是「恢复」。
  */
 export interface RowMenuProps {
   row: TaskListItem;
   onlyArchived: boolean;
-  /** 页面级共用 mutation 的入口（每行各挂一个 useMutation 只是白占订阅）。 */
-  onAction: (vars: { id: string; send: () => Promise<unknown> }) => void;
+  /** 页面级 `useCardActions` 的产物：动词与弹窗目标 setter 都在看板上同一处造。 */
+  actions: CardActions;
   actionBusy: boolean;
 }
 
-function RowMenu({ row, onlyArchived, onAction, actionBusy }: RowMenuProps) {
-  const transitions = allowedTransitions(row.status);
-  const archived = onlyArchived || isArchivedRow(row);
-
-  const entries: (MenuItem | null)[] = [
-    {
-      id: 'detail',
-      label: '查看详情',
-      icon: <Eye className="size-3.5" aria-hidden />,
-      onSelect: () => useShellStore.getState().openTask(row.id),
-    },
-    ...(row.status === 'REVIEW'
-      ? [
-          {
-            id: 'review',
-            label: '审核 →',
-            icon: <Gavel className="size-3.5" aria-hidden />,
-            hint: '三字段必填',
-            onSelect: () => useShellStore.getState().openReview(row.id),
-          },
-        ]
-      : []),
-    ...transitions.map((rule) => ({
-      id: `to-${rule.to}`,
-      // 非 danger 边沿用本页措辞（「移动到X」）；danger 边直接给矩阵的 menuLabel，
-      // 让「按失败结案」这一动作名在列表页也点明性质（廿二 B）。
-      label: rule.danger ? rule.menuLabel : `移动到${statusLabel(rule.to)}`,
-      icon: <Undo2 className="size-3.5" aria-hidden />,
-      danger: rule.danger,
-      onSelect: () => {
-        // 廿二 B：danger 的 ✅ 边先二次确认，取消零请求（确认语与抽屉同源，见 lib/copy）。
-        if (rule.danger && !window.confirm(COPY.closeFailedConfirm)) return;
-        onAction({ id: row.id, send: () => api.tasks.transition(row.id, { to: rule.to }) });
-      },
-    })),
-    {
-      id: 'pin',
-      label: row.pinned ? '取消置顶' : '置顶',
-      icon: row.pinned ? (
-        <PinOff className="size-3.5" aria-hidden />
-      ) : (
-        <Pin className="size-3.5" aria-hidden />
-      ),
-      hint: '影响抓取顺序',
-      onSelect: () =>
-        onAction({
-          id: row.id,
-          send: () => (row.pinned ? api.tasks.unpin(row.id) : api.tasks.pin(row.id)),
-        }),
-    },
-    row.status === 'DONE' && !archived
-      ? {
-          id: 'archive',
-          label: '归档',
-          icon: <Archive className="size-3.5" aria-hidden />,
-          hint: '仅已完成',
-          onSelect: () => onAction({ id: row.id, send: () => api.tasks.archive(row.id) }),
-        }
-      : null,
-    archived
-      ? {
-          id: 'restore',
-          label: '恢复',
-          icon: <ArchiveRestore className="size-3.5" aria-hidden />,
-          onSelect: () => onAction({ id: row.id, send: () => api.tasks.restore(row.id) }),
-        }
-      : null,
-  ];
-  const items: MenuItem[] = entries.filter(
-    (item): item is MenuItem => item !== null,
-  );
-
+export function RowMenu({ row, onlyArchived, actions, actionBusy }: RowMenuProps) {
   return (
     <Menu
       align="end"
-      width={216}
-      groups={[{ label: `当前：${row.status_label || statusLabel(row.status)}`, items }]}
+      width={220}
+      groups={cardMenuGroups(row, actions, { archived: onlyArchived || isArchivedRow(row) })}
       trigger={({ open, toggle }) => (
         <IconButton
           label={`${row.id} 的操作`}
@@ -682,24 +631,6 @@ function RowMenu({ row, onlyArchived, onAction, actionBusy }: RowMenuProps) {
         />
       )}
     />
-  );
-}
-
-/**
- * 4.5 矩阵里 `✅` 的那几格——**落点只有矩阵一份**（`features/board/matrix.ts`），
- * 本页不再抄第二遍 `to:` 字面量。`🔒` 要走表单（强制停止/审核都在抽屉与审核表单里承担，
- * 本页只给「查看详情 / 审核 →」入口）、`❌` 由服务端拒，两者都不进这个菜单，
- * 所以矩阵的 ✅ 集合就是本页的流转菜单全集——廿二 B 起其中的 danger 边
- * （BLOCKED「按失败结案」）不再是「安全直发」：直发前先过 `window.confirm` 二次确认。
- * 顺序按看板列序（`BOARD_COLUMN_ORDER` = 4.1 六列序）排一遍，与卡片 `⋯` 菜单读到的顺序同源。
- * 表外状态（20.2 末段）`directTransitions()` 返回空数组 = 一个写入口都不给。
- */
-function allowedTransitions(status: string): TransitionRule[] {
-  const byTarget = new Map<TaskStatus, TransitionRule>(
-    directTransitions(status).map((rule) => [rule.to, rule]),
-  );
-  return BOARD_COLUMN_ORDER.map((to) => byTarget.get(to)).filter(
-    (rule): rule is TransitionRule => rule !== undefined,
   );
 }
 

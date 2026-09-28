@@ -6,10 +6,9 @@ import { statusLabel } from '@/lib/labels';
  * 4.5 拖拽矩阵在前端的**唯一一份**实现：谁想要落点，都只能问这张表——
  * - 拖拽松手 / 落点高亮：`dropStates()` 与 `dropVerdict()`（`features/board/index.tsx`）；
  * - 键盘 `←`/`→`：`keyboardTargets()`（`features/board/model.ts`）；
- * - 卡片 `⋯` 菜单：按列序问 `dropVerdict()`（`card-menu.tsx`）；
- * - 详情抽屉底部按钮：`directTransitions()`（`features/task-detail/actions.ts`）；
- * - 任务列表页行 `⋯` 菜单：`directTransitions()`（`features/task-list/index.tsx`
- *   的 `allowedTransitions()`——这里原先自己抄过一份 ✅ 边，已删；别再写回来）。
+ * - 卡片 `⋯` 菜单：按列序问 `dropVerdict()`（`card-menu.tsx`）——
+ *   任务列表页的行 `⋯` 现在共用这一份（原型 3.8 第 822 行），不再各自读矩阵；
+ * - 详情抽屉底部按钮：`directTransitions()`（`features/task-detail/actions.ts`）。
  *
  * 原型 3.3 / 3.7 的「不在前端另写一套规则」就是这条：别处不得再出现 `to:` 字面量。
  *

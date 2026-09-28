@@ -1,6 +1,7 @@
 import type { ReactElement, ReactNode } from 'react';
 import {
   Archive,
+  ArchiveRestore,
   ClipboardList,
   Copy,
   Ellipsis,
@@ -28,13 +29,25 @@ import type { CardActions } from './card-actions';
  *
  * 置灰而不隐藏（原型 3.3 末段）：归档只对 `DONE` 开放、删除对 `RUNNING` 关闭，
  * 隐藏会让人以为功能丢了；原因用 Tooltip 给，文案取 4.5 统一文案表。
+ *
+ * **本文件是 `⋯` 菜单的唯一实现**（原型 3.8 第 822 行）：看板卡片与任务列表页的行动作
+ * 都从这里出，列表页不再自写 entries——曾经那份第二实现少了删除/强制停止/复制 ID，
+ * 归档还从「置灰 + 原因」漂成了「非 DONE 直接不显示」。
  */
-export function CardMenu({ card, actions }: { card: TaskCard; actions: CardActions }) {
+export function CardMenu({
+  card,
+  actions,
+  archived = false,
+}: {
+  card: TaskCard;
+  actions: CardActions;
+  archived?: boolean;
+}) {
   return (
     <Menu
       align="end"
       width={220}
-      groups={cardMenuGroups(card, actions)}
+      groups={cardMenuGroups(card, actions, { archived })}
       trigger={({ open, toggle }) => (
         <IconButton
           label="更多操作"
@@ -49,8 +62,16 @@ export function CardMenu({ card, actions }: { card: TaskCard; actions: CardActio
   );
 }
 
-/** 单独导出：列表页接线时（3.8「同一份按状态生成的动作集」）可直接复用。 */
-export function cardMenuGroups(card: TaskCard, actions: CardActions): (MenuItem | MenuGroup)[] {
+/**
+ * 单独导出：列表页的行 `⋯` 直接吃这一份（原型 3.8 第 822 行「与卡片 `⋯` 同一份按状态生成的动作集，
+ * 列表页不自立一套」）。`archived` 只有列表页会给真值——看板的 `/board` 不返回归档任务（6.13.1），
+ * 归档行要多出来的动作只有「恢复」一项。
+ */
+export function cardMenuGroups(
+  card: TaskCard,
+  actions: CardActions,
+  { archived = false }: { archived?: boolean } = {},
+): (MenuItem | MenuGroup)[] {
   const status = knownStatus(card.status);
   const groups: MenuGroup[] = [];
 
@@ -91,7 +112,7 @@ export function cardMenuGroups(card: TaskCard, actions: CardActions): (MenuItem 
   }
   groups.push({ label: '卡片', items: meta });
 
-  groups.push({ label: '危险操作', items: dangerItems(card, status, actions) });
+  groups.push({ label: '危险操作', items: dangerItems(card, status, actions, archived) });
 
   return groups;
 }
@@ -159,15 +180,37 @@ function flowItems(card: TaskCard, status: TaskStatus, actions: CardActions): Me
   return items;
 }
 
-function dangerItems(card: TaskCard, status: TaskStatus | null, actions: CardActions): MenuItem[] {
+function dangerItems(
+  card: TaskCard,
+  status: TaskStatus | null,
+  actions: CardActions,
+  archived: boolean,
+): MenuItem[] {
   return [
     {
       id: 'archive',
-      label: status === 'DONE' ? '归档' : <ReasonTip reason="归档只对已完成的任务开放（6.13.1）">归档</ReasonTip>,
+      label: archived ? (
+        <ReasonTip reason="该任务已在归档态，用下方「恢复」退出">归档</ReasonTip>
+      ) : status === 'DONE' ? (
+        '归档'
+      ) : (
+        <ReasonTip reason="归档只对已完成的任务开放（6.13.1）">归档</ReasonTip>
+      ),
       icon: <Archive className="size-3.5" />,
-      disabled: status !== 'DONE',
+      disabled: archived || status !== 'DONE',
       onSelect: () => actions.archive(card),
     },
+    // 恢复只给归档行：它是「归档」的反向动作，放在同一组里成对出现（6.13.1）。
+    ...(archived
+      ? [
+          {
+            id: 'restore',
+            label: '恢复',
+            icon: <ArchiveRestore className="size-3.5" />,
+            onSelect: () => actions.restore(card),
+          },
+        ]
+      : []),
     {
       id: 'delete',
       label:

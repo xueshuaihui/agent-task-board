@@ -1,5 +1,6 @@
 import { api, qk, useApiMutation } from '@/api';
 import type { TaskCard, TaskCreateInput, TaskDetail, TaskPatchInput, TaskStatus } from '@/api/types';
+import { archiveErrorText } from '@/lib/archive-error';
 import { STATUS_LABEL } from '@/lib/labels';
 import { useToast } from '@/components/ui';
 
@@ -45,7 +46,18 @@ export function useBoardMutations() {
     (id) => api.tasks.archive(id),
     {
       invalidate: ({ vars }) => [qk.boardRoot, qk.tasksRoot, qk.taskRoot(vars)],
+      errorText: archiveErrorText,
       onSuccess: (_data, id) => toast.success('任务已归档', `${id} 移出看板`),
+    },
+  );
+
+  /** 6.13.1 的反向动作：只有归档行给入口（列表页勾「包含已归档」时）。 */
+  const restore = useApiMutation<string, TaskCard>(
+    (id) => api.tasks.restore(id),
+    {
+      invalidate: ({ vars }) => [qk.boardRoot, qk.tasksRoot, qk.taskRoot(vars)],
+      errorText: archiveErrorText,
+      onSuccess: (_data, id) => toast.success('已恢复为未归档', id),
     },
   );
 
@@ -91,7 +103,7 @@ export function useBoardMutations() {
     },
   );
 
-  return { move, togglePin, stop, archive, remove, create, patch, advance };
+  return { move, togglePin, stop, archive, restore, remove, create, patch, advance };
 }
 
 export type BoardMutations = ReturnType<typeof useBoardMutations>;
