@@ -4,10 +4,9 @@ import { ArrowLeft, CheckCircle2, Circle, Loader2, Plus, Undo2 } from 'lucide-re
 import { BREAKDOWN_STATUS_LABEL, type BreakdownDraftEdit, type BreakdownSession } from '@/api/types';
 import { api } from '@/api';
 import { navigate } from '@/app/router';
-import { useActiveGroups } from '@/features/groups';
 import { useSkills } from '@/features/skills/hooks';
 import { useRequirementDrawerStore } from '@/features/requirements';
-import { Badge, Button, Card, EmptyState, IconButton, Progress, Skeleton, useToast } from '@/components/ui';
+import { Button, Card, EmptyState, IconButton, Progress, Skeleton, useToast } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { transitions } from '@/lib/motion';
 import { formatDateTime } from '@/lib/time';
@@ -123,7 +122,6 @@ export function BreakdownOverlay({ onClose }: BreakdownOverlayProps) {
 function SessionActions({ session, draftCount }: { session: BreakdownSession; draftCount: number }) {
   const toast = useToast();
   const hide = useBreakdownOverlayStore((state) => state.hide);
-  const groups = useActiveGroups();
   const confirm = useBreakdownConfirm();
   const cancel = useBreakdownCancel();
   const [dialog, setDialog] = useState<'confirm' | 'cancel' | null>(null);
@@ -173,9 +171,8 @@ function SessionActions({ session, draftCount }: { session: BreakdownSession; dr
   if (!canCancel && session.status !== 'completed') {
     return <BreakdownStatusBadge status={session.status} />;
   }
-  const groupName = session.group_id
-    ? (groups.data?.items ?? []).find((g) => g.id === session.group_id)?.name
-    : null;
+  // §19.15·90（r6 R3-C）：原此处按会话归属分组反查组名渲染 badge，已随「分组」
+  // 概念从 web 清零退场——r6 后用户既不能管组也不能按组过滤，组名是纯噪声。
 
   if (countdown !== null) {
     return (
@@ -209,7 +206,6 @@ function SessionActions({ session, draftCount }: { session: BreakdownSession; dr
 
   return (
     <div className="flex shrink-0 items-center gap-2">
-      {groupName ? <Badge tone="neutral">{groupName}</Badge> : null}
       {canCancel ? (
         <Button variant="default" size="sm" onClick={() => setDialog('cancel')} data-testid="breakdown-cancel-btn">
           取消

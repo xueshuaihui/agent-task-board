@@ -15,7 +15,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
  * **R3 追加（§19.15·90，2026-09-28）**：同一闸文件继续钉「分组」可见面清零的三件事——
  * 列表作用域 chip 改走 `requirements` 维、`filtersFromSearch` 不再水合 `groups`、
  * 分节菜单删 `group` 维候选并改措辞「分节方式 / 不分节」（末尾两个 describe）。
- * C 段（归属下拉 / 组名 badge）与 D 段（labels/errors 中文）见后续提交。
+ * R3-C 再追加「归属下拉与组名 badge 退场」段；R3-D 收 labels/errors 中文口径段。
  *
  * 环境口径同 W2 各闸：本仓 vitest 无 jsdom，文件存在性/源码字符串用
  * `readFileSync`/`existsSync`；router 模块装配期读一次 hash（`create` 初值跑
@@ -166,5 +166,39 @@ describe('r6 作用域 chip 闸：从 groups 维改走 requirements 维（§19.1
   it('filtersFromSearch 不再水合 groups（列表腿与看板腿同口径剥离）', () => {
     expect(store).not.toMatch(/patch\.groups\s*=/);
     expect(store).not.toContain("listFrom(search, 'groups')");
+  });
+});
+
+/**
+ * §19.15·90（r6 R3-C）：三处归属可见面清零的源码闸——
+ * 新建任务弹窗「分组」下拉并掉（归属只剩「挂到需求」写 parent_task_id）、
+ * creation 编辑卡假归属口整块删除、拆解会话卡头的组名 badge 退场。
+ * 字段级细钉各归本feature（creation-requirement-copy / ownership-single-field-source-gate），
+ * 这里统一钉「Group 消费面不再出现在这三个文件」。
+ */
+describe('r6 归属可见面闸：两处归属下拉 + 拆解组名 badge 退场（§19.15·90）', () => {
+  const createDialog = readFileSync(join(FEATURES_DIR, 'task-detail', 'create-task-dialog.tsx'), 'utf8');
+  const creationDialog = readFileSync(join(FEATURES_DIR, 'creation', 'creation-edit-dialog.tsx'), 'utf8');
+  const overlay = readFileSync(join(FEATURES_DIR, 'breakdown', 'breakdown-overlay.tsx'), 'utf8');
+
+  it('create-task-dialog：「分组」下拉与 group 候选数据源全部退场', () => {
+    expect(createDialog).not.toContain('useActiveGroups');
+    expect(createDialog).not.toMatch(/label="分组"/);
+    expect(createDialog).not.toContain('未分配分组');
+    expect(createDialog).not.toContain('归档分组');
+  });
+
+  it('creation-edit-dialog：假归属口（显示需求、写分组）整块删除', () => {
+    expect(creationDialog).not.toContain('useActiveGroups');
+    expect(creationDialog).not.toContain('useRequirementOptions');
+    expect(creationDialog).not.toMatch(/label="(需求|分组)"/);
+    expect(creationDialog).not.toContain('creation-edit-requirement');
+  });
+
+  it('breakdown-overlay：组名 badge 与反查退场（BreakdownStatusBadge 是状态徽标，不在此列）', () => {
+    expect(overlay).not.toContain('useActiveGroups');
+    expect(overlay).not.toContain('groupName');
+    expect(overlay).not.toMatch(/<Badge[\s/>]/);
+    expect(overlay).toContain('BreakdownStatusBadge');
   });
 });

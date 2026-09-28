@@ -15,8 +15,9 @@ import { describe, expect, it } from 'vitest';
  * 上述两个构造器：它写的是 creation decision payload，服务端 `creation.dto.ts` 的
  * 字段面只有 `group_id`、没有 `parent_task_id`（2026-09 核实于
  * apps/api/src/creation/creation.dto.ts 与 apps/web/src/api/types.ts 的
- * CreationDecisionInput）——收敛它需要 api 侧字段面配合，属 §19.15·92 的 Agent/
- * REST 面收口范围，本闸如实不钉、也不误判 R2 为绿。
+ * CreationDecisionInput）——r6 拍板该下拉**整块删除**（§19.15·91 追加段），
+ * R3-C 已落地：下面第二段闸钉它连同 create-task-dialog 的**全文零 group_id**。
+ * 给 creation 载荷补 `parent_task_id` 仍属 §19.15·92 的 Agent/REST 面收口范围。
  *
  * 明确**不钉**（读取/分节用途、非写路径，属 R3 范围）：
  * features/board/grouping/dimensions.ts 与 features/task-list/use-group-scoped.ts。
@@ -44,6 +45,32 @@ describe('§19.15·91 写路径源码闸：请求体构造处不出现 group_id'
       expect(source).not.toMatch(/body\.group_id\s*=/);
     });
   }
+});
+
+describe('§19.15·90/91 r6 R3-C 闸：两处归属下拉退场后，全文件零 group_id', () => {
+  // create-task-dialog 的「分组」下拉并掉后归属只剩「挂到需求」（写 parent_task_id）；
+  // creation-edit-dialog 的假归属口整块删除（只提交标题/描述/优先级，见
+  // features/creation/__tests__/creation-requirement-copy.test.ts 的字段级闸）。
+  const dialogs: ReadonlyArray<[string, string]> = [
+    ['新建任务弹窗（create-task-dialog）', join('task-detail', 'create-task-dialog.tsx')],
+    ['creation 编辑卡（creation-edit-dialog）', join('creation', 'creation-edit-dialog.tsx')],
+  ];
+
+  for (const [label, rel] of dialogs) {
+    it(`${label}：全文（含注释）零 group_id / 零 useActiveGroups / 零「分组」归属控件`, () => {
+      const source = readFileSync(join(FEATURES_DIR, rel), 'utf8');
+      expect(source).not.toContain('group_id');
+      expect(source).not.toContain('groupId');
+      expect(source).not.toContain('useActiveGroups');
+      expect(source).not.toMatch(/label="分组"/);
+      expect(source).not.toContain('未分配分组');
+    });
+  }
+
+  it('create-task-dialog 归属唯一入口 =「挂到需求」写 parent_task_id（§19.15·90「并掉」）', () => {
+    const source = readFileSync(join(FEATURES_DIR, 'task-detail', 'create-task-dialog.tsx'), 'utf8');
+    expect(source).toMatch(/if \(!asRequirement && parentId\) body\.parent_task_id = parentId;/);
+  });
 });
 
 describe('§19.15·91 构造器函数体闸：requirementCreateBody / requirementMoveBody 不回吐 group_id', () => {

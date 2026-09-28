@@ -1,6 +1,5 @@
 import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { api, fieldErrorsOf, isApiError, qk, useApiMutation, useSettings, useTaskList } from '@/api';
-import { useActiveGroups } from '@/features/groups';
 import type { TaskCreateInput } from '@/api';
 import { Button, Dialog, Field, Input, Select, Textarea } from '@/components/ui';
 import {
@@ -70,7 +69,6 @@ function TaskCreateForm({
   onClose: () => void;
 }) {
   const settings = useSettings();
-  const groups = useActiveGroups();
   // 「挂到需求」的候选：非归档的需求类型任务（列表页按类型过滤；page_size 拉满一页够用）。
   const requirements = useTaskList({ type: ['需求'], archived: 'false', page: 1, page_size: 200 });
 
@@ -79,7 +77,6 @@ function TaskCreateForm({
   const [type, setType] = useState(asRequirement ? '需求' : (types.find((item) => item !== '需求') ?? types[0] ?? '任务'));
   const [priority, setPriority] = useState('2');
   const [parentId, setParentId] = useState(initialParent);
-  const [groupId, setGroupId] = useState('');
   const [tagText, setTagText] = useState('');
   const [reviewMode, setReviewMode] = useState<ReviewModeChoice>('');
   const [description, setDescription] = useState('');
@@ -116,7 +113,8 @@ function TaskCreateForm({
       tags: parseTags(tagText),
     };
     if (description.trim()) body.description = description.trim();
-    if (groupId) body.group_id = groupId;
+    // §19.15·90（r6 R3-C）：「分组」下拉并掉——归属只剩「挂到需求」一条（写 parent_task_id），
+    // 分组字段不再从本弹窗发出（不传时服务端按 §5.2 落「默认」分组兜底）。
     if (!asRequirement && parentId) body.parent_task_id = parentId;
     Object.assign(body, reviewModeBody(reviewMode));
     create.mutate(body, {
@@ -219,18 +217,6 @@ function TaskCreateForm({
             />
           </Field>
         )}
-
-        <Field label="分组" hint="可选；归档分组不出现在候选里">
-          <Select
-            value={groupId}
-            placeholder="未分配分组"
-            options={(groups.data?.items ?? []).map((group) => ({
-              value: group.id,
-              label: `${group.icon ? `${group.icon} ` : ''}${group.name}`,
-            }))}
-            onChange={(event) => setGroupId(event.target.value)}
-          />
-        </Field>
 
         {/* 需求不执行、不进 REVIEW（1.md 5.2），审核方式对它无意义——「创建为需求」时不给这一项。 */}
         {asRequirement ? null : (

@@ -4,9 +4,12 @@
  * group-delete-dialog）及 group-glyph 已删除，UI 不再渲染任何 Group 管理界面。
  * 本目录只保留仍有实际消费者的**数据层**（`group_id`/`/groups` 仍是存量数据与
  * REST/Agent 面真相，§19.15·91/92）：
- * - `queries.ts`：useGroups/useActiveGroups（列表筛选面板、列表页、新建任务弹窗、
- *   拆解浮层共 4 处消费者）+ useGroupMutations/groupsApi（端点封装保留）；
- * - `use-group-scoped.ts`：看板/列表的作用域腿（board/index.tsx）；
+ * - `queries.ts`：useGroups（唯一消费者 = `requirements/use-requirement-options.ts`
+ *   的归档组剔除，§19.15·91 保留项）；useActiveGroups 自 r6 R3-C 起 **UI 消费者清零**
+ *   （新建任务弹窗「分组」下拉与拆解浮层组名 badge 已退场），导出保留、不拆；
+ *   useGroupMutations/groupsApi（端点封装保留）；
+ * - `use-group-scoped.ts`：看板/列表两条数据腿（board/index.tsx 的
+ *   useBoardWithGroups、task-list/index.tsx 的 useTaskListWithGroups），仍在用；
  * - `types.ts`：Group 形状与 GROUP_LIMIT 常量（服务端校验口径）。
  * B15-③：`GroupSwitcher` 早已下线——分组维并入统一过滤 store（`useFilterStore.groups`）。
  */
