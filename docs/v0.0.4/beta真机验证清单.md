@@ -16,6 +16,23 @@
 > Windows 真机腿是**全新未验面**（SmartScreen 首启、WebView2 联网装、per-user 落盘、托盘/自启），口径见 `docs/发布手册.md` §1.3「已证/未证」，
 > 该批另立清单、不并进本 #14 关单条件。
 
+> **2026-09-29 追加：最新包 `v0.0.4-beta.9`（tag → `d3f32c0`，CI run 36569386437，四 job 全绿：打包 win-x64 / arm64 / x64 / 创建 Release；`isDraft=false / isPrerelease=true`）。**
+> 用 beta.9 走查时三项哈希换成（**哈希禁止抄旧批**——包不可字节复现）：
+> - arm64 dmg `d054ef92a26570e47935b4aaea7f5082738ee9e031edbfdfe658832f856102cd`（57,974,479 B）
+> - x64 dmg `5a86c8cc265e0e75de19f0e87b9e61b8bd11c2da0f4f752f0adee31b0b9dc0e0`（60,087,776 B）
+> - win-x64 setup.exe `47327a810a79e76cbe88558a3f321bffea59ac92ece0df7e5fa70d1d47c21c3c`（32,847,864 B）←
+>   Windows job 第二次走 `on: push: tags: v*` 正式通道跑绿（首包基线 draft `dryrun-d93debf` 按用户令保留未删）。
+> **对账口径本轮更新**：`gh api repos/xueshuaihui/agent-task-board/releases/tags/v0.0.4-beta.9 --jq '.assets[] | "\(.digest)  \(.name)  \(.size)B"'`
+> 已能直接返回 `sha256:…`（beta.7/8 那两轮恒 null），可与 Release 内 `SHA256SUMS.txt` 逐条对账；本轮三条全等。
+> 但 SUMS 内登记的是**空格名**（`Jarvis Workbench_0.1.0_x64.dmg`）、GitHub 资产落成**点号名**（`Jarvis.Workbench_…`），
+> 直接 `sha256sum -c` 必假红——按 `docs/发布手册.md` §5「空格→点号」口径以**哈希**为准（`release.yml:132-135` 注释写明是有意保留原始名）。
+> beta.9 相对 beta.8 的**内容差 = 44 条提交**：报错全面细化（7 枚数据层码 + REST/MCP 共用解码器 + 界面不许把失败念成空）+
+> 删需求卡片 500 根因（0022 弱引用）+ Group 在 web 整体下线、导航改「需求」（r1–r6）+ 任务审核方式可配置（0020）+
+> 自动审核器 **A1 数据层**（0021）+ BLOCKED 失败死路（`87c8963`）+ 建单绑技能（`226f275`）。
+> **迁移水位 0019 → 0022**，故 §3 的真库首启核验已就地改到 0022 并补 0020–0022 结构核验；§1–§12 其余 mac 项对 beta.9 同样成立、无需重走。
+> ⚠️ **本批有一条必须讲清的「没有」**：0021 只落数据层与词表，自动审核回路 **A2–A4 未实现**——装 beta.9 看不到自动审核行为
+> （`auto` 分流与审核队列是 0020 那条棒的产物，审核批次任务 / 审核器 Run / 批次抽屉都还没接线）。见 §13。
+
 > **截至 2026-09-25（tag v0.0.4-beta.7 → `5ed5861` 已切、CI run 36086497632）**：dev 可验面已全绿——§6.2/§6.3/§6.4/§6.5/§7.1/§7.2(前二)/§7.3/§7.4 与 §9–§11 的 dev 腿逐条勾销（批次记录在矩阵「beta.6 之后：dev 演练真机轮」节，该轮修掉 `96f7fb7`/`9777249`/`c3fa31e`/`e27d26e` 四缺陷）；G 批（§10、§11）与 0925 批（§12：31 条编码技能收录 + 分类两级树化）均已在 dev HEAD 真机走查（/tmp 副本环境 c6：两级筛选栏、搜「编码」41 条、双角色两行卡片、0018/0019 增量与 fresh 双路径实测）。**剩余未勾项全部依赖打包 dmg**：§0–§5、§6.1、§7.2-③ 托盘深色可见性、§9 的 beta 包复验腿、§10.1 经典占位滚动条档与 §10.2/§10.3 真实客户端实调、§11 打包环境滚动条挤压与最小窗横滚手势、§12 的包内首启核验（真库 0006→0019 直跳是本批最大真实路径）。
 
 - [ ] 按本机架构下载对应 dmg：Apple Silicon → `Jarvis.Workbench_0.1.0_arm64.dmg`；Intel → `Jarvis.Workbench_0.1.0_x64.dmg`
@@ -40,10 +57,14 @@
 
 ## 3. 条款 68 · 真库首启自动迁移（一次性，重点项）｜**只能打包 dmg，且必须写真库**
 
-场景：本机真实旧库 `~/.agent-board/atb.db`（schema 停 0006、`_prisma_migrations` 账本残缺）→ 首启应自动搬到 `~/.jarvis-workbench/jarvis.db` 并补迁到 0019。
+场景：本机真实旧库 `~/.agent-board/atb.db`（schema 停 0006、`_prisma_migrations` 账本残缺）→ 首启应自动搬到 `~/.jarvis-workbench/jarvis.db` 并补迁到 **0022**（beta.9 批的水位；beta.7 那轮是 0019）。
 
 - [ ] 首次启动触发搬迁：`~/.jarvis-workbench/` 生成 `jarvis.db`；旧目录保留原位且有 `backups/` 备份与迁移指引文件（`ls ~/.jarvis-workbench ~/.agent-board`）
-- [ ] 迁移水位到 0019：`sqlite3 ~/.jarvis-workbench/jarvis.db "PRAGMA user_version"` = 19（或 `select count(*) from _prisma_migrations where finished_at is not null` ≥ 19），且 0007–0019 迁移对应新表/列存在（如 notification/creation_request 相关表、skills.category 列 + `idx_skills_category`）；**0018/0019 树化核验**：`sqlite3 ~/.jarvis-workbench/jarvis.db "select count(*) from skills where category != '' and category not in ('需求与规划','开发与实现','质量与安全','代码清理','运维与协作','测试自动化','开发编程','教育学习','内容创作','方案写作','投资理财','Office办公','实用工具','数据分析','资讯研究','推荐')"` = 0（用户行旧「质量保障」应已被 0018 直映射为「质量与安全」），默认技能 total=125（0019 归位 + seed upsert 双路收敛）
+- [ ] 迁移水位到 **0022**（beta.9 批把水位从 0019 提到 0022，见 §0 追加块与 §13）：`sqlite3 ~/.jarvis-workbench/jarvis.db "PRAGMA user_version"` = 22（或 `select count(*) from _prisma_migrations where finished_at is not null` ≥ 22），且 0007–0022 迁移对应新表/列存在（如 notification/creation_request 相关表、skills.category 列 + `idx_skills_category`）；**0018/0019 树化核验**：`sqlite3 ~/.jarvis-workbench/jarvis.db "select count(*) from skills where category != '' and category not in ('需求与规划','开发与实现','质量与安全','代码清理','运维与协作','测试自动化','开发编程','教育学习','内容创作','方案写作','投资理财','Office办公','实用工具','数据分析','资讯研究','推荐')"` = 0（用户行旧「质量保障」应已被 0018 直映射为「质量与安全」），默认技能 total=125（0019 归位 + seed upsert 双路收敛）
+- [ ] **0020–0022 三条真库直跳的结构核验**（本批最大真实路径：真库 0006→**0022** 一次连跑**三次整表重建**（0020 `notifications`、0021 `task_dependencies`、0022 `breakdown_sessions`）+ **六条加列**（`tasks.review_mode`/`review_track`/`review_batch`、`reviews.reviewer_type`/`reviewer_name`/`reviewer_run_id`）+ 一次 settings 词表追加）：
+  - 0020：`select count(*) from pragma_table_info('tasks') where name in ('review_mode','review_track')` = 2；`select count(*) from pragma_table_info('reviews') where name in ('reviewer_type','reviewer_name')` = 2；存量任务应全吃默认 `review_mode='human'`（`select count(*) from tasks where review_mode != 'human'` = 0，§2 拍板「默认仍人工」）；`notifications` 的 kind CHECK 含 `review_auto_pending`/`review_auto_passed`（`select sql from sqlite_master where name='notifications'` 里能读到这两个词），且 `idx_notif_unread`、`idx_notif_read` 两条索引都在（0014 教训：DROP TABLE 连索引同毁）
+  - 0021：`select count(*) from tasks where review_batch != 0` = 0（A1 只落数据层，没有建批路径能写 1）；`task_dependencies` 的 type CHECK 已是三值含 `review`；`idx_deps_task` + `idx_deps_depends_on` + `idx_tasks_review_batch_status` + `idx_tasks_review_batch_archived` + `idx_reviews_reviewer_run` **五条索引全在**；生效词表已追加 `审核`：`select value from settings where key='task_types'` 应含该词，且**用户原有词与顺序一字未动**（N32 追加不重写；若该库这行被手改成坏 JSON 或非数组，本段应空转、值原样留着且不炸迁移）
+  - 0022：`select sql from sqlite_master where name='breakdown_sessions'` 内 `group_id`/`parent_task_id` 两条外键都带 `ON DELETE SET NULL`（旧库这里是裸 `REFERENCES`，是「删需求卡片报本地服务内部错误」的根因）；`breakdown_drafts`/`breakdown_progress` 行数迁移前后一致（重建期不得级联销毁草案与流水）
 - [ ] 数据完整保留：旧库里的任务/分组/技能在 UI 中可见、条数对得上（`select count(*) from Task;` 对比旧库副本 `/tmp/atb.db.insure-*`）
 - [ ] `PRAGMA foreign_key_check` 干净：`sqlite3 ~/.jarvis-workbench/jarvis.db "PRAGMA foreign_key_check;"` 无输出
 - [ ] migrated_from 审计/回滚对账信息在位（迁移指引文件可读、指明备份位置与回滚方法）
@@ -224,6 +245,28 @@
 
 **本节门禁**：api 689 用例 / tsc 0 / boot:smoke PASS（fresh total=125）；web 179 用例 / tsc 0；两侧镜像四导出（树/叶子/阶段词/作废词）逐字守护测试在 web `skill-categories.test.ts`。
 
+## 13. beta.9 批：报错全面细化 + 删除 500 根因 + Group 下线（2026-09-29 写回）
+
+三棒合流的一批：`5504e54`（0022 拆解会话弱引用，用户报「删需求卡片报本地服务内部错误」的根因）、`3771fe1`（报错全面细化）、`d3f32c0`（0021 自动审核器 A1 数据层）。用户令原文「**用户把报错可以全部细化一下**」，三条拍板均取推荐项：①新增一组数据层码而不复用 `INTERNAL`；②前端 5xx 不再整片兜底成通用文案，改**细化文案 + 折叠「详情」看引擎原文**；③MCP（Agent 面）与 REST 一起改、**共用同一份解码器**。设计口径已写回 `docs/` 第十三章错误码表与使用手册。
+
+- [x] **细化面 dev 已验**（/tmp 副本走查环境，注入真实故障而非 mock）：42 个判定面 = 36 读面 + 3 设置写面 + 3 建单写面，**42/42 显示细化文案**，泄漏「本地服务内部错误」0、引擎原文裸露在主文案 0、把失败念成空态 0；每次故障注入后恢复 200，960/1280/1600 三档各自截图留档。
+- [x] **两条源码闸（防复发的承重墙）**：`list-empty-vs-error.gate.test.ts` 扫 128 个 `.tsx`、识别 43 处 `?? []` / `?? 0` / `?? '—'` 折叠点，未消费对应 query 的 error 即判红（豁免必须写理由 `// 三态豁免：<原因>`），本轮 offenders 归零；REST/MCP/Web 三处码表一致性闸锁住同源，改一处码必改全表。
+- [x] **两条硬事实（下次碰错误面别重新查）**：① WAL 下**库锁只挡写**——另一进程 `BEGIN EXCLUSIVE` 时 `GET /tasks` 仍 200/7ms，只有写请求等满 5s 后 503，所以「遇锁」类触发面必须是写动作；② `SettingsService` 有 memo（`settings.service.ts:22`），`GET /settings` 根本不碰 `settings` 表，判「缺表有没有被细化」要挑真正落库的那张表。
+- [x] **0022 回归**：删除由拆解产出的父需求 → 200、拆解会话与草案/流水保留、`parent_task_id` 归空；升级路径存量零丢失演练过（/tmp 副本，真库未碰）。
+- [x] **本节门禁**：api `tsc --noEmit` 干净 + **70 files / 778 tests 全绿** + `boot:smoke` PASS；web `tsc` 干净 + **30 files / 277 tests 全绿** + `vite build` 成功。
+- [x] **Group 在 web 下线（r1–r6）随本批首次对外**：导航「分组」→「需求」、归属只写 `parent_task_id`、完成度判据回到模型真值（不再用 `type=子任务`）。规范与实现在 dev 已对账收口，包内可见性随下条复验。
+- [ ] **待 beta 包复验**：
+  - ①真库 `~/.agent-board`（停 0006）首启直跳 **0022**——§3 新补的 0020/0021/0022 三条结构核验（本批一次连跑两次整表重建 + 一次列扩容，是历史最大增量）。
+  - ②真机删一张拆解产出的需求卡片：不再出现「本地服务内部错误」，拆解历史页仍可打开（指针归空的会话读面）。
+  - ③包内遇库锁（另一进程占库）时的写动作：界面显示存储被占的细化文案，折叠「详情」里能读到引擎原文一行。
+  - ④MCP 面在**真实 Agent 客户端**里回细化码 + `detail`（此前只到协议层与 InMemoryTransport，见 §6.5/§10.2 同类口径）。
+  - ⑤**反向核验「不该有的没有」**：0021 只有数据层，审核回路 A2–A4 未实现——装 beta.9 后不应看到任何自动审核行为（无建批入口、批次任务不可创建，`审核` 只作为类型词出现在词表与筛选下拉）。这条是本批对外的承诺边界，tag note 与 commit message 均已写明。
+  - ⑥包内导航与页面文案确为「需求」（Group 字样不应残留），看板列不随筛选折叠（r5 拍板）在 dmg 的经典滚动条档复验。
+  - ⑦Windows：beta.9 是**第二个**含 `.exe` 的对外包（首个是 beta.8），真机安装与首启仍未验证，口径见 `docs/发布手册.md` §1.3「已证/未证」，另立清单、不并进 #14 关单。
+- **本轮查出但刻意未改（记档待拍板）**：设置页「通用」Tab 的写失败提示渲染在**该列末尾**（`general.tsx:254`），960px 档实测位于首屏折叠线下（TreeWalker 量到 y≈1497），用户点了主题切换后可能看不到报错——文案本身已细化，属**位置**问题，dev 未改，真机走查时判是否需要挪到表单顶部。
+
+**本节门禁**：见上条门禁项；走查脚本与截图留档在 `/tmp/atb-walk/`（本机临时目录，**不作为验收载体**，真机按本节条目重跑）。
+
 ## 记录区（现象/截图/报错贴这里）
 
 | 项 | 结果（过/挂） | 现象备注 |
@@ -248,5 +291,6 @@
 | §10.2 G-2 `update_task` | 协议层过（2026-09-24 · dev，InMemoryTransport 全链路 17 用例），客户端实调待包 | MCP 工具 26→27。守卫三支（拍板）：RUNNING 须持当前租约（与 `update_progress` 同 `leases.verify` 口径）、BACKLOG/READY 免租约、其余四状态拒 409 `TASK_NOT_EDITABLE` 且 details 指名该走的链路。字段面逐字取 `taskPatchSchema.shape`（13 可写字段），校验/审计只有 `TasksService.applyPatch` 一份；**REST `PATCH /tasks/:id` 的 RUNNING 即拒一字未动**（既有测试 + 新增红线用例双向锁住）；`status`/`assignee` 不在可写键内，改不到状态机与执行权。 |
 | §10.3 G-3 `update_skill` | 协议层过（同上，16 用例），客户端实调待包 | 27→28。可写面 = UI `skillPatchSchema` 除 `status` 外全部；`status` **有意排除**（UI 发布=`POST /versions` 快照 + `PATCH {status}` 两步，agent 面无快照工具，只改状态会让 `current_version` 与 content 脱节），`mcp_dependencies` 与 UI PATCH 面一致不可写。守卫全复用 `SkillsService.patch`（默认技能 `SKILL_READONLY`、子技能自引用/成环 `SKILL_REF_SELF`/`SKILL_REF_CYCLE`），`@AuthScope('ui')` 未摘。词表回显补在 agent 入口层：`parseToolInput` details 追加 `received`、hint 拼「可接受值 + 当前收到」，`get_vocabulary` 新增 `skill_categories`；REST 的裸 zod 422 形状 UI 在用、锁进测试未改。 |
 | §11 G-5 看板列宽 | 过（2026-09-24 · dev 真机浏览器，非打包 dmg），打包环境待复验 | 用户拍板「全列常驻等分 + 暂无任务」，覆盖 PRD v1.5 §4.1/§5 的「空列折叠为 40px 竖条」。修法删概念：`model.ts::columnCollapsed` 连函数删除、`board-column.tsx` 的 `collapsed` prop/`w-column-collapsed` 分支/列头竖条形态/条件包裹全清、40px 定档 token 与随之失去对象的 `transition-[width]` 一并删；`total === 0 && defaultView` 那条整页空态规则未动。实测：1940px 真窗口无筛选 7×228 → 加 `P3 低` 后仍 7×228（修复前 698/698/40×5 且空列无「暂无任务」），5 个空列全部显示「暂无任务」；960/1280/1600 三档（同源 iframe 真视口，各跑无筛选与 P3 两态）列数恒 7、单列恒 180px、容器 clientW/scrollW = 848/1356、1032/1356、1352/1356（横滚只在列行内）、三档页面级 `scrollWidth === clientWidth` 零横向溢出；B4 列内竖滚未退化（需求池 clientH 1225 < scrollH 1450）。新增 7 例单测（`renderToStaticMarkup` 真渲列组件）。 |
+| §13 beta.9 批（报错细化 / 0022 删除根因 / 0021 A1） | dev 过（2026-09-29 · /tmp 副本走查 + 真故障注入，非打包 dmg），包内待复验 | 42 判定面（36 读 + 3 设置写 + 3 建单写）**42/42 细化文案**，泄漏「本地服务内部错误」0、引擎原文裸露主文案 0、念成空态 0，三档 960/1280/1600 各留截图；注入后均恢复 200。两条闸：`list-empty-vs-error.gate.test.ts`（128 `.tsx`、43 折叠点、offenders 0，豁免须写理由）+ REST/MCP/Web 码表一致性。门禁 api 70 files/778 tests + boot:smoke PASS、web 30 files/277 tests + build。两条硬事实入档：**WAL 库锁只挡写**（读面测锁必假绿）、**settings 有 memo**（`GET /settings` 不碰表）。0022 已验：删拆解产出的需求 → 200、会话与草案留、指针归空。**本批承诺边界**：0021 只有数据层，A2–A4 未实现 → 装包看不到自动审核行为（§13 待包⑤是反向核验）。记档未改：设置「通用」写报错落在该列末尾（`general.tsx:254`，960 档 y≈1497 在折叠线下）。
 
 另记：**React Flow 归属水印**——流程图视图原先 `proOptions={{ hideAttribution: true }}`，控制台明确提示隐藏需订阅 Pro（本项目无订阅）。2026-09-24 拍板「恢复显示」，已随 `e27d26e` 改回 `hideAttribution: false`（与技能画布既有写法同风格），水印走 `globals.css` 既有的弱化配色（透明底 + `--color-text-tertiary`，深浅主题同一令牌），未加隐藏、未改色位。beta 包复验时确认深浅两套主题下不压内容即可。
