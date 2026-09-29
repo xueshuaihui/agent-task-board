@@ -2472,6 +2472,29 @@ CREATE INDEX idx_notif_unread ON notifications(read_at) WHERE read_at IS NULL;
 |`FIELD_IN_USE`|409|删除被任务引用的字段定义，`details.task_count` 给出引用数（13 章字段接口）|UI|
 |`INVALID_BACKUP_NAME`|400|恢复入参不符合 `^atb-\d{8}-\d{6}\.db$`，或含路径分隔符（组装路径前的白名单校验，13 章备份接口）|UI|
 |`BACKUP_NOT_FOUND`|404|文件名合法但磁盘上不存在——备份列表来自磁盘扫描，两次请求之间可能被人手动删除|UI|
+|`SELF_REVIEW_FORBIDDEN`|403|0020 §3\.3/Q4 自审硬门禁：审核者 Token 与被审 Run 的执行者 Token 是同一枚。`message` 指名该换哪类凭证|Agent|
+|`INVALID_PARAM`|422|入参**形状**不合（枚举越界、id 含非法字符、WS 用查询参数带凭证），区别于 `VALIDATION_FAILED` 的逐字段业务校验|全部|
+|`SKILL_BOUND`|409|8 章：删除仍被任务绑定的技能，`context.bound_count` 给出绑定任务数|UI|
+|`SKILL_ID_CONFLICT`|409|§9\.8\.4 导入撞同 ID 且未指定策略，回「覆盖更新／跳过」两选|UI|
+|`SKILL_READONLY`|403|§9\.1 内置默认技能拒改、拒删、拒发版本|UI / Agent|
+|`SKILL_REF_SELF`|400|§9 技能子引用 `skillRef` 指回自己（入参本身非法）|UI|
+|`SKILL_REF_CYCLE`|409|§9 技能引用链与库内既有图形成环|UI|
+|`GROUP_LIMIT_REACHED`|409|§5\.5 活跃分组数达到上限 50|UI / Agent|
+|`GROUP_DEFAULT_PROTECTED`|409|§5\.2／§5\.5／§5\.6 预置「默认」分组不可删除，也不可归档|UI / Agent|
+|`GROUP_NOT_ALL_DONE`|409|§5\.6 归档前置校验未过：组内还有未完成／未归档任务，`context.remaining` 带剩余数|UI / Agent|
+|`GROUP_ARCHIVED`|409|§5\.6 归档分组转只读：不能再向该组建任务或把任务移进来，`context.group_id` 指名分组|UI / Agent|
+|`BREAKDOWN_BAD_STATE`|409|§7\.7 拆解动作从表外状态发起（`confirm` 只允许 `reviewing`，`cancel` 只允许 `receiving`／`reviewing`）。`context` 带 `session_id/status/allowed`|Agent / UI|
+|`BREAKDOWN_DRAFT_REF_TAKEN`|409|§7\.4 用户侧「添加任务」显式带的 `ref` 在本会话内已占用（`UNIQUE(session_id, ref)`）。不传 `ref` 由服务端自动取号，走不到这一条。`context` 带 `session_id/ref`|Agent|
+|`CREATION_REQUEST_RESOLVED`|409|§8\.7 r3 轻确认决策回传时请求已终结（已建／已取消／已超时含 30s＋5s 宽限）。`context.status` 带归宿，界面据此就地收口卡片|Agent|
+|`NOT_IMPLEMENTED`|501|§8\.8 技能源：git／http 远程源本期不实现|UI|
+|`DATA_STILL_REFERENCED`|409|2026\-09\-29「报错全部细化」：删除／更新撞上外键，且该外键不是 `CASCADE`（`ON DELETE` 动作为 `NO ACTION`／`SET NULL` 时走不到这里）。业务护栏本该先挡住（见 `ARCHIVE_BLOCKED_BY_DEPENDENCY`／`FIELD_IN_USE`），出现这一枚说明调用方绕过了护栏或库里存在设计外的引用者。`context` 带 `model/detail`|全部|
+|`DATA_DUPLICATE`|409|唯一约束或主键冲突（并发写、TOCTOU、导入撞号）。区别于 `IMPORT_ID_CONFLICT`／`SKILL_ID_CONFLICT`：那两枚是预期内的冲突并给出策略选项，这一枚是护栏没兜住时的通用形状。`context` 带 `fields/detail`|全部|
+|`SCHEMA_MISMATCH`|500|缺表／缺列：程序与库的 DDL 不一致（迁移链没跑完、旧程序读了新库、手工改过库）。`context` 带 `missing/detail`，`message` 指名是表还是字段|全部|
+|`STORAGE_UNAVAILABLE`|503|库文件打不开、磁盘满、IO 错误、数据目录被移动或外接盘拔出——环境侧，重试不一定有用，故与「被占用」分开。`message` 给出检查动作|全部|
+|`STORAGE_LOCKED`|503|`SQLITE_BUSY`／`LOCKED`：另一个进程持写锁（同时开了两个本地服务、备份正在跑）。可重试|全部|
+|`STORAGE_CORRUPT`|500|`SQLITE_CORRUPT`／`NOTADB`（"file is not a database"）：库文件坏了或被截断，`message` 指向设置页「备份与恢复」|全部|
+|`STORAGE_READONLY`|500|`SQLITE_READONLY`／`PERM`、fs 的 `EACCES`／`EPERM`／`EROFS`：数据目录在只读卷上或权限不足|全部|
+|`INTERNAL`|500|兜底：`contract/db-errors.ts` 也认不出的抛出（非数据层、非 fs）。`message` 给通用文案，`context.detail` 仍带引擎原文一行，界面折叠区可见——细化不允许吃掉现场|全部|
 
 
 

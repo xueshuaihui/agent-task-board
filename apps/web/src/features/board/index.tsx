@@ -13,10 +13,10 @@ import {
 import { CloudOff, Plus, RotateCcw } from 'lucide-react';
 import { LayoutGroup, motion } from 'motion/react';
 import type { BoardColumn, TaskCard, TaskStatus } from '@/api/types';
-import { errorMessage, useFieldDefs } from '@/api';
+import { useFieldDefs } from '@/api';
 import { navigate } from '@/app/router';
 import { toBoardQuery, useFilterStore } from '@/app/store/filters';
-import { Button, EmptyState, useToast } from '@/components/ui';
+import { Button, EmptyState, ErrorCopy, useToast } from '@/components/ui';
 import { useBoardWithGroups } from '@/features/groups';
 import { BoardColumnView } from './board-column';
 import { useCardActions } from './card-actions';
@@ -58,6 +58,7 @@ export function BoardPage() {
   // 单一一份 `/board` 请求。
   const board = useBoardWithGroups(params);
   const fieldDefs = useFieldDefs();
+  // 三态豁免：defs 只喂卡片正文的自定义字段行（`cardFieldEntries` 按 def 过滤 `card.custom_fields`，def 没拿到就那一行不出现，界面不写「没有自定义字段」）；看板正文的三态由下面 `board.isPending / board.isError` 分支整块承担
   const defs = useMemo(() => fieldDefs.data?.items ?? [], [fieldDefs.data?.items]);
   const mutations = useBoardMutations();
   const { overlayOf } = useRunOverlay();
@@ -163,7 +164,7 @@ export function BoardPage() {
               className="mt-6"
               icon={<CloudOff className="size-7" aria-hidden />}
               title="看板读取失败"
-              description={errorMessage(board.error)}
+              description={<ErrorCopy error={board.error} className="inline-block max-w-full text-left" />}
               action={
                 <Button variant="primary" icon={<RotateCcw className="size-4" />} onClick={() => void board.refetch()}>
                   重试

@@ -20,6 +20,7 @@ import { useShellStore } from '@/app/store/shell';
  * import { openDependencyGraph } from '@/features/requirements';
  * import { useBoard } from '@/api';
  * const board = useBoard(); // 或 useTaskList 等任何拿到 GraphTask 集合的地方
+ * // 三态豁免：本行是 JSDoc 用例（不是渲染路径；本文件不查任何列表，仓内唯一实调点 `requirement-drawer.tsx` 的 GraphTab 用 `detail.children` 拼 tasks），实际调用方须自己按 `board.isError` 报错
  * openDependencyGraph(board.data?.columns.flatMap((c) => c.tasks) ?? []);
  * ```
  *

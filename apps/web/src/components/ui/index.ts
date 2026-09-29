@@ -14,6 +14,7 @@ export { Tooltip, type TooltipProps } from './tooltip';
 export { Menu, MenuCaret, type MenuItem, type MenuGroup, type MenuProps } from './menu';
 export { Popover, type PopoverProps } from './popover';
 export { ToastProvider, useToast, type ToastApi, type ToastVariant } from './toast';
+export { ErrorCopy, ErrorDetail, ErrorLine, ErrorText } from './error-copy';
 export {
   Table,
   TBody,

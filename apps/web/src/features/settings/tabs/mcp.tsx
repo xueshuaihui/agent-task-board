@@ -1,6 +1,7 @@
-import { RadioGroup } from '@/components/ui';
+import { ErrorCopy, RadioGroup } from '@/components/ui';
 import type { McpWakeMode } from '@/api/types';
 import { MCP_WAKE_MODES } from '@/api/types';
+import { InlineError } from '@/features/task-detail/ui-bits';
 import { MCP_WAKE_MODE_LABEL } from '@/lib/labels';
 import { FormError, SettingRow, SettingSection, TabHeader } from '../components/settings-ui';
 import { useSettingsWriter } from '../queries';
@@ -11,6 +12,10 @@ import { useSettingsWriter } from '../queries';
  * 改的是 MCP 侧行为（#46 唤醒模式），与 Token 的「接入凭证」是两件事：
  * Token Tab 管一次性明文，这里管长期生效的即时写入项，走 `useSettingsWriter`
  * 与其他 Tab 相同的写入通道。措辞与服务端 `buildMcpInstructions` 下发口径一致。
+ *
+ * 2026-09-29「列表三态必须可辨」：这一页只有一份读查询（`GET /settings`），读失败时
+ * 单选组会退回 `single` 那一档，看起来像用户选的。写失败（`wake.error`）与读失败
+ * （`wake.loadError`）是两回事，各摆一条，读失败摆在控件之上。
  */
 
 /** #46 两档控件的副标题（短标签在 `lib/labels.ts`，此处只补一句「会怎样」）。 */
@@ -35,6 +40,8 @@ export function McpTab() {
         description="对已接入本 MCP 的 Agent 说「贾维斯，创建一个任务：明天发布」，它就直接用看板工具完成请求，不反问是否使用工具。"
       />
 
+      {wake.loadError ? <InlineError text={<ErrorCopy error={wake.loadError} />} /> : null}
+
       <SettingSection title="工作模式">
         <SettingRow
           label="唤醒后的会话模式"
@@ -48,7 +55,7 @@ export function McpTab() {
             onChange={(value) => wake.set('mcp_wake_mode', value as McpWakeMode)}
           />
         </SettingRow>
-        {wake.errorText ? <FormError>{wake.errorText}</FormError> : null}
+        {wake.error ? <FormError><ErrorCopy error={wake.error} /></FormError> : null}
       </SettingSection>
     </div>
   );

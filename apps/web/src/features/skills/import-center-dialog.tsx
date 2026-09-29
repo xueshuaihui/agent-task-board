@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, FileCode2, FileText, FileWarning, Package, Upload, X } from 'lucide-react';
-import { Badge, Button, Dialog, useToast } from '@/components/ui';
-import { errorMessage } from '@/api';
+import { Badge, Button, Dialog, ErrorDetail, useToast } from '@/components/ui';
+import { errorDetailOf, errorMessage } from '@/api';
 import { cn } from '@/lib/cn';
 import { markdownToBlocks } from './markdown';
 import { skillsApi } from './api';
@@ -54,6 +54,8 @@ interface FailedEntry {
   key: string;
   fileName: string;
   message: string;
+  /** 服务端错误里的引擎原文（`context.detail`）；解析类失败是本地抛的，就没有。 */
+  detail?: string;
 }
 
 const SOURCE_META: Record<SourceKind, { label: string; className: string }> = {
@@ -172,6 +174,8 @@ export function ImportCenterDialog({
             key: `${entry.key}-create`,
             fileName: entry.fileName,
             message: `导入失败：${errorMessage(error) || '未知错误'}`,
+            // 服务端拒绝（重名/校验/存储层）时带上原文，行内「详情」可展开看引擎那句话。
+            detail: errorDetailOf(error),
           },
         ]);
       }
@@ -269,7 +273,10 @@ export function ImportCenterDialog({
             <AlertCircle className="mt-0.5 size-4 shrink-0 text-status-failed" />
             <div className="min-w-0 flex-1">
               <p className="text-body text-text-primary">{entry.fileName}</p>
-              <p className="text-aux text-status-failed">{entry.message}</p>
+              <p className="text-aux text-status-failed">
+                {entry.message}
+                <ErrorDetail text={entry.detail} />
+              </p>
             </div>
             <button
               type="button"

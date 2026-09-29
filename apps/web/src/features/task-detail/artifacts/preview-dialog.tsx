@@ -1,7 +1,6 @@
 import { useRef } from 'react';
 import { Download, ExternalLink } from 'lucide-react';
-import { Button, Dialog, EmptyState, Skeleton } from '@/components/ui';
-import { errorMessage } from '@/api';
+import { Button, Dialog, EmptyState, ErrorCopy, ErrorText, Skeleton } from '@/components/ui';
 import { desktop } from '@/app/desktop';
 import { useArtifactMeta } from '../queries';
 import { COPY } from '@/lib/copy';
@@ -107,7 +106,7 @@ function PreviewBody({ target, maxMb }: { target: PreviewTarget; maxMb: number }
   if (kind === 'link') {
     if (meta.isPending) return <Skeleton className="h-28 w-full rounded-card" />;
     if (meta.isError) {
-      return <EmptyState title="外链信息读取失败" description={errorMessage(meta.error)} />;
+      return <EmptyState title="外链信息读取失败" description={<ErrorCopy error={meta.error} className="inline-block max-w-full text-left" />} />;
     }
     // `uri` 是 Agent 在 `complete_task` 里自报的（12 章），服务端 20.6 只校格式、不担保内容，
     // 所以目标地址摊开给用户自己看过再决定点不点。
@@ -155,7 +154,7 @@ function kindFromType(type: string): 'diff' | 'text' | 'image' | 'link' {
 }
 
 function TextBody({ artifactId }: { artifactId: string }) {
-  const { text, loading, error, reload } = useArtifactText(artifactId);
+  const { text, loading, error, detail, reload } = useArtifactText(artifactId);
 
   if (loading) {
     return <p className="py-6 text-center text-aux text-text-tertiary">正文加载中…</p>;
@@ -165,7 +164,7 @@ function TextBody({ artifactId }: { artifactId: string }) {
     return (
       <EmptyState
         title={lost ? '产物文件已丢失' : '正文读取失败'}
-        description={error}
+        description={<ErrorText text={error} detail={detail} className="inline-block max-w-full text-left" />}
         action={
           lost ? undefined : (
             <Button size="sm" onClick={reload}>

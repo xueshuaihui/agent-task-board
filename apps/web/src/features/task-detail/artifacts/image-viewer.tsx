@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Maximize, RefreshCw } from 'lucide-react';
-import { Button, EmptyState } from '@/components/ui';
+import { Button, EmptyState, ErrorText } from '@/components/ui';
 import { COPY } from '@/lib/copy';
 import { useSignedUrl } from './use-artifact-content';
 
@@ -17,7 +17,7 @@ const MIN_SCALE = 0.25;
 const MAX_SCALE = 4;
 
 export function ImageViewer({ artifactId, name }: { artifactId: string; name: string }) {
-  const { url, loading, error, reload } = useSignedUrl(artifactId);
+  const { url, loading, error, detail, reload } = useSignedUrl(artifactId);
   const [scale, setScale] = useState(FIT_SCALE);
   const [actual, setActual] = useState(false);
   const retried = useRef(false);
@@ -41,7 +41,13 @@ export function ImageViewer({ artifactId, name }: { artifactId: string; name: st
     return (
       <EmptyState
         title={error === COPY.artifactLost ? '产物文件已丢失' : '图片无法显示'}
-        description={error ?? COPY.artifactLost}
+        description={
+          <ErrorText
+            text={error ?? COPY.artifactLost}
+            detail={detail}
+            className="inline-block max-w-full text-left"
+          />
+        }
         action={
           <Button size="sm" icon={<RefreshCw className="size-3.5" />} onClick={reload}>
             重新加载

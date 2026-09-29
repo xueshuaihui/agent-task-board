@@ -55,7 +55,15 @@ export function buildRequirementOptions(
     .map((task) => ({ id: task.id, title: task.title, group_id: task.group_id }));
 }
 
-/** 看板两处的共享拉取：一次性全量需求（page_size 取服务端上限 200）。 */
+/**
+ * 看板两处的共享拉取：一次性全量需求（page_size 取服务端上限 200）。
+ *
+ * 返回体 = 需求列表查询（`isPending`/`isError`/`error` 都在）+ 派生候选 + **归档组判定状态**。
+ * `groupsError` 是 2026-09-29「列表报错被渲染成空状态」补的：归档组取不到时
+ * `buildRequirementOptions` 走的是「未就绪全量放行」分支，即**静默放弃归档剔除**——
+ * 候选照样非空、不会说「没有需求」，所以不能只看 `isError` 判健康。消费方（归属下拉/子菜单）
+ * 拿它给自己加 tier-2 文案「归档需求可能仍在候选里」，别让 409 留给服务端才发现。
+ */
 export function useRequirementOptions() {
   const list = useTaskList({
     type: [REQUIREMENT_TYPE],
@@ -68,7 +76,12 @@ export function useRequirementOptions() {
     () => buildRequirementOptions(list.data?.items, groups.data?.items),
     [list.data, groups.data],
   );
-  return { ...list, data: options };
+  return {
+    ...list,
+    data: options,
+    /** 归档组词表取不到时的原始错误；此时候选未剔除归档组需求（`null` = 判定正常生效）。 */
+    groupsError: groups.isError ? groups.error : null,
+  };
 }
 
 /**

@@ -4,6 +4,7 @@ import {
   ERROR_CODE_COPY,
   api,
   artifactSrc,
+  errorDetailOf,
   errorMessage,
   isKnownErrorCode,
 } from '@/api';
@@ -133,13 +134,18 @@ export interface RawContentState {
   text: string | null;
   loading: boolean;
   error: string | null;
+  /** 「详情」折叠那行的原料：`context.detail`（引擎原文一行），没有就不给入口。 */
+  detail?: string;
   reload: () => void;
 }
 
 export function useArtifactText(artifactId: string | null): RawContentState {
-  const [state, setState] = useState<{ text: string | null; loading: boolean; error: string | null }>(
-    { text: null, loading: false, error: null },
-  );
+  const [state, setState] = useState<{
+    text: string | null;
+    loading: boolean;
+    error: string | null;
+    detail?: string;
+  }>({ text: null, loading: false, error: null });
 
   const load = useCallback(async () => {
     if (!artifactId) {
@@ -150,7 +156,7 @@ export function useArtifactText(artifactId: string | null): RawContentState {
     try {
       setState({ text: await fetchArtifactText(artifactId), loading: false, error: null });
     } catch (error) {
-      setState({ text: null, loading: false, error: errorMessage(error) });
+      setState({ text: null, loading: false, error: errorMessage(error), detail: errorDetailOf(error) });
     }
   }, [artifactId]);
 
@@ -165,14 +171,19 @@ export interface SignedUrlState {
   url: string | null;
   loading: boolean;
   error: string | null;
+  /** 同 `RawContentState.detail`：现签失败时的引擎原文，供「详情」折叠。 */
+  detail?: string;
   /** 再签一条：图片加载失败（签名过期/被消费）时由 `onError` 调。 */
   reload: () => void;
 }
 
 export function useSignedUrl(artifactId: string | null): SignedUrlState {
-  const [state, setState] = useState<{ url: string | null; loading: boolean; error: string | null }>(
-    { url: null, loading: false, error: null },
-  );
+  const [state, setState] = useState<{
+    url: string | null;
+    loading: boolean;
+    error: string | null;
+    detail?: string;
+  }>({ url: null, loading: false, error: null });
 
   const load = useCallback(async () => {
     if (!artifactId) {
@@ -189,6 +200,7 @@ export function useSignedUrl(artifactId: string | null): SignedUrlState {
         loading: false,
         // 404 ARTIFACT_LOST 的兜底文案换成灰态口径（13 章）。
         error: text === ERROR_CODE_COPY.ARTIFACT_LOST ? COPY.artifactLost : text,
+        detail: errorDetailOf(error),
       });
     }
   }, [artifactId]);

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { RadioGroup, Select, Switch } from '@/components/ui';
+import { ErrorCopy, RadioGroup, Select, Switch } from '@/components/ui';
 import type { Settings } from '@/api/types';
+import { InlineError } from '@/features/task-detail/ui-bits';
 import { REVIEW_MODE_LABEL } from '@/lib/labels';
 import { ChipEditor } from '../components/chip-editor';
 import { ConfirmDialog } from '../components/confirm-dialog';
@@ -15,6 +16,11 @@ import { optionsWithCurrent, TASK_TYPE_LIST_MAX, TASK_TYPE_MAX } from '../utils'
  *
  * 档位取自 20.9 的区间，但只显示常用的几档；库里存着档位外的值时
  * `optionsWithCurrent` 会把它补进候选，select 不会把一个合法值显示成别的数字。
+ *
+ * 2026-09-29「列表三态必须可辨」：这一页的九个控件全部吃 `GET /settings` 一份读查询，
+ * 读失败时 `settings` 是 `undefined`、每行退回代码里的默认值——那不是「用户没改过」，
+ * 是库没读到。以前只有 PATCH 的写失败会露头（页底那条 `FormError`），读失败整片隐身，
+ * 所以 `loadError` 单独摆在**所有控件之上**：先说明下面这些值是兜底出来的，再让人改。
  */
 
 const THEME_OPTIONS = [
@@ -51,7 +57,7 @@ const REVIEW_MODE_OPTIONS = [
 ] as const;
 
 export function GeneralTab() {
-  const { settings, set, patch, errorText } = useSettingsWriter();
+  const { settings, set, patch, error, loadError } = useSettingsWriter();
 
   // 存值怎么落到 DOM 上是壳层的事（`app/app.tsx` 的 `useUiThemeSync`）：
   // 这里写成功后 `useSettingsWriter` 更新的是同一份 `qk.settings()` 缓存，主题随即跟上，
@@ -81,6 +87,8 @@ export function GeneralTab() {
   return (
     <div className="flex flex-col gap-4">
       <TabHeader title="通用" />
+
+      {loadError ? <InlineError text={<ErrorCopy error={loadError} />} /> : null}
 
       <SettingSection>
         <SettingRow
@@ -243,7 +251,7 @@ export function GeneralTab() {
         </SettingRow>
       </SettingSection>
 
-      {errorText ? <FormError>{errorText}</FormError> : null}
+      {error ? <FormError><ErrorCopy error={error} /></FormError> : null}
 
       <ConfirmDialog
         open={pendingType !== null}

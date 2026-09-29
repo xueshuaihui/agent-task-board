@@ -6,7 +6,7 @@ import { api, qk } from '@/api';
 import { navigate } from '@/app/router';
 import { useFilterStore } from '@/app/store/filters';
 import { cn } from '@/lib/cn';
-import { Button, Menu, MenuCaret, Tooltip, type MenuProps } from '@/components/ui';
+import { Button, ErrorText, Menu, MenuCaret, Tooltip, type MenuProps } from '@/components/ui';
 import { boardFilterCount, VIEW_ORDER } from './model';
 import { useViewPrefsStore } from './flow/view-prefs';
 import { FilterMenu } from './filter/FilterMenu';
@@ -167,14 +167,22 @@ function DisplaySegmented() {
 /** 3.4：模板最多 6 条，超出走「管理模板…」。 */
 const TEMPLATE_LIMIT = 6;
 
-function useTemplates(): Template[] {
+/** 模板候选 + 取不到时的原始错误（tier-2：候选源不能把 500 折成「暂无模板」）。 */
+interface TemplateCandidates {
+  templates: Template[];
+  /** 查询报错时的原始错误；成功时为 null。 */
+  error: unknown;
+}
+
+function useTemplates(): TemplateCandidates {
   const query = useQuery({
     queryKey: qk.templates(),
     queryFn: () => api.templates.list(),
     staleTime: 30_000,
   });
   /** 服务端已按 `sort_order` 排好；模板没有启停，所以这里只截断条数。 */
-  return useMemo(() => (query.data?.items ?? []).slice(0, TEMPLATE_LIMIT), [query.data?.items]);
+  const templates = useMemo(() => (query.data?.items ?? []).slice(0, TEMPLATE_LIMIT), [query.data?.items]);
+  return { templates, error: query.isError ? query.error : null };
 }
 
 export interface CreateMenuProps {
@@ -187,7 +195,8 @@ export interface CreateMenuProps {
 }
 
 /**
- * 3.4「新建任务下拉」：`＋ 新建任务 ▾` = 空白任务 / 从模板（最多 6 条，无模板时该项 disabled）
+ * 3.4「新建任务下拉」：`＋ 新建任务 ▾` = 空白任务 / 从模板（最多 6 条；没有模板时该项
+ * 显示「暂无模板」，模板接口报错时显示「模板加载失败」，两者都 disabled）
  * / 管理模板…（跳设置页 templates Tab）。
  *
  * 导出给 3.8 的任务列表页头部复用：两处是同一份规格（各自都是「本栏唯一的创建入口」），
@@ -195,7 +204,7 @@ export interface CreateMenuProps {
  * `data-testid` 固定为 `create-task`：`app.tsx` 的 `PAGES` 一次只挂一页，两个入口不会同时进 DOM。
  */
 export function CreateMenu({ onCreate }: CreateMenuProps) {
-  const templates = useTemplates();
+  const { templates, error: templatesError } = useTemplates();
   const groups: MenuProps['groups'] = [
     {
       items: [
@@ -209,8 +218,13 @@ export function CreateMenu({ onCreate }: CreateMenuProps) {
     },
     {
       label: '从模板',
-      items:
-        templates.length === 0
+      // tier-2（2026-09-29「列表报错被渲染成空状态」）：候选源取不到时说「模板加载失败」，
+      // 不能用「暂无模板」把 500 冒充成"你还没建过模板"。「空白任务」与「管理模板…」照常可用，
+      // 建任务这条主动作不被候选源卡住。禁用项里的「详情」折叠仍可点（Radix 只在 select 时
+      // 因 disabled 短路，不给 disabled 加 pointer-events）。
+      items: templatesError
+        ? [{ id: 'template-load-failed', label: <ErrorText text="模板加载失败" error={templatesError} />, disabled: true }]
+        : templates.length === 0
           ? [{ id: 'no-template', label: '暂无模板', disabled: true }]
           : templates.map((template) => ({
               id: template.id,

@@ -65,12 +65,19 @@ export async function countTasksByType(type: string): Promise<number | null> {
 /**
  * `GET /settings/backups`：`api/types.ts` 的 `BackupListResult` 已按服务端实际响应
  * 收录 `backup_dir`（9.3 的存放目录，原型 7.8 的「备份路径」那一行用它），这里不再叠克隆类型。
+ *
+ * `error` 这一位是 2026-09-29「列表三态必须可辨」补的：以前这个钩子只回下面那四个字段，
+ * `query.error` 在结构上就出不去——查询失败时 `items` 是 `[]`、`totalSize` 是 `0`，
+ * 消费方 `tabs/backups.tsx` 于是只能渲染「共 0 B」+「还没有备份。」，500 被空态吃掉。
+ * **只加不减**：旧的解构照旧可用，新代码拿它摆列表错误面。
  */
 export function useBackupList(): {
   items: BackupFile[];
   totalSize: number;
   dir: string | null;
   isLoading: boolean;
+  /** 列表查询自己的原始错误对象（走 `<ErrorCopy>`）；没有失败时为 `null`。 */
+  error: unknown;
 } {
   const query = useQuery({
     queryKey: qk.backups(),
@@ -81,6 +88,7 @@ export function useBackupList(): {
     totalSize: query.data?.total_size_bytes ?? 0,
     dir: query.data?.backup_dir ?? null,
     isLoading: query.isLoading,
+    error: query.error,
   };
 }
 
@@ -93,12 +101,32 @@ export interface SettingsWriter {
   /** 单值写法：`set('board_column_limit', 50)`。 */
   set: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   pending: boolean;
-  errorText: string | null;
+  /**
+   * **写**失败的原始错误对象，`null` 表示没有。
+   * 就地错误面一律用它走 `<ErrorCopy>`：文案出自 `errorMessage`，另外带上
+   * 「详情」折叠（`context.detail`，引擎原文）——2026-09-29「报错全部细化」拍板②。
+   * 以前这里给的是拼好的 `errorText`，各 Tab 拿到的是纯字符串，折叠原文根本进不去界面，
+   * 于是整片设置页的错误面比 Toast 少一行；字符串那层已经没有必要留（无消费者，删）。
+   */
+  error: unknown;
+  /**
+   * **读**失败（`GET /settings`）的原始错误对象，`null` 表示没有——与 `error`（写失败）
+   * 是两位，不能合成一位（2026-09-29「列表三态必须可辨」）。
+   *
+   * 为什么单列：读失败时 `settings` 是 `undefined`，各 Tab 的控件全部退回代码里写死的
+   * 默认值——主题＝「跟随系统」、任务类型词表＝空、默认审核方式＝人工……看着像「用户
+   * 什么都没改过」，实际是 `SCHEMA_MISMATCH` 那一类本地库故障。只让写失败可见的话，
+   * 这一片整片都是隐身的，所以每个渲染设置控件的 Tab 都要把它摆出来。
+   */
+  loadError: unknown;
 }
 
 /**
  * 把「本 Tab 最近一次成功响应」叠在查询缓存之上：控件因此能在一个往返内
  * 保持用户刚选中的值，不会先弹回旧值再跳回来。
+ *
+ * 读失败也在这里出：`mutation.data ?? query.data` 的回落会让 `settings` 变成 `undefined`、
+ * 控件全部显示默认值，所以 `query.error` 必须原样透成 `loadError`，而不是被它盖掉。
  */
 export function useSettingsWriter(): SettingsWriter {
   const query = useSettings();
@@ -115,7 +143,8 @@ export function useSettingsWriter(): SettingsWriter {
     patch: (body) => mutation.mutate(body),
     set: (key, value) => mutation.mutate({ [key]: value } as Partial<Settings>),
     pending: mutation.isPending,
-    errorText: mutation.error ? errorMessage(mutation.error) : null,
+    error: mutation.error ?? null,
+    loadError: query.error ?? null,
   };
 }
 

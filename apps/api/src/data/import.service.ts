@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ApiException } from '../contract/errors';
+import { toApiExceptionFromError } from '../contract/db-errors';
 import {
   appliesToType,
   normalizeMultiSelect,
@@ -7,7 +8,7 @@ import {
   type FieldDefLike,
   type FieldOptions,
 } from '../contract/custom-fields';
-import { toDateOnly, nowSql, toSqlTime } from '../contract/time';
+import { toDateOnly, nowSql, toSqlTime, isParsableTime } from '../contract/time';
 import { newId } from '../contract/ids';
 import type { RequestAuth } from '../auth/auth.scope';
 import type { FieldType } from '../contract/enums';
@@ -434,6 +435,12 @@ export class ImportService {
   ): void {
     const landed = new Map<string, string>();
     const skipped = new Set<string>();
+    // 规划期就被逐条判失败的任务：它**在包里**，只是这一次没落库。
+    // 不把这份名单传下来的话，指向它的边会被归到 `target_missing`（"包里根本没有这个号"），
+    // 而用户真正要看的是 `task_failed`——同一包里那条失败记录说的就是原因。
+    const rejected = new Set(
+      plan.failed.filter((item) => item.kind === 'task' && item.id).map((item) => item.id as string),
+    );
     for (const item of plan.tasks) {
       if (item.action === 'skip') skipped.add(item.finalId);
       else if (item.originalId) landed.set(item.originalId, item.finalId);
@@ -451,11 +458,13 @@ export class ImportService {
           plan.dropped.push({
             task_id: item.finalId,
             depends_on: edge.depends_on,
-            reason: skipped.has(edge.depends_on)
-              ? 'target_skipped'
-              : existingTasks.has(edge.depends_on)
-                ? 'target_ambiguous'
-                : 'target_missing',
+            reason: rejected.has(edge.depends_on)
+              ? 'task_failed'
+              : skipped.has(edge.depends_on)
+                ? 'target_skipped'
+                : existingTasks.has(edge.depends_on)
+                  ? 'target_ambiguous'
+                  : 'target_missing',
           });
           continue;
         }
@@ -553,6 +562,20 @@ export class ImportService {
     }
   }
 
+  /**
+   * 逐条写库失败的记账（2026-09-29「报错全部细化」）。这三处过去恒写 `INTERNAL` + 引擎原文，
+   * 于是「导入包内两条撞了同一个号」这种**用户改一条就好**的情况也被报成内部错误，
+   * 还把裸 SQL 糊在结果页上。现在码与人话都取自数据层解码器：
+   * `detail` 与规划期的 `VALIDATION_FAILED` 同口径（结果页那一行始终是一句中文），
+   * 引擎原文只进日志——排查时按 `id` 找那一行，不必把它交给用户。
+   * 业务自己抛的 `ApiException` 原样沿用它的码与文案。
+   */
+  private writeFailure(what: string, error: unknown): { code: string; detail: string } {
+    const api = toApiExceptionFromError(error);
+    this.logger.warn(`导入写库失败 ${what} → ${api.code}: ${message(error)}`, 'data');
+    return { code: api.code, detail: api.message };
+  }
+
   private async apply(plan: Plan): Promise<{ runs: number; reviews: number; edges: number; failed: ImportFailure[] }> {
     const failed: ImportFailure[] = [];
     let runs = 0;
@@ -564,7 +587,7 @@ export class ImportService {
       try {
         await writeFieldDef(this.prisma, item);
       } catch (error) {
-        failed.push({ kind: 'field_def', id: item.def.key, code: 'INTERNAL', detail: message(error) });
+        failed.push({ kind: 'field_def', id: item.def.key, ...this.writeFailure(`字段定义 ${item.def.key}`, error) });
       }
     }
     for (const item of plan.templates) {
@@ -572,7 +595,7 @@ export class ImportService {
       try {
         await writeTemplate(this.prisma, item);
       } catch (error) {
-        failed.push({ kind: 'template', id: item.tpl.name, code: 'INTERNAL', detail: message(error) });
+        failed.push({ kind: 'template', id: item.tpl.name, ...this.writeFailure(`模板 ${item.tpl.name}`, error) });
       }
     }
 
@@ -586,7 +609,7 @@ export class ImportService {
         runs += counts.runs;
         reviews += counts.reviews;
       } catch (error) {
-        failed.push({ kind: 'task', id: item.finalId, code: 'INTERNAL', detail: message(error) });
+        failed.push({ kind: 'task', id: item.finalId, ...this.writeFailure(`任务 ${item.finalId}`, error) });
       }
     }
 
@@ -847,6 +870,22 @@ function checkTask(
     }
     const issue = validateFieldValue(def, value, { present: true });
     if (issue) issues.push(`自定义字段「${issue.key}」：${issue.message}`);
+  }
+  // 时间列：包里给的是自由文本，schema 只能管长度。留到写库阶段才炸的话，
+  // 报上来就是 `INTERNAL`（用户读到的是「本地服务内部错误」），所以在这里逐字段先判。
+  for (const [label, value] of [
+    ['到期日 due_at', task.due_at],
+    ['归档时间 archived_at', task.archived_at],
+    ['创建时间 created_at', task.created_at],
+    ['更新时间 updated_at', task.updated_at],
+    ...task.runs.flatMap((_run, index) => [
+      [`第 ${index + 1} 次执行的 started_at`, _run.started_at],
+      [`第 ${index + 1} 次执行的 finished_at`, _run.finished_at],
+    ]),
+    ...task.reviews.flatMap((review, index) => [[`第 ${index + 1} 条审核的 created_at`, review.created_at]]),
+  ] as [string, string | null | undefined][]) {
+    if (value === undefined || value === null || value === '') continue;
+    if (!isParsableTime(value)) issues.push(`${label}「${value}」不是合法时间`);
   }
   return issues;
 }

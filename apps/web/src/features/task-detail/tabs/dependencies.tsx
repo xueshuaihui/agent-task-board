@@ -11,6 +11,8 @@ import {
   Button,
   Dialog,
   EmptyState,
+  ErrorCopy,
+  ErrorText,
   Input,
   RadioGroup,
 } from '@/components/ui';
@@ -38,7 +40,7 @@ export function DependenciesTab({ taskId }: { taskId: string }) {
   const [picker, setPicker] = useState<{ type: DependencyType } | null>(null);
 
   if (deps.isPending) return <LoadingBlock lines={4} />;
-  if (deps.isError) return <InlineError text={deps.error.message} />;
+  if (deps.isError) return <InlineError text={<ErrorCopy error={deps.error} />} />;
 
   const dependsOn = deps.data?.depends_on ?? [];
   const blocks = deps.data?.blocks ?? [];
@@ -272,6 +274,12 @@ function DependencyPickerDialog({ taskId, preset, existing, onClose }: PickerPro
         <div className="atb-scroll max-h-[280px] overflow-y-auto rounded-card border border-border">
           {results.isPending ? (
             <p className="px-3 py-3 text-aux text-text-tertiary">搜索中…</p>
+          ) : results.isError ? (
+            // 候选搜索挂了不能念成「没有可选任务」：那是把 500 说成空（2026-09-29 同类收口）。
+            // 这是辅助候选面，不顶掉整块，只在这个列表的位置给一行细化文案 + 折叠。
+            <p className="px-3 py-3 text-aux text-text-tertiary">
+              <ErrorText text="任务搜索失败，换个关键词再试" error={results.error} />
+            </p>
           ) : candidates.length === 0 ? (
             <EmptyState
               className="m-2 border-0 py-4"
@@ -317,7 +325,9 @@ function DependencyPickerDialog({ taskId, preset, existing, onClose }: PickerPro
           <p className="mt-1 text-aux text-text-tertiary">{COPY_DEPENDENCY_HINT}</p>
         </div>
 
-        {errorText ? <InlineError text={errorText} /> : null}
+        {/* 环的话术是本地按 4.5 统一文案拼的，主行不能被 `errorMessage` 覆盖，所以走 `ErrorText`；
+            折叠那行仍然只认原始错误的引擎原文。 */}
+        {errorText ? <InlineError text={<ErrorText text={errorText} error={add.error} />} /> : null}
       </div>
     </Dialog>
   );

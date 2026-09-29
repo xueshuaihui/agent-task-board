@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ChevronDown, ChevronRight, MoreHorizontal, Search } from 'lucide-react';
-import { errorMessage } from '@/api';
 import { useTaskListWithGroups } from '@/features/groups';
 import type { ListSortField, TaskCard, TaskListItem } from '@/api/types';
 import { navigate, useRouteSearchParams } from '@/app/router';
@@ -11,6 +10,7 @@ import {
   Button,
   Checkbox,
   EmptyState,
+  ErrorCopy,
   IconButton,
   Input,
   Menu,
@@ -360,7 +360,7 @@ export function TaskListPage() {
           </div>
         ) : list.isError ? (
           <div className="flex flex-col items-start gap-2 p-4">
-            <p className="text-body text-status-failed">{errorMessage(list.error)}</p>
+            <p className="text-body text-status-failed"><ErrorCopy error={list.error} /></p>
             <Button size="sm" onClick={() => void list.refetch()}>
               重试
             </Button>

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, Clock3, XCircle } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { Skeleton } from '@/components/ui';
+import { Button, ErrorText, Skeleton } from '@/components/ui';
 
 /**
  * 抽屉内的排版基元。原型 4.4–4.10 的每个标签都由「分区标题 + 行块」组成，
@@ -95,6 +95,46 @@ export function LoadingBlock({ lines = 3 }: { lines?: number }) {
     <div className="flex flex-col gap-2 py-1">
       <Skeleton lines={lines} />
     </div>
+  );
+}
+
+/** 后续页查询用到的那几项（结构上兼容 react-query 的结果对象，便于无 DOM 单测直接渲染）。 */
+export interface OlderPageQueryState {
+  isError: boolean;
+  error?: unknown;
+  isFetching: boolean;
+  refetch: () => Promise<unknown>;
+}
+
+/**
+ * 「更早那页没拿到」的行（tier-2 的第二层，2026-09-29「列表报错被渲染成空状态」），
+ * 三个分页面共用：评论 4.8、审计 13 章、执行日志 6.3。
+ *
+ * 原来每一页都只被 `query.data?.items ?? []` 取数：第二页 500 时那一页贡献 0 行、界面上
+ * 一点痕迹都没有，「加载更早」还照旧在——再点一次是 `pages + 1`，翻到更远处去，
+ * 失败的那一页永远补不回来。这里让失败页显形，并且重试只打那一页（`refetch`，不动 pages）。
+ *
+ * 第一页失败不归这里：那时主列表压根没拿到内容，调用方整块换错误面（tier-1）。
+ */
+export function OlderPageError({ label, query }: { label: string; query: OlderPageQueryState }) {
+  if (!query.isError) return null;
+  return (
+    <InlineError
+      text={
+        <>
+          <ErrorText text={`更早的${label}加载失败`} error={query.error} />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="mt-1 self-start"
+            loading={query.isFetching}
+            onClick={() => void query.refetch()}
+          >
+            重试这一页
+          </Button>
+        </>
+      }
+    />
   );
 }
 

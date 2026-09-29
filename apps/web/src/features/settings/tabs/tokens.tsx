@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronUp, Copy, Plus } from 'lucide-react';
 import { apiBase, errorMessage, fieldErrorsOf, isApiError } from '@/api';
-import { Button, Dialog, Input, Tooltip } from '@/components/ui';
+import { Button, Dialog, ErrorCopy, ErrorText, Input, Skeleton, Tooltip } from '@/components/ui';
 import type { AgentToken, IssuedToken } from '@/api/types';
+import { InlineError } from '@/features/task-detail/ui-bits';
 import { formatDateTime, formatRelative } from '@/lib/time';
 import { ChipEditor } from '../components/chip-editor';
 import { ConfirmDialog } from '../components/confirm-dialog';
@@ -32,6 +33,11 @@ import { CAPABILITY_NAMESPACES, CAPABILITY_RE, TOKEN_NAME_RE } from '../utils';
  *
  * #46「MCP 设置」在 beta.6 B9 拆成了独立的 MCP Tab（`tabs/mcp.tsx`）：
  * 它改的是 MCP 侧的长期行为，与「一次性明文凭证」不是一件事。
+ *
+ * 2026-09-29「列表三态必须可辨」：Token 列表是这个 Tab 存在的目的，所以它有三种必须分得开的
+ * 状态——`isPending` 给骨架、`isError` 给错误面、真的读到零条才给空态。以前只有创建/吊销
+ * 两个 mutation 的错误可见，`useTokens` 的 `error` 从没被渲染：`api_tokens` 表缺失时
+ * `GET /tokens` 回 500 `SCHEMA_MISMATCH`，这一页却照旧摆出「还没有 Token。生成一个后…」。
  */
 
 const COLS = 'grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_128px_96px_84px_64px]';
@@ -203,9 +209,16 @@ export function TokensTab() {
             ),
           ]}
           empty={
-            <p className="text-aux text-text-secondary">
-              还没有 Token。生成一个后把它填进 Agent 客户端的 MCP 配置，Agent 才能领取任务。
-            </p>
+            tokens.isError ? (
+              // 错误面摆在「列表本来该出现的地方」，直接替掉空态；生成 Token 的按钮照旧可用。
+              <InlineError text={<ErrorCopy error={tokens.error} />} />
+            ) : tokens.isPending ? (
+              <Skeleton lines={3} />
+            ) : (
+              <p className="text-aux text-text-secondary">
+                还没有 Token。生成一个后把它填进 Agent 客户端的 MCP 配置，Agent 才能领取任务。
+              </p>
+            )
           }
         />
         {revoked.length > 0 ? (
@@ -317,7 +330,11 @@ export function TokensTab() {
               <span>{CAPABILITY_NOTE}</span>
             </p>
 
-            {issueError ? <FormError>{issueError}</FormError> : null}
+            {issueError ? (
+              <FormError>
+                <ErrorText text={issueError} error={issue.error} />
+              </FormError>
+            ) : null}
           </div>
         )}
       </Dialog>

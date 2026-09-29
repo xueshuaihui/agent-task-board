@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ArrowLeft, GitCompareArrows, History, RotateCcw } from 'lucide-react';
-import { Button, Dialog, EmptyState, Skeleton, useToast } from '@/components/ui';
-import { errorMessage } from '@/api';
+import { Button, Dialog, EmptyState, Skeleton, useToast, ErrorCopy } from '@/components/ui';
+import { errorDetailOf, errorMessage } from '@/api';
 import { formatDateTime } from '@/lib/time';
 import { BLOCK_KIND_META, blockTitle } from './meta';
 import { useRollbackSkill, useSkillVersionSnapshot } from './hooks';
@@ -99,7 +99,7 @@ export function SkillVersionHistory({ skill, draft, onRolledBack }: SkillVersion
                     ) {
                       rollback.mutate(
                         { id: skill.id, version: version.version },
-                        { onError: (error) => toast.error('回滚失败', errorMessage(error)) },
+                        { onError: (error) => toast.error(`回滚失败：${errorMessage(error)}`, errorDetailOf(error)) },
                       );
                     }
                   }}
@@ -140,7 +140,7 @@ function VersionDiff({
   if (snapshot.isError || !snapshot.data) {
     return (
       <div className="flex flex-col gap-3">
-        <p className="text-body text-status-failed">{errorMessage(snapshot.error)}</p>
+        <p className="text-body text-status-failed"><ErrorCopy error={snapshot.error} /></p>
         <Button variant="default" size="sm" onClick={onBack}>
           返回版本列表
         </Button>

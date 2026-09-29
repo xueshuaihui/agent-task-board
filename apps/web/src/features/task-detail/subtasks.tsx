@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Plus } from 'lucide-react';
-import { api, errorMessage, fieldErrorsOf, isApiError, qk, useApiMutation, useSettings } from '@/api';
+import { api, fieldErrorsOf, isApiError, qk, useApiMutation, useSettings } from '@/api';
 import type { TaskAggregate, TaskChildRef } from '@/api';
-import { Badge, Button, Field, Input, Progress, Select, StatusDot } from '@/components/ui';
+import { Badge, Button, ErrorCopy, ErrorText, Field, Input, Progress, Select, StatusDot } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { itemVariants, listVariants } from '@/lib/motion';
 import { clearFieldError } from '@/lib/forms';
@@ -140,12 +140,16 @@ function SubtaskRow({ child, index = 0 }: { child: TaskChildRef; index?: number 
 function AddSubtaskForm({ taskId, onDone }: { taskId: string; onDone: () => void }) {
   const settings = useSettings();
   // 子任务必须可执行：类型取词表里第一个非「需求」的类型（1.md 5.3）。
+  /* tier-2（2026-09-29「列表报错被渲染成空状态」）：词表 500 时这里折成 `[]`，下面的字段会静默显示
+   * 兜底值「任务」——那是替用户编一个没被词表确认过的类型（比空态更糟），必须在字段下方说一行。
+   * 不拦创建：载荷仍按兜底值提交，真不合法会被服务端 422 逐字段回显（本表单已有那条错误面）。 */
   const types = settings.data?.task_types ?? [];
   const childType = types.find((type) => type !== '需求') ?? types[0] ?? '任务';
   const [title, setTitle] = useState('');
   const [priority, setPriority] = useState('2');
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [errorText, setErrorText] = useState<string | null>(null);
+  /** 存原始错误：就地那行走 `<ErrorCopy>`，细化文案与折叠原文都由它现取。 */
+  const [submitError, setSubmitError] = useState<unknown>(null);
 
   const create = useApiMutation((body: Parameters<typeof api.tasks.create>[0]) => api.tasks.create(body), {
     invalidate: () => [qk.taskRoot(taskId), qk.boardRoot, qk.tasksRoot],
@@ -153,7 +157,7 @@ function AddSubtaskForm({ taskId, onDone }: { taskId: string; onDone: () => void
     onSuccess: () => {
       setTitle('');
       setErrors({});
-      setErrorText(null);
+      setSubmitError(null);
       onDone();
     },
   });
@@ -166,18 +170,16 @@ function AddSubtaskForm({ taskId, onDone }: { taskId: string; onDone: () => void
       return;
     }
     setErrors({});
-    setErrorText(null);
+    setSubmitError(null);
     create.mutate(
       { title: trimmed, type: childType, priority: Number(priority) as 0 | 1 | 2 | 3, parent_task_id: taskId },
       {
         onError: (error) => {
           const issues = fieldErrorsOf(error);
-          if (isApiError(error) && Object.keys(issues).length > 0) {
-            setErrors(issues);
-            setErrorText(error.message);
-            return;
-          }
-          setErrorText(errorMessage(error));
+          // 与新建任务弹窗同口径：422 把逐字段问题落到字段上，两条分支都只存原始错误，
+          // 就地那一行交给 `<ErrorCopy>` 现取文案（细化文案 + 折叠引擎原文）。
+          if (isApiError(error) && Object.keys(issues).length > 0) setErrors(issues);
+          setSubmitError(error);
         },
       },
     );
@@ -203,7 +205,16 @@ function AddSubtaskForm({ taskId, onDone }: { taskId: string; onDone: () => void
         />
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="类型" hint={`子任务不可用「需求」类型（1.md 5.4）`}>
+        <Field
+          label="类型"
+          hint={
+            settings.isError ? (
+              <ErrorText text="类型词表加载失败，这里先按「任务」兜底" error={settings.error} />
+            ) : (
+              `子任务不可用「需求」类型（1.md 5.4）`
+            )
+          }
+        >
           <Input value={childType} disabled aria-label="子任务类型" />
         </Field>
         <Field label="优先级" htmlFor="add-subtask-priority">
@@ -216,7 +227,7 @@ function AddSubtaskForm({ taskId, onDone }: { taskId: string; onDone: () => void
         </Field>
       </div>
       {errors.parent_task_id ? <InlineError text={errors.parent_task_id} /> : null}
-      {errorText ? <InlineError text={errorText} /> : null}
+      {submitError ? <InlineError text={<ErrorCopy error={submitError} />} /> : null}
       <div className="flex items-center justify-end gap-2">
         <Button size="sm" type="button" onClick={onDone} disabled={create.isPending}>
           取消

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
-import { errorMessage } from './errors';
+import { errorDetailOf, errorMessage } from './errors';
 import { useToast } from '@/components/ui/toast';
 
 /**
@@ -48,7 +48,10 @@ export function useApiMutation<TVars = void, TData = unknown>(
         const text = errorText
           ? errorText(error)
           : errorMessage(error);
-        toast.error(text);
+        // 细化文案 + 折叠详情（2026-09-29 拍板②）：主行说「现在怎么办」，引擎原文收进
+        // Toast 的「详情」那一行（`context.detail`，服务端已压成一行）。没带 detail 的错误
+        // 不显示折叠入口，界面不会多一个点了没反应的按钮。
+        toast.error(text, errorDetailOf(error));
       }
     },
     onSettled,

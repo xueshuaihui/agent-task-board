@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { TaskDetail } from '@/api';
-import { useSettings } from '@/api';
-import { Button, Drawer, Tabs, type TabItem } from '@/components/ui';
+import { errorMessage, useSettings } from '@/api';
+import { Button, Drawer, ErrorCopy, Tabs, type TabItem } from '@/components/ui';
 import { transitions } from '@/lib/motion';
 import { pickAction, type TaskAction } from './actions';
 import { DrawerMetaRow, DrawerTabRow, DrawerTitle } from './drawer-header';
@@ -66,7 +66,11 @@ function DrawerWithOverview({
   if (!detail) {
     return (
       <Drawer open={open} title={`任务 ${taskId}`} onClose={onClose}>
-        <InlineError text={overview.error?.message ?? '任务详情加载失败'} />
+        {/* 以前这里直接吐 `error.message`：认不出的错误会把内部话术「服务内部错误」糊在界面上。
+            走 ErrorCopy 之后，主行是「怎么办」，引擎原文收进「详情」折叠（2026-09-29 报错细化）。 */}
+        <InlineError
+          text={overview.error ? <ErrorCopy error={overview.error} /> : '任务详情加载失败'}
+        />
       </Drawer>
     );
   }
@@ -90,10 +94,12 @@ function DrawerBody({
   const maxMb = settings.data?.artifact_max_mb ?? 20;
   const reducedMotion = useReducedMotion();
 
-  const items: TabItem[] = DRAWER_TABS.map((value) => {
-    const count = countFor(value, detail.run_count, commentCount.data?.total ?? 0);
-    return { value, label: TAB_LABELS[value], count };
-  });
+  const items: TabItem[] = DRAWER_TABS.map((value) => ({
+    value,
+    label: tabLabel(value, commentCount),
+    // 三态豁免：计数拿不到时 `countFor` 不画徽标，失败由上一行 `tabLabel(value, commentCount)` 换成标签后的「—」＋title 说明（tier-2，判据与文案见本文件末尾 `tabLabel` 注释）
+    count: countFor(value, detail.run_count, commentCount.data?.total ?? 0),
+  }));
 
   return (
     <Drawer
@@ -180,4 +186,30 @@ function countFor(tab: DrawerTab, runs: number, comments: number): number | unde
   if (!TABS_WITH_COUNT.includes(tab)) return undefined;
   const value = tab === 'runs' ? runs : comments;
   return value > 0 ? value : undefined;
+}
+
+/** 评论计数查询的状态里标签这一格要用的那几项（结构上兼容 react-query 结果）。 */
+interface CommentCountState {
+  isError: boolean;
+  error?: unknown;
+}
+
+/**
+ * 页签标签（tier-2，2026-09-29「列表报错被渲染成空状态」）：评论计数 500 时
+ * `countFor` 的「0 不画徽标」规则会把「这一轮的计数没拿到」折成「确实 0 条评论」的样子，
+ * 徽标就此静默消失。这里在标签后补一枚「—」把
+ * "没拿到计数"说出来（徽标位类型是 `number`，破折号只能走 ReactNode 的 `label`），
+ * 原因挂在 `title` 上；「执行」的 `run_count` 来自详情 DTO 本身，没有独立查询，不需要这一层。
+ */
+export function tabLabel(tab: DrawerTab, comments: CommentCountState): ReactNode {
+  const label = TAB_LABELS[tab];
+  if (tab !== 'comments' || !comments.isError) return label;
+  return (
+    <span title={`评论计数加载失败：${errorMessage(comments.error)}`}>
+      {label}
+      <span aria-hidden className="ml-1 text-text-tertiary">
+        —
+      </span>
+    </span>
+  );
 }

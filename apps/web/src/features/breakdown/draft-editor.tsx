@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Link2, Link2Off, Plus, RotateCcw, Trash2, X } from 'lucide-react';
 import type { BreakdownDraftEdit } from '@/api/types';
-import { Button, Card, Field, Input, Select, Textarea, useToast } from '@/components/ui';
+import { Button, Card, ErrorText, Field, Input, Select, Textarea, useToast } from '@/components/ui';
 import { PRIORITY_LABEL } from '@/lib/labels';
 import { cn } from '@/lib/cn';
 import { useSkills } from '@/features/skills/hooks';
@@ -174,7 +174,17 @@ export function DraftEditor({ drafts, draftRef, onSelect, onPatch, onDelete, onA
             data-testid="breakdown-draft-priority"
           />
         </Field>
-        <Field label="绑定技能">
+        <Field
+          label="绑定技能"
+          // tier-2（2026-09-29「列表报错被渲染成空状态」）：技能候选源 500 时面板只会写
+          // 「没有可添加的技能」（且触发器被 disabled 锁死，连这行假话都看不到），
+          // 已选 chips 也会退化成「未解析 · id」——那同样是候选源挂了的表象，得说清原因。
+          error={
+            skills.isError ? (
+              <ErrorText text="技能库加载失败，暂不能添加技能；已绑定的技能仍可移除（服务端标注的名称不受影响）" error={skills.error} />
+            ) : undefined
+          }
+        >
           <div className="flex flex-wrap items-center gap-1">
             {draft.skill_ids.map((value) => {
               const status = skillStatusOf(draft, value);
@@ -250,8 +260,14 @@ export function DraftEditor({ drafts, draftRef, onSelect, onPatch, onDelete, onA
                 onSelect={(skill) =>
                   onPatch(draft.ref, { skill_ids: toggleDraftSkillId(draft.skill_ids, skill.id) })
                 }
-                disabled={skillCandidates.length === 0}
-                emptyText={skills.isPending ? '技能加载中…' : '没有可添加的技能'}
+                disabled={skillCandidates.length === 0 && !skills.isError}
+                emptyText={
+                  skills.isPending
+                    ? '技能加载中…'
+                    : skills.isError
+                      ? '技能加载失败，可关闭后重开面板'
+                      : '没有可添加的技能'
+                }
                 placeholder="搜索技能（名称 / 分类 / 类型 / 标签 / ID）"
                 ariaLabel="添加草案技能"
                 triggerContent={() => (

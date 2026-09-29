@@ -10,6 +10,7 @@ import {
 import path from 'node:path';
 import { Injectable } from '@nestjs/common';
 import { ApiException, USER_COPY } from '../contract/errors';
+import { toApiExceptionFromError } from '../contract/db-errors';
 import { nowSql } from '../contract/time';
 import { paths } from '../common/paths';
 import { applyMigrations } from '../infra/bootstrap';
@@ -52,6 +53,17 @@ const NAME_RETRY_MAX = 5;
 /** WAL 附属文件：主文件换掉后它们必须一起消失，否则旧页会污染新库。 */
 const SIDE_SUFFIXES = ['-wal', '-shm'];
 
+/**
+ * 报错细化（2026-09-29）：备份与恢复是**用户主动点的动作**，底层抛上来的可能是
+ * 「目录只读」「磁盘满」「库文件坏了」「另一个实例持着写锁」——这四种用户要做的事各不相同，
+ * 一律裹成 `INTERNAL` 就等于什么都没交代（旧写法还把引擎原文塞进 message，界面糊成一句英文）。
+ * 现在：前缀这句留给人定位是哪一步炸的，码与文案交 `contract/db-errors.ts`，原文进 `detail` 折叠区。
+ */
+function prefixed(error: unknown, prefix: string): ApiException {
+  const decoded = toApiExceptionFromError(error);
+  return new ApiException(decoded.code, `${prefix}：${decoded.message}`, decoded.details, decoded.context);
+}
+
 @Injectable()
 export class BackupService {
   constructor(
@@ -73,7 +85,12 @@ export class BackupService {
   async create(actorName = '我'): Promise<BackupCreated> {
     const source = paths.dbFile();
     if (!existsSync(source)) {
-      throw new ApiException('INTERNAL', '数据库文件不存在，无法备份');
+      // 报错细化（2026-09-29）：这一枚过去报 INTERNAL/500，用户看到的是「本地服务内部错误」，
+      // 而真相是「主库不在数据目录里」——外接盘拔出、目录被移动过都会这样，是环境侧（503）。
+      throw new ApiException(
+        'STORAGE_UNAVAILABLE',
+        `主库文件不在数据目录里（${source}），无法备份。请确认数据目录位置，或从备份恢复`,
+      );
     }
     const dir = this.dir();
     const target = await this.freeSlot(dir);
@@ -86,7 +103,9 @@ export class BackupService {
     } catch (error) {
       rmSync(target, { force: true });
       if (error instanceof ApiException) throw error;
-      throw new ApiException('INTERNAL', `备份失败：${(error as Error).message}`);
+      // 只读目录、磁盘满、库被别的实例锁住——这三种都发生在这条路上，用户各自要做的事不同，
+      // 所以码与文案交解码器给，这里只补「备份失败」这一句定位用（原文仍在 detail 折叠区）。
+      throw prefixed(error, '备份失败');
     }
 
     const size = statSync(target).size;
@@ -223,7 +242,9 @@ export class BackupService {
         'backup',
       );
       if (error instanceof ApiException) throw error;
-      throw new ApiException('INTERNAL', `恢复失败，已回滚到 ${rolledBackTo}`);
+      // 同样交解码器：一份坏备份文件（NOTADB/CORRUPT）恢复失败，用户要知道的是「这个备份本身坏了，
+      // 换一份或先去检查」，而不是「恢复失败，已回滚到 xxx」后面跟一句猜。回滚事实仍在 message 里。
+      throw prefixed(error, `恢复失败，已回滚到 ${rolledBackTo}`);
     }
   }
 

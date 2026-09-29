@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { Copy, Download, FolderOpen, History, Play, RotateCcw } from 'lucide-react';
-import { Badge, Button, Drawer, EmptyState, Field, Skeleton, Tabs, TagBadge, Textarea, useToast } from '@/components/ui';
-import { errorMessage } from '@/api';
+import { Badge, Button, Drawer, EmptyState, ErrorCopy, Field, Skeleton, Tabs, TagBadge, Textarea, useToast } from '@/components/ui';
+import { errorDetailOf, errorMessage } from '@/api';
 import { cn } from '@/lib/cn';
 import { formatDateTime } from '@/lib/time';
 import { skillsApi } from './api';
 import { useRollbackSkill, useSkill, useSkillBoundTasks, useTestSkill } from './hooks';
 import { categoryDisplay } from './skill-picker-core';
 import { BLOCK_KIND_META, SKILL_ORIGIN_META, SKILL_STATUS_META, SKILL_TYPE_META } from './meta';
-import type { Skill } from './types';
+import type { Skill, SkillBoundTaskList } from './types';
 
 /**
  * 技能详情抽屉（2.md 第十三章，本地技能版）：
@@ -23,6 +23,21 @@ export interface SkillDetailDrawerProps {
   open: boolean;
   onClose: () => void;
   onEdit?: (skill: Skill) => void;
+}
+
+/**
+ * 本抽屉的「就地错误面」容器（2026-09-29「列表报错被渲染成空状态」tier-1）：
+ * 主行给细化文案、引擎原文收进「详情」折叠，形状沿用技能 feature 既有的
+ * `<p className="… text-status-failed"><ErrorCopy /></p>`（见 skill-version-history / publish-dialog），
+ * 只多挂一层卡片边框，让替换掉的 EmptyState 不引起版式跳动。
+ * 两个使用点都在本文件，故不上抽共享原语。
+ */
+function DrawerError({ error }: { error: unknown }) {
+  return (
+    <p className="rounded-card border border-border bg-status-failed-soft px-3 py-2.5 text-aux text-status-failed">
+      <ErrorCopy error={error} />
+    </p>
+  );
 }
 
 export function SkillDetailDrawer({ skillId, open, onClose, onEdit }: SkillDetailDrawerProps) {
@@ -89,10 +104,19 @@ export function SkillDetailDrawer({ skillId, open, onClose, onEdit }: SkillDetai
       }
     >
       {!skill ? (
-        <div className="flex flex-col gap-3 px-5 py-4">
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-32 w-full" />
-        </div>
+        /* tier-1：详情查询报错时以前是一片永久骨架——骨架是「还在加载」的断言，
+           500 之后它永远挂着，等于把失败说成还没好。技能本身没拿到，五个分区都无内容可给，
+           所以这里整块换成错误面。 */
+        query.isError ? (
+          <div className="px-5 py-4">
+            <DrawerError error={query.error} />
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 px-5 py-4">
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-32 w-full" />
+          </div>
+        )
       ) : (
         <div className="flex flex-col gap-4 px-5 py-4">
           {/* C-6b①：分类独立成行、与 tags 分区——口径与筛选器/卡片同源
@@ -164,6 +188,10 @@ function VersionsTab({ skill }: { skill: Skill }) {
   const rollback = useRollbackSkill((updated) => {
     toast.success('已回滚', `当前版本 ${updated.current_version}`);
   });
+  /* `versions` 不是独立查询、而是 `GET /skills/:id` 载荷里的字段（types.ts 标可选）：
+   * 这一份数据取不到时唯一的原因是详情查询报错，而那条错误在抽屉基座已经整块换成错误面
+   * （见 SkillDetailDrawer 的 `query.isError` 分支），所以走到这里的 `[]` 只剩「确实没发布过版本」，
+   * 「暂无版本记录」这句空态因此站得住（2026-09-29「列表报错被渲染成空状态」核对结论）。 */
   const versions = skill.versions ?? [];
 
   if (versions.length === 0) {
@@ -230,7 +258,7 @@ function TestTab({ skillId }: { skillId: string }) {
             { id: skillId, input },
             {
               onSuccess: (data) => setResult(data),
-              onError: (error) => toast.error('运行失败', errorMessage(error)),
+              onError: (error) => toast.error(`运行失败：${errorMessage(error)}`, errorDetailOf(error)),
             },
           )
         }
@@ -311,11 +339,36 @@ function McpTab({ skill }: { skill: Skill }) {
   );
 }
 
+/** `useSkillBoundTasks` 返回值里本节要用的那几项（结构上兼容 react-query 的结果对象）。 */
+interface BoundTasksQueryState {
+  isPending: boolean;
+  isError: boolean;
+  error?: unknown;
+  data?: SkillBoundTaskList | undefined;
+}
+
 function TasksTab({ skillId }: { skillId: string }) {
   const query = useSkillBoundTasks(skillId);
+  return <SkillBoundTasksSection query={query} />;
+}
 
+/**
+ * 「绑定任务」分区主体（tier-1：这一节的意义就是列出绑定，列表数据没拿到就不能装作没有）。
+ *
+ * 2026-09-29「列表报错被渲染成空状态」：`query.data?.items ?? []` 把 500（例如 `skills`
+ * 表缺失的 SCHEMA_MISMATCH）折成空数组后，界面给的是「暂无绑定任务」——一句与事实相反的断言，
+ * 用户会去任务详情里找那个并不存在的绑定入口。三态必须分开：pending → 骨架、
+ * error → 错误面、成功且零条 → 才给空态。
+ *
+ * 拆成吃 `query` 的展示件是因为本仓 vitest 无 DOM/QueryClientProvider：
+ * 状态判据要能被 `renderToStaticMarkup` 直接渲染断言（见 __tests__/query-error-surface.test.ts）。
+ */
+export function SkillBoundTasksSection({ query }: { query: BoundTasksQueryState }) {
   if (query.isPending) {
     return <Skeleton className="h-24 w-full" />;
+  }
+  if (query.isError) {
+    return <DrawerError error={query.error} />;
   }
   const items = query.data?.items ?? [];
   if (items.length === 0) {

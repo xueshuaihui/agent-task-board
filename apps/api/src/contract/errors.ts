@@ -54,6 +54,28 @@ export const ERROR_STATUS = {
   INVALID_PARAM: 422,
   // 8.8 技能源：git/http 远程源本期不实现
   NOT_IMPLEMENTED: 501,
+  // ── 数据层异常七枚（2026-09-29「报错全部细化」）──────────────────────────────
+  // 这一组的存在理由：它们过去一律落进 `INTERNAL`（界面「本地服务内部错误」），
+  // 而其中多数恰恰是**用户自己能修**的（引用没清、开了两个实例、磁盘只读、库损坏）。
+  // 出口只有两处：`infra/api-exception.filter.ts`（REST）与 `mcp/mcp.server.ts`（Agent），
+  // 两边都调 `contract/db-errors.ts` 的解码器——码表仍只有一份实现（与 SELF_REVIEW_FORBIDDEN 同口径）。
+  // 删除/更新时撞上外键（`ON DELETE` 动作不是 CASCADE 且仍有引用者）。
+  // 区别于 ARCHIVE_BLOCKED_BY_DEPENDENCY（那是 blocks 边的业务护栏）：本码是 DDL 层的兜底，
+  // 说明调用方绕过了业务护栏或库里存在设计外的引用者（0022 之前的拆解会话就是这种形状）。
+  DATA_STILL_REFERENCED: 409,
+  // 唯一约束/主键冲突（并发写、TOCTOU、导入撞号）。区别于 IMPORT_ID_CONFLICT /
+  // SKILL_ID_CONFLICT：那两枚是**预期内**的冲突并给出策略选项，本码是护栏没兜住时的通用形状。
+  DATA_DUPLICATE: 409,
+  // 缺表 / 缺列：程序与库的 DDL 不一致（迁移链没跑完、旧程序读了新库、手工改过库）。
+  SCHEMA_MISMATCH: 500,
+  // 库文件打不开、磁盘满、IO 错误——环境侧，重试不一定有用，故与「被占用」分开。
+  STORAGE_UNAVAILABLE: 503,
+  // SQLITE_BUSY / LOCKED：另一个进程持写锁（两个本地服务实例、备份正在跑）。可重试。
+  STORAGE_LOCKED: 503,
+  // SQLITE_CORRUPT / NOTADB（"file is not a database"）：文件坏了或被截断。
+  STORAGE_CORRUPT: 500,
+  // SQLITE_READONLY / PERM：数据目录在只读卷上或权限不足。
+  STORAGE_READONLY: 500,
   INTERNAL: 500,
 } as const satisfies Record<string, number>;
 

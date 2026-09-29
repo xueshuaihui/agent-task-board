@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, ListChecks } from 'lucide-react';
-import { errorMessage, useAudit, useTaskList } from '@/api';
+import { useAudit, useTaskList } from '@/api';
 import type { AuditEntry, ListSortField, TaskListItem, TaskListQuery } from '@/api/types';
 import { navigate } from '@/app/router';
 import { taskListSearch } from '@/app/store/filters';
@@ -13,6 +13,7 @@ import {
   CardBody,
   CardHeader,
   EmptyState,
+  ErrorCopy,
   Pagination,
   Skeleton,
   StatusDot,
@@ -160,7 +161,7 @@ export function ReviewPage() {
               </div>
             ) : list.isError ? (
               <div className="flex flex-col items-start gap-2 px-4 py-3">
-                <p className="text-body text-status-failed">{errorMessage(list.error)}</p>
+                <p className="text-body text-status-failed"><ErrorCopy error={list.error} /></p>
                 <Button size="sm" onClick={() => void list.refetch()}>
                   重试
                 </Button>
@@ -228,7 +229,7 @@ export function ReviewPage() {
             {history.isPending ? <Skeleton lines={5} /> : null}
             {history.isError ? (
               <div className="flex flex-col items-start gap-2">
-                <p className="text-body text-status-failed">{errorMessage(history.error)}</p>
+                <p className="text-body text-status-failed"><ErrorCopy error={history.error} /></p>
                 <Button size="sm" onClick={() => void history.refetch()}>
                   重试
                 </Button>
@@ -424,7 +425,7 @@ function HistoryRow({ entry }: { entry: AuditEntry }) {
           {reviews.isPending ? (
             <Skeleton lines={2} />
           ) : reviews.isError ? (
-            <p className="text-aux text-status-failed">{errorMessage(reviews.error)}</p>
+            <p className="text-aux text-status-failed"><ErrorCopy error={reviews.error} /></p>
           ) : (
             <ul className="flex flex-col gap-2">
               {(reviews.data?.items ?? []).map((review) => (

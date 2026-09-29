@@ -1,13 +1,12 @@
-import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { api, fieldErrorsOf, isApiError, qk, useApiMutation, useSettings, useTaskList } from '@/api';
 import type { TaskCreateInput } from '@/api';
-import { Button, Dialog, Field, Input, Select, Textarea } from '@/components/ui';
+import { Button, Dialog, ErrorCopy, ErrorText, Field, Input, Select, Textarea } from '@/components/ui';
 import {
   ReviewModeField,
   reviewModeBody,
   type ReviewModeChoice,
 } from '@/features/review/review-mode-field';
-import { errorMessage } from '@/api';
 import { clearFieldError } from '@/lib/forms';
 import { priorityText } from '@/lib/labels';
 
@@ -81,7 +80,8 @@ function TaskCreateForm({
   const [reviewMode, setReviewMode] = useState<ReviewModeChoice>('');
   const [description, setDescription] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [errorText, setErrorText] = useState<string | null>(null);
+  /** 存原始错误而不是拼好的句子：就地那行要走 `<ErrorCopy>`（细化文案 + 折叠引擎原文）。 */
+  const [submitError, setSubmitError] = useState<unknown>(null);
 
   const create = useApiMutation((body: TaskCreateInput) => api.tasks.create(body), {
     invalidate: (context) => [
@@ -105,7 +105,7 @@ function TaskCreateForm({
       return;
     }
     setErrors({});
-    setErrorText(null);
+    setSubmitError(null);
     const body: TaskCreateInput = {
       title: trimmed,
       type,
@@ -120,12 +120,10 @@ function TaskCreateForm({
     create.mutate(body, {
       onError: (error) => {
         const issues = fieldErrorsOf(error);
-        if (isApiError(error) && Object.keys(issues).length > 0) {
-          setErrors(issues);
-          setErrorText(error.message);
-          return;
-        }
-        setErrorText(errorMessage(error));
+        // 422 的逐字段问题落到各个字段上；两条分支都只**存原始错误**，
+        // 就地那行交给 `<ErrorCopy>` 现取文案（细化文案 + 折叠引擎原文），这里不再预先拼句子。
+        if (isApiError(error) && Object.keys(issues).length > 0) setErrors(issues);
+        setSubmitError(error);
       },
     });
   };
@@ -134,6 +132,17 @@ function TaskCreateForm({
     value: item.id,
     label: `${item.id} ${item.title.length > 18 ? `${item.title.slice(0, 18)}…` : item.title}`,
   }));
+
+  /* tier-2（2026-09-29「列表报错被渲染成空状态」）：两个候选源都是本弹窗之外的读取，
+   * 挂掉时表现都是"控件里没有可选项"——类型下拉会空到只剩一个不在词表里的默认值，
+   * 「挂到需求」会只剩占位「不挂，作为独立任务」。两句都不许说成"你没有类型/没有需求"，
+   * 也不拦「创建」这条主动作（不挂需求独立建任务本来就合法）。 */
+  const typesNotice: ReactNode = settings.isError ? (
+    <ErrorText text="任务类型词表加载失败，类型只能按默认值提交（可在设置页确认服务状态）" error={settings.error} />
+  ) : null;
+  const requirementNotice: ReactNode = requirements.isError ? (
+    <ErrorText text="需求候选加载失败，本轮先作为独立任务创建（建完可在详情「概览」补挂）" error={requirements.error} />
+  ) : null;
 
   return (
     <Dialog
@@ -174,7 +183,7 @@ function TaskCreateForm({
         </Field>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="类型" required error={errors.type}>
+          <Field label="类型" required error={errors.type ?? typesNotice}>
             {asRequirement ? (
               <Input value="需求" disabled aria-label="需求类型" />
             ) : (
@@ -203,7 +212,7 @@ function TaskCreateForm({
           <Field
             label="挂到需求"
             hint="可选；只能挂到「需求」类型下，子任务下不能再挂（两层上限，1.md 5.4）"
-            error={errors.parent_task_id}
+            error={errors.parent_task_id ?? requirementNotice}
           >
             <Select
               value={parentId}
@@ -250,9 +259,9 @@ function TaskCreateForm({
           />
         </Field>
 
-        {errorText ? (
+        {submitError ? (
           <p className="text-aux text-status-failed" role="alert">
-            {errorText}
+            <ErrorCopy error={submitError} />
           </p>
         ) : null}
       </form>

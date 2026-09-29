@@ -516,12 +516,14 @@ describe('逐条失败语义（不整体回滚）', () => {
   it('写库阶段才失败的那一条不牵连同包：其余条目仍然落库', async () => {
     const result = await run(pkg([one('T-2001'), one('T-2001', { title: '同号第二条' }), one('T-2002')]));
 
-    expect(result.failed).toEqual([{ kind: 'task', id: 'T-2001', code: 'INTERNAL', detail: expect.any(String) }]);
+    // 同号第二条撞的是 task.id 主键，报数据层码而不是「内部错误」；失败那条形态不变。
+    expect(result.failed).toEqual([{ kind: 'task', id: 'T-2001', code: 'DATA_DUPLICATE', detail: expect.any(String) }]);
+    expect(result.failed[0].detail.length).toBeGreaterThan(0);
     expect(await h.prisma.task.count()).toBe(2);
     expect(await h.prisma.task.findUnique({ where: { id: 'T-2002' } })).not.toBeNull();
   });
 
-  it('包内目标任务在写库阶段失败时，指向它的边按 task_failed 丢弃且只报三个键', async () => {
+  it('包内目标任务被判失败时，指向它的边按 task_failed 丢弃且只报三个键', async () => {
     const result = await run(
       pkg([
         one('T-2001', { runs: [{ id: 'R-9001', started_at: '不是时间' }] }),
@@ -529,8 +531,10 @@ describe('逐条失败语义（不整体回滚）', () => {
       ]),
     );
 
+    // 坏时间戳在规划期就被逐字段判掉（以前一路走到写库才炸，报成 INTERNAL「本地服务内部错误」），
+    // 所以这一条给出「哪个对象的哪个字段」——边的丢弃语义不变。
     expect(result.failed).toEqual([
-      { kind: 'task', id: 'T-2001', code: 'INTERNAL', detail: '无法解析的时间：不是时间' },
+      { kind: 'task', id: 'T-2001', code: 'VALIDATION_FAILED', detail: '第 1 次执行的 started_at「不是时间」不是合法时间' },
     ]);
     expect(result.imported.tasks).toEqual(['T-2002']);
     expect(result.dropped_dependencies).toEqual([

@@ -109,8 +109,14 @@ export function applyMigrations(logger?: Pick<AppLogger, 'log' | 'error'>): numb
         db.exec(`PRAGMA user_version = ${migration.order}`);
         db.exec('COMMIT');
       } catch (error) {
-        db.exec('ROLLBACK');
-        throw new Error(`迁移 ${migration.name} 失败：${(error as Error).message}`);
+        try {
+          db.exec('ROLLBACK');
+        } catch {
+          // 库损坏（NOTADB/CORRUPT）时 ROLLBACK 自己也会抛；不能让它遮住原始那条错误。
+        }
+        // 必须带 `cause`：SQLite 的结果码形状（errcode / 约束扩展码）只在原始错误上，
+        // 裹成裸 Error 出口就只能报 INTERNAL。`contract/db-errors.ts` 顺 cause 链还原细化码。
+        throw new Error(`迁移 ${migration.name} 失败：${(error as Error).message}`, { cause: error });
       }
       version = migration.order;
       applied.push(migration.order);

@@ -1,8 +1,20 @@
 import { useMemo, useRef, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
-import { Button, Dialog, IconButton, Input, Select, Switch, Tooltip } from '@/components/ui';
-import { contextNumber, errorMessage, isApiError } from '@/api';
+import {
+  Button,
+  Dialog,
+  ErrorCopy,
+  ErrorText,
+  IconButton,
+  Input,
+  Select,
+  Skeleton,
+  Switch,
+  Tooltip,
+} from '@/components/ui';
+import { contextNumber, isApiError } from '@/api';
 import type { FieldDef, FieldDefCreateInput, FieldDefPatchInput, FieldType } from '@/api/types';
+import { InlineError } from '@/features/task-detail/ui-bits';
 import { FIELD_TYPE_LABEL, PHASE_ONE_FIELD_TYPES } from '@/lib/labels';
 import { ChipEditor } from '../components/chip-editor';
 import { ConfirmDialog } from '../components/confirm-dialog';
@@ -43,6 +55,11 @@ import {
  *    是真开关：`textarea` 行不给这个控件，槽位满时其余置灰并在 tooltip 写明原因。
  * 3. 删除仅对未被任务引用的字段成功；`409 FIELD_IN_USE` 不当错误弹，而是就地转成
  *    「改为停用？」的引导（7.4 末行：不做「看着能点、点了没反应」的置灰）。
+ *
+ * 2026-09-29「列表三态必须可辨」：`GET /field-defs` 是这一页的主数据源，它的 `error` 必须
+ * 替掉「还没有自定义字段。」空态——以前只有表单/新建/停用三处 mutation 错误可见，列表读失败
+ * 一律显示空态。词表（`GET /settings`）是喂「适用类型」的副数据源：读失败时不再报
+ * 「（词表为空）」，也不再拿一份读不到的词表去否决用户输入。
  */
 
 const COLS =
@@ -55,7 +72,7 @@ const TYPE_OPTIONS = PHASE_ONE_FIELD_TYPES.map((type) => ({
 }));
 
 export function FieldsTab() {
-  const { settings } = useSettingsWriter();
+  const { settings, loadError } = useSettingsWriter();
   const defs = useFieldDefs();
   const create = useCreateFieldDef();
   const patch = usePatchFieldDef();
@@ -80,13 +97,14 @@ export function FieldsTab() {
   const [removing, setRemoving] = useState<FieldDef | null>(null);
   /** 409 回来的字段：就地提示「改为停用」并把停用按钮标出来（7.4）。 */
   const [inUse, setInUse] = useState<{ def: FieldDef; count: number | null } | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<unknown>(null);
 
   const cardCount = useMemo(() => items.filter((item) => item.show_on_card).length, [items]);
 
-  const errorText =
-    formError ??
-    (create.error ? errorMessage(create.error) : patch.error ? errorMessage(patch.error) : null);
+  // 三处来源（本地捕获 / create / patch）合成一个原始错误，展示交给 `<ErrorCopy>`：
+  // 文案仍是 `errorMessage` 那一套，另外有 `context.detail` 时才给「详情」折叠。
+  // 取名 `lastError`——回调里惯用的 `error` 形参会遮蔽外层变量，别在这儿埋坑。
+  const lastError = formError ?? create.error ?? patch.error ?? null;
 
   const toggleCard = (def: FieldDef, next: boolean) => {
     setInUse(null);
@@ -114,7 +132,7 @@ export function FieldsTab() {
           setRemoving(null);
           return;
         }
-        setFormError(errorMessage(error));
+        setFormError(error);
         setRemoving(null);
       },
     });
@@ -223,9 +241,16 @@ export function FieldsTab() {
             ];
           }}
           empty={
-            <p className="text-aux text-text-secondary">
-              还没有自定义字段。新建后它会出现在任务表单与详情「概览」里。
-            </p>
+            defs.isError ? (
+              // 主面：错误面占在「列表该出现的地方」，替掉空态。新建字段的按钮照旧可用。
+              <InlineError text={<ErrorCopy error={defs.error} />} />
+            ) : defs.isPending ? (
+              <Skeleton lines={3} />
+            ) : (
+              <p className="text-aux text-text-secondary">
+                还没有自定义字段。新建后它会出现在任务表单与详情「概览」里。
+              </p>
+            )
           }
         />
       </SettingSection>
@@ -249,7 +274,7 @@ export function FieldsTab() {
         </div>
       ) : null}
 
-      {inUse ? null : errorText ? <FormError>{errorText}</FormError> : null}
+      {inUse ? null : lastError ? <FormError><ErrorCopy error={lastError} /></FormError> : null}
 
       {shownForm ? (
         <FieldDefDialog
@@ -257,6 +282,7 @@ export function FieldsTab() {
           open={formOpen}
           def={shownForm.def}
           taskTypes={taskTypes}
+          taskTypesError={loadError}
           existing={items}
           cardCount={cardCount}
           pending={create.isPending || patch.isPending}
@@ -276,7 +302,7 @@ export function FieldsTab() {
               setEditing(null);
               return;
             } catch (error) {
-              setFormError(errorMessage(error));
+              setFormError(error);
             }
           }}
         />
@@ -311,6 +337,11 @@ interface FieldDefDialogProps {
   /** null = 新建：`key` 与 `type` 两个输入框只在这种情形出现。 */
   def: FieldDef | null;
   taskTypes: readonly string[];
+  /**
+   * `GET /settings` 的错误对象（词表读不到时非空，2026-09-29「列表三态必须可辨」副面档）：
+   * 一份读不到的词表既不能说成「（词表为空）」，也不能拿它去否决用户输入。
+   */
+  taskTypesError: unknown;
   existing: readonly FieldDef[];
   cardCount: number;
   pending: boolean;
@@ -322,6 +353,7 @@ function FieldDefDialog({
   open,
   def,
   taskTypes,
+  taskTypesError,
   existing,
   cardCount,
   pending,
@@ -514,7 +546,17 @@ function FieldDefDialog({
         <SettingRow
           label="适用类型"
           width="fluid"
-          hint={`可多选，一个都不选即对所有任务类型渲染该字段（20.1 的 applies_to 为空数组）；只能选词表里的类型（20.9）：${taskTypes.join('、') || '（词表为空）'}。`}
+          hint={
+            taskTypesError ? (
+              // 副面：候选来自 `GET /settings`，读不到时不能说「词表为空」（那是把故障报成用户没配）。
+              <ErrorText
+                text="任务类型词表没读到：这一栏暂时无法校验候选，保存时服务端仍会拒非法值。"
+                error={taskTypesError}
+              />
+            ) : (
+              `可多选，一个都不选即对所有任务类型渲染该字段（20.1 的 applies_to 为空数组）；只能选词表里的类型（20.9）：${taskTypes.join('、') || '（词表为空）'}。`
+            )
+          }
         >
           <ChipEditor
             values={appliesTo}
@@ -523,7 +565,10 @@ function FieldDefDialog({
             addLabel="添加类型"
             placeholder="任务类型"
             validate={(raw) =>
-              taskTypes.includes(raw) ? null : `「${raw}」不在任务类型词表里（20.9）`
+              // 词表没读到时跳过本地校验：拿一份读不到的名单去否决用户输入，比不校验更糟。
+              taskTypesError || taskTypes.includes(raw)
+                ? null
+                : `「${raw}」不在任务类型词表里（20.9）`
             }
             onChange={setAppliesTo}
           />

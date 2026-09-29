@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Package, Save, Send } from 'lucide-react';
 import { Button, Field, Input, RadioGroup, Skeleton, Tabs, Textarea, useToast } from '@/components/ui';
-import { errorMessage } from '@/api';
+import { errorDetailOf, errorMessage } from '@/api';
 import { BlockEditor } from './block-editor';
 import { usePatchSkill, useSkill } from './hooks';
 import { SKILL_CATEGORY_OPTIONS, SKILL_STATUS_META, emptyContent } from './meta';
@@ -107,7 +107,7 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
     if (!skill || patch.isPending || skill.readonly) return;
     patch.mutate(
       { id: skill.id, body: buildBody() },
-      { onError: (error) => toast.error('保存失败', errorMessage(error)) },
+      { onError: (error) => toast.error(`保存失败：${errorMessage(error)}`, errorDetailOf(error)) },
     );
   }, [skill, patch, buildBody]);
 
@@ -118,7 +118,7 @@ export function SkillEditorPage({ skillId, onClose, onOpenDetail }: SkillEditorP
     autoSaveTimer.current = window.setTimeout(() => {
       patch.mutate(
         { id: skill.id, body: buildBody() },
-        { onError: (error) => toast.error('自动保存失败，可手动保存重试', errorMessage(error)) },
+        { onError: (error) => toast.error(`自动保存失败，可手动保存重试：${errorMessage(error)}`, errorDetailOf(error)) },
       );
     }, 3000);
     return () => {

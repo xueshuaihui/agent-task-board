@@ -35,6 +35,7 @@ function useNow(intervalMs = 30_000): number {
 export function AgentStatusChip() {
   // page_size=1：只要 total（计数）与首条 updated_at（最近活动），不拉列表正文。
   const running = useTaskList({ status: ['RUNNING'], page_size: 1 });
+  // 三态豁免：失败时 `running.data` 恒 undefined → `runningSettled` 为假 → 下面 `if (!runningSettled) return null` 整条隐藏（本文件头部注释即此设计），那个 0 到不了界面
   const runningCount = running.data?.total ?? 0;
   const runningSettled = running.data !== undefined;
 

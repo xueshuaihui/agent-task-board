@@ -5,7 +5,7 @@ import { useFieldDefs, useSettings, useTags } from '@/api';
 import { TASK_STATUSES, type ArchivedFilter, type FieldDef, type TaskStatus } from '@/api/types';
 import { activeFilterCount, useFilterStore } from '@/app/store/filters';
 import { transitions } from '@/lib/motion';
-import { Badge, Button, Checkbox, Input, Menu, MenuCaret, RadioGroup } from '@/components/ui';
+import { Badge, Button, Checkbox, ErrorText, Input, Menu, MenuCaret, RadioGroup } from '@/components/ui';
 import type { MenuItem } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { NONE_VALUE } from '@/features/board/filter/options';
@@ -64,12 +64,22 @@ export function FilterChips({
         selected={filters.tags}
         options={(tags.data?.tags ?? []).map((tag) => ({ value: tag, label: tag }))}
         onToggle={(value) => filters.toggleString('tags', value)}
+        loadError={
+          tags.isError
+            ? { text: '标签词表加载失败，本轮没有候选可点', error: tags.error }
+            : undefined
+        }
       />
       <MultiSelectChip
         label="类型"
         selected={filters.type}
         options={types.map((type) => ({ value: type, label: type }))}
         onToggle={(value) => filters.toggleString('type', value)}
+        loadError={
+          settings.isError
+            ? { text: '类型词表加载失败，本轮没有候选可点', error: settings.error }
+            : undefined
+        }
       />
       <Button
         size="sm"
@@ -93,11 +103,18 @@ function MultiSelectChip({
   options,
   selected,
   onToggle,
+  loadError,
 }: {
   label: string;
   options: readonly { value: string; label: string }[];
   selected: readonly string[];
   onToggle: (value: string) => void;
+  /**
+   * tier-2（2026-09-29「列表报错被渲染成空状态」）：候选源（设置/标签接口）报错时给
+   * 「文案 + 原始错误」。不给会怎样：弹层是一片空白，与"词表真的是空的"同形，
+   * 用户只会认为自己没建过标签/类型。已选值仍然照常可点删（不拦主动作）。
+   */
+  loadError?: { text: string; error: unknown };
 }) {
   const items: MenuItem[] = options.map((option) => ({
     id: option.value,
@@ -107,10 +124,23 @@ function MultiSelectChip({
     ) : null,
     onSelect: () => onToggle(option.value),
   }));
+  const shown =
+    loadError && options.length === 0
+      ? [
+          ...items,
+          {
+            id: `${label}-load-failed`,
+            // disabled 项里的「详情」折叠仍可点：Radix 只在 select 时因 disabled 短路，
+            // 也不给 disabled 加 pointer-events（node_modules/@radix-ui/react-menu 已核对）。
+            label: <ErrorText text={loadError.text} error={loadError.error} />,
+            disabled: true,
+          },
+        ]
+      : items;
   return (
     <Menu
       width={220}
-      groups={[{ items }]}
+      groups={[{ items: shown }]}
       trigger={({ open, toggle }) => (
         <Button
           size="sm"
@@ -192,8 +222,14 @@ export function FilterPanel({ onClose }: { onClose: () => void }) {
                 onToggle={() => filters.toggleString('type', type)}
               />
             ))}
+            {/* tier-2：词表 500 时这句「没有可选类型」是假话（真相是没读到），换成加载失败 + 折叠原因；
+                成功且确实没类型（服务端允许把词表清空）才留原句。 */}
             {(settings.data?.task_types ?? []).length === 0 ? (
-              <Empty text="没有可选类型" />
+              settings.isError ? (
+                <ErrorText text="类型词表加载失败" error={settings.error} />
+              ) : (
+                <Empty text="没有可选类型" />
+              )
             ) : null}
           </div>
         </Group>
@@ -202,17 +238,25 @@ export function FilterPanel({ onClose }: { onClose: () => void }) {
 
         <Group label="自定义字段">
           {visibleFields.length === 0 ? (
-            <Empty text="还没有启用中的字段定义（设置页「字段定义」里建）" />
+            fieldDefs.isError ? (
+              <ErrorText text="字段定义加载失败，本轮没有可按的字段" error={fieldDefs.error} />
+            ) : (
+              <Empty text="还没有启用中的字段定义（设置页「字段定义」里建）" />
+            )
           ) : (
             <div className="flex flex-col gap-2">
-              {visibleFields.map((def) => (
-                <CustomFieldRow
-                  key={def.id}
-                  def={def}
-                  values={filters.customFields[def.key] ?? []}
-                  onChange={(next) => filters.setCustomField(def.key, next)}
-                />
-              ))}
+              {visibleFields.map((def) => {
+                // 三态豁免：`filters` 不是查询而是 zustand store（本组件开头 `const filters = useFilterStore()`），这里折成 `[]` 的是「该字段已选的筛选值」，没有请求可失败；字段定义自身挂了走上面 `fieldDefs.isError` 那条
+                const values = filters.customFields[def.key] ?? [];
+                return (
+                  <CustomFieldRow
+                    key={def.id}
+                    def={def}
+                    values={values}
+                    onChange={(next) => filters.setCustomField(def.key, next)}
+                  />
+                );
+              })}
             </div>
           )}
         </Group>
@@ -304,6 +348,11 @@ function TagGroup() {
             </button>
           ))}
         </div>
+      ) : null}
+      {/* tier-2：候选区取不到时候选区静默消失（与"标签都用上了/没有匹配标签"同形）。
+          已选标签与移除按钮不受影响，所以这里只补一行，不拦任何主动作。 */}
+      {tags.isError && candidates.length === 0 ? (
+        <ErrorText text="标签候选加载失败，已选标签仍可正常移除" error={tags.error} />
       ) : null}
     </Group>
   );

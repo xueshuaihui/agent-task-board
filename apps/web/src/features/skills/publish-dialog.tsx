@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { AlertTriangle, Check, FlaskConical, Play } from 'lucide-react';
-import { Button, Dialog, Field, Input, Textarea, useToast } from '@/components/ui';
-import { errorMessage } from '@/api';
+import { Button, Dialog, Field, Input, Textarea, useToast, ErrorCopy } from '@/components/ui';
 import { usePatchSkill, usePublishSkill, useTestSkill } from './hooks';
 import { McpDependencyEditor } from './mcp-dependency-editor';
 import { cyclicBlockIds, danglingNexts, previewNextVersion, variableWarnings } from './meta';
@@ -146,7 +145,7 @@ export function PublishDialog({ open, skill, content, onClose, onPublished }: Pu
                   {test.data.logs.join('\n') || test.data.output}
                 </pre>
               ) : null}
-              {test.isError ? <p className="text-aux text-status-failed">{errorMessage(test.error)}</p> : null}
+              {test.isError ? <p className="text-aux text-status-failed"><ErrorCopy error={test.error} /></p> : null}
             </div>
           ) : null}
         </div>

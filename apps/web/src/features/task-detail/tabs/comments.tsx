@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Send } from 'lucide-react';
 import type { Comment, CommentType } from '@/api';
-import { Button, EmptyState, Textarea } from '@/components/ui';
+import { Button, EmptyState, ErrorCopy, Textarea } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { AUTHOR_TYPE_LABEL, COMMENT_TYPE_LABEL, labelOf } from '@/lib/labels';
 import { formatRelative, parseIso } from '@/lib/time';
@@ -11,7 +11,7 @@ import {
   DEFAULT_COMMENT_TYPES,
   useTaskCommentPages,
 } from '../queries';
-import { DayDivider, InlineError, LoadingBlock } from '../ui-bits';
+import { DayDivider, InlineError, LoadingBlock, OlderPageError } from '../ui-bits';
 import { LinkifiedText } from '../rich-text';
 
 /**
@@ -58,6 +58,9 @@ export function CommentsTab({ taskId }: { taskId: string }) {
 
   const loaded = queries.reduce((sum, query) => sum + (query.data?.items.length ?? 0), 0);
   const hasMore = loaded < total;
+  /* 页 ≥ 2 的失败（见 `OlderPageError`）：从第二页起找，第一页失败由 body() 整块换错误面。 */
+  const failedPageIndex = queries.slice(1).findIndex((query) => query.isError);
+  const failedPage = failedPageIndex >= 0 ? queries[failedPageIndex + 1] : undefined;
 
   const toggle = (value: CommentType) => {
     setPages(1);
@@ -97,13 +100,17 @@ export function CommentsTab({ taskId }: { taskId: string }) {
 
   const body = () => {
     if (first?.isPending) return <LoadingBlock lines={3} />;
-    if (first?.isError) return <InlineError text={first.error.message} />;
+    if (first?.isError) return <InlineError text={<ErrorCopy error={first.error} />} />;
+    const olderError = failedPage ? <OlderPageError label="评论" query={failedPage} /> : null;
     if (rows.length === 0) {
       return (
-        <EmptyState
-          title="还没有评论"
-          description="状态变更由系统自动记（4.5 文案表），人写的讨论在下面的输入框。"
-        />
+        <>
+          <EmptyState
+            title="还没有评论"
+            description="状态变更由系统自动记（4.5 文案表），人写的讨论在下面的输入框。"
+          />
+          {olderError}
+        </>
       );
     }
     const groups = groupByDay(rows);
@@ -121,6 +128,7 @@ export function CommentsTab({ taskId }: { taskId: string }) {
             )}
           </div>
         ))}
+        {olderError}
         {hasMore ? (
           <Button
             size="sm"
@@ -188,7 +196,7 @@ export function CommentsTab({ taskId }: { taskId: string }) {
         </Button>
       </div>
 
-      {add.isError ? <InlineError text={add.error.message} /> : null}
+      {add.isError ? <InlineError text={<ErrorCopy error={add.error} />} /> : null}
     </div>
   );
 }

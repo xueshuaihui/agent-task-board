@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { AlertTriangle, ClipboardList, Undo2 } from 'lucide-react';
-import { api, errorMessage, isApiError } from '@/api';
+import { api, errorDetailOf, errorMessage, isApiError } from '@/api';
 import type { CreationDecisionInput } from '@/api/types';
 import { useShellStore } from '@/app/store/shell';
 import {
@@ -9,7 +9,7 @@ import {
   useRequirementOptions,
 } from '@/features/requirements/use-requirement-options';
 import { useSkills } from '@/features/skills/hooks';
-import { Badge, Button, IconButton, Progress, useToast } from '@/components/ui';
+import { Badge, Button, ErrorText, IconButton, Progress, useToast } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { transitions } from '@/lib/motion';
 import { priorityLabel } from '@/lib/labels';
@@ -90,7 +90,7 @@ export function CreationCard({ card }: CreationCardProps) {
           );
           toast.error('请求已超时或已被处理，未创建任务');
         } else {
-          toast.error(errorMessage(error));
+          toast.error(errorMessage(error), errorDetailOf(error));
         }
       } finally {
         setSubmitting(false);
@@ -110,7 +110,23 @@ export function CreationCard({ card }: CreationCardProps) {
     () => requirementTitleForGroup(requirements.data, card.group_id),
     [requirements.data, card.group_id],
   );
+  /* tier-2（2026-09-29「列表报错被渲染成空状态」）：这一行是**展示层反查**，反查没成立就不能
+   * 说「未分配」（那是"这张卡没挂需求"这句没根据的话），也不能一路显示读取中把 30 秒确认窗
+   * 变成猜谜。pending → 「读取中…」、error → 「需求反查失败」＋折叠原因；「创建」按钮照常可用
+   * （载荷里的 group_id 才是事实，归属由服务端落库时决定）。 */
+  const requirementLabel: ReactNode = requirements.isError ? (
+    <ErrorText text="📌 需求：反查失败，创建后请在详情确认归属" error={requirements.error} />
+  ) : requirements.isPending ? (
+    <span className="min-w-0 max-w-full truncate">📌 需求：读取中…</span>
+  ) : (
+    <span className="min-w-0 max-w-full truncate" title={requirementTitle ?? '未分配'}>
+      {requirementTitle ? `📌 需求：${requirementTitle}` : '未分配'}
+    </span>
+  );
+  /* 技能名同样只是展示层回填：查不到时回落原 slug/引用名（不是「没有技能」，行照样渲染），
+   * 所以这一路不需要错误面——`skillNames.length` 取自载荷本身，不受查询状态影响。 */
   const skillNames = useMemo(() => {
+    // 三态豁免：技能名只是展示层回填——查不到就回落载荷里的原 slug/引用名（`hit ? hit.name : slug`，行照样渲染），且 `skillNames.length` 取自 `card.skills`，不宣称「没有技能」
     const items = skills.data?.items ?? [];
     return card.skills.map((slug) => {
       const hit = items.find((item) => item.id === slug || item.name === slug);
@@ -183,9 +199,7 @@ export function CreationCard({ card }: CreationCardProps) {
         ) : null}
 
         <div className="flex flex-wrap items-center gap-1.5 text-aux text-text-secondary">
-          <span className="min-w-0 max-w-full truncate" title={requirementTitle ?? '未分配'}>
-            {requirementTitle ? `📌 需求：${requirementTitle}` : '未分配'}
-          </span>
+          {requirementLabel}
           <Badge tone="outline">{card.type}</Badge>
           <Badge tone="outline">{priorityLabel(card.priority)}</Badge>
         </div>
@@ -319,7 +333,7 @@ function CreationCardResult({
       markUndone(card.request_id);
       onUndone();
     } catch (error) {
-      toast.error(errorMessage(error));
+      toast.error(errorMessage(error), errorDetailOf(error));
     } finally {
       setBusy(false);
     }

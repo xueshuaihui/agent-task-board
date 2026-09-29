@@ -174,10 +174,18 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 /* --------------------------------------------------------------- 错误契约 */
 
-/** 13 章「统一错误码」表 + 网络层兜底 `NETWORK_ERROR`。UI 文案按 code 驱动（api/client.ts）。 */
+/**
+ * 13 章「统一错误码」表 + 网络层兜底 `NETWORK_ERROR`。UI 文案按 code 驱动（api/client.ts）。
+ *
+ * 这张表必须与服务端 `apps/api/src/contract/errors.ts` 的 `ERROR_STATUS` 逐键对齐：
+ * 少一个键，那个码在 `client.ts` 的已知码判定里就落回 `UNKNOWN`，细化文案直接丢掉。
+ * 对齐由 `apps/api/src/contract/__tests__/error-code-table.test.ts` 的闸守着（双向都判）。
+ */
 export const ERROR_CODES = [
   'UNAUTHORIZED',
   'FORBIDDEN',
+  // 0020 草案 §3.3/Q4：审核者 Token == 被审 Run 的执行者 Token 时自审被硬门禁拦下。
+  'SELF_REVIEW_FORBIDDEN',
   'NOT_FOUND',
   'VALIDATION_FAILED',
   'INVALID_PARAM',
@@ -185,6 +193,8 @@ export const ERROR_CODES = [
   'TASK_NOT_RUNNING',
   'TASK_RUNNING',
   'TASK_GONE',
+  // v0.0.4 §16.1：任务停在 BLOCKED/REVIEW/DONE/FAILED 这些「编辑窗口之外」的状态。
+  'TASK_NOT_EDITABLE',
   'ARCHIVE_BLOCKED_BY_DEPENDENCY',
   'DEPENDENCY_CYCLE',
   'LEASE_EXPIRED',
@@ -193,6 +203,12 @@ export const ERROR_CODES = [
   'ARTIFACT_LOST',
   'IMPORT_ID_CONFLICT',
   'FIELD_IN_USE',
+  // 8 章技能管理：被任务绑定 / 同 ID 导入冲突 / 默认技能只读 / 引用自指与成环。
+  'SKILL_BOUND',
+  'SKILL_ID_CONFLICT',
+  'SKILL_READONLY',
+  'SKILL_REF_SELF',
+  'SKILL_REF_CYCLE',
   'INVALID_BACKUP_NAME',
   'GROUP_LIMIT_REACHED',
   'GROUP_DEFAULT_PROTECTED',
@@ -202,9 +218,24 @@ export const ERROR_CODES = [
   'BACKUP_NOT_FOUND',
   // v0.0.4 W7 §7.7：拆解动作从表外状态发起（confirm 只允许 reviewing、cancel 只允许 receiving/reviewing）。
   'BREAKDOWN_BAD_STATE',
+  // v0.0.4 W7 遗留 b3 §7.4：用户侧「添加任务」显式带 ref 且会话内已占用（context 带 session_id/ref）。
+  'BREAKDOWN_DRAFT_REF_TAKEN',
   // v0.0.4 W8 §8.7 r3：轻确认请求已终结（含 30s+5s 宽限到期），decision 拒收；context.status 带归宿。
   'CREATION_REQUEST_RESOLVED',
+  // 8.8 技能源：git/http 远程源本期不实现。
+  'NOT_IMPLEMENTED',
+  // ── 数据层七枚（2026-09-29「报错全部细化」）：过去全被压成 INTERNAL，
+  //    由 `contract/db-errors.ts` 从 Prisma / node:sqlite / fs 的真实形状解出来。
+  //    这一组里多数是用户自己能修的（引用没清、开了两个实例、磁盘只读、库损坏、迁移没跑完）。
+  'DATA_STILL_REFERENCED',
+  'DATA_DUPLICATE',
+  'SCHEMA_MISMATCH',
+  'STORAGE_UNAVAILABLE',
+  'STORAGE_LOCKED',
+  'STORAGE_CORRUPT',
+  'STORAGE_READONLY',
   'INTERNAL',
+  // 下面两枚是前端自己的，服务端不会下发：NETWORK_ERROR=没拿到响应，UNKNOWN=认不出的形状。
   'NETWORK_ERROR',
   'UNKNOWN',
 ] as const;

@@ -5,7 +5,7 @@ import { SubtasksSection } from '@/features/task-detail/subtasks';
 import { CommentsTab } from '@/features/task-detail/tabs/comments';
 import { InlineError, LoadingBlock } from '@/features/task-detail/ui-bits';
 import type { TaskAggregate, TaskDetail } from '@/api';
-import { Badge, Button, Drawer, Progress, StatusDot, Tabs, type TabItem } from '@/components/ui';
+import { Badge, Button, Drawer, ErrorCopy, Progress, StatusDot, Tabs, type TabItem } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { priorityText } from '@/lib/labels';
 import { priorityStyle, statusStyle } from '@/lib/status-style';
@@ -79,7 +79,11 @@ export function RequirementDrawer({ requirementId, open, onClose }: RequirementD
   if (!detail) {
     return (
       <Drawer open={open} title={`需求 ${requirementId}`} onClose={onClose}>
-        <InlineError text={overview.error?.message ?? '需求详情加载失败'} />
+        {/* 与任务详情抽屉同一口径：有错误就交给 `<ErrorCopy>`（细化文案 + 折叠原文），
+            查询没错误（还没发过）才用本地那句。 */}
+        <InlineError
+          text={overview.error ? <ErrorCopy error={overview.error} /> : '需求详情加载失败'}
+        />
       </Drawer>
     );
   }

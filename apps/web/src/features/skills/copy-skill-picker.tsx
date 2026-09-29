@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
-import { Button, Dialog, EmptyState } from '@/components/ui';
-import { errorMessage } from '@/api';
+import { Button, Dialog, EmptyState, ErrorCopy } from '@/components/ui';
 import { useSkills } from './hooks';
 import { SkillPicker } from './skill-picker';
 import type { Skill } from './types';
@@ -32,7 +31,7 @@ export function CopySkillPicker({ open, onClose, onPicked }: CopySkillPickerProp
       {skills.isPending ? (
         <p className="py-6 text-center text-aux text-text-tertiary">加载中…</p>
       ) : skills.isError ? (
-        <p className="py-6 text-center text-aux text-status-failed">{errorMessage(skills.error)}</p>
+        <p className="py-6 text-center text-aux text-status-failed"><ErrorCopy error={skills.error} className="inline-block max-w-full text-left" /></p>
       ) : items.length === 0 ? (
         <EmptyState title="没有可复制的技能" description="先创建或导入一个技能" />
       ) : (

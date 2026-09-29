@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, type Task } from '@prisma/client';
 import { ApiException, USER_COPY } from '../contract/errors';
+import { toApiExceptionFromError } from '../contract/db-errors';
 import {
   ARTIFACT_TYPES,
   BOARD_COLUMNS,
@@ -864,11 +865,11 @@ export class TasksService {
         await fn(id);
         succeeded.push(id);
       } catch (error) {
-        if (error instanceof ApiException) {
-          skipped.push({ id, reason: `${error.code}: ${error.message}` });
-          continue;
-        }
-        skipped.push({ id, reason: `INTERNAL: ${(error as Error).message}` });
+        // 逐条失败的原因也要说准（2026-09-29「报错全部细化」）：`toApiExceptionFromError` 对
+        // 业务自己抛的 `ApiException` 是原样透传，对数据层抛出给细化码。过去非 ApiException 一律
+        // 写成 `INTERNAL:`，「批量删除撞上拆解会话那条外键」（0022 之前的真实形状）就混在内部错误里。
+        const api = toApiExceptionFromError(error);
+        skipped.push({ id, reason: `${api.code}: ${api.message}` });
       }
     }
     return { succeeded, skipped };

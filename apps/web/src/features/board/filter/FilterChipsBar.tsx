@@ -32,7 +32,9 @@ export function FilterChipsBar({ cards }: { cards: readonly TaskCard[] }) {
     () =>
       deriveFilterOptions({
         cards,
+        // 三态豁免：候选只给下面 `optionLabel` 回显 chip 文案，查不到即回显裸值，且 type 维 label===value（options.ts）——本行不宣称「没有类型」；候选收缩那层由同目录 `FilterMenu.tsx` 的降级说明行承担
         types: settings.data?.task_types ?? [],
+        // 三态豁免：同 type 维——tag 维也是 label===value，词表 500 时 chip 文案一字不变，这里没有「没有标签」这句话
         tags: tags.data?.tags ?? [],
       }),
     [cards, settings.data?.task_types, tags.data?.tags],

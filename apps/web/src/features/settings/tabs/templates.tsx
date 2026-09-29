@@ -1,7 +1,17 @@
 import { useMemo, useRef, useState } from 'react';
 import { Copy, Plus, Trash2 } from 'lucide-react';
-import { Button, Dialog, IconButton, Input, Select, Textarea } from '@/components/ui';
-import { errorMessage, fieldErrorsOf } from '@/api';
+import {
+  Button,
+  Dialog,
+  ErrorCopy,
+  ErrorText,
+  IconButton,
+  Input,
+  Select,
+  Skeleton,
+  Textarea,
+} from '@/components/ui';
+import { errorDetailOf, errorMessage, fieldErrorsOf } from '@/api';
 import type {
   FieldDef,
   Template,
@@ -9,6 +19,7 @@ import type {
   TemplatePatchInput,
   TemplatePreset,
 } from '@/api/types';
+import { InlineError } from '@/features/task-detail/ui-bits';
 import { PRIORITY_LABEL } from '@/lib/labels';
 import { ChipEditor } from '../components/chip-editor';
 import { ConfirmDialog } from '../components/confirm-dialog';
@@ -40,6 +51,13 @@ import { CAPABILITY_NAMESPACES, CAPABILITY_RE, FIELD_OPTION_MAX } from '../utils
  * 「预填不是校验」（7.5）：这里存什么都不会锁住新建任务时的字段，
  * 所以失效预填（类型已删、字段已停用）在本页只做**提示 + 保存前挡住**，
  * 因为服务端 `assertPreset` 对这两种情况就是 422。
+ *
+ * 2026-09-29「列表三态必须可辨」：本页有**两份**列表数据，分层处理——
+ * - 模板列表（这一页存在的目的，主面）：`isPending` 骨架 / `isError` 用错误面**替掉**
+ *   「还没有模板。」空态 / 读到零条才是空态。
+ * - 字段定义（喂「自定义字段默认值」那张表的副源，副面）：失败时不再说「还没有启用的字段定义」，
+ *   改一句「加载失败」并保留「详情」折叠，弹窗其余部分照常可填。
+ * 已有的 mutation 错误面（`describeTemplateError` + `<ErrorText>`）不动：列表错误与表单错误可以同时出现。
  */
 
 const COLS = 'grid-cols-[minmax(0,220px)_minmax(0,1fr)_152px]';
@@ -47,7 +65,7 @@ const COLS = 'grid-cols-[minmax(0,220px)_minmax(0,1fr)_152px]';
 const PRIORITIES = [0, 1, 2, 3] as const;
 
 export function TemplatesTab() {
-  const { settings } = useSettingsWriter();
+  const { settings, loadError } = useSettingsWriter();
   const templates = useTemplates();
   const defs = useFieldDefs();
   const create = useCreateTemplate();
@@ -73,12 +91,15 @@ export function TemplatesTab() {
   if (draft && !wasDraftOpenRef.current) draftSeqRef.current += 1;
   wasDraftOpenRef.current = Boolean(draft);
   const [removing, setRemoving] = useState<Template | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  /** 存原始错误（不是拼好的句子），下方折叠才拿得到引擎原文。 */
+  const [error, setError] = useState<unknown>(null);
 
   const errorText =
-    error ??
+    (error ? describeTemplateError(error) : null) ??
     (create.error ? describeTemplateError(create.error) : null) ??
     (patch.error ? describeTemplateError(patch.error) : null);
+  // 主行是本地拼的（422 的逐字段路径并进来了），所以走 `ErrorText`；详情仍取第一个有值的错误对象。
+  const errorDetail = errorDetailOf(error ?? create.error ?? patch.error);
 
   const confirmRemove = () => {
     if (!removing) return;
@@ -159,14 +180,25 @@ export function TemplatesTab() {
             </RowActions>,
           ]}
           empty={
-            <p className="text-aux text-text-secondary">
-              还没有模板。新建后它会出现在「新建任务」的模板下拉里。
-            </p>
+            templates.isError ? (
+              // 主面：读失败替掉空态。「还没有模板。」在这里是假话——模板可能有，只是没读到（500）。
+              <InlineError text={<ErrorCopy error={templates.error} />} />
+            ) : templates.isPending ? (
+              <Skeleton lines={3} />
+            ) : (
+              <p className="text-aux text-text-secondary">
+                还没有模板。新建后它会出现在「新建任务」的模板下拉里。
+              </p>
+            )
           }
         />
       </SettingSection>
 
-      {errorText ? <FormError>{errorText}</FormError> : null}
+      {errorText ? (
+        <FormError>
+          <ErrorText text={errorText} detail={errorDetail} />
+        </FormError>
+      ) : null}
 
       {shownDraft ? (
         <TemplateDialog
@@ -174,7 +206,9 @@ export function TemplatesTab() {
           open={draft !== null}
           source={shownDraft.source}
           taskTypes={taskTypes}
+          taskTypesError={loadError}
           defs={enabledDefs}
+          defsError={defs.error}
           pending={create.isPending || patch.isPending}
           onClose={() => setDraft(null)}
           onSubmit={async (body) => {
@@ -187,7 +221,7 @@ export function TemplatesTab() {
               }
               setDraft(null);
             } catch (caught) {
-              setError(describeTemplateError(caught));
+              setError(caught);
             }
           }}
         />
@@ -216,7 +250,14 @@ interface TemplateDialogProps {
   /** null = 新建；「复制」传的是源模板的浅拷贝（id 已清空、名称加了「副本」）。 */
   source: Template | null;
   taskTypes: readonly string[];
+  /**
+   * `task_types` 那份读查询的错误（`GET /settings`）：非空时类型下拉的空选项
+   * 不是「词表真的为空」而是「没读到」，得说清（2026-09-29「列表三态必须可辨」副面档）。
+   */
+  taskTypesError: unknown;
   defs: readonly FieldDef[];
+  /** `GET /field-defs` 的错误：非空时「自定义字段默认值」那一段不能说「还没有启用的字段定义」。 */
+  defsError: unknown;
   pending: boolean;
   onClose: () => void;
   onSubmit: (body: {
@@ -230,7 +271,9 @@ function TemplateDialog({
   open,
   source,
   taskTypes,
+  taskTypesError,
   defs,
+  defsError,
   pending,
   onClose,
   onSubmit,
@@ -253,10 +296,14 @@ function TemplateDialog({
   const editing = Boolean(source?.id);
 
   const stale = useMemo(
-    () => collectStale(preset, taskTypes, defs),
+    () =>
+      collectStale(preset, taskTypes, defs, {
+        taskTypes: !taskTypesError,
+        defs: !defsError,
+      }),
     // 表单里改过的条目以提交前重算为准，这里只报存量问题（7.5 的 ⚠ 提示）
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [preset, taskTypes, defs],
+    [preset, taskTypes, defs, taskTypesError, defsError],
   );
 
   const submit = () => {
@@ -357,7 +404,21 @@ function TemplateDialog({
         </SettingRow>
 
         <div className="flex flex-wrap gap-x-4 gap-y-3">
-          <SettingRow label="类型" required width="narrow" error={errors.type}>
+          <SettingRow
+            label="类型"
+            required
+            width="narrow"
+            error={
+              errors.type ??
+              (taskTypesError ? (
+                // 副面：下拉空了不一定是「词表为空」，也可能是没读到（`GET /settings` 失败）。
+                <ErrorText
+                  text="任务类型词表没读到，这一栏暂时没有候选；先修好本地服务再保存。"
+                  error={taskTypesError}
+                />
+              ) : undefined)
+            }
+          >
             <Select
               value={type}
               options={[
@@ -426,9 +487,19 @@ function TemplateDialog({
           hint="只列启用中的字段定义（7.5），值按 20.10 的类型契约取合法候选。"
         >
           {defs.length === 0 ? (
-            <span className="inline-flex h-8 items-center text-aux text-text-tertiary">
-              还没有启用的字段定义。
-            </span>
+            defsError ? (
+              // 副面：这一段的候选来自 `GET /field-defs`，读失败时不能说「还没有启用的字段定义」。
+              // 其余预填项照常可填（`buildCustomFields` 会把没渲染出来的键原样带回，不丢数据）。
+              <ErrorText
+                text="字段定义没读到，这一栏暂时列不出可预填的字段。"
+                error={defsError}
+                className="py-1 text-aux text-status-failed"
+              />
+            ) : (
+              <span className="inline-flex h-8 items-center text-aux text-text-tertiary">
+                还没有启用的字段定义。
+              </span>
+            )
           ) : (
             <div className="flex flex-col gap-2 py-1">
               {defs.map((def) => (
@@ -583,13 +654,21 @@ function collectStale(
   preset: TemplatePreset,
   taskTypes: readonly string[],
   defs: readonly FieldDef[],
+  /**
+   * 两份对照数据**读到没有**（2026-09-29「列表三态必须可辨」）。
+   * 读失败时它们必然是空的，而「空」在这里会被判成「类型已从词表删除」「字段已停用或不存在」——
+   * 那是把一次网络故障报成一份用户数据问题，比不报更糟。所以哪一份没读到，就跳过哪一份的检查。
+   */
+  sources: { taskTypes: boolean; defs: boolean },
 ): string[] {
   const out: string[] = [];
-  if (preset.type && !taskTypes.includes(preset.type)) {
+  if (sources.taskTypes && preset.type && !taskTypes.includes(preset.type)) {
     out.push(`类型「${preset.type}」已从词表删除`);
   }
-  for (const key of Object.keys(preset.custom_fields ?? {})) {
-    if (!defs.some((def) => def.key === key)) out.push(`字段「${key}」已停用或不存在`);
+  if (sources.defs) {
+    for (const key of Object.keys(preset.custom_fields ?? {})) {
+      if (!defs.some((def) => def.key === key)) out.push(`字段「${key}」已停用或不存在`);
+    }
   }
   return out;
 }

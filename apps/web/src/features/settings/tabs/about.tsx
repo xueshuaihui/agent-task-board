@@ -1,7 +1,6 @@
 import { FolderOpen } from 'lucide-react';
-import { Button } from '@/components/ui';
-import { useSettings } from '@/api';
-import { COPY } from '@/lib/copy';
+import { Button, ErrorCopy } from '@/components/ui';
+import { errorCodeOf, useSettings } from '@/api';
 import {
   ReadOnlyTag,
   SettingRow,
@@ -62,9 +61,15 @@ export function AboutTab() {
           </div>
         </SettingRow>
 
-        <SettingRow label="服务状态">
+        <SettingRow
+          label="服务状态"
+          // 具体那一句走码表 +「详情」折叠（2026-09-29「列表三态必须可辨」）：
+          // 以前不管 `GET /settings` 是连不上还是 500 `SCHEMA_MISMATCH`，都只印
+          // `COPY.sidecarDown`——本地服务明明答了话、答的是「数据库缺少表」，界面却说它没响应。
+          error={settings.isError ? <ErrorCopy error={settings.error} /> : undefined}
+        >
           <div className="flex h-8 items-center gap-2">
-            <ServiceState failing={settings.isError} pending={settings.isLoading} />
+            <ServiceState error={settings.error} pending={settings.isLoading} />
             <StaticValue mono>{listenAddress()}</StaticValue>
             <ReadOnlyTag>10.1 只绑 127.0.0.1</ReadOnlyTag>
           </div>
@@ -92,13 +97,17 @@ export function AboutTab() {
   );
 }
 
-function ServiceState({ failing, pending }: { failing: boolean; pending: boolean }) {
-  if (failing) {
+/**
+ * 服务状态那一行的灯（原型 7.9）。只给「灯 + 一个短词」，具体那句由 `SettingRow` 的错误位
+ * 走 `<ErrorCopy>`。两个短词按错误码分支：`NETWORK_ERROR` 才是真的没响应（连不上、正在重启），
+ * 其余（500/503 那一类）服务答了话、只是答不了，写成「无响应」是误导（2026-09-29「列表三态必须可辨」）。
+ */
+function ServiceState({ error, pending }: { error: unknown; pending: boolean }) {
+  if (error) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-body text-status-failed">
+      <span className="inline-flex shrink-0 items-center gap-1.5 text-body text-status-failed">
         <span className="size-2 rounded-full bg-status-failed" aria-hidden />
-        无响应
-        <span className="text-aux text-text-tertiary">{COPY.sidecarDown}</span>
+        {errorCodeOf(error) === 'NETWORK_ERROR' ? '无响应' : '异常'}
       </span>
     );
   }

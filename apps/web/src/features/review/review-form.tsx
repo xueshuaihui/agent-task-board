@@ -11,6 +11,7 @@ import { useReducedMotion, motion } from 'motion/react';
 import { FileCode2, AlertTriangle, RotateCcw } from 'lucide-react';
 import {
   api,
+  errorDetailOf,
   errorMessage,
   fieldErrorsOf,
   isApiError,
@@ -28,6 +29,8 @@ import {
   CardBody,
   CardHeader,
   Dialog,
+  ErrorCopy,
+  ErrorText,
   Field,
   RadioGroup,
   Select,
@@ -136,7 +139,12 @@ function ReviewFormBody({
   const [localErrors, setLocalErrors] = useState<Partial<Record<RequiredField, string>>>({});
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
   const [truncated, setTruncated] = useState<Partial<Record<RequiredField, boolean>>>({});
-  const [banner, setBanner] = useState<string | null>(null);
+  /**
+   * 顶部条幅（原型 5.3）：`text` 是给用户看的那一句，可能是本地写的（并发把任务拖走时
+   * 只说「状态已变化」，不复述服务端话术）；`error` 只在失败由服务端引起时带上，
+   * 供「详情」折叠出引擎原文（2026-09-29 拍板②）。
+   */
+  const [banner, setBanner] = useState<{ text: string; error?: unknown } | null>(null);
   /** 原型 5.3 上半区的产物预览框：`link` 不进这里，它走系统默认浏览器（6.10.1）。 */
   const [preview, setPreview] = useState<PreviewTarget | null>(null);
   const suggestionRef = useRef<HTMLTextAreaElement>(null);
@@ -194,11 +202,13 @@ function ReviewFormBody({
     onSettled: (_data, error) => {
       if (!error) return;
       const code = isApiError(error) ? error.code : null;
-      setBanner(
-        code === 'ILLEGAL_TRANSITION' || code === 'NOT_FOUND' || code === 'TASK_GONE'
-          ? '该任务状态已变化'
-          : errorMessage(error),
-      );
+      setBanner({
+        text:
+          code === 'ILLEGAL_TRANSITION' || code === 'NOT_FOUND' || code === 'TASK_GONE'
+            ? '该任务状态已变化'
+            : errorMessage(error),
+        error,
+      });
     },
   });
 
@@ -231,16 +241,16 @@ function ReviewFormBody({
         const code = isApiError(error) ? error.code : null;
         if (code === 'VALIDATION_FAILED') {
           setServerErrors(fieldErrorsOf(error));
-          setBanner('有字段未通过服务端校验，见下方红字');
+          setBanner({ text: '有字段未通过服务端校验，见下方红字', error });
           return;
         }
         setServerErrors({});
         // 4.5 / 原型 5.3：并发来源把任务拖走时不清空表单，改成顶部条幅 + 刷新后重试。
         if (code === 'ILLEGAL_TRANSITION' || code === 'TASK_GONE' || code === 'NOT_FOUND') {
-          setBanner('该任务状态已变化');
+          setBanner({ text: '该任务状态已变化', error });
           return;
         }
-        setBanner(errorMessage(error));
+        setBanner({ text: errorMessage(error), error });
       },
     },
   );
@@ -365,7 +375,7 @@ function ReviewFormBody({
       <div onKeyDown={onKeyDown} className="flex flex-col gap-4">
         {banner ? (
           <StaleBanner
-            text={banner}
+            text={<ErrorText text={banner.text} error={banner.error} />}
             onRetry={() => {
               setBanner(null);
               setServerErrors({});
@@ -422,7 +432,7 @@ function ReviewFormBody({
                 </div>
               </div>
             ) : (
-              <p className="text-aux text-status-failed">{errorMessage(overview.error)}</p>
+              <p className="text-aux text-status-failed"><ErrorCopy error={overview.error} /></p>
             )}
             <Section title="执行摘要">
               {run ? (
@@ -471,7 +481,7 @@ function ReviewFormBody({
                 <p className="text-body text-text-tertiary">该任务没有可关联的执行记录（6.6）。</p>
               )}
               {runs.isError ? (
-                <p className="mt-2 text-aux text-status-failed">{errorMessage(runs.error)}</p>
+                <p className="mt-2 text-aux text-status-failed"><ErrorCopy error={runs.error} /></p>
               ) : null}
             </Section>
           </CardBody>
@@ -697,7 +707,7 @@ function DiffBlock({ artifact }: { artifact: RunArtifact }) {
   const download = () => {
     setBusy(true);
     void downloadArtifact(artifact.id, artifact.name)
-      .catch((error: unknown) => toast.error(errorMessage(error)))
+      .catch((error: unknown) => toast.error(errorMessage(error), errorDetailOf(error)))
       .finally(() => setBusy(false));
   };
 
@@ -724,7 +734,8 @@ function DiffBlock({ artifact }: { artifact: RunArtifact }) {
   );
 }
 
-function StaleBanner({ text, onRetry }: { text: string; onRetry: () => void }) {
+/** `text` 允许是拼好的节点（`<ErrorText>` 带折叠详情），不只是纯字符串。 */
+function StaleBanner({ text, onRetry }: { text: ReactNode; onRetry: () => void }) {
   return (
     <div
       role="alert"

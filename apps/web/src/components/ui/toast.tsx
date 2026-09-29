@@ -9,6 +9,7 @@ import {
 import { Toaster, toast } from 'sonner';
 import { AlertTriangle, CheckCircle2, Info, X, XCircle } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { ErrorDetail } from './error-copy';
 
 export type ToastVariant = 'success' | 'error' | 'warning' | 'info';
 
@@ -46,7 +47,13 @@ const STYLE: Record<ToastVariant, { border: string; icon: ReactNode }> = {
   info: { border: 'border-l-primary', icon: <Info className="size-4 text-primary" /> },
 };
 
-/** 卡片皮肤走 token：surface 底 + 状态色左描边；图标用 lucide 描边系（§2 Toast）。 */
+/**
+ * 卡片皮肤走 token：surface 底 + 状态色左描边；图标用 lucide 描边系（§2 Toast）。
+ *
+ * 详情行（2026-09-29 拍板②「显示细化文案＋折叠详情」）：默认收起，点「详情」展开引擎原文。
+ * 展开时不必担心 6s 自动消失——指针停在卡片上 sonner 就暂停计时（见 ToastProvider 注释），
+ * 而用户要点展开必然正悬在这张卡片上。
+ */
 function ToastCard({ item, onClose }: { item: Omit<ToastItem, 'id'>; onClose: () => void }) {
   return (
     <div
@@ -58,11 +65,8 @@ function ToastCard({ item, onClose }: { item: Omit<ToastItem, 'id'>; onClose: ()
       <span className="mt-[2px] shrink-0">{STYLE[item.variant].icon}</span>
       <span className="min-w-0 flex-1 text-body text-text-primary">
         {item.text}
-        {item.detail ? (
-          <span className="mt-1 block text-aux text-text-secondary" data-selectable>
-            {item.detail}
-          </span>
-        ) : null}
+        {/* 折叠那一行的实现与就地错误面共用一份（`ui/error-copy.tsx`），两处长得一样、行为一样。 */}
+        {item.detail ? <ErrorDetail text={item.detail} /> : null}
       </span>
       <button
         type="button"

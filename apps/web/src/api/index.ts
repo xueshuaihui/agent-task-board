@@ -40,6 +40,7 @@ export {
   ERROR_CODE_COPY,
   contextNumber,
   errorCodeOf,
+  errorDetailOf,
   errorMessage,
   fieldErrorsOf,
   isApiError,

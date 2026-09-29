@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import {
   api,
-  errorMessage,
   qk,
   useApiMutation,
   useBoard,
@@ -31,6 +30,8 @@ import {
   Button,
   Dialog,
   EmptyState,
+  ErrorCopy,
+  ErrorText,
   Field,
   IconButton,
   Input,
@@ -109,7 +110,7 @@ function useRequirementMutations() {
     restore: useApiMutation((id: string) => api.tasks.restore(id), {
       invalidate: ({ vars }) => taskKeys(vars),
     }),
-    /** 删除的 409（有子任务）由对话框**内联**回显 `errorMessage`，不吞掉也不另编文案。 */
+    /** 删除的 409（有子任务）由对话框**内联**回显（`<ErrorCopy>`：细化文案 + 折叠原文），不吞掉也不另编文案。 */
     remove: useApiMutation((id: string) => api.tasks.remove(id), {
       invalidate: [qk.taskAny, qk.boardRoot, qk.tasksRoot],
       toastOnError: false,
@@ -167,6 +168,10 @@ export function RequirementsPage() {
       ),
     [items, board.data],
   );
+  /* tier-2（2026-09-29「列表报错被渲染成空状态」）：完成度腿 500 时上面那份取数恒折成 `[]`，
+   * 每张需求卡的进度块就此**整块消失**——而按 §19.15·88 的口径，「块不在」在界面上的意思就是
+   * 「这条需求没有子任务」，于是失败被念成了空。需求卡本身照常可点可编辑（主动作不受阻），
+   * 所以只补一行降级说明，把「没拿到」与「没有子任务」分开。 */
 
   /** 表单对话框目标：'create' = 新建，对象 = 编辑；null = 关闭。 */
   const [formTarget, setFormTarget] = useState<'create' | TaskListItem | null>(null);
@@ -213,7 +218,7 @@ export function RequirementsPage() {
         </div>
       ) : list.isError ? (
         <div className="flex flex-col items-start gap-2 rounded-card border border-border bg-bg-surface p-4">
-          <p className="text-body text-status-failed">{errorMessage(list.error)}</p>
+          <p className="text-body text-status-failed"><ErrorCopy error={list.error} /></p>
           <Button size="sm" onClick={() => void list.refetch()}>
             重试
           </Button>
@@ -241,6 +246,11 @@ export function RequirementsPage() {
         </div>
       ) : (
         <>
+          {board.isError ? (
+            <p className="text-aux text-status-failed">
+              <ErrorText text="子任务完成度加载失败，卡片上的进度这一轮不显示（需求本身照常可点开、可编辑）" error={board.error} />
+            </p>
+          ) : null}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {items.map((task) => (
               <RequirementCard
@@ -550,8 +560,8 @@ function RequirementFormDialog({
 }
 
 /**
- * 删除确认：`DELETE /tasks/{id}`。服务端「仍有子任务」的 409 用 `errorMessage(error)`
- * 原样内联回显（§19.15·89 沿用现有文案与链路），不吞掉、不自编。
+ * 删除确认：`DELETE /tasks/{id}`。服务端「仍有子任务」的 409 由 `<ErrorCopy>` 原样内联回显
+ * （文案仍是 `errorMessage`，另带一行「详情」折叠引擎原文；§19.15·89 沿用现有文案与链路），不吞掉、不自编。
  */
 function RequirementDeleteDialog({
   requirement,
@@ -562,14 +572,15 @@ function RequirementDeleteDialog({
   mutations: RequirementMutations;
   onClose: () => void;
 }) {
-  const [error, setError] = useState<string | null>(null);
+  /** 存原始错误（不是 `errorMessage()` 拼好的句子），就地那行才有折叠详情可给。 */
+  const [error, setError] = useState<unknown>(null);
   const confirm = async () => {
     setError(null);
     try {
       await mutations.remove.mutateAsync(requirement.id);
       onClose();
     } catch (caught) {
-      setError(errorMessage(caught));
+      setError(caught);
     }
   };
 
@@ -602,7 +613,7 @@ function RequirementDeleteDialog({
         </p>
         {error ? (
           <p className="flex items-start gap-2 rounded-card bg-status-failed-soft px-3 py-2 text-aux text-status-failed">
-            {error}
+            <ErrorCopy error={error} />
           </p>
         ) : null}
       </div>

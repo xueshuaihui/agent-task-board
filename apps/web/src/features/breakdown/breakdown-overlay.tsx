@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { ArrowLeft, CheckCircle2, Circle, Loader2, Plus, Undo2 } from 'lucide-react';
 import { BREAKDOWN_STATUS_LABEL, type BreakdownDraftEdit, type BreakdownSession } from '@/api/types';
@@ -6,7 +6,7 @@ import { api } from '@/api';
 import { navigate } from '@/app/router';
 import { useSkills } from '@/features/skills/hooks';
 import { useRequirementDrawerStore } from '@/features/requirements';
-import { Button, Card, EmptyState, IconButton, Progress, Skeleton, useToast } from '@/components/ui';
+import { Button, Card, EmptyState, ErrorCopy, IconButton, Progress, Skeleton, useToast } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { transitions } from '@/lib/motion';
 import { formatDateTime } from '@/lib/time';
@@ -65,26 +65,18 @@ export function BreakdownOverlay({ onClose }: BreakdownOverlayProps) {
   }, [currentId]);
   const drafts = detail.data?.drafts ?? [];
 
-  const body = detail.isPending ? (
-    <div className="flex flex-col gap-3 p-4">
-      <Skeleton className="h-6 w-1/2" />
-      <Skeleton className="h-24 w-full" />
-      <Skeleton className="h-24 w-full" />
-    </div>
-  ) : !session ? (
-    <EmptyState
-      title="还没有拆解会话"
-      description="Agent 调用 board.begin_breakdown 后会话会出现在这里。"
-      className="m-4"
-    />
-  ) : (
-    <SessionDetail
-      session={session}
-      detail={detail.data}
-      drafts={drafts}
-      selectedRef={selectedRef}
-      onSelectDraft={setSelectedRef}
-    />
+  const body = (
+    <BreakdownOverlayBody sessions={sessions} detail={detail} hasSession={session !== null}>
+      {session ? (
+        <SessionDetail
+          session={session}
+          detail={detail.data}
+          drafts={drafts}
+          selectedRef={selectedRef}
+          onSelectDraft={setSelectedRef}
+        />
+      ) : null}
+    </BreakdownOverlayBody>
   );
 
   return (
@@ -116,6 +108,73 @@ export function BreakdownOverlay({ onClose }: BreakdownOverlayProps) {
       <div className="atb-scroll min-h-0 flex-1 overflow-y-auto">{body}</div>
     </motion.div>
   );
+}
+
+/** 本节只吃查询结果的这几项（结构上兼容 `useQuery` 返回值，单测可直传假对象）。 */
+interface BreakdownQueryState {
+  isPending: boolean;
+  isError: boolean;
+  error?: unknown;
+}
+
+/**
+ * 会话区主体的三态闸（tier-1，2026-09-29「列表报错被渲染成空状态」）。
+ *
+ * 病灶：`sessions.data ?? []` + `detail.data?.drafts ?? []` 把 500（`skills` 缺表的
+ * SCHEMA_MISMATCH 就是实例）折成「没有会话」。这里还有第二种谎：`useBreakdownSession(null)`
+ * 是 disabled 查询、`isPending` 恒真，所以列表报错时 body 长期停在骨架——骨架同样是在说「还没好」，
+ * 而真相是「不会好了」。判据顺序因此固定为 **error → pending → 空态 → 正文**：
+ * 报错永远优先，空态只在查询确实成功且返回零条时才出现。
+ *
+ * 拆成吃假对象也能渲染的展示件：本仓 vitest 无 DOM / QueryClientProvider，
+ * 三态判据要能被 `renderToStaticMarkup` 直钉（见 __tests__/query-error-surface.test.ts）。
+ */
+export function BreakdownOverlayBody({
+  sessions,
+  detail,
+  hasSession,
+  children,
+}: {
+  sessions: BreakdownQueryState;
+  detail: BreakdownQueryState;
+  /** 列表或详情任一处能给出会话对象就算有（`session` 的取法见 BreakdownOverlay）。 */
+  hasSession: boolean;
+  children: ReactNode;
+}) {
+  if (sessions.isError) {
+    return (
+      <div className="m-4 rounded-card border border-border bg-status-failed-soft px-3 py-2.5 text-aux text-status-failed">
+        <ErrorCopy error={sessions.error} />
+      </div>
+    );
+  }
+  // 详情报错时读视图（session/drafts/progress）都不可信，正文与「本会话没有收到任何草案」都不给。
+  if (detail.isError) {
+    return (
+      <div className="m-4 rounded-card border border-border bg-status-failed-soft px-3 py-2.5 text-aux text-status-failed">
+        <ErrorCopy error={detail.error} />
+      </div>
+    );
+  }
+  if (!hasSession && !sessions.isPending) {
+    return (
+      <EmptyState
+        title="还没有拆解会话"
+        description="Agent 调用 board.begin_breakdown 后会话会出现在这里。"
+        className="m-4"
+      />
+    );
+  }
+  if (!hasSession || detail.isPending) {
+    return (
+      <div className="flex flex-col gap-3 p-4">
+        <Skeleton className="h-6 w-1/2" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+    );
+  }
+  return <>{children}</>;
 }
 
 /** 头部右侧动作区：receiving/reviewing 可取消，只有 reviewing 能确认创建（§7.7）。 */

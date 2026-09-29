@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { ApiException, type ErrorCode } from '../contract/errors';
+import { toApiExceptionFromError } from '../contract/db-errors';
 
 const HTTP_TO_CODE: Record<number, ErrorCode> = {
   400: 'VALIDATION_FAILED',
@@ -56,15 +57,15 @@ export class ApiExceptionFilter implements ExceptionFilter {
       return;
     }
 
+    // 2026-09-29「报错全部细化」：这里过去不分形状，一律 500 `INTERNAL`（界面「本地服务内部错误」），
+    // 把「数据还被引用着」「同时开了两个本地服务」「库文件损坏」「迁移没跑完缺列」这类
+    // 用户自己能修的情况压成了排障黑洞。现交 `contract/db-errors.ts` 解码（REST 与 MCP 同一份），
+    // 认不出的仍回 INTERNAL，但 `detail` 带上引擎原文一行——细化是纯增益，不硬编语义。
+    const decoded = toApiExceptionFromError(exception);
     this.logger.error(
-      `未预期异常 ${req.method} ${req.originalUrl ?? req.url}: ${(exception as Error)?.stack ?? exception}`,
+      `未预期异常 ${req.method} ${req.originalUrl ?? req.url} → ${decoded.code}: ${(exception as Error)?.stack ?? exception}`,
     );
-    this.write(
-      res,
-      500,
-      { error: { code: 'INTERNAL', message: '服务内部错误' } },
-      req,
-    );
+    this.write(res, decoded.status, decoded.toBody(), req);
   }
 
   private write(res: Response, status: number, body: unknown, req: Request): void {

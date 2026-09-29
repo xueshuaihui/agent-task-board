@@ -1,8 +1,8 @@
 import { useMemo, useRef, useState } from 'react';
 import { Plus, X } from 'lucide-react';
-import { errorMessage, qk, useApiMutation } from '@/api';
+import { qk, useApiMutation } from '@/api';
 import { navigate } from '@/app/router';
-import { Badge, Button } from '@/components/ui';
+import { Badge, Button, ErrorCopy } from '@/components/ui';
 import {
   SkillDetailDrawer,
   taskSkillsApi,
@@ -68,7 +68,7 @@ export function SkillsTab({ detail }: { detail: TaskDetailView }) {
   );
 
   if (all.isPending) return <LoadingBlock lines={4} />;
-  if (all.isError) return <InlineError text={all.error.message} />;
+  if (all.isError) return <InlineError text={<ErrorCopy error={all.error} />} />;
 
   return (
     <div className="flex flex-col gap-5">
@@ -91,7 +91,7 @@ export function SkillsTab({ detail }: { detail: TaskDetailView }) {
             ))}
           </ul>
         )}
-        {setSkills.isError ? <InlineError text={errorMessage(setSkills.error)} /> : null}
+        {setSkills.isError ? <InlineError text={<ErrorCopy error={setSkills.error} />} /> : null}
       </Section>
 
       <Section title="绑定技能">

@@ -4,7 +4,7 @@ import { useSettings, useTags } from '@/api';
 import type { TaskCard } from '@/api/types';
 import { useFilterStore } from '@/app/store/filters';
 import { cn } from '@/lib/cn';
-import { ChipGroup, Popover } from '@/components/ui';
+import { ChipGroup, ErrorText, Popover } from '@/components/ui';
 import { boardFilterCount } from '../model';
 import {
   FILTER_DIMENSIONS,
@@ -36,6 +36,10 @@ export function FilterMenu({ cards }: { cards: readonly TaskCard[] }) {
       }),
     [cards, settings.data?.task_types, tags.data?.tags],
   );
+  /* tier-2（2026-09-29「列表报错被渲染成空状态」）：两词表各自都可能 500，各说一行——
+   * `deriveFilterOptions` 与看板快照取并集，所以这里没有「没有标签」那种假话，
+   * 但候选会静默收缩成"只剩当前卡片上出现的值"，这层降级必须显形。 */
+  const vocabularyDegraded = settings.isError || tags.isError;
 
   const anchor = (
     <button
@@ -91,6 +95,17 @@ export function FilterMenu({ cards }: { cards: readonly TaskCard[] }) {
             onChange={(next) => setFilterDimension(dimension.key, next)}
           />
         ))}
+        {/* 词表降级说明（见上方 `vocabularyDegraded`）：已选值仍可见可删、五维照常可点，只补行说明。 */}
+        {vocabularyDegraded ? (
+          <div className="flex flex-col gap-1 text-status-failed">
+            {settings.isError ? (
+              <ErrorText text="类型词表加载失败，候选只剩当前看板卡片里的类型" error={settings.error} />
+            ) : null}
+            {tags.isError ? (
+              <ErrorText text="标签词表加载失败，候选只剩当前看板卡片里的标签" error={tags.error} />
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </Popover>
   );

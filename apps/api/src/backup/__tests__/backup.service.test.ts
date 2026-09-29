@@ -131,11 +131,14 @@ describe('立即备份（VACUUM INTO）', () => {
     expect(titlesIn(second.path)).toEqual(['改过了']);
   });
 
-  it('主库文件不存在时报 INTERNAL，不留下 0 字节空壳', async () => {
+  it('主库文件不存在时报 STORAGE_UNAVAILABLE（环境侧，不是内部错误），不留下 0 字节空壳', async () => {
     const missing = createBackupHarness('atb-backup-nolib-');
     rmSync(paths.dbFile(), { force: true });
     const error = await thrown(missing.backups.create());
-    expect({ code: error.code, status: error.status }).toEqual({ code: 'INTERNAL', status: 500 });
+    // 2026-09-29「报错全部细化」：过去这一枚报 INTERNAL/500，用户看到「本地服务内部错误」，
+    // 而真相是「主库不在数据目录里」——外接盘拔出、目录被移动过都会这样，503 才对得上动作。
+    expect({ code: error.code, status: error.status }).toEqual({ code: 'STORAGE_UNAVAILABLE', status: 503 });
+    expect(error.message).toContain('无法备份');
     expect(readdirSync(paths.backupsDir())).toEqual([]);
     await missing.prisma.$disconnect();
     await removeTempDir(missing.dir);
@@ -377,8 +380,12 @@ describe('恢复：吃进 tasks / runs / reviews / audit，产物文件不在范
     writeJunk(path.join(paths.backupsDir(), forged), '这不是数据库文件');
 
     const error = await thrown(h.backups.restore(forged));
-    expect({ code: error.code, status: error.status }).toEqual({ code: 'INTERNAL', status: 500 });
+    // 2026-09-29「报错全部细化」：伪造的「名字合法、内容不是数据库」文件在恢复时抛的是
+    // node:sqlite 的 errcode 26（NOTADB），过去一律洗成 INTERNAL；现在它按真相报损坏，
+    // 用户该做的是「换一份备份或去检查那个文件」，而不是「等我们修内部错误」。
+    expect({ code: error.code, status: error.status }).toEqual({ code: 'STORAGE_CORRUPT', status: 500 });
     expect(error.message).toContain('已回滚');
+    expect(error.message).toContain('损坏');
 
     // 回滚到原库：恢复前的数据仍然在
     expect(await h.prisma.task.findUnique({ where: { id: 'T-A' } })).toMatchObject({ title: '任务 A' });

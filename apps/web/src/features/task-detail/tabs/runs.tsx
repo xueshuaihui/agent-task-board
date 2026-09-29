@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Inbox, PlayCircle } from 'lucide-react';
 import type { RunStatus, TaskDetail, TaskRun } from '@/api';
-import { EmptyState, Progress, Skeleton } from '@/components/ui';
+import { EmptyState, Progress, Skeleton, ErrorCopy } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import {
   REVIEW_CONCLUSION_LABEL,
@@ -15,7 +15,7 @@ import { ArtifactList } from '../artifacts/artifact-list';
 import { ArtifactPreviewDialog } from '../artifacts/preview-dialog';
 import type { PreviewTarget } from '../types';
 import { LOG_PAGE_SIZE, useRunLogPages, useTaskRuns } from '../queries';
-import { InlineError, LoadingBlock, Mono, Section, SubLine } from '../ui-bits';
+import { InlineError, LoadingBlock, Mono, OlderPageError, Section, SubLine } from '../ui-bits';
 
 /**
  * 原型 4.5 执行标签：当前 Run + 历史 Run，产物按 Run 归组、日志按 Run 展开。
@@ -60,7 +60,7 @@ export function RunsTab({ taskId, detail, maxMb }: RunsTabProps) {
   const history = useMemo(() => items.filter((run) => run.id !== current?.id), [items, current]);
 
   if (runs.isPending) return <LoadingBlock lines={4} />;
-  if (runs.isError) return <InlineError text={runs.error.message} />;
+  if (runs.isError) return <InlineError text={<ErrorCopy error={runs.error} />} />;
   if (items.length === 0) {
     return (
       <EmptyState
@@ -267,11 +267,17 @@ function LogBlock({ taskId, run, pendingNewLines, onClearNewLines }: LogBlockPro
   const queries = useRunLogPages(taskId, run.id, pages);
 
   const lines = useMemo(
+    // 三态豁免：分页数组的折叠不摆「没有日志」——第一页失败由下面 `firstPage?.isError` 整块换错误面（tier-1），第二页起由 `failedPage` → `<OlderPageError label="日志">` 逐页说出并可单独重试
     () => queries.flatMap((query) => query.data?.items ?? []),
     [queries],
   );
   const total = queries[queries.length - 1]?.data?.total ?? run.log_count;
   const loading = queries.some((query) => query.isPending);
+  const firstPage = queries[0];
+  /* 页 ≥ 2 的失败（判据与展示在 `OlderPageError`）：那一页原先只贡献 0 行，界面上没有痕迹，
+   * 「加载更早」再点一次是 pages+1，失败那页永远补不回来。 */
+  const failedPageIndex = queries.slice(1).findIndex((query) => query.isError);
+  const failedPage = failedPageIndex >= 0 ? queries[failedPageIndex + 1] : undefined;
 
   // 内容已经追上服务端的条数，就认为「新输出」已被读到（事件只是提示，不当真相用）。
   useEffect(() => {
@@ -303,7 +309,11 @@ function LogBlock({ taskId, run, pendingNewLines, onClearNewLines }: LogBlockPro
         ) : null}
       </div>
 
-      {loading && lines.length === 0 ? (
+      {firstPage?.isError ? (
+        // 第一页就没拿到：整块换错误面（tier-1）。以前这里落到 `lines.length === 0` 分支，
+        // 500 会被念成「本次执行没有日志。」——把失败说成空，是本次要修的那一类。
+        <InlineError text={<ErrorCopy error={firstPage.error} />} />
+      ) : loading && lines.length === 0 ? (
         <Skeleton className="h-24 w-full rounded-card" />
       ) : lines.length === 0 ? (
         <p className="text-aux text-text-tertiary">
@@ -326,6 +336,8 @@ function LogBlock({ taskId, run, pendingNewLines, onClearNewLines }: LogBlockPro
           ))}
         </div>
       )}
+
+      {failedPage ? <OlderPageError label="日志" query={failedPage} /> : null}
 
       {pages < totalPages ? (
         <button

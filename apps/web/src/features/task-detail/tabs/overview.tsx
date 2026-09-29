@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Pencil } from 'lucide-react';
 import { fieldErrorsOf, useFieldDefs, useSettings, useTags } from '@/api';
 import type { FieldDef, ReviewMode, TaskDetail, TaskTab } from '@/api';
-import { Badge, Button, Field, Input, Progress, Select, TagBadge, Textarea } from '@/components/ui';
+import { Badge, Button, ErrorCopy, ErrorText, Field, Input, Progress, Select, TagBadge, Textarea } from '@/components/ui';
 import { priorityText, REVIEW_MODE_LABEL, statusLabel } from '@/lib/labels';
 import { formatDateTime } from '@/lib/time';
 import { useShellStore } from '@/app/store/shell';
@@ -75,6 +75,13 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
     return merged.map((item) => ({ value: item, label: item }));
   }, [settings.data, detail.type]);
 
+  /* 标签候选（tier-2 判定，2026-09-29「列表报错被渲染成空状态」）：`TagEditor` 的候选只是
+   * datalist 提示、输入框可自由手填，塌成 `[]` 不宣称「没有标签」——见下面 `tagCandidates`
+   * 那行的豁免理由。类型词表归另一条：`typeOptions` 塌成 `[]` 会让「类型」下拉真的空掉，
+   * 所以那一条由 `OverviewEditForm` 里的 `settings.isError` 提示行负责。 */
+  // 三态豁免：候选只作 `TagEditor` 的 datalist 提示（fields.tsx：手输回车即加，不受候选限制），且编辑态「无标签」那句说的是 `detail.tags` 自身，与这条查询无关
+  const tagCandidates = tags.data?.tags ?? [];
+
   const customRows = useMemo(() => {
     const stored = detail.custom_fields ?? {};
     const rows = defs.map((def) => ({
@@ -122,7 +129,7 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
             detail={detail}
             defs={defs}
             typeOptions={typeOptions}
-            tagCandidates={tags.data?.tags ?? []}
+            tagCandidates={tagCandidates}
             onCancel={() => {
               setEditing(false);
               patch.reset();
@@ -130,7 +137,7 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
             onSubmit={(body) => patch.mutate(body, { onSuccess: finishSave })}
             pending={patch.isPending}
             errors={patch.isError ? fieldErrorsOf(patch.error) : {}}
-            errorText={patch.isError ? patch.error.message : null}
+            error={patch.isError ? patch.error : null}
           />
         ) : (
           <KeyValues
@@ -198,7 +205,12 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
       </Section>
 
       <Section title="自定义字段">
-        {customRows.length === 0 ? (
+        {fieldDefs.isError ? (
+          // 字段定义挂了不能念成「当前类型没有适用的自定义字段」：那是把 500 说成空
+          // （2026-09-29 同类收口）。这里不顶掉整个概览，只在这个 Section 里给细化文案 + 折叠。
+          // 标签候选不归这条：`TagEditor` 是可自由输入的 datalist，没有「没有标签」这种谎可拆。
+          <InlineError text={<ErrorCopy error={fieldDefs.error} />} />
+        ) : customRows.length === 0 ? (
           <p className="text-aux text-text-tertiary">当前任务类型没有适用的自定义字段（6.9）。</p>
         ) : (
           <KeyValues rows={customRows} />
@@ -294,7 +306,8 @@ interface EditFormProps {
   onSubmit: (body: DrawerTaskPatch) => void;
   pending: boolean;
   errors: Record<string, string>;
-  errorText: string | null;
+  /** PATCH 失败原文（存对象不存句子：就地那行要走 `<ErrorCopy>` 才有折叠详情）。 */
+  error: unknown;
 }
 
 /** 受控表单 + 「只提交变化过的键」：PATCH 是增量语义，`custom_fields` 由服务端 merge（20.10）。 */
@@ -307,7 +320,7 @@ function OverviewEditForm({
   onSubmit,
   pending,
   errors,
-  errorText,
+  error,
 }: EditFormProps) {
   const [description, setDescription] = useState(detail.description ?? '');
   const [type, setType] = useState(detail.type);
@@ -387,7 +400,18 @@ function OverviewEditForm({
         <Textarea rows={4} value={description} onChange={(event) => setDescription(event.target.value)} />
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="类型" htmlFor="task-type">
+        <Field
+          label="类型"
+          htmlFor="task-type"
+          /* tier-2（2026-09-29「列表报错被渲染成空状态」）：词表 500 时 `typeOptions` 折成空数组，
+           * 原生 select 里连当前类型都没有对应项 → 控件一片空白，看着像「这任务没有可选类型」。
+           * 这里在字段下方说一行；其余字段与「保存」都不受影响（没动类型就不会发 `type` 键）。 */
+          hint={
+            settings.isError ? (
+              <ErrorText text="类型词表加载失败，本轮无法改选类型" error={settings.error} />
+            ) : undefined
+          }
+        >
           <Select id="task-type" value={type} options={typeOptions} onChange={(event) => setType(event.target.value)} />
         </Field>
         <Field label="优先级" htmlFor="task-priority">
@@ -439,7 +463,7 @@ function OverviewEditForm({
         </div>
       ) : null}
 
-      {errorText ? <InlineError text={errorText} /> : null}
+      {error ? <InlineError text={<ErrorCopy error={error} />} /> : null}
 
       <div className="flex items-center justify-end gap-2">
         <Button size="sm" onClick={onCancel} disabled={pending}>

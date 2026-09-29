@@ -10,7 +10,7 @@ import {
   ScrollText,
 } from 'lucide-react';
 import { Button, useToast } from '@/components/ui';
-import { errorMessage } from '@/api';
+import { errorDetailOf, errorMessage } from '@/api';
 import type { RunArtifact } from '@/api';
 import { cn } from '@/lib/cn';
 import { ARTIFACT_TYPE_LABEL, labelOf } from '@/lib/labels';
@@ -95,7 +95,7 @@ function ArtifactRow({ artifact, maxMb, onPreview, active }: ArtifactRowProps) {
   const run = (fn: () => Promise<void>) => {
     setBusy(true);
     void fn()
-      .catch((error: unknown) => toast.error(errorMessage(error)))
+      .catch((error: unknown) => toast.error(errorMessage(error), errorDetailOf(error)))
       .finally(() => setBusy(false));
   };
 

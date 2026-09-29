@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api, errorMessage, qk } from '@/api';
+import { api, qk } from '@/api';
 import { cn } from '@/lib/cn';
-import { Button, EmptyState, Skeleton } from '@/components/ui';
+import { Button, EmptyState, ErrorCopy, Skeleton } from '@/components/ui';
 import type { DiffFileView, DiffHunkView, DiffResultView } from '../types';
 
 /**
@@ -51,7 +51,7 @@ export function DiffViewer({ artifactId, collapseAfterLines }: DiffViewerProps) 
     return <Skeleton className="h-64 w-full rounded-card" />;
   }
   if (query.isError) {
-    return <EmptyState title="无法解析 diff" description={errorMessage(query.error)} />;
+    return <EmptyState title="无法解析 diff" description={<ErrorCopy error={query.error} className="inline-block max-w-full text-left" />} />;
   }
   if (files.length === 0) {
     return <EmptyState title="这份 diff 里没有可展示的片段" />;

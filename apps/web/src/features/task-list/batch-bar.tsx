@@ -8,6 +8,7 @@ import {
   Badge,
   Button,
   Dialog,
+  ErrorText,
   Input,
   Menu,
   MenuCaret,
@@ -297,6 +298,12 @@ function TagsDialog({
             </Button>
           </div>
           <div className="flex flex-wrap gap-1.5">
+            {/* 三态（2026-09-29「列表报错被渲染成空状态」，tier-2）：词表 500 时候选按钮整片消失，
+                与「历史标签都用上了/一个标签也没有」同形；手输标签名这条路不受影响，所以只补一行，
+                下面的「没有要新增的标签」讲的是用户自己的选择集，不用改。 */}
+            {tags.isError ? (
+              <ErrorText text="标签候选加载失败，可直接输入标签名后回车添加" error={tags.error} />
+            ) : null}
             {(tags.data?.tags ?? [])
               .filter((tag) => !add.includes(tag))
               .slice(0, 14)

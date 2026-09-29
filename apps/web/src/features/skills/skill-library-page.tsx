@@ -5,12 +5,13 @@ import {
   Button,
   CardSkeleton,
   EmptyState,
+  ErrorCopy,
   Input,
   Menu,
   Select,
   useToast,
 } from '@/components/ui';
-import { errorMessage } from '@/api';
+import { errorDetailOf, errorMessage } from '@/api';
 import { useRouteSearchParams } from '@/app/router';
 import { itemVariants, listVariants } from '@/lib/motion';
 import { blocksToMarkdown } from './markdown';
@@ -121,7 +122,7 @@ export function SkillLibraryPage() {
           content: full.content,
         }),
       )
-      .catch((error) => toast.error('复制失败', errorMessage(error)));
+      .catch((error) => toast.error(`复制失败：${errorMessage(error)}`, errorDetailOf(error)));
   };
 
   /** SKILL.md 导出：markdown.ts 的 blocksToMarkdown 直接生成下载（r2：frontmatter 必带 id；
@@ -154,7 +155,7 @@ export function SkillLibraryPage() {
         : '该技能暂无任务绑定';
     if (window.confirm(`删除技能「${skill.name}」？${suffix}。此操作不可撤销`)) {
       remove.mutate(skill.id, {
-        onError: (error) => toast.error('删除失败', errorMessage(error)),
+        onError: (error) => toast.error(`删除失败：${errorMessage(error)}`, errorDetailOf(error)),
       });
     }
   };
@@ -323,7 +324,7 @@ export function SkillLibraryPage() {
       ) : skills.isError ? (
         <EmptyState
           title="技能库加载失败"
-          description={errorMessage(skills.error)}
+          description={<ErrorCopy error={skills.error} className="inline-block max-w-full text-left" />}
           action={
             <Button size="sm" onClick={() => skills.refetch()}>
               重试
@@ -394,7 +395,7 @@ export function SkillLibraryPage() {
                   onExport={(target) => {
                     skillsApi
                       .export(target.id, target.name)
-                      .catch((error) => toast.error('导出失败', errorMessage(error)));
+                      .catch((error) => toast.error(`导出失败：${errorMessage(error)}`, errorDetailOf(error)));
                   }}
                   onExportMarkdown={exportMarkdown}
                   onCopy={copySkill}

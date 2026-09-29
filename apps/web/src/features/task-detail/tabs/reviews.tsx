@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { CheckCircle2, ClipboardList, XCircle } from 'lucide-react';
 import type { Review } from '@/api';
-import { EmptyState, Badge } from '@/components/ui';
+import { EmptyState, Badge, ErrorCopy } from '@/components/ui';
 import { reviewerSignature } from '@/features/review/queries';
 import { cn } from '@/lib/cn';
 import { REVIEW_CONCLUSION_LABEL, labelOf, statusLabel } from '@/lib/labels';
@@ -34,7 +34,7 @@ export function ReviewsTab({ taskId }: { taskId: string }) {
   const rejected = useMemo(() => items.filter((item) => item.conclusion === 'REJECT'), [items]);
 
   if (reviews.isPending) return <LoadingBlock lines={4} />;
-  if (reviews.isError) return <InlineError text={reviews.error.message} />;
+  if (reviews.isError) return <InlineError text={<ErrorCopy error={reviews.error} />} />;
 
   return (
     <div className="flex flex-col gap-5">

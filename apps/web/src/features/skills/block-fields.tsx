@@ -1,4 +1,4 @@
-import { Badge, Field, Input, Select, Textarea } from '@/components/ui';
+import { Badge, ErrorText, Field, Input, Select, Textarea } from '@/components/ui';
 import { ON_ERROR_META, PARALLEL_MERGE_META, SKILL_ORIGIN_META, VALUE_TYPE_OPTIONS } from './meta';
 import { useSkills } from './hooks';
 import { SkillPickerPopover, duplicateNameSet, skillPickerDisplayLabel } from './skill-picker';
@@ -288,6 +288,8 @@ export function BlockFields({ block, variableOptions, targetOptions, readOnly = 
  * 分类分组（组头 `分类（条数）`、'' 归「未分类」恒最后、组内名称稳定序）、重名
  * `·id后6位` 消歧与命中高亮全走组件标准，替代原「名称子串搜索 + Menu 手工分组」。
  * 保留的既有行为：技能库空/加载中（拿不到条目）退回手填 skl_xxx 的输入框；
+ * 库取不到时（报错）同样保留手填通路，但会另起一行为「技能库加载失败」补一句
+ * 可折叠的原因（见 SubskillField 内的 tier-2 注）；
  * 库外引用在触发器上回显「<id>（不在技能库）」（原面板顶部的禁用行）；
  * 面板尾部 footer 承载「清除引用」；行尾与触发器的非默认来源注记徽标
  * （官方/社区 受众词已作废，出处由 source_type 承载，默认技能无徽标）。
@@ -302,8 +304,20 @@ function SubskillField({
   const skills = useSkills();
   const items = skills.data?.items ?? [];
   if (items.length === 0) {
+    /* tier-2 候选源（2026-09-29「列表报错被渲染成空状态」）：这一片的主体是块本身，技能库
+     * 只是子技能引用的候选。`?? []` 把 GET /skills 的 500 折成空列表后，这里以前**静默**退化
+     * 成裸输入框——用户既看不见少了个选择器，也无从判断是「库里真没技能」还是「库没加载出来」。
+     * 修法：保留手填 skl_xxx 的通路（不挡保存），另起一行说清是加载失败；引擎原文仍走折叠。 */
     return (
-      <Field label="引用技能" hint="子技能的 id（如 skl_xxx），发布前请确认目标技能可用">
+      <Field
+        label="引用技能"
+        hint="子技能的 id（如 skl_xxx），发布前请确认目标技能可用"
+        error={
+          skills.isError ? (
+            <ErrorText text="技能库加载失败，暂时只能手填技能 id" error={skills.error} />
+          ) : undefined
+        }
+      >
         <Input value={block.skillRef ?? ''} placeholder="skl_xxx" onChange={(event) => onPatch({ skillRef: event.target.value })} />
       </Field>
     );

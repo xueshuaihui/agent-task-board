@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Undo2 } from 'lucide-react';
-import { api, errorMessage } from '@/api';
+import { api, errorDetailOf, errorMessage } from '@/api';
 import { useShellStore } from '@/app/store/shell';
 import { Button, useToast } from '@/components/ui';
 import { cn } from '@/lib/cn';
@@ -67,7 +67,7 @@ export function AgentUndoStack() {
       toast.success('已撤销，任务已删除');
     } catch (error) {
       // 多半是「已被领取」被 DELETE 守卫拒绝（4xx）：入口消失，与超窗同一归宿。
-      toast.error(errorMessage(error));
+      toast.error(errorMessage(error), errorDetailOf(error));
       remove(entry.taskId);
     } finally {
       busyRef.current = new Set([...busyRef.current].filter((id) => id !== entry.taskId));

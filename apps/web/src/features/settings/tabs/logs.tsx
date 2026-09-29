@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { FolderOpen } from 'lucide-react';
-import { Button, Pagination, Select, Tooltip } from '@/components/ui';
+import { Button, ErrorCopy, Pagination, Select, Skeleton, Tooltip } from '@/components/ui';
 import { useAudit } from '@/api';
 import type { LogLevel } from '@/api/types';
+import { InlineError } from '@/features/task-detail/ui-bits';
 import { AUDIT_ACTION_LABEL, labelOf } from '@/lib/labels';
 import { formatDateTime, formatRelative } from '@/lib/time';
 import {
@@ -28,6 +29,11 @@ import { auditSummary, prettyJson } from '../utils';
  *
  * 下半审计只读、时间倒序、`page_size` 固定 50、**无筛选控件**（17.2）：
  * 与任务详情抽屉的「审计」Tab 是同一份读路径（`GET /audit`），差别只是这里不传 `target_id`。
+ *
+ * 2026-09-29「列表三态必须可辨」：这一页原先只有**写**失败会露头（`useSettingsWriter` 的
+ * mutation 错误），两处**读**失败都是隐身的——`GET /settings` 挂了上半就退回默认值，
+ * `GET /audit` 挂了下半直接显示「还没有审计记录」+「共 0 条」。审计是这个 Tab 的主数据源，
+ * 所以它现在有三态：骨架 / 错误面（替掉空态与计数）/ 真的零条才是空态。
  */
 
 const LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
@@ -39,7 +45,7 @@ const LOG_FILE_MAX_MB = 20;
 const RETENTION_TIERS = [3, 7, 14, 30, 60, 90] as const;
 
 export function LogsTab() {
-  const { settings, set, errorText } = useSettingsWriter();
+  const { settings, set, error, loadError } = useSettingsWriter();
   const { info } = useSystemInfo();
   const openDir = useOpenDir();
 
@@ -48,6 +54,10 @@ export function LogsTab() {
   return (
     <div className="flex flex-col gap-4">
       <TabHeader title="日志与审计" />
+
+      {/* 读失败要写在控件**之上**：下面那两个下拉此刻显示的是代码里的默认值（info / 14 天），
+          不是库里的值——先说明这一点，再让人去改（2026-09-29「列表三态必须可辨」）。 */}
+      {loadError ? <InlineError text={<ErrorCopy error={loadError} />} className="mb-0" /> : null}
 
       <SettingSection title="运行日志">
         <SettingRow
@@ -101,7 +111,7 @@ export function LogsTab() {
         </SettingRow>
       </SettingSection>
 
-      {errorText ? <FormError>{errorText}</FormError> : null}
+      {error ? <FormError><ErrorCopy error={error} /></FormError> : null}
 
       <SectionDivider className="my-0" />
 
@@ -123,7 +133,15 @@ function AuditBlock() {
     <SettingSection
       bare
       title="操作审计"
-      meta={audit.isFetching ? '加载中…' : `共 ${total} 条 · 每页 ${pageSize} 条`}
+      // 读失败时这一位宁可不写：`共 0 条` 把「没读到」报成了「一条都没有」
+      //（2026-09-29「列表三态必须可辨」；错误面就摆在下面的表体里）。
+      meta={
+        audit.isError
+          ? undefined
+          : audit.isFetching
+            ? '加载中…'
+            : `共 ${total} 条 · 每页 ${pageSize} 条`
+      }
       description="全量写入、只读列表，阶段一无筛选控件（17.2）。详情列是 before → after 的压缩摘要，展开才给两份 JSON 原文。"
     >
       <SettingsTable
@@ -161,9 +179,16 @@ function AuditBlock() {
           </details>,
         ]}
         empty={
-          <p className="text-aux text-text-secondary">
-            还没有审计记录。任务、Run、审核、Token、字段与模板的每次写入都会留痕（9.1）。
-          </p>
+          audit.isError ? (
+            // 主面：`GET /audit` 失败（例如 `audit_logs` 表缺失的 500）用错误面替掉空态。
+            <InlineError text={<ErrorCopy error={audit.error} />} />
+          ) : audit.isPending ? (
+            <Skeleton lines={4} />
+          ) : (
+            <p className="text-aux text-text-secondary">
+              还没有审计记录。任务、Run、审核、Token、字段与模板的每次写入都会留痕（9.1）。
+            </p>
+          )
         }
       />
       {total > pageSize ? (

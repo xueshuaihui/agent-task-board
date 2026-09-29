@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { Button, EmptyState } from '@/components/ui';
+import { Button, EmptyState, ErrorCopy } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { AUDIT_ACTION_LABEL, AUTHOR_TYPE_LABEL, labelOf } from '@/lib/labels';
 import { formatDateTime, parseIso } from '@/lib/time';
 import { AUDIT_PAGE_SIZE, useTaskAuditPages } from '../queries';
 import type { AuditEntryView } from '../types';
-import { InlineError, LoadingBlock, Mono, Section } from '../ui-bits';
+import { InlineError, LoadingBlock, Mono, OlderPageError, Section } from '../ui-bits';
 
 /**
  * 原型 4.10 审计标签：与设置页「日志与审计」下半区（7.7）同构，只带 `target_id`。
@@ -41,9 +41,12 @@ export function AuditTab({ taskId }: { taskId: string }) {
   }, [queries, first]);
 
   const loaded = queries.reduce((sum, query) => sum + (query.data?.items.length ?? 0), 0);
+  /* 页 ≥ 2 的失败（判据与展示都在 `OlderPageError`）：第一页失败已在上面整块换错误面。 */
+  const failedPageIndex = queries.slice(1).findIndex((query) => query.isError);
+  const failedPage = failedPageIndex >= 0 ? queries[failedPageIndex + 1] : undefined;
 
   if (first?.isPending) return <LoadingBlock lines={4} />;
-  if (first?.isError) return <InlineError text={first.error.message} />;
+  if (first?.isError) return <InlineError text={<ErrorCopy error={first.error} />} />;
 
   return (
     <Section title="操作记录" meta={`共 ${total} 条`}>
@@ -56,6 +59,8 @@ export function AuditTab({ taskId }: { taskId: string }) {
           ))}
         </ul>
       )}
+
+      {failedPage ? <OlderPageError label="审计记录" query={failedPage} /> : null}
 
       {loaded < total ? (
         <div className="flex items-center gap-2">

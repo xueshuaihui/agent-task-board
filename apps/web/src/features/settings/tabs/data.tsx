@@ -4,9 +4,10 @@ import { desktop } from '@/app/desktop';
 import { navigate } from '@/app/router';
 import { taskListSearch, useFilterStore, activeFilterCount, toListQuery } from '@/app/store/filters';
 import type { FilterState } from '@/app/store/filters';
-import { Button, Checkbox, Input, RadioGroup, Textarea, useToast } from '@/components/ui';
+import { Button, Checkbox, Input, RadioGroup, Textarea, useToast, ErrorCopy } from '@/components/ui';
+import { InlineError } from '@/features/task-detail/ui-bits';
 import type { ExportInput, ImportStrategy, TaskListQuery } from '@/api/types';
-import { api, errorMessage, useApiMutation } from '@/api';
+import { api, errorDetailOf, errorMessage, useApiMutation } from '@/api';
 import { formatBytes } from '@/lib/time';
 import { SHOW_CSV_EXPORT } from '@/lib/phase';
 import { ConfirmDialog } from '../components/confirm-dialog';
@@ -28,6 +29,10 @@ import { parseTaskIds } from '../utils';
  *   所以 `SHOW_CSV_EXPORT` 为假时这一行整体不渲染，只在只读说明里交代「仅 JSON」。
  * - **导入是四步**：选文件 → 预览（`dry_run=true`）→ 冲突处理（有冲突必选策略）→ 确认。
  *   一步直传会跳过 6.12.2 的强制选择，也没机会给出「导入前自动备份」的路径。
+ *
+ * 2026-09-29「列表三态必须可辨」：本页唯一的一份读查询是「归档」那一行的
+ * `auto_archive_days`（`GET /settings`）。读失败时它退回代码里的 30，看起来就像用户存的值，
+ * 而页底那条 `FormError` 只管写失败——所以读失败单独摆在归档分区之上。
  */
 
 const STRATEGY_LABEL: Record<ImportStrategy, string> = {
@@ -43,7 +48,7 @@ const STRATEGY_HINT: Record<ImportStrategy, string> = {
 };
 
 export function DataTab() {
-  const { settings, set, errorText: settingError } = useSettingsWriter();
+  const { settings, set, error: settingError, loadError } = useSettingsWriter();
   return (
     <div className="flex flex-col gap-4">
       <TabHeader
@@ -53,6 +58,9 @@ export function DataTab() {
 
       <ExportBlock />
       <ImportBlock />
+
+      {/* 读失败摆在归档分区之上：下面那个 30 是代码里的兜底值，不是库里存的值。 */}
+      {loadError ? <InlineError text={<ErrorCopy error={loadError} />} /> : null}
 
       <SettingSection title="归档">
         <SettingRow
@@ -90,7 +98,7 @@ export function DataTab() {
         </SettingRow>
       </SettingSection>
 
-      {settingError ? <FormError>{settingError}</FormError> : null}
+      {settingError ? <FormError><ErrorCopy error={settingError} /></FormError> : null}
     </div>
   );
 }
@@ -187,7 +195,7 @@ function ExportBlock() {
         >
           导出
         </Button>
-        {exportData.error ? <FormError>{errorMessage(exportData.error)}</FormError> : null}
+        {exportData.error ? <FormError><ErrorCopy error={exportData.error} /></FormError> : null}
       </SettingRow>
     </SettingSection>
   );
@@ -273,7 +281,7 @@ function ImportBlock() {
       { file, strategy },
       {
         onSuccess: () => setStep('done'),
-        onError: (error) => toast.error(errorMessage(error)),
+        onError: (error) => toast.error(errorMessage(error), errorDetailOf(error)),
       },
     );
   };
@@ -301,7 +309,7 @@ function ImportBlock() {
         </div>
       </SettingRow>
 
-      {preview.error ? <FormError>{errorMessage(preview.error)}</FormError> : null}
+      {preview.error ? <FormError><ErrorCopy error={preview.error} /></FormError> : null}
 
       {step !== 'pick' && previewResult ? (
         <SettingRow label="预览" width="fluid">
@@ -371,7 +379,7 @@ function ImportBlock() {
         </SettingRow>
       ) : null}
 
-      {apply.error ? <FormError>{errorMessage(apply.error)}</FormError> : null}
+      {apply.error ? <FormError><ErrorCopy error={apply.error} /></FormError> : null}
 
       {result && step === 'done' ? <ImportResultView result={result} /> : null}
 

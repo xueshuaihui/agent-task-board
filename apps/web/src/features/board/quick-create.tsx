@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { Plus, X } from 'lucide-react';
 import type { TaskCreateInput, TaskStatus, TemplatePreset } from '@/api/types';
-import { errorMessage, fieldErrorsOf, isApiError, useFieldDefs, useSettings } from '@/api';
+import { errorDetailOf, errorMessage, fieldErrorsOf, isApiError, useFieldDefs, useSettings } from '@/api';
 import {
   requirementCreateBody,
   useRequirementOptions,
@@ -21,7 +21,7 @@ import { useFilterStore } from '@/app/store/filters';
 import { priorityText, STATUS_LABEL } from '@/lib/labels';
 import { clearFieldError } from '@/lib/forms';
 import { useToast } from '@/components/ui';
-import { Button, Dialog, Field, Input, Select, Textarea } from '@/components/ui';
+import { Button, Dialog, ErrorText, Field, Input, Select, Textarea } from '@/components/ui';
 import type { BoardMutations } from './mutations';
 import { cardDefs, CustomFieldInputs, requiredDefs, toSubmitValues, type CustomValues } from './custom-fields';
 
@@ -135,6 +135,35 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
     [requirementOptions.data, requirementId],
   );
 
+  // tier-2（2026-09-29「列表报错被渲染成空状态」）：本弹窗的三个候选源都可能 500，三个都不许
+  // 伪装成「你没有 X」——需求下拉会塌成只剩占位「未分配需求」、技能触发器写「没有可添加的技能」、
+  // 自定义字段整段消失。文案挂到各自字段的小字位（`Field` 的 `error` 优先于 `hint`，同一行不占两行），
+  // 「创建」这条主动作照常可点，不被候选源卡死。
+  const requirementNotice: ReactNode = requirementOptions.isError ? (
+    <ErrorText text="需求候选加载失败，本轮先不分配（建完可在详情「概览」改归属）" error={requirementOptions.error} />
+  ) : requirementOptions.groupsError ? (
+    // 归档名单取不到时 `buildRequirementOptions` 走「未就绪全量放行」，即静默放弃归档剔除；
+    // 候选看着正常，撞到才会被服务端 409——这条降级必须说出来。
+    // 措辞受 r6（§19.15·87）约束：Group 概念在 web 整体下线，本文件有零「Group 中文词」源码闸。
+    <ErrorText
+      text="已归档需求名单加载失败，候选里可能混入已归档需求（选中会被服务端拒绝）"
+      error={requirementOptions.groupsError}
+    />
+  ) : null;
+  const skillNotice: ReactNode = skills.isError ? (
+    <ErrorText text="技能库加载失败，本轮不能创建时绑定（建完可在详情「技能」Tab 增删）" error={skills.error} />
+  ) : null;
+  const fieldDefsNotice: ReactNode = fieldDefs.isError ? (
+    <ErrorText
+      text="自定义字段定义加载失败，本轮没有必填字段可填；若创建被 422 拒绝，请刷新后重试"
+      error={fieldDefs.error}
+    />
+  ) : null;
+  // 类型词表也来自设置：取不到时下拉会静默只剩默认值（`?? ['需求']` 兜的那一项）。
+  const typeNotice: ReactNode = settings.isError ? (
+    <ErrorText text="任务类型词表加载失败，本轮只能按默认类型提交" error={settings.error} />
+  ) : null;
+
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
     setErrors({});
@@ -231,7 +260,7 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
         </Field>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="类型" required error={errors.type}>
+          <Field label="类型" required error={errors.type ?? typeNotice}>
             <Select
               value={type}
               invalid={Boolean(errors.type)}
@@ -251,7 +280,7 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
           </Field>
         </div>
 
-        <Field label="所属需求" hint="可选；选中后自动跟随该需求的归属（§19.14）">
+        <Field label="所属需求" hint="可选；选中后自动跟随该需求的归属（§19.14）" error={requirementNotice}>
           <Select
             value={requirementId}
             placeholder="未分配需求"
@@ -289,7 +318,7 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
         <Field
           label="技能"
           hint="可选；随任务下发给领取的 Agent（10.3），建完仍可在详情「技能」Tab 增删"
-          error={errors.skills}
+          error={errors.skills ?? skillNotice}
         >
           <div className="flex flex-wrap items-center gap-1.5">
             {skillIds.map((id) => {
@@ -323,8 +352,16 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
                     : [...prev, skill.id],
                 )
               }
-              disabled={skills.isPending || skillCandidates.length === 0}
-              emptyText={skills.isPending ? '技能加载中…' : '没有可添加的技能'}
+              // tier-2：报错时不能写「没有可添加的技能」（那是"技能库是空的"这句假话），
+              // 也不能让触发器一直 disabled——disabled 就开不了面板，这行文案永远看不见。
+              disabled={skills.isPending || (skillCandidates.length === 0 && !skills.isError)}
+              emptyText={
+                skills.isPending
+                  ? '技能加载中…'
+                  : skills.isError
+                    ? '技能加载失败，可稍后重开面板或建完再绑'
+                    : '没有可添加的技能'
+              }
               placeholder="搜索技能（名称 / 分类 / 类型 / 标签 / ID，草稿与已发布）"
               ariaLabel="创建时绑定技能"
               triggerContent={() => (
@@ -361,6 +398,10 @@ function QuickCreateForm({ state, open, mutations, onClose }: QuickCreateFormPro
             />
           </div>
         ) : null}
+
+        {/* tier-2：字段定义 500 时段落会整块消失（看着像"没有必填字段"，实际是候选源挂了，
+            真提交还可能被服务端 422 拒），这里补一行说明并把原因折出来；成功且确实没定义时不出现。 */}
+        {fieldDefsNotice ? <p className="text-aux">{fieldDefsNotice}</p> : null}
 
         {state.target === 'READY' ? (
           <p className="text-aux text-text-tertiary">
@@ -408,8 +449,10 @@ function handleFailure(
   const issues = fieldErrorsOf(error);
   if (isApiError(error) && error.code === 'VALIDATION_FAILED') {
     setErrors(issues);
-    toast.warning(error.message, Object.values(issues).slice(0, 3).join('；'));
+    // 422 走「逐字段内联 + 一条警告」：主句仍取 `errorMessage`（服务端 message 优先，缺了才回码表），
+    // 副行给前三条字段问题——这条没有引擎原文可折叠，`context.detail` 是空的。
+    toast.warning(errorMessage(error), Object.values(issues).slice(0, 3).join('；'));
     return;
   }
-  toast.error(errorMessage(error));
+  toast.error(errorMessage(error), errorDetailOf(error));
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { FolderOpen, HardDriveDownload, History } from 'lucide-react';
-import { Button, Progress, Tooltip } from '@/components/ui';
-import { errorMessage } from '@/api';
+import { Button, Progress, Skeleton, Tooltip, ErrorCopy } from '@/components/ui';
+import { InlineError } from '@/features/task-detail/ui-bits';
 import { COPY } from '@/lib/copy';
 import { SHOW_AUTO_BACKUP_TOGGLE } from '@/lib/phase';
 import { formatBytes, formatDateTime } from '@/lib/time';
@@ -28,12 +28,18 @@ import { isBackupFileName } from '../utils';
  *
  * 列表**没有「来源」列**——13 章的备份接口只回文件名/大小/时间，磁盘扫描也拿不到更细的信息。
  * 「较早」是纯提示：非最近一份照样可恢复（用户可能就是要把某个时间点倒回去）。
+ *
+ * 2026-09-29「列表三态必须可辨」：`GET /settings/backups` 是磁盘扫描，会失败（读目录权限、
+ * `STORAGE_READONLY`），但 `useBackupList` 原先只回 `{items,totalSize,dir,isLoading}`、
+ * 结构上就带不出 `error`，于是这一页把失败渲染成「共 0 B」+「还没有备份。」。
+ * 现在钩子多回一位 `error`，页面上三态分开：骨架 / 错误面（连带撤掉总占用与条数这两个
+ * 会被读成 0 的数字）/ 真的零份才是空态。
  */
 
 const COLS = 'grid-cols-[minmax(0,1fr)_88px_148px_72px_88px]';
 
 export function BackupsTab() {
-  const { items, totalSize, dir, isLoading } = useBackupList();
+  const { items, totalSize, dir, isLoading, error: listError } = useBackupList();
   const { info } = useSystemInfo();
   const openDir = useOpenDir();
   const create = useCreateBackup();
@@ -59,7 +65,8 @@ export function BackupsTab() {
     <div className="flex flex-col gap-4">
       <TabHeader
         title="备份"
-        meta={isLoading ? undefined : `共 ${formatBytes(totalSize)}`}
+        // 读失败/未读到时不给 `共 0 B`：那会被读成「磁盘上真的没有东西」（2026-09-29「列表三态必须可辨」）。
+        meta={isLoading || listError ? undefined : `共 ${formatBytes(totalSize)}`}
         description="备份是整库快照（`VACUUM INTO`，只读一致性、不停写）；产物文件不在备份范围内（9.3）。"
       />
 
@@ -88,9 +95,11 @@ export function BackupsTab() {
           label="立即备份"
           width="fluid"
           hint={
-            newest
-              ? `上次备份：${backupTime(newest.created_at)} · ${formatBytes(newest.size_bytes)}`
-              : '还没有备份。'
+            listError
+              ? '备份列表没读到，无法确认上一次备份的时间与大小（下面的按钮不受影响，仍可手动备份）。'
+              : newest
+                ? `上次备份：${backupTime(newest.created_at)} · ${formatBytes(newest.size_bytes)}`
+                : '还没有备份。'
           }
         >
           <div className="flex h-8 items-center">
@@ -114,12 +123,13 @@ export function BackupsTab() {
         )}
       </SettingSection>
 
-      {create.error ? <FormError>{errorMessage(create.error)}</FormError> : null}
+      {create.error ? <FormError><ErrorCopy error={create.error} /></FormError> : null}
       {result ? <RestoreResultLine result={result} /> : null}
 
       <SettingSection
         bare
-        title={`备份列表（${items.length}）`}
+        // 条数只在真读到结果时给：`备份列表（0）` 与「还没有备份」是同一句谎话。
+        title={listError ? '备份列表' : `备份列表（${items.length}）`}
         meta="阶段一不自动清理旧备份"
       >
         <SettingsTable
@@ -171,15 +181,22 @@ export function BackupsTab() {
             ];
           }}
           empty={
-            <div className="flex items-start gap-2 text-aux text-text-secondary">
-              <History className="mt-0.5 size-4 shrink-0 text-text-tertiary" />
-              <span>{COPY.emptyBackup}</span>
-            </div>
+            listError ? (
+              // 主面：错误面占在列表该出现的地方（`useBackupList` 现在把 `query.error` 带得出来了）。
+              <InlineError text={<ErrorCopy error={listError} />} />
+            ) : isLoading ? (
+              <Skeleton lines={3} />
+            ) : (
+              <div className="flex items-start gap-2 text-aux text-text-secondary">
+                <History className="mt-0.5 size-4 shrink-0 text-text-tertiary" />
+                <span>{COPY.emptyBackup}</span>
+              </div>
+            )
           }
         />
       </SettingSection>
 
-      {restore.error ? <FormError>{errorMessage(restore.error)}</FormError> : null}
+      {restore.error ? <FormError><ErrorCopy error={restore.error} /></FormError> : null}
 
       <ConfirmDialog
         open={target !== null}
