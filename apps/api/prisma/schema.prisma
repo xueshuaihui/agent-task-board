@@ -345,7 +345,10 @@ model SkillVersion {
 
 // v0.0.4 W7 需求拆解（§7.6/§7.7，迁移 0012）。三表逐条照搬 §7.6 DDL；
 // status 取值全集见 §7.7（CHECK 只在迁移 SQL 里，本文件照旧只做客户端映射）。
-// group_id / parent_task_id 是弱引用（§7.6 无级联语义），不建 Prisma 关系字段。
+// group_id / parent_task_id 是**弱引用**（溯源指针，不是归属）：不建 Prisma 关系字段，
+// DDL 侧自迁移 0022 起带 `ON DELETE SET NULL`——删需求/删分组只把指针归空，拆解会话（历史页的
+// 账本）不跟着销毁。0012 原本写成裸 REFERENCES（= NO ACTION，硬约束），正是「删拆解产出的需求卡片
+// 报 500 本地服务内部错误」的根因；读面 `parent_task_id: string | null` 从未确认会话起就是 NULL 一等取值。
 model BreakdownSession {
   id                String  @id
   requirementText   String  @map("requirement_text")
