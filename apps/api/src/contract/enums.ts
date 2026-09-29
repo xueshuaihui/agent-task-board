@@ -71,7 +71,13 @@ export type ReviewerType = (typeof REVIEWER_TYPES)[number];
 
 export const RETURN_TARGETS = ['BACKLOG', 'READY'] as const;
 
-export const DEP_TYPES = ['blocks', 'relates'] as const;
+/**
+ * 依赖边的种类（词表权威在迁移的列级 CHECK：0001 建表钉 blocks/relates，**0021 扩出 review**）。
+ * `review` 是审核批次任务的**纯标记边**（自动审核器草案 §3.2）：方向固定 `批次 → 被审对象`
+ * （task_id=批次、depends_on=对象），N 条边即「审 N 支」；它**不参与认领过滤、不参与环检测**
+ * （与 relates 同级的处置）。反查「这支被哪支活跃批次覆盖」= `depends_on=? AND type='review'`。
+ */
+export const DEP_TYPES = ['blocks', 'relates', 'review'] as const;
 export type DependencyType = (typeof DEP_TYPES)[number];
 
 export const AUTHOR_TYPES = ['user', 'agent', 'system'] as const;
@@ -223,7 +229,18 @@ export const BREAKDOWN_STATUS_LABEL: Record<BreakdownSessionStatus, string> = {
   interrupted: '已中断',
 };
 
-export const DEFAULT_TASK_TYPES = ['需求', '缺陷', '子任务', '巡检', '重构'] as const;
+/**
+ * 任务类型缺省词表（设置项 task_types 的默认值，20 章全量表）。
+ * 自动审核器草案 §3.1 追加第六词 `审核`，但它**是服务端保留类型**：
+ * - 只有服务端建批路径造得出的批次任务（`tasks.review_batch=1`）用它；
+ * - 四个建单面（REST 人建 / 看板快捷新建 / 拆解确认 / MCP `board.create_task` 与
+ *   `create_tasks_batch`）一律拒绝用户手建该类型 → `422 TASK_TYPE_RESERVED`（N21），
+ *   `get_vocabulary` 的 `task_types` 对 Agent 面也不含它——**这两道闸与词表过滤在 A4 片落地**，
+ *   本片只落词表默认值（§7 第 4 条）；
+ * - **行为判据是 `tasks.review_batch`，不是这个字符串**：用户可在设置里改名或删除该词，
+ *   回路不得因此被打断（§3.1）。
+ */
+export const DEFAULT_TASK_TYPES = ['需求', '缺陷', '子任务', '巡检', '重构', '审核'] as const;
 
 /**
  * v0.0.4 W8 §8.2 会话创建确认模式三值（词表唯一来源）：

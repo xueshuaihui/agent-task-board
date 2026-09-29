@@ -12,6 +12,7 @@ import {
   TAGS_MAX_PER_TASK,
   TRIGGER_TYPES,
   isKnownEnum,
+  type DependencyType,
   type ReviewerType,
   type TaskStatus,
 } from '../contract/enums';
@@ -717,7 +718,8 @@ export class TasksService {
   async addDependency(
     id: string,
     dependsOn: string,
-    type: 'blocks' | 'relates',
+    // 0021 将 DDL 的 type CHECK 扩为 blocks/relates/review，签名随 DEP_TYPES 取宽（不再写字面联合）。
+    type: DependencyType,
   ): Promise<TaskDetailDto> {
     await this.requireTask(id);
     if (id === dependsOn) {
@@ -769,7 +771,8 @@ export class TasksService {
     tx: Prisma.TransactionClient,
     taskId: string,
     dependsOn: string,
-    type: 'blocks' | 'relates',
+    // 同上：0021 起词表含 review（纯标记边，下面的环检测分支只认 blocks）。
+    type: DependencyType,
   ): Promise<void> {
     const existing = await tx.taskDependency.findUnique({
       where: { taskId_dependsOn: { taskId, dependsOn } },

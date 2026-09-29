@@ -89,6 +89,13 @@ model Task {
   // REVIEW 列内的换轨位（0020 加列）：auto=等审核器 / human=人工待审（含「转人工」升级位）。
   // 只在 REVIEW 状态有意义，其余状态是遗留值；读面恒返回。换轨触发点（ESCALATE/转人工）在 A2。
   reviewTrack      String @default("human") @map("review_track")
+  // 审核批次任务标记（0021 加列，自动审核器草案 §3.1）：1 = 审核批次任务，0 = 普通任务。
+  // **行为判据一律用这一列，不用 type**：词表里的「审核」用户可在设置页改名或删除
+  // （settings.ts 的 task_types），删掉那个词不得打断已在跑的回路（§3.1）。
+  // 写面：只有服务端建批路径能写 1（§4.3 自动挂批 / §5.6 打包送审）——不进 update_task、
+  // 不进 REST PATCH 的可写键（同 0020 对 review_mode 的处理），四个建单面建不出它（N11/N21）。
+  // DDL 不带 CHECK：0/1 由代码保证，与既有 pinned INTEGER NOT NULL DEFAULT 0 同法（§7.2）。
+  reviewBatch      Int    @default(0) @map("review_batch")
   currentRunId         String? @map("current_run_id")
   claimedAt            String? @map("claimed_at")
   runCount             Int     @default(0) @map("run_count")
@@ -108,6 +115,11 @@ model Task {
   @@index([status], map: "idx_tasks_status")
   @@index([status, pinned, priority, createdAt], map: "idx_tasks_ready")
   @@index([archivedAt], map: "idx_tasks_archived")
+  // 0021：批次分桶两条——§4.3 找可复用批次/§4.7 收工判定按 status 扫批次，
+  // 第二条覆盖归档态（N7 复用键排除 archived_at IS NOT NULL、§5.9「隐藏审核批次」筛选维度同形）。
+  // map: 必须写 DDL 里的真实索引名，否则 Prisma 生成的名字与手写迁移不一致。
+  @@index([status, reviewBatch], map: "idx_tasks_review_batch_status")
+  @@index([archivedAt, reviewBatch], map: "idx_tasks_review_batch_archived")
   @@map("tasks")
 }
 
@@ -115,6 +127,10 @@ model TaskDependency {
   id        String @id
   taskId    String @map("task_id")
   dependsOn String @map("depends_on")
+  // 边的种类。DDL 的 CHECK 词表自迁移 0021 起为 blocks/relates/review（0001 只有前两值）。
+  // `review` 是审核批次任务的**纯标记边**（草案 §3.2）：不参与认领的前置过滤、不参与环检测
+  // （与 relates 同级的处置），方向固定为 `批次 → 被审对象`（task_id=批次、depends_on=对象），
+  // N 条边即「这支批次审 N 个对象」；反查「被哪支活跃批次覆盖」走 idx_deps_depends_on。
   type      String @default("blocks")
   createdAt String @default(dbgenerated("(datetime('now'))")) @map("created_at")
   task      Task   @relation("Dependents", fields: [taskId], references: [id], onDelete: Cascade)
@@ -213,10 +229,18 @@ model Review {
   // reviewer_name 可空（人侧现在不署名，agent 侧记 Token 名）。存量行回填 user 由迁移默认值保证。
   reviewerType String  @default("user") @map("reviewer_type")
   reviewerName String? @map("reviewer_name")
+  // 批次归属（0021 加列，草案 §3.3 N20）——**别与 runId 混**：
+  // runId（`reviews.run_id`）= 被审的那次 Run（被审对象的 current_run_id 那条，0001:130）；
+  // reviewerRunId = **给出这条结论的审核方 Run**（审核批次任务的那次 Run，其 task_runs.task_id 就是批次），
+  // 人审为 NULL。松散引用、不建 relation 也不建外键（与同模型 runId 的声明形状一致，
+  // 删批次不得连带删掉它给过的结论）。§5.7 按它 JOIN task_runs 做逐次执行汇总、
+  // §5.4 按它反查批次短号；轮次预算不用它（C2：按 task_id + reviewer_type='agent' 计数）。
+  reviewerRunId String? @map("reviewer_run_id")
   createdAt   String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
   task        Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([taskId, createdAt], map: "idx_reviews_task")
+  @@index([reviewerRunId], map: "idx_reviews_reviewer_run")
   @@map("reviews")
 }
 

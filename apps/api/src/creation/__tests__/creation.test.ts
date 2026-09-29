@@ -1,13 +1,15 @@
-import { cpSync, mkdirSync, mkdtempSync, readdirSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { RequestAuth } from '../../auth/auth.scope';
-import { applyMigrations, migrationsDir } from '../../infra/bootstrap';
+import { applyMigrations, collectMigrations, migrationsDir } from '../../infra/bootstrap';
 import { callAgentTool } from '../../mcp/mcp.server';
 import { createAgentHarness, type AgentHarness } from '../../agent/__tests__/temp-db';
 import { removeTempDirSync } from '../../__tests__/helpers/temp-dir';
+import { DEFAULT_TASK_TYPES } from '../../contract/enums';
+import { decodeSetting } from '../../contract/settings';
 import { skillCreateSchema, DEFAULT_SKILL_VERSION } from '../../skills/skills.dto';
 import { DEFAULT_SKILL_SEEDS, ensureDefaultSkills } from '../../skills/default-skills';
 import type { ArtifactsService } from '../../artifacts/artifacts.service';
@@ -81,10 +83,20 @@ afterAll(async () => {
   await h?.dispose();
 });
 
-// ---------------------------------------------------------------- 1. 迁移 0013 演练
+// ---------------------------------------------------------------- 1. 迁移演练
+// 本 describe 是「迁移演练」的落点：第一条用例从水位 0012 一路增量到迁移目录的当前顶
+// （0013 起每一棒，含 0021 的 ①~⑨ 与 0022 的拆解除弱引用），第二条专打 0021 第 4 段
+// （fresh 全量到顶 + 水位 0020 的副本库只重放 20 之上、task_types 生效行的 A/B/C 三种行
+// 与三道守卫），第三条验列语义。
+/**
+ * 迁移目录现取的最高编号。演练断言一律按这个顶来判，不写死某一棒的编号——
+ * 写死的代价是「下一棒加迁移，本棒的红就记在他头上」（0022 拆解除弱引用时踩中两次）。
+ */
+const migrationTop = (): number =>
+  Math.max(...collectMigrations().map((migration) => migration.order));
 
-describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0020）', () => {
-  it('水位 0012 的库增量应用 0013~0020：只重放这八棒，新表与 tasks 来源列就位', () => {
+describe('迁移演练（/tmp 临时库，当前水位 0012/0020 → 目录顶）', () => {
+  it('水位 0012 的库增量应用 0013~目录顶：只重放 12 之上的每一棒，新表与 tasks 来源列就位', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'atb-w8-mig-'));
     const previous = { data: process.env.ATB_DATA_DIR, mig: process.env.ATB_MIGRATIONS_DIR };
     try {
@@ -141,21 +153,50 @@ describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0020）', 
            VALUES ('r_legacy', 't_legacy', 'APPROVE', 's', 'r', 'd')`,
         )
         .run();
+      // 0021 演练数据：水位 0012 时先造两条既有依赖边（blocks 与显式 relates）——
+      // 本迁移整表重建 task_dependencies，这两行必须零丢失、列值原样、两条 ON DELETE CASCADE
+      // 与两条索引都还在（0014 丢索引的教训面）。第三值 review 在本棒之后才可写。
+      staging.prepare(`INSERT INTO tasks (id, title) VALUES ('t_legacy2', '存量任务二')`).run();
+      staging
+        .prepare(`INSERT INTO task_dependencies (id, task_id, depends_on) VALUES ('d_blocks', 't_legacy', 't_legacy2')`)
+        .run();
+      staging
+        .prepare(`INSERT INTO task_dependencies (id, task_id, depends_on, type) VALUES ('d_relates', 't_legacy2', 't_legacy', 'relates')`)
+        .run();
+      // 0021 第 4 段演练数据（A 行）：先确认 0001:203 种下的确实是那五词，再把它的 updated_at
+      // 钉成哨兵值——本段只该改 value，不写 updated_at（schema 扩容不是用户编辑），⑨ 据此断言哨兵没动。
+      expect(staging.prepare(`SELECT value FROM settings WHERE key = 'task_types'`).get()).toEqual({
+        value: '["需求","缺陷","子任务","巡检","重构"]',
+      });
+      staging
+        .prepare(`UPDATE settings SET updated_at = '2020-01-01 00:00:00' WHERE key = 'task_types'`)
+        .run();
       staging.close();
 
-      // 2) 切回全量迁移目录：应只增量应用 0013/0014（W8-a3 追加通知 kind 词表）、
+      // 2) 切回全量迁移目录：应只增量应用 12 之上的每一棒——
+      //    0013/0014（W8-a3 追加通知 kind 词表）、
       //    0015（skills.category 收口，加列不重建）、0016（tags 存量洗数，纯洗数无 DDL）、
       //    0017（词表删「开学季」12→11，重建 skills 收敛 CHECK）、
       //    0018（0925 树化 11→16 叶子，先直映射「质量保障」再重建收敛 CHECK）、
-      //    0019（内置 35 行逐 id 回填叶子终值）
-      //    与 0020（tasks 审核方式两列、reviews 审核人两列、notifications kind 词表追加两条）。
+      //    0019（内置 35 行逐 id 回填叶子终值）、
+      //    0020（tasks 审核方式两列、reviews 审核人两列、notifications kind 词表追加两条）
+      //    与 0021（task_dependencies 整表重建把 type CHECK 扩出第三种边 review、
+      //    tasks 加 review_batch 批次标记列 + 两条分桶索引、reviews 加批次归属列
+      //    reviewer_run_id + idx_reviews_reviewer_run、settings 的 task_types 生效行追加「审核」；
+      //    自动审核器草案 §7 第 1~4 条）
+      //    与 0022（breakdown_sessions 整表重建，把 group_id / parent_task_id 两条裸
+      //    REFERENCES 落成 ON DELETE SET NULL；卡片删除报 500 的修复，见该迁移头部注释）。
       delete process.env.ATB_MIGRATIONS_DIR;
+      const top = migrationTop();
       const applied = applyMigrations();
-      expect(applied).toEqual([13, 14, 15, 16, 17, 18, 19, 20]); // 0001~0012 不重放
+      // 0001~0012 不重放：期望值是「12 之上、按编号递增的每一棒」。
+      expect(applied).toEqual(
+        Array.from({ length: top - 12 }, (_, index) => index + 13),
+      );
 
       const check = new DatabaseSync(path.join(dir, 'jarvis.db'), { readOnly: true });
       const version = check.prepare('PRAGMA user_version').get() as { user_version: number };
-      expect(version.user_version).toBe(20);
+      expect(Number(version.user_version)).toBe(top);
       const tables = check
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('agent_sessions','task_creation_logs')")
         .all() as { name: string }[];
@@ -192,6 +233,85 @@ describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0020）', 
       expect(() =>
         probe.prepare(`INSERT INTO tasks (id, title, review_mode) VALUES ('t_bad', 'bad', 'self')`).run(),
       ).toThrow();
+      // 0021（自动审核器 A1 数据层）：整表重建 + 三处新列/索引。
+      // ① 既有依赖行零丢失、列值原样（重建只做拷贝，不洗数——老值必然落在新三值词表里）；
+      expect(
+        probe
+          .prepare(`SELECT id, task_id, depends_on, type, created_at IS NOT NULL AS has_ts FROM task_dependencies ORDER BY id`)
+          .all() as { id: string; task_id: string; depends_on: string; type: string; has_ts: number }[],
+      ).toEqual([
+        { id: 'd_blocks', task_id: 't_legacy', depends_on: 't_legacy2', type: 'blocks', has_ts: 1 },
+        { id: 'd_relates', task_id: 't_legacy2', depends_on: 't_legacy', type: 'relates', has_ts: 1 },
+      ]);
+      // ② 新 CHECK 生效：第三种边 review 放行（§3.2 批次 → 被审对象的纯标记边），
+      //    词表外值挡住，表级 UNIQUE(task_id, depends_on) 随重建原位保住（同一批次对同一对象天然去重）；
+      probe.prepare(`INSERT INTO tasks (id, title) VALUES ('t_legacy3', '存量任务三（充当批次）')`).run();
+      probe.prepare(`INSERT INTO task_dependencies (id, task_id, depends_on, type) VALUES ('d_review', 't_legacy3', 't_legacy', 'review')`).run();
+      expect(() =>
+        probe.prepare(`INSERT INTO task_dependencies (id, task_id, depends_on, type) VALUES ('d_bad', 't_legacy3', 't_legacy2', 'blocks+')`).run(),
+      ).toThrow();
+      expect(() =>
+        probe.prepare(`INSERT INTO task_dependencies (id, task_id, depends_on, type) VALUES ('d_dup', 't_legacy3', 't_legacy', 'relates')`).run(),
+      ).toThrow();
+      // ③ DDL 里的词表确实收敛为三值（重建后 sqlite_master 存的是新表定义）；
+      const depDdl = probe.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'task_dependencies'`).get() as { sql: string };
+      expect(depDdl.sql).toContain(`'review'`);
+      // ④ 重建保下全部既有索引，一条不少（0014 丢索引的教训面；TEXT 主键与表级 UNIQUE 自带的
+      //    sqlite_autoindex_* 不算显式索引，滤掉）；
+      const depIndexes = probe
+        .prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'task_dependencies'`)
+        .all() as { name: string }[];
+      expect(
+        depIndexes.map((row) => row.name).filter((name) => !name.startsWith('sqlite_autoindex_')).sort(),
+      ).toEqual(['idx_deps_depends_on', 'idx_deps_task']);
+      // ⑤ 两条 ON DELETE CASCADE 语义原样恢复：删掉批次侧任务，review 边跟着没。
+      probe.prepare(`DELETE FROM tasks WHERE id = 't_legacy3'`).run();
+      expect(probe.prepare(`SELECT COUNT(*) AS n FROM task_dependencies WHERE id = 'd_review'`).get()).toEqual({ n: 0 });
+      // ⑥ tasks.review_batch：存量行吃常量默认 0（= 不是批次，无需 UPDATE 洗数），
+      //    两条分桶索引就位，且既有六条索引一条没动。
+      expect(probe.prepare(`SELECT review_batch FROM tasks WHERE id = 't_legacy'`).get()).toEqual({ review_batch: 0 });
+      const taskIndexNames = new Set(
+        (probe.prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'tasks'`).all() as { name: string }[]).map(
+          (row) => row.name,
+        ),
+      );
+      for (const name of [
+        'idx_tasks_status',
+        'idx_tasks_ready',
+        'idx_tasks_archived',
+        'idx_tasks_lease',
+        'idx_tasks_group',
+        'idx_tasks_parent',
+        'idx_tasks_review_batch_status',
+        'idx_tasks_review_batch_archived',
+      ]) {
+        expect(taskIndexNames.has(name)).toBe(true);
+      }
+      // ⑦ reviews.reviewer_run_id：可空、无 CHECK、无外键——存量行落 NULL（人审没有审核方 Run），
+      //    显式索引两条（既有的 idx_reviews_task + 本棒的 idx_reviews_reviewer_run）。
+      expect(probe.prepare(`SELECT reviewer_run_id FROM reviews WHERE id = 'r_legacy'`).get()).toEqual({
+        reviewer_run_id: null,
+      });
+      const reviewIndexes = probe
+        .prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'reviews'`)
+        .all() as { name: string }[];
+      expect(
+        reviewIndexes.map((row) => row.name).filter((name) => !name.startsWith('sqlite_autoindex_')).sort(),
+      ).toEqual(['idx_reviews_reviewer_run', 'idx_reviews_task']);
+      // ⑧ 重建 + 加列后的库必须干净：整库一致性 ok、无外键违例（重建期外键是关的，这里补验）。
+      expect(Object.values(probe.prepare('PRAGMA integrity_check').get() as Record<string, string>)).toEqual(['ok']);
+      expect(probe.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+      // ⑨ 0021 第 4 段（N32 稳健追加）的 A 行：0001:203 那条**用户从未改过**的五词种子行被追加成
+      //    六词——原序不变、`审核` 落在末尾，且文本正是 JSON.stringify(DEFAULT_TASK_TYPES) 的产物，
+      //    能被 decodeSetting 原样读回 string[]（SettingsService 有行用行，读不回等于没有词表）。
+      //    钉住的 updated_at 哨兵值没被动过：本段只改 value，schema 扩容不算用户编辑。
+      //    B（用户自定义过且不含该词）/C（已含该词，逐字不动）两种行与守卫面见下一条用例。
+      const wordlist = probe
+        .prepare(`SELECT value, updated_at FROM settings WHERE key = 'task_types'`)
+        .get() as { value: string; updated_at: string };
+      expect(wordlist.value).toBe('["需求","缺陷","子任务","巡检","重构","审核"]');
+      expect(wordlist.updated_at).toBe('2020-01-01 00:00:00');
+      expect(decodeSetting('task_types', wordlist.value)).toEqual([...DEFAULT_TASK_TYPES]);
       // 0015：skills.category 以 ALTER ADD COLUMN 落地（不整表重建）、0017/0018 两次重建
       // 收敛列级 CHECK——'' （未分类）与现行 16 叶子放行，词表外值挡住。0015 定稿词表是
       // 12 项（含「开学季」「质量保障」），fresh 重放里它先按旧口径回填，随后由 0017/0018
@@ -276,6 +396,170 @@ describe('迁移 0013 演练（/tmp 临时库，当前水位 0012 → 0020）', 
       else process.env.ATB_DATA_DIR = previous.data;
       if (previous.mig === undefined) delete process.env.ATB_MIGRATIONS_DIR;
       else process.env.ATB_MIGRATIONS_DIR = previous.mig;
+    }
+  });
+
+  /**
+   * 0021 第 4 段（N32 稳健追加）的正面演练：草案 §10-29 要求的三种行 + 三道守卫 + 两条升级路径。
+   * 姿势照上一条用例——`/tmp` 临时目录 + `ATB_DATA_DIR` + `ATB_MIGRATIONS_DIR`，真库禁写。
+   * 这一段只对齐 `DEFAULT_TASK_TYPES` 的口径，**不是回路的承重墙**（§7 约束 14：A2 派生建批绕过词表校验），
+   * 所以这里断言的全是「库里那一行文本」的形状，不断言任何批次能不能建起来。
+   */
+  it('迁移 0021 第 4 段：task_types 生效行缺则末尾追加、已含则逐字不动（A/B/C + 守卫面 + 两条路径）', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'atb-0021-wordlist-'));
+    const previous = {
+      data: process.env.ATB_DATA_DIR,
+      mig: process.env.ATB_MIGRATIONS_DIR,
+      logs: process.env.ATB_LOGS_DIR,
+    };
+    const SEED = '["需求","缺陷","子任务","巡检","重构"]';
+    const SIX = '["需求","缺陷","子任务","巡检","重构","审核"]';
+    const SENTINEL = '2020-01-01 00:00:00';
+    const orders = (count: number) => Array.from({ length: count }, (_, index) => index + 1);
+    /**
+     * 本棒之上的最高编号，从迁移目录现取而不是写死 21：写死即「谁下一棒加迁移，谁的
+     * 全量重放断言就红」（0022 拆解除弱引用时正好踩中一次）。本用例只管 0021 第 4 段，
+     * 「fresh 一次跑到顶」与「水位 20 的库只重放 20 以上」两条口径都按这个顶来判。
+     */
+    const top = migrationTop();
+    const above20 = () => orders(top).filter((order) => order > 20);
+    const dirOf = (name: string): string => {
+      const dir = path.join(root, name);
+      mkdirSync(dir, { recursive: true });
+      return dir;
+    };
+    const readWordlist = (db: DatabaseSync): { value: string; updated_at: string } | undefined =>
+      db.prepare(`SELECT value, updated_at FROM settings WHERE key = 'task_types'`).get() as
+        | { value: string; updated_at: string }
+        | undefined;
+    // 满编 20 词：SETTINGS_SPECS.task_types 的 zod 上限就是 20（contract/settings.ts:31），
+    // 追加第 21 词会让整键 parse 失败、用户二十个词一起回落默认值——守卫必须拦住。
+    const twentyWords = JSON.stringify(orders(20).map((index) => `类型${index}`));
+    type Case = { name: string; from: string | null; to: string; decoded: string[] | null };
+    const cases: Case[] = [
+      // A 未改过的种子行 → 六词、原序不变、`审核` 在末尾。
+      { name: 'case-a-seed', from: SEED, to: SIX, decoded: [...DEFAULT_TASK_TYPES] },
+      // B 用户自定义过且不含该词 → 两个原词都在、顺序不变，末尾多一个 `审核`（N32 的核心：不重写用户词表）。
+      { name: 'case-b-custom', from: '["需求","我的类型"]', to: '["需求","我的类型","审核"]', decoded: ['需求', '我的类型', '审核'] },
+      // C 已含该词（不在末尾也算）→ 逐字不动，幂等，不追加第二个。
+      { name: 'case-c-has', from: '["需求","审核","缺陷"]', to: '["需求","审核","缺陷"]', decoded: ['需求', '审核', '缺陷'] },
+      // D 子串陷阱：表里有「审核任务」**不等于**有「审核」——存在性判据必须是 json_each 的元素等值，
+      //    写成 `value LIKE '%"审核"%'` 就把这一行误判成已含、第六词永远加不上。
+      { name: 'case-d-substring', from: '["需求","审核任务"]', to: '["需求","审核任务","审核"]', decoded: ['需求', '审核任务', '审核'] },
+      // E 坏 JSON（用户手改过库）→ json_valid 守卫原样留着，且整条迁移不炸（无守卫时 malformed JSON 回滚全棒）。
+      { name: 'case-e-broken', from: 'not json at all', to: 'not json at all', decoded: null },
+      // F 合法 JSON 但不是数组 → json_type 守卫原样留着：往对象上「追加一个词」只会造出读不回来的形状。
+      { name: 'case-f-object', from: '{"a": 1}', to: '{"a": 1}', decoded: null },
+      // G 满编 20 词 → 不加（见上）。原词一个不少地活着。
+      { name: 'case-g-full20', from: twentyWords, to: twentyWords, decoded: JSON.parse(twentyWords) as string[] },
+      // H 库里根本没有 task_types 行 → 本段空转，也不替用户补插一行（那时 SettingsService 吃 DEFAULT_SETTINGS）。
+      { name: 'case-h-norow', from: null, to: '', decoded: null },
+    ];
+
+    try {
+      process.env.ATB_LOGS_DIR = path.join(root, 'logs');
+      mkdirSync(process.env.ATB_LOGS_DIR, { recursive: true });
+
+      // ── 路径一：fresh 全量重放（空目录一次跑到顶），种子行同样被追加成六词 ──────────────
+      const fresh = dirOf('fresh');
+      process.env.ATB_DATA_DIR = fresh;
+      delete process.env.ATB_MIGRATIONS_DIR;
+      expect(applyMigrations()).toEqual(orders(top));
+      const freshDb = new DatabaseSync(path.join(fresh, 'jarvis.db'));
+      expect(freshDb.prepare('PRAGMA user_version').get()).toEqual({ user_version: top });
+      expect(readWordlist(freshDb)?.value).toBe(SIX);
+      expect(decodeSetting('task_types', SIX)).toEqual([...DEFAULT_TASK_TYPES]);
+      expect(Object.values(freshDb.prepare('PRAGMA integrity_check').get() as Record<string, string>)).toEqual(['ok']);
+      expect(freshDb.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+      freshDb.close();
+      expect(applyMigrations()).toEqual([]); // 二次 applyMigrations() 幂等空转
+      const freshAgain = new DatabaseSync(path.join(fresh, 'jarvis.db'), { readOnly: true });
+      expect(freshAgain.prepare(`SELECT value FROM settings WHERE key = 'task_types'`).get()).toEqual({ value: SIX });
+      freshAgain.close();
+
+      // ── 路径二：水位 0020 的既有库只重放 20 之上的编号，逐条换 task_types 行 ─────────────
+      // 先用 0001~0020 子集造一个「升级前的库」模板，再按用例复制成副本库（真库禁写）。
+      const source = migrationsDir();
+      const staged = path.join(root, 'migrations-0020');
+      mkdirSync(staged);
+      for (const entry of readdirSync(source)) {
+        if (/^\d+_/.test(entry) && Number(entry.split('_')[0]) <= 20) {
+          cpSync(path.join(source, entry), path.join(staged, entry), { recursive: true });
+        }
+      }
+      const template = dirOf('template');
+      process.env.ATB_DATA_DIR = template;
+      process.env.ATB_MIGRATIONS_DIR = staged;
+      expect(applyMigrations()).toEqual(orders(20));
+
+      // 第 4 段是本文件**最后一条语句**：单独摘出来重跑，直接验「已含就不再写」的语句面幂等
+      // （不经水位，与上面 applyMigrations() 的二次空转互补）。
+      const migration21Dir = readdirSync(source).find((name) => /^0021_/.test(name));
+      expect(typeof migration21Dir).toBe('string');
+      const migration21 = readFileSync(path.join(source, migration21Dir as string, 'migration.sql'), 'utf8');
+      const cut = migration21.lastIndexOf('\nUPDATE settings');
+      expect(cut).toBeGreaterThan(-1);
+      const appendOnce = migration21.slice(cut + 1);
+
+      for (const testCase of cases) {
+        const dir = dirOf(testCase.name);
+        cpSync(path.join(template, 'jarvis.db'), path.join(dir, 'jarvis.db'));
+        const before = new DatabaseSync(path.join(dir, 'jarvis.db'));
+        expect(before.prepare('PRAGMA user_version').get()).toEqual({ user_version: 20 });
+        // 除 task_types 之外的生效行整体留档：本段只能碰 task_types 那一行。
+        const others = before
+          .prepare(`SELECT key, value FROM settings WHERE key <> 'task_types' ORDER BY key`)
+          .all() as { key: string; value: string }[];
+        expect(others.length).toBeGreaterThan(0);
+        if (testCase.from === null) {
+          before.prepare(`DELETE FROM settings WHERE key = 'task_types'`).run();
+        } else {
+          before
+            .prepare(`UPDATE settings SET value = ?, updated_at = ? WHERE key = 'task_types'`)
+            .run(testCase.from, SENTINEL);
+        }
+        before.close();
+
+        delete process.env.ATB_MIGRATIONS_DIR; // 用仓库全量目录：水位 20 → 只重放 20 之上的编号
+        process.env.ATB_DATA_DIR = dir;
+        expect(applyMigrations()).toEqual(above20());
+        expect(applyMigrations()).toEqual([]);
+
+        const after = new DatabaseSync(path.join(dir, 'jarvis.db'));
+        const row = readWordlist(after);
+        if (testCase.from === null) {
+          // H：无行 → 本段什么都不做（不追加、也不插一行）。口径天然一致的证据在最后一行。
+          expect(row).toBeUndefined();
+          expect(after.prepare(`SELECT COUNT(*) AS n FROM settings WHERE key = 'task_types'`).get()).toEqual({ n: 0 });
+        } else {
+          expect(row).toBeDefined();
+          expect(row!.value).toBe(testCase.to);
+          expect(row!.updated_at).toBe(SENTINEL); // 不给 updated_at 赋值：哨兵值原样留着
+          if (testCase.decoded) {
+            expect(decodeSetting('task_types', row!.value)).toEqual(testCase.decoded);
+          }
+          // 幂等：同一条 UPDATE 再跑两次，值与 updated_at 都不动（E/F/G 同时再验一次守卫不炸）。
+          after.exec(appendOnce);
+          after.exec(appendOnce);
+          expect(readWordlist(after)).toEqual(row);
+        }
+        expect(after.prepare(`SELECT key, value FROM settings WHERE key <> 'task_types' ORDER BY key`).all()).toEqual(others);
+        expect(after.prepare('PRAGMA user_version').get()).toEqual({ user_version: top });
+        expect(Object.values(after.prepare('PRAGMA integrity_check').get() as Record<string, string>)).toEqual(['ok']);
+        expect(after.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+        after.close();
+      }
+
+      // H 行为什么不需要补插：无行时 SettingsService 吃 DEFAULT_SETTINGS，而代码默认词表已含 `审核`。
+      expect([...DEFAULT_TASK_TYPES]).toContain('审核');
+    } finally {
+      removeTempDirSync(root);
+      if (previous.data === undefined) delete process.env.ATB_DATA_DIR;
+      else process.env.ATB_DATA_DIR = previous.data;
+      if (previous.mig === undefined) delete process.env.ATB_MIGRATIONS_DIR;
+      else process.env.ATB_MIGRATIONS_DIR = previous.mig;
+      if (previous.logs === undefined) delete process.env.ATB_LOGS_DIR;
+      else process.env.ATB_LOGS_DIR = previous.logs;
     }
   });
 
