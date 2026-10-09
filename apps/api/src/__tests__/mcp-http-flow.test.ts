@@ -49,6 +49,10 @@ import {
  * + W7 board.* 拆解五工具 + W8-a2 创建闭环三工具 create_task/get_creation_status/wait_for_confirmation
  * + W8-a3 board.create_tasks_batch + B6 get_vocabulary + §16.1 update_task / update_skill）。
  * 与内存传输那份各写一份是有意的：两边都得独立对表，不互相引用。
+ *
+ * 2026-10-09 裁定（清单 §14）移除「外部 Agent 当审核方」整链：0020 的 `claim_next_review` /
+ * `submit_review` 两工具已从 `buildAgentTools` 删除，本表随之减两条（30→28）。下方
+ * 「拆掉的两个审核工具」一条用例是本表的反面判据（§14 验收①），不许把它改回含两条。
  */
 const CHAPTER_12_TOOLS = [
   'append_log',
@@ -63,7 +67,6 @@ const CHAPTER_12_TOOLS = [
   'board.report_task_draft',
   'board.wait_for_confirmation',
   'check_mcp_policy',
-  'claim_next_review',
   'claim_next_task',
   'complete_task',
   'fail_task',
@@ -76,12 +79,14 @@ const CHAPTER_12_TOOLS = [
   'list_skills',
   'report_mcp_call',
   'search_skills',
-  'submit_review',
   'update_progress',
   'update_skill',
   'update_task',
   'wait_for_resume',
 ];
+
+/** 清单 §14 判据①：这两枚工具名必须从 tools/list 消失、调用即「未知工具」错。 */
+const REMOVED_AGENT_REVIEW_TOOLS = ['claim_next_review', 'submit_review'];
 
 let t: TestApp;
 let ui: ReturnType<typeof uiSender>;
@@ -234,6 +239,10 @@ describe('MCP HTTP 主链路', () => {
     expect(res.status).toBe(200);
     const tools = res.body.result.tools as { name: string; description?: string; inputSchema?: any }[];
     expect(tools.map((tool) => tool.name).sort()).toEqual(CHAPTER_12_TOOLS);
+    // §14 判据①的正半边独立钉一遍：整表相等已隐含「不含」，但这条读起来才是给验收看的证据。
+    for (const name of REMOVED_AGENT_REVIEW_TOOLS) {
+      expect(tools.map((tool) => tool.name), name).not.toContain(name);
+    }
     expect(res.body.result.nextCursor).toBeUndefined();
 
     for (const tool of tools) {
@@ -534,6 +543,20 @@ describe('MCP HTTP 的鉴权与传输层（验收 32）', () => {
     );
     expect(result.content[0]!.text).toContain('no_such_tool');
     expect(await t.prisma.taskRun.count()).toBe(runsBefore);
+  });
+
+  it('拆掉的两个审核工具现在是未知工具（清单 §14 验收判据①）', async () => {
+    // 2026-10-09 裁定「外部 Agent 当审核方」整链移除：`claim_next_review` / `submit_review`
+    // 不再注册（`buildAgentTools` 里那两条已删），Agent 侧照旧调用必须停在协议层拿
+    // 「未知工具」，绝不落到服务层——反面情形是「工具还在但什么都不做」，那是兼容壳。
+    const runsBefore = await t.prisma.taskRun.count();
+    const reviewsBefore = await t.prisma.review.count();
+    for (const name of REMOVED_AGENT_REVIEW_TOOLS) {
+      const { result } = unwrapToolError(await callTool(agent.token, name, {}), '未知工具');
+      expect(result.content[0]!.text, name).toContain(name);
+    }
+    expect(await t.prisma.taskRun.count()).toBe(runsBefore);
+    expect(await t.prisma.review.count()).toBe(reviewsBefore);
   });
 
   it('未知方法与不成形的请求体都停在协议层，不落 500', async () => {

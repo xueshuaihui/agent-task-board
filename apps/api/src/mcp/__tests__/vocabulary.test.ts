@@ -27,7 +27,6 @@ const toolCtx = () => ({
   query: h.query,
   skills: h.skills,
   policy: h.policy,
-  reviewQueue: h.reviewQueue,
   breakdown: h.breakdown,
   creation: h.creation,
   settings: h.settings,
@@ -88,24 +87,29 @@ describe('get_vocabulary：一次调用拿全服务端词表', () => {
     expect(result.skill_categories.source).toContain('0018');
     expect(result.skill_categories.uncategorized).toBe('');
     expect(result.skill_categories.note).toContain('可选：');
-    // 0020 §3.7：审核口径进词表——agent 领到 auto 队列的活要能自证「这支任务在等谁」，
-    // 也要知道 update_task 写不到 review_mode（不可自豁免是硬不变量，写在 note 里）。
-    expect(result.review_mode.values).toEqual(['human', 'auto', 'none']);
+    // 0020 §3.7 把审核口径进词表；2026-10-09 裁定（清单 §14）移除「Agent 当审核方」整链后，
+    // Agent 面仍要能自证「这支任务在等谁」，而「执行者不得自豁免」是与人审共用的一条硬不变量。
+    expect(result.review_mode.values).toEqual(['human', 'none']);
     expect(result.review_mode.default).toBe('human');
     expect(result.review_mode.semantics.none).toContain('直接落 DONE');
-    expect(result.review_mode.tracks.values).toEqual(['auto', 'human']);
-    expect(result.review_mode.note).toContain('SELF_REVIEW_FORBIDDEN');
-    expect(result.review_conclusion.values).toEqual(['APPROVE', 'REJECT', 'ESCALATE']);
-    expect(result.task_status.note).toContain('submit_review');
+    expect(result.review_mode.semantics.human).toContain('等人提交审核结论');
+    // §14 判据②：词表只剩 human/none——`auto` 不得以任何形式回到 Agent 面。
+    expect(result.review_mode.values).not.toContain('auto');
+    // 换轨位随 review_track 列一起出词表（0023），note 里只剩「不可自豁免」这条硬不变量。
+    expect(result.review_mode.note).toContain('不得自豁免');
+    expect(result.review_mode.note).not.toContain('claim_next_review');
+    expect(result.review_conclusion.values).toEqual(['APPROVE', 'REJECT']);
     expect(result.task_status.note).toContain('review_mode=none');
   });
 
   it('review_mode.default 跟着设置页的 default_review_mode 走（三条建单路同一口径来源）', async () => {
-    await h.settings.patch({ default_review_mode: 'auto' });
+    // 2026-10-09 裁定后 `auto` 不是合法取值，这条键的可选值只剩 human/none；
+    // 测的是「词表 default 与设置生效行同源」，换一个仍存活的值才能测出同源而不是撞校验。
+    await h.settings.patch({ default_review_mode: 'none' });
     const result = (await callAgentTool(toolCtx(), agent, 'get_vocabulary', {})) as ReturnType<
       typeof buildVocabulary
     >;
-    expect(result.review_mode.default).toBe('auto');
+    expect(result.review_mode.default).toBe('none');
     await h.settings.patch({ default_review_mode: 'human' });
   });
 

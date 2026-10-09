@@ -38,7 +38,6 @@ const W6_TOOL_NAMES = [
   'board.report_task_draft',
   'board.wait_for_confirmation',
   'check_mcp_policy',
-  'claim_next_review',
   'claim_next_task',
   'complete_task',
   'fail_task',
@@ -51,7 +50,6 @@ const W6_TOOL_NAMES = [
   'list_skills',
   'report_mcp_call',
   'search_skills',
-  'submit_review',
   'update_progress',
   'update_skill',
   'update_task',
@@ -69,7 +67,6 @@ beforeAll(async () => {
     query: h.query,
     skills: h.skills,
     policy: h.policy,
-    reviewQueue: h.reviewQueue,
     breakdown: h.breakdown,
     creation: h.creation,
     settings: h.settings,
@@ -210,7 +207,7 @@ describe('MCP 工具面', () => {
   });
 
   it('工具表与服务层一一对应：MCP 不复制业务逻辑', () => {
-    expect(buildAgentTools({ claims: h.claims, leases: h.leases, writeback: h.writeback, query: h.query, skills: h.skills, policy: h.policy, reviewQueue: h.reviewQueue, breakdown: h.breakdown, creation: h.creation, settings: h.settings }).map((tool) => tool.name).sort()).toEqual(
+    expect(buildAgentTools({ claims: h.claims, leases: h.leases, writeback: h.writeback, query: h.query, skills: h.skills, policy: h.policy, breakdown: h.breakdown, creation: h.creation, settings: h.settings }).map((tool) => tool.name).sort()).toEqual(
       W6_TOOL_NAMES,
     );
   });
@@ -342,7 +339,6 @@ describe('MCP 工具面', () => {
     query: h.query,
     skills: h.skills,
     policy: h.policy,
-    reviewQueue: h.reviewQueue,
     breakdown: h.breakdown,
     creation: h.creation,
     settings: h.settings,

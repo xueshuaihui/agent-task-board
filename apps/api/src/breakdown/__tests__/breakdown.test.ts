@@ -123,10 +123,13 @@ describe('拆解链路主路径：begin → progress → drafts → finish（技
   });
 
   it('拆解建的父单与子任务吃全局默认键 `default_review_mode`（2026-09-28 拍板「三条建单路一处口径」）', async () => {
-    // 用户在设置页选了 auto，拆出来的子任务就必须进自动审核队列；这条路上没有 review_mode
-    // 入参位（Agent 不得自豁免），全局键是唯一决定权来源。
+    // 2026-09-28 拍板「三条建单路一处口径」：用户在设置页选了非缺省的审核方式，
+    // 拆出来的父单与子任务就必须照它落；这条路上没有 review_mode 入参位
+    // （Agent 不得自豁免），全局键是唯一决定权来源。
+    // 2026-10-09 裁定移除 auto 后键的可选值只剩 human/none（清单 §14 判据②），这里取 none：
+    // 缺省是 human，只有能把生效行读出来才测得出「同源」而不是「正好撞默认值」。
     const ui = uiSender(t);
-    expect((await ui.patch(`${API}/settings`, { default_review_mode: 'auto' })).status).toBe(200);
+    expect((await ui.patch(`${API}/settings`, { default_review_mode: 'none' })).status).toBe(200);
     try {
       const session = await svc.begin({
         requirement_text: '继承全局审核方式的拆解',
@@ -143,9 +146,7 @@ describe('拆解链路主路径：begin → progress → drafts → finish（技
       });
       expect(rows).toHaveLength(2);
       for (const row of rows) {
-        expect(row.reviewMode).toBe('auto');
-        // 轨道位由 complete 分流写（草案 §3.4），建单期恒 human。
-        expect(row.reviewTrack).toBe('human');
+        expect(row.reviewMode).toBe('none');
       }
     } finally {
       expect((await ui.patch(`${API}/settings`, { default_review_mode: 'human' })).status).toBe(200);

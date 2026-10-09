@@ -38,7 +38,6 @@ const toolCtx = () => ({
   query: h.query,
   skills: h.skills,
   policy: h.policy,
-  reviewQueue: h.reviewQueue,
   breakdown: h.breakdown,
   creation: h.creation,
   settings: h.settings,
@@ -185,7 +184,11 @@ describe('迁移演练（/tmp 临时库，当前水位 0012/0020 → 目录顶�
       //    reviewer_run_id + idx_reviews_reviewer_run、settings 的 task_types 生效行追加「审核」；
       //    自动审核器草案 §7 第 1~4 条）
       //    与 0022（breakdown_sessions 整表重建，把 group_id / parent_task_id 两条裸
-      //    REFERENCES 落成 ON DELETE SET NULL；卡片删除报 500 的修复，见该迁移头部注释）。
+      //    REFERENCES 落成 ON DELETE SET NULL；卡片删除报 500 的修复，见该迁移头部注释）
+      //    与 0023（2026-10-09 裁定「Agent 当审核方」整链移除：tasks 删 review_track/review_batch
+      //    并把 review_mode 词表收窄成 human/none、reviews 删 reviewer_type/reviewer_run_id、
+      //    task_dependencies 的 type 收回两值、notifications 的 kind 收回六词、
+      //    settings 删四个审核键并摘掉 task_types 里的「审核」）。
       delete process.env.ATB_MIGRATIONS_DIR;
       const top = migrationTop();
       const applied = applyMigrations();
@@ -216,25 +219,56 @@ describe('迁移演练（/tmp 临时库，当前水位 0012/0020 → 目录顶�
       expect(() =>
         probe.prepare(`INSERT INTO notifications (id, kind, message) VALUES ('n_bad', 'sms', 'x')`).run(),
       ).toThrow();
-      // 0020：notifications.kind 词表追加自动审核两段——重建后的表放行两条新 kind，
-      // 未知 kind 依然被挡住（上一条 n_bad 就是这条断言的反面）。
-      probe.prepare(`INSERT INTO notifications (id, kind, message) VALUES ('n_auto_p', 'review_auto_pending', 'x')`).run();
-      probe.prepare(`INSERT INTO notifications (id, kind, message) VALUES ('n_auto_q', 'review_auto_passed', 'x')`).run();
-      // 0020：存量两行吃到常量默认（升级前语义 = 人工审核 + 人工待审 + 审核人 user）；
-      // 新列的 CHECK 与 fresh 重放同一份 DDL，词表外值挡住。
+      // 0020 曾给 notifications.kind 追加两枚自动审核词，0023 随整链移除收回六词（清单 §14）：
+      // 全量重放到顶后这两枚**不再放行**——它们是「等 Agent 审 / Agent 判通过」的提醒，
+      // 拆链后没有对应概念。未知 kind 依然被挡住（上一条 n_bad 就是这条断言的反面）。
+      for (const gone of ['review_auto_pending', 'review_auto_passed']) {
+        expect(() =>
+          probe.prepare(`INSERT INTO notifications (id, kind, message) VALUES (?, ?, 'x')`).run(`n_${gone}`, gone),
+        ).toThrow();
+      }
+      // 0020：存量两行吃到常量默认（升级前语义 = 人工审核 + 人工待审）；
+      // 0023 把 review_mode 词表收窄为 human/none，存量 'auto' 归 human（见下一条用例的专项演练）。
       const legacyTask = probe
-        .prepare(`SELECT review_mode, review_track FROM tasks WHERE id = 't_legacy'`)
-        .get() as { review_mode: string; review_track: string };
-      expect(legacyTask).toEqual({ review_mode: 'human', review_track: 'human' });
+        .prepare(`SELECT review_mode FROM tasks WHERE id = 't_legacy'`)
+        .get() as { review_mode: string };
+      expect(legacyTask).toEqual({ review_mode: 'human' });
+      // 0023：`reviews.reviewer_type`（来源 user/agent）与 `reviewer_name` 里的前者已删、
+      // 署名位保留；存量审核行本体零丢失（结论/建议/理由都还在，见列集合断言）。
       const legacyReview = probe
-        .prepare(`SELECT reviewer_type, reviewer_name FROM reviews WHERE id = 'r_legacy'`)
-        .get() as { reviewer_type: string; reviewer_name: string | null };
-      expect(legacyReview).toEqual({ reviewer_type: 'user', reviewer_name: null });
+        .prepare(`SELECT conclusion, suggestion, reason, detail, reviewer_name FROM reviews WHERE id = 'r_legacy'`)
+        .get() as { conclusion: string; suggestion: string; reason: string; detail: string; reviewer_name: string | null };
+      expect(legacyReview).toEqual({
+        conclusion: 'APPROVE',
+        suggestion: 's',
+        reason: 'r',
+        detail: 'd',
+        reviewer_name: null,
+      });
+      // 0023：被删的四列在 sqlite_master 里彻底不存在（判据③「schema 与 sqlite_master 同步归零」）。
+      const columnsOf = (table: string): Set<string> =>
+        new Set(
+          (probe.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((row) => row.name),
+        );
+      const reviewColumns = columnsOf('reviews');
+      for (const gone of ['reviewer_type', 'reviewer_run_id']) {
+        expect(reviewColumns.has(gone)).toBe(false);
+      }
+      expect(reviewColumns.has('reviewer_name')).toBe(true);
+      const taskColumnsAfter = columnsOf('tasks');
+      for (const gone of ['review_track', 'review_batch']) {
+        expect(taskColumnsAfter.has(gone)).toBe(false);
+      }
+      expect(taskColumnsAfter.has('review_mode')).toBe(true);
       expect(() =>
         probe.prepare(`INSERT INTO tasks (id, title, review_mode) VALUES ('t_bad', 'bad', 'self')`).run(),
       ).toThrow();
+      // §14 判据②：`auto` 也从词表里出去了——写它撞 CHECK，整条插入回滚。
+      expect(() =>
+        probe.prepare(`INSERT INTO tasks (id, title, review_mode) VALUES ('t_bad_auto', 'bad', 'auto')`).run(),
+      ).toThrow();
       // 0021（自动审核器 A1 数据层）：整表重建 + 三处新列/索引。
-      // ① 既有依赖行零丢失、列值原样（重建只做拷贝，不洗数——老值必然落在新三值词表里）；
+      // ① 既有依赖行零丢失、列值原样（重建只做拷贝，不洗数——老值必然落在新词表里）；
       expect(
         probe
           .prepare(`SELECT id, task_id, depends_on, type, created_at IS NOT NULL AS has_ts FROM task_dependencies ORDER BY id`)
@@ -243,19 +277,22 @@ describe('迁移演练（/tmp 临时库，当前水位 0012/0020 → 目录顶�
         { id: 'd_blocks', task_id: 't_legacy', depends_on: 't_legacy2', type: 'blocks', has_ts: 1 },
         { id: 'd_relates', task_id: 't_legacy2', depends_on: 't_legacy', type: 'relates', has_ts: 1 },
       ]);
-      // ② 新 CHECK 生效：第三种边 review 放行（§3.2 批次 → 被审对象的纯标记边），
-      //    词表外值挡住，表级 UNIQUE(task_id, depends_on) 随重建原位保住（同一批次对同一对象天然去重）；
-      probe.prepare(`INSERT INTO tasks (id, title) VALUES ('t_legacy3', '存量任务三（充当批次）')`).run();
-      probe.prepare(`INSERT INTO task_dependencies (id, task_id, depends_on, type) VALUES ('d_review', 't_legacy3', 't_legacy', 'review')`).run();
+      // ② 词表现在是两值：0021 追加的第三种边 `review` 已随 0023 收回（清单 §14），
+      //    写它撞 CHECK；词表外值同样挡住；表级 UNIQUE(task_id, depends_on) 随重建原位保住。
+      probe.prepare(`INSERT INTO tasks (id, title) VALUES ('t_legacy3', '存量任务三')`).run();
+      expect(() =>
+        probe.prepare(`INSERT INTO task_dependencies (id, task_id, depends_on, type) VALUES ('d_review', 't_legacy3', 't_legacy', 'review')`).run(),
+      ).toThrow();
       expect(() =>
         probe.prepare(`INSERT INTO task_dependencies (id, task_id, depends_on, type) VALUES ('d_bad', 't_legacy3', 't_legacy2', 'blocks+')`).run(),
       ).toThrow();
       expect(() =>
-        probe.prepare(`INSERT INTO task_dependencies (id, task_id, depends_on, type) VALUES ('d_dup', 't_legacy3', 't_legacy', 'relates')`).run(),
+        probe.prepare(`INSERT INTO task_dependencies (id, task_id, depends_on, type) VALUES ('d_dup', 't_legacy', 't_legacy2', 'relates')`).run(),
       ).toThrow();
-      // ③ DDL 里的词表确实收敛为三值（重建后 sqlite_master 存的是新表定义）；
+      // ③ DDL 里的词表确实收回两值（重建后 sqlite_master 存的是新表定义，'review' 不再出现）；
       const depDdl = probe.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'task_dependencies'`).get() as { sql: string };
-      expect(depDdl.sql).toContain(`'review'`);
+      expect(depDdl.sql).not.toContain(`'review'`);
+      expect(depDdl.sql).toContain(`'blocks','relates'`);
       // ④ 重建保下全部既有索引，一条不少（0014 丢索引的教训面；TEXT 主键与表级 UNIQUE 自带的
       //    sqlite_autoindex_* 不算显式索引，滤掉）；
       const depIndexes = probe
@@ -264,12 +301,12 @@ describe('迁移演练（/tmp 临时库，当前水位 0012/0020 → 目录顶�
       expect(
         depIndexes.map((row) => row.name).filter((name) => !name.startsWith('sqlite_autoindex_')).sort(),
       ).toEqual(['idx_deps_depends_on', 'idx_deps_task']);
-      // ⑤ 两条 ON DELETE CASCADE 语义原样恢复：删掉批次侧任务，review 边跟着没。
+      // ⑤ 两条 ON DELETE CASCADE 语义原样恢复：删掉这一侧任务，blocks 边跟着没。
+      probe.prepare(`INSERT INTO task_dependencies (id, task_id, depends_on, type) VALUES ('d_cascade', 't_legacy3', 't_legacy', 'blocks')`).run();
       probe.prepare(`DELETE FROM tasks WHERE id = 't_legacy3'`).run();
-      expect(probe.prepare(`SELECT COUNT(*) AS n FROM task_dependencies WHERE id = 'd_review'`).get()).toEqual({ n: 0 });
-      // ⑥ tasks.review_batch：存量行吃常量默认 0（= 不是批次，无需 UPDATE 洗数），
-      //    两条分桶索引就位，且既有六条索引一条没动。
-      expect(probe.prepare(`SELECT review_batch FROM tasks WHERE id = 't_legacy'`).get()).toEqual({ review_batch: 0 });
+      expect(probe.prepare(`SELECT COUNT(*) AS n FROM task_dependencies WHERE id = 'd_cascade'`).get()).toEqual({ n: 0 });
+      // ⑥ 0023：tasks 的两条批次分桶索引随列一起消失，其余六条原样在位（名字也要一致，
+      //    验收会去 sqlite_master 里数——见清单 §14 判据③）。
       const taskIndexNames = new Set(
         (probe.prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'tasks'`).all() as { name: string }[]).map(
           (row) => row.name,
@@ -282,34 +319,38 @@ describe('迁移演练（/tmp 临时库，当前水位 0012/0020 → 目录顶�
         'idx_tasks_lease',
         'idx_tasks_group',
         'idx_tasks_parent',
-        'idx_tasks_review_batch_status',
-        'idx_tasks_review_batch_archived',
       ]) {
         expect(taskIndexNames.has(name)).toBe(true);
       }
-      // ⑦ reviews.reviewer_run_id：可空、无 CHECK、无外键——存量行落 NULL（人审没有审核方 Run），
-      //    显式索引两条（既有的 idx_reviews_task + 本棒的 idx_reviews_reviewer_run）。
-      expect(probe.prepare(`SELECT reviewer_run_id FROM reviews WHERE id = 'r_legacy'`).get()).toEqual({
-        reviewer_run_id: null,
-      });
+      for (const gone of ['idx_tasks_review_batch_status', 'idx_tasks_review_batch_archived']) {
+        expect(taskIndexNames.has(gone)).toBe(false);
+      }
+      // ⑦ 0023：`reviews.reviewer_run_id` 列与它的索引随批次链删除，索引只剩既有一条。
       const reviewIndexes = probe
         .prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'reviews'`)
         .all() as { name: string }[];
       expect(
         reviewIndexes.map((row) => row.name).filter((name) => !name.startsWith('sqlite_autoindex_')).sort(),
-      ).toEqual(['idx_reviews_reviewer_run', 'idx_reviews_task']);
-      // ⑧ 重建 + 加列后的库必须干净：整库一致性 ok、无外键违例（重建期外键是关的，这里补验）。
+      ).toEqual(['idx_reviews_task']);
+      // notifications 的两条索引一条不少（0001 部分索引 + 0007 追加那条）。
+      const notifIndexes = probe
+        .prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'notifications'`)
+        .all() as { name: string }[];
+      expect(
+        notifIndexes.map((row) => row.name).filter((name) => !name.startsWith('sqlite_autoindex_')).sort(),
+      ).toEqual(['idx_notif_read', 'idx_notif_unread']);
+      // ⑧ 重建 + 删列后的库必须干净：整库一致性 ok、无外键违例（重建期外键是关的，这里补验）。
       expect(Object.values(probe.prepare('PRAGMA integrity_check').get() as Record<string, string>)).toEqual(['ok']);
       expect(probe.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
-      // ⑨ 0021 第 4 段（N32 稳健追加）的 A 行：0001:203 那条**用户从未改过**的五词种子行被追加成
-      //    六词——原序不变、`审核` 落在末尾，且文本正是 JSON.stringify(DEFAULT_TASK_TYPES) 的产物，
-      //    能被 decodeSetting 原样读回 string[]（SettingsService 有行用行，读不回等于没有词表）。
-      //    钉住的 updated_at 哨兵值没被动过：本段只改 value，schema 扩容不算用户编辑。
-      //    B（用户自定义过且不含该词）/C（已含该词，逐字不动）两种行与守卫面见下一条用例。
+      // ⑨ 0021 第 4 段（N32 稳健追加）的 A 行：0001:203 那条**用户从未改过**的五词种子行先被
+      //    追加成六词，再被 0023 第 5-c 段把「审核」摘回五词——终值 = 新的 DEFAULT_TASK_TYPES，
+      //    与 fresh 全量重放同一个终值（本文件全量重放那条用例的口径）。
+      //    钉住的 updated_at 哨兵值没被动过：两段都只改 value，schema 扩容/收词都不是用户编辑。
+      //    B（用户自定义词表）/C（不含该词）两种行与守卫面见后面两条用例。
       const wordlist = probe
         .prepare(`SELECT value, updated_at FROM settings WHERE key = 'task_types'`)
         .get() as { value: string; updated_at: string };
-      expect(wordlist.value).toBe('["需求","缺陷","子任务","巡检","重构","审核"]');
+      expect(wordlist.value).toBe('["需求","缺陷","子任务","巡检","重构"]');
       expect(wordlist.updated_at).toBe('2020-01-01 00:00:00');
       expect(decodeSetting('task_types', wordlist.value)).toEqual([...DEFAULT_TASK_TYPES]);
       // 0015：skills.category 以 ALTER ADD COLUMN 落地（不整表重建）、0017/0018 两次重建
@@ -421,8 +462,14 @@ describe('迁移演练（/tmp 临时库，当前水位 0012/0020 → 目录顶�
      * 全量重放断言就红」（0022 拆解除弱引用时正好踩中一次）。本用例只管 0021 第 4 段，
      * 「fresh 一次跑到顶」与「水位 20 的库只重放 20 以上」两条口径都按这个顶来判。
      */
+    // 本用例只管 0021 第 4 段的**追加**口径，所以两条路径的水位都停在 0022：
+    // 0023（2026-10-09 裁定移除「Agent 当审核方」整链）会把刚追加的「审核」再摘掉，
+    // 让它参与断言就等于把「追加」和「收词」两件事混在一条用例里读不出责任边界。
+    // 收词口径（含用户自定义词表不被重写）见下一条「迁移 0023 双路径演练」。
+    const cap = 22;
     const top = migrationTop();
-    const above20 = () => orders(top).filter((order) => order > 20);
+    expect(top).toBeGreaterThan(cap);
+    const above20 = () => orders(cap).filter((order) => order > 20);
     const dirOf = (name: string): string => {
       const dir = path.join(root, name);
       mkdirSync(dir, { recursive: true });
@@ -437,8 +484,8 @@ describe('迁移演练（/tmp 临时库，当前水位 0012/0020 → 目录顶�
     const twentyWords = JSON.stringify(orders(20).map((index) => `类型${index}`));
     type Case = { name: string; from: string | null; to: string; decoded: string[] | null };
     const cases: Case[] = [
-      // A 未改过的种子行 → 六词、原序不变、`审核` 在末尾。
-      { name: 'case-a-seed', from: SEED, to: SIX, decoded: [...DEFAULT_TASK_TYPES] },
+      // A 未改过的种子行 → 六词、原序不变、`审核` 在末尾（对字面量，不引用已回到五词的 DEFAULT_TASK_TYPES）。
+      { name: 'case-a-seed', from: SEED, to: SIX, decoded: ['需求', '缺陷', '子任务', '巡检', '重构', '审核'] },
       // B 用户自定义过且不含该词 → 两个原词都在、顺序不变，末尾多一个 `审核`（N32 的核心：不重写用户词表）。
       { name: 'case-b-custom', from: '["需求","我的类型"]', to: '["需求","我的类型","审核"]', decoded: ['需求', '我的类型', '审核'] },
       // C 已含该词（不在末尾也算）→ 逐字不动，幂等，不追加第二个。
@@ -460,15 +507,26 @@ describe('迁移演练（/tmp 临时库，当前水位 0012/0020 → 目录顶�
       process.env.ATB_LOGS_DIR = path.join(root, 'logs');
       mkdirSync(process.env.ATB_LOGS_DIR, { recursive: true });
 
-      // ── 路径一：fresh 全量重放（空目录一次跑到顶），种子行同样被追加成六词 ──────────────
+      // ── 路径一：fresh 全量重放（空目录一次跑到 0022），种子行同样被追加成六词 ────────────
+      // 先把 ≤0022 的迁移子集摆好，两条路径共用（0023 不参与本用例，理由见上）。
+      const source = migrationsDir();
+      const stagedUpToCap = path.join(root, 'migrations-0022');
+      mkdirSync(stagedUpToCap);
+      for (const entry of readdirSync(source)) {
+        if (/^\d+_/.test(entry) && Number(entry.split('_')[0]) <= cap) {
+          cpSync(path.join(source, entry), path.join(stagedUpToCap, entry), { recursive: true });
+        }
+      }
       const fresh = dirOf('fresh');
       process.env.ATB_DATA_DIR = fresh;
-      delete process.env.ATB_MIGRATIONS_DIR;
-      expect(applyMigrations()).toEqual(orders(top));
+      process.env.ATB_MIGRATIONS_DIR = stagedUpToCap;
+      expect(applyMigrations()).toEqual(orders(cap));
       const freshDb = new DatabaseSync(path.join(fresh, 'jarvis.db'));
-      expect(freshDb.prepare('PRAGMA user_version').get()).toEqual({ user_version: top });
+      expect(freshDb.prepare('PRAGMA user_version').get()).toEqual({ user_version: cap });
       expect(readWordlist(freshDb)?.value).toBe(SIX);
-      expect(decodeSetting('task_types', SIX)).toEqual([...DEFAULT_TASK_TYPES]);
+      // 0021 追加口径的解码回读：六词能原样读回 string[]。
+      // （DEFAULT_TASK_TYPES 在 0023 之后回到五词，本用例水位停在 0022，所以这里对字面量而不是对默认值。）
+      expect(decodeSetting('task_types', SIX)).toEqual(['需求', '缺陷', '子任务', '巡检', '重构', '审核']);
       expect(Object.values(freshDb.prepare('PRAGMA integrity_check').get() as Record<string, string>)).toEqual(['ok']);
       expect(freshDb.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
       freshDb.close();
@@ -477,9 +535,8 @@ describe('迁移演练（/tmp 临时库，当前水位 0012/0020 → 目录顶�
       expect(freshAgain.prepare(`SELECT value FROM settings WHERE key = 'task_types'`).get()).toEqual({ value: SIX });
       freshAgain.close();
 
-      // ── 路径二：水位 0020 的既有库只重放 20 之上的编号，逐条换 task_types 行 ─────────────
+      // ── 路径二：水位 0020 的既有库只重放 20 之上、0022 及以下的编号，逐条换 task_types 行 ──
       // 先用 0001~0020 子集造一个「升级前的库」模板，再按用例复制成副本库（真库禁写）。
-      const source = migrationsDir();
       const staged = path.join(root, 'migrations-0020');
       mkdirSync(staged);
       for (const entry of readdirSync(source)) {
@@ -520,7 +577,7 @@ describe('迁移演练（/tmp 临时库，当前水位 0012/0020 → 目录顶�
         }
         before.close();
 
-        delete process.env.ATB_MIGRATIONS_DIR; // 用仓库全量目录：水位 20 → 只重放 20 之上的编号
+        process.env.ATB_MIGRATIONS_DIR = stagedUpToCap; // 0022 子集：水位 20 → 只重放 20 之上、22 及以下的编号
         process.env.ATB_DATA_DIR = dir;
         expect(applyMigrations()).toEqual(above20());
         expect(applyMigrations()).toEqual([]);
@@ -544,14 +601,319 @@ describe('迁移演练（/tmp 临时库，当前水位 0012/0020 → 目录顶�
           expect(readWordlist(after)).toEqual(row);
         }
         expect(after.prepare(`SELECT key, value FROM settings WHERE key <> 'task_types' ORDER BY key`).all()).toEqual(others);
-        expect(after.prepare('PRAGMA user_version').get()).toEqual({ user_version: top });
+        expect(after.prepare('PRAGMA user_version').get()).toEqual({ user_version: cap });
         expect(Object.values(after.prepare('PRAGMA integrity_check').get() as Record<string, string>)).toEqual(['ok']);
         expect(after.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
         after.close();
       }
 
-      // H 行为什么不需要补插：无行时 SettingsService 吃 DEFAULT_SETTINGS，而代码默认词表已含 `审核`。
-      expect([...DEFAULT_TASK_TYPES]).toContain('审核');
+      // H 行为什么不需要补插：无行时 SettingsService 吃 DEFAULT_SETTINGS。
+      // 0023 之后代码默认词表已不含「审核」（DEFAULT_TASK_TYPES 回到五词），
+      // 所以「有行 → 摘词」与「无行 → 吃默认」两条口径在 0023 之后天然同为五词。
+      expect([...DEFAULT_TASK_TYPES]).not.toContain('审核');
+      expect([...DEFAULT_TASK_TYPES]).toEqual(['需求', '缺陷', '子任务', '巡检', '重构']);
+    } finally {
+      removeTempDirSync(root);
+      if (previous.data === undefined) delete process.env.ATB_DATA_DIR;
+      else process.env.ATB_DATA_DIR = previous.data;
+      if (previous.mig === undefined) delete process.env.ATB_MIGRATIONS_DIR;
+      else process.env.ATB_MIGRATIONS_DIR = previous.mig;
+      if (previous.logs === undefined) delete process.env.ATB_LOGS_DIR;
+      else process.env.ATB_LOGS_DIR = previous.logs;
+    }
+  });
+
+  /**
+   * 迁移 0023（2026-10-09 裁定「Agent 当审核方」整链移除，见清单 §14）的双路径演练。
+   *
+   * 这是 §14 判据③的仓内落点：`review_track` / `review_batch` / `reviewer_run_id` 三列 +
+   * `reviewer_type` + 「审核」类型词 + 两枚 `review_auto_*` kind + 四个审核设置键，
+   * 在 schema、`sqlite_master`、settings 生效行三处同步归零；同时按裁定第 2 条的边界澄清，
+   * `tasks` / `reviews` 的**其他业务列逐字零丢失**。
+   *
+   * 两条路径都必须在 /tmp 里跑（真库 `~/.agent-board` 绝对禁写）：
+   *  · 全新建库：0001~0023 一次跑到顶；
+   *  · 存量升级：0001~0022 造模板库 + 灌一批 0022 形状的审核数据，再只重放 0023。
+   * 两库终态逐字一致（列集合、CHECK 词表文本、索引名集合三项对齐）。
+   */
+  it('迁移 0023 双路径：审核列/索引/词表/设置键归零，业务数据零丢失', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'atb-0023-'));
+    const previous = {
+      data: process.env.ATB_DATA_DIR,
+      mig: process.env.ATB_MIGRATIONS_DIR,
+      logs: process.env.ATB_LOGS_DIR,
+    };
+    const orders2 = (count: number) => Array.from({ length: count }, (_, index) => index + 1);
+    const top = migrationTop();
+    const source = migrationsDir();
+    const stageUpTo = (cap: number, name: string): string => {
+      const dir = path.join(root, name);
+      mkdirSync(dir);
+      for (const entry of readdirSync(source)) {
+        if (/^\d+_/.test(entry) && Number(entry.split('_')[0]) <= cap) {
+          cpSync(path.join(source, entry), path.join(dir, entry), { recursive: true });
+        }
+      }
+      return dir;
+    };
+    /** 表定义原文（含 CHECK 词表）——fresh 与增量两条路径必须逐字相同。 */
+    const tableSql = (db: DatabaseSync, table: string): string =>
+      (db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table) as {
+        sql: string;
+      }).sql;
+    /** 显式索引名集合（`sqlite_autoindex_*` 是主键/表级 UNIQUE 自带的，不计）。 */
+    const indexNames = (db: DatabaseSync, table: string): string[] =>
+      (db.prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ?`).all(table) as {
+        name: string;
+      }[])
+        .map((row) => row.name)
+        .filter((name) => !name.startsWith('sqlite_autoindex_'))
+        .sort();
+    const columnNames = (db: DatabaseSync, table: string): string[] =>
+      (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((row) => row.name);
+
+    /**
+     * 0022 形状的存量审核数据（随 v0.0.4-beta.9 出去的那个库的真实可能形状）：
+     * 一支等 Agent 审的任务、一支免审直通、一支人审已过并署了名、一条 review 纯标记边、
+     * 两枚自动审核通知、四个审核设置键 + default_review_mode='auto' + 用户自己排的词表（含「审核」）。
+     * updated_at 一律钉哨兵值：0023 不洗业务时间戳（0009~0022 同口径）。
+     */
+    const SENTINEL = '2020-01-01 00:00:00';
+    const seedLegacy = (db: DatabaseSync) => {
+      db.prepare(
+        `INSERT INTO tasks (id, type, title, description, status, priority, tags, pinned, due_at,
+                            lease_id, stop_reason, current_run_id, run_count, created_at, updated_at,
+                            parent_task_id, sort_order, skills, origin_type, origin_agent, origin_skill,
+                            origin_session_id, confirmation_mode, review_mode, review_track, review_batch)
+         VALUES ('t_auto', '需求', '等 Agent 审的那支', '存量描述', 'REVIEW', 1, '["支付","核心"]', 1,
+                 '2026-12-31 00:00:00', NULL, NULL, 'run_legacy', 2, '2026-01-01 00:00:00', ?,
+                 NULL, 7, '[{"skill_id":"skl_builtin_code-review","version":"1"}]', 'agent', 'qoder', '代码评审',
+                 'conv-legacy', 'light', 'auto', 'auto', 0)`,
+      ).run(SENTINEL);
+      db.prepare(
+        `INSERT INTO tasks (id, title, status, review_mode, review_track, created_at, updated_at)
+         VALUES ('t_none', '免审直通', 'DONE', 'none', 'human', '2026-01-02 00:00:00', ?)`,
+      ).run(SENTINEL);
+      db.prepare(
+        `INSERT INTO tasks (id, title, status, review_mode, review_track, review_batch, type, updated_at)
+         VALUES ('t_batch', '审核批次（第六版死列的产物）', 'REVIEW', 'auto', 'auto', 1, '审核', ?)`,
+      ).run(SENTINEL);
+      db.prepare(
+        `INSERT INTO reviews (id, task_id, conclusion, suggestion, reason, detail, return_to,
+                              priority_adj, created_at, reviewer_name, reviewer_type, reviewer_run_id)
+         VALUES ('r_agent', 't_batch', 'APPROVE', '建议原文', '理由原文', '细节原文', NULL, NULL,
+                 '2026-01-03 00:00:00', 'bot-token-name', 'agent', 'run_batch_legacy')`,
+      ).run();
+      db.prepare(
+        `INSERT INTO reviews (id, task_id, conclusion, suggestion, reason, detail, return_to, priority_adj, created_at)
+         VALUES ('r_human', 't_auto', 'REJECT', '补单测', '缺回归用例', '详见流水线', 'BACKLOG', 0, '2026-01-04 00:00:00')`,
+      ).run();
+      db.prepare(
+        `INSERT INTO task_dependencies (id, task_id, depends_on, type, created_at)
+         VALUES ('d_review', 't_batch', 't_auto', 'review', '2026-01-05 00:00:00')`,
+      ).run();
+      db.prepare(
+        `INSERT INTO task_dependencies (id, task_id, depends_on, type, created_at)
+         VALUES ('d_blocks', 't_auto', 't_none', 'blocks', '2026-01-06 00:00:00')`,
+      ).run();
+      db.prepare(
+        `INSERT INTO notifications (id, kind, task_id, message, created_at)
+         VALUES ('n_auto_p', 'review_auto_pending', 't_auto', '等待自动审核', '2026-01-07 00:00:00')`,
+      ).run();
+      db.prepare(
+        `INSERT INTO notifications (id, kind, task_id, message, created_at)
+         VALUES ('n_auto_q', 'review_auto_passed', 't_batch', '自动审核通过', '2026-01-08 00:00:00')`,
+      ).run();
+      db.prepare(
+        `INSERT INTO notifications (id, kind, task_id, message, created_at)
+         VALUES ('n_pending', 'review_pending', 't_auto', '任务已完成，等待审核', '2026-01-09 00:00:00')`,
+      ).run();
+      // 设置生效行：SettingsService「有行用行」，所以键与词表都必须在迁移里处理（0021 同论证）。
+      db.prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES
+          ('review_auto_dispatch', 'true', ?),
+          ('review_batch_max_targets', '5', ?),
+          ('review_max_rounds', '3', ?),
+          ('review_rubric_skill', '"skl_builtin_code-review"', ?),
+          ('default_review_mode', '"auto"', ?)`,
+      ).run(SENTINEL, SENTINEL, SENTINEL, SENTINEL, SENTINEL);
+      // 用户自己排过的词表（顺序与既有词都要活着）：0023 只摘「审核」这一个元素。
+      // updated_at 钉哨兵值：本段只该改 value，收词不是用户编辑（0009~0022 同口径）。
+      db.prepare(
+        `UPDATE settings SET value = '["需求","我的类型","审核","巡检"]', updated_at = ? WHERE key = 'task_types'`,
+      ).run(SENTINEL);
+    };
+    /** 升级前抓一份业务列快照，升级后逐字比对（裁定第 2 条：其他业务数据零丢失）。 */
+    const businessSnapshot = (db: DatabaseSync) =>
+      db
+        .prepare(
+          `SELECT id, type, title, description, status, priority, tags, pinned, due_at, current_run_id,
+                  run_count, created_at, updated_at, sort_order, skills, origin_type, origin_agent,
+                  origin_skill, origin_session_id, confirmation_mode
+           FROM tasks ORDER BY id`,
+        )
+        .all();
+    const reviewSnapshot = (db: DatabaseSync) =>
+      db
+        .prepare(
+          `SELECT id, task_id, run_id, conclusion, suggestion, reason, detail, return_to, priority_adj,
+                  created_at, reviewer_name
+           FROM reviews ORDER BY id`,
+        )
+        .all();
+
+    try {
+      process.env.ATB_LOGS_DIR = path.join(root, 'logs');
+      mkdirSync(process.env.ATB_LOGS_DIR, { recursive: true });
+
+      // ── 路径一：全新建库（0001~0023 一次跑到顶） ──────────────────────────────────
+      const fresh = path.join(root, 'fresh');
+      mkdirSync(fresh);
+      process.env.ATB_DATA_DIR = fresh;
+      delete process.env.ATB_MIGRATIONS_DIR; // 仓库全量目录
+      expect(applyMigrations()).toEqual(orders2(top));
+      const freshDb = new DatabaseSync(path.join(fresh, 'jarvis.db'));
+      expect(freshDb.prepare('PRAGMA user_version').get()).toEqual({ user_version: top });
+
+      // ── 路径二：0022 存量库只重放 0023 ───────────────────────────────────────────
+      const upgraded = path.join(root, 'upgraded');
+      mkdirSync(upgraded);
+      process.env.ATB_DATA_DIR = upgraded;
+      process.env.ATB_MIGRATIONS_DIR = stageUpTo(22, 'migrations-0022');
+      expect(applyMigrations()).toEqual(orders2(22));
+      const before = new DatabaseSync(path.join(upgraded, 'jarvis.db'));
+      seedLegacy(before);
+      const tasksBefore = businessSnapshot(before);
+      const reviewsBefore = reviewSnapshot(before);
+      expect(tasksBefore).toHaveLength(3);
+      expect(reviewsBefore).toHaveLength(2);
+      // 升级前的形状自检：确实在演 0022 的形状，而不是不小心演了一个已经拆过的库。
+      expect(columnNames(before, 'tasks')).toContain('review_track');
+      expect(columnNames(before, 'reviews')).toContain('reviewer_type');
+      before.close();
+
+      delete process.env.ATB_MIGRATIONS_DIR; // 切回全量目录：水位 22 → 只重放 0023
+      expect(applyMigrations()).toEqual([23]);
+      expect(applyMigrations()).toEqual([]); // 二次空转（幂等）
+
+      const db = new DatabaseSync(path.join(upgraded, 'jarvis.db'));
+
+      // ① 三列 + reviewer_type 在 sqlite_master 里彻底不存在（判据③）。
+      for (const [table, column] of [
+        ['tasks', 'review_track'],
+        ['tasks', 'review_batch'],
+        ['reviews', 'reviewer_run_id'],
+        ['reviews', 'reviewer_type'],
+      ] as const) {
+        expect(columnNames(db, table), `${table}.${column}`).not.toContain(column);
+      }
+      expect(columnNames(db, 'tasks')).toContain('review_mode');
+      // `reviews.reviewer_name` 保留：它是「这条结论谁给的」唯一署名位，人审复用位（依据见 0023 第 2 段注释）。
+      expect(columnNames(db, 'reviews')).toContain('reviewer_name');
+
+      // ② 存量 `review_mode='auto'` 归 human（回「结果强制人工审核」现状），不批量免审。
+      expect(db.prepare(`SELECT review_mode FROM tasks WHERE id = 't_auto'`).get()).toEqual({ review_mode: 'human' });
+      expect(db.prepare(`SELECT review_mode FROM tasks WHERE id = 't_batch'`).get()).toEqual({ review_mode: 'human' });
+      // none 支一字不变（免审直通路的行为不许被动摇）。
+      expect(db.prepare(`SELECT review_mode FROM tasks WHERE id = 't_none'`).get()).toEqual({ review_mode: 'none' });
+
+      // ③ 其他业务列逐字零丢失（裁定第 2 条的边界澄清）。
+      expect(businessSnapshot(db)).toEqual(tasksBefore);
+      expect(reviewSnapshot(db)).toEqual(reviewsBefore);
+      // 存量审核行本体不删：r_agent 那条只是失去来源标记，结论文案与署名照旧。
+      expect(db.prepare(`SELECT COUNT(*) AS n FROM reviews`).get()).toEqual({ n: 2 });
+
+      // ④ `type='review'` 的纯标记边删除，blocks 边零丢失。
+      expect(
+        db.prepare(`SELECT id, task_id, depends_on, type FROM task_dependencies ORDER BY id`).all(),
+      ).toEqual([{ id: 'd_blocks', task_id: 't_auto', depends_on: 't_none', type: 'blocks' }]);
+
+      // ⑤ 两枚自动审核通知删除，其余 kind 零丢失（不改写成 review_pending——那是假账）。
+      expect(
+        db.prepare(`SELECT id, kind FROM notifications ORDER BY id`).all(),
+      ).toEqual([{ id: 'n_pending', kind: 'review_pending' }]);
+
+      // ⑥ 四个审核设置键的**生效行**删除（只改代码默认值管不到库里那行）。
+      expect(
+        db.prepare(`SELECT COUNT(*) AS n FROM settings WHERE key IN
+          ('review_auto_dispatch','review_batch_max_targets','review_max_rounds','review_rubric_skill')`).get(),
+      ).toEqual({ n: 0 });
+      // default_review_mode 键保留、取值归 'human'（与 ② 同一条判据）。
+      expect(db.prepare(`SELECT value FROM settings WHERE key = 'default_review_mode'`).get()).toEqual({ value: '"human"' });
+      // 用户词表只摘「审核」这一个元素：其余词与原序一字不动（整串替换会把用户资产洗成默认）。
+      const wordlist = db.prepare(`SELECT value, updated_at FROM settings WHERE key = 'task_types'`).get() as {
+        value: string;
+        updated_at: string;
+      };
+      expect(wordlist.value).toBe('["需求","我的类型","巡检"]');
+      expect(decodeSetting('task_types', wordlist.value)).toEqual(['需求', '我的类型', '巡检']);
+      expect(
+        db.prepare(`SELECT COUNT(*) AS n FROM settings WHERE key = 'task_types' AND updated_at <> ?`).get(SENTINEL),
+      ).toEqual({ n: 0 });
+
+      // ⑦ CHECK 词表收窄到位：review_mode 只放行 human/none、kind 只放行六词、deps 只放行两值。
+      expect(() => db.prepare(`INSERT INTO tasks (id, title, review_mode) VALUES ('x1', 'x', 'auto')`).run()).toThrow();
+      db.prepare(`INSERT INTO tasks (id, title, review_mode) VALUES ('x1', 'x', 'none')`).run();
+      db.prepare(`INSERT INTO tasks (id, title, review_mode) VALUES ('x4', 'x', 'human')`).run();
+      expect(() =>
+        db.prepare(`INSERT INTO notifications (id, kind, message) VALUES ('x2', 'review_auto_pending', 'x')`).run(),
+      ).toThrow();
+      expect(() =>
+        db.prepare(`INSERT INTO task_dependencies (id, task_id, depends_on, type) VALUES ('x3', 't_auto', 't_none', 'review')`).run(),
+      ).toThrow();
+
+      // ⑧ 索引集合：删掉的三条随列一起没了，其余一条不少且名字一致（验收会去 sqlite_master 数）。
+      expect(indexNames(db, 'tasks')).toEqual([
+        'idx_tasks_archived',
+        'idx_tasks_group',
+        'idx_tasks_lease',
+        'idx_tasks_parent',
+        'idx_tasks_ready',
+        'idx_tasks_status',
+      ]);
+      expect(indexNames(db, 'reviews')).toEqual(['idx_reviews_task']);
+      expect(indexNames(db, 'task_dependencies')).toEqual(['idx_deps_depends_on', 'idx_deps_task']);
+      expect(indexNames(db, 'notifications')).toEqual(['idx_notif_read', 'idx_notif_unread']);
+
+      // ⑨ 部分索引活着（重建最容易丢的就是 WHERE 条件那半截）。
+      expect(
+        (db.prepare(`SELECT name, sql FROM sqlite_master WHERE type = 'index' AND name IN ('idx_tasks_lease','idx_notif_unread')`).all() as {
+          name: string;
+          sql: string;
+        }[]).map((row) => row.sql),
+      ).toEqual([
+        'CREATE INDEX idx_tasks_lease ON tasks(lease_expires_at) WHERE status = \'RUNNING\'',
+        'CREATE INDEX idx_notif_unread ON notifications(read_at) WHERE read_at IS NULL',
+      ]);
+
+      // ⑩ 库干净：重建期外键是关的，这里补验无违例。
+      expect(Object.values(db.prepare('PRAGMA integrity_check').get() as Record<string, string>)).toEqual(['ok']);
+      expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+
+      // ⑪ 双路径终值一致：四张表的 DDL 原文与索引集合逐字相同。
+      for (const table of ['tasks', 'reviews', 'task_dependencies', 'notifications']) {
+        expect(tableSql(db, table), `${table} DDL`).toBe(tableSql(freshDb, table));
+        expect(indexNames(db, table), `${table} 索引`).toEqual(indexNames(freshDb, table));
+        expect(columnNames(db, table), `${table} 列`).toEqual(columnNames(freshDb, table));
+      }
+      // fresh 路径的词表种子行同样是五词（0001 五词 → 0021 追加六词 → 0023 摘回五词）。
+      expect(freshDb.prepare(`SELECT value FROM settings WHERE key = 'task_types'`).get()).toEqual({
+        value: '["需求","缺陷","子任务","巡检","重构"]',
+      });
+      // 四个审核键在 fresh 路径也不该有行（0001 从未种过它们，0023 又删了增量库里的生效行）。
+      // 注意别写成 `key LIKE 'review_%'`：`review_reuse_last_opinion` 是人审侧的活键，必须活着。
+      expect(
+        freshDb.prepare(
+          `SELECT COUNT(*) AS n FROM settings WHERE key IN
+             ('review_auto_dispatch','review_batch_max_targets','review_max_rounds','review_rubric_skill')`,
+        ).get(),
+      ).toEqual({ n: 0 });
+      expect(freshDb.prepare(`SELECT value FROM settings WHERE key = 'review_reuse_last_opinion'`).get()).toEqual({
+        value: 'true',
+      });
+
+      db.close();
+      freshDb.close();
     } finally {
       removeTempDirSync(root);
       if (previous.data === undefined) delete process.env.ATB_DATA_DIR;
@@ -703,8 +1065,9 @@ describe('board.create_task 直接创建（direct）', () => {
 
   it('Agent 直建面吃全局默认键 `default_review_mode`（2026-09-28 拍板「三条建单路一处口径」）', async () => {
     // 这条继承的意义：Agent 面**没有** review_mode 入参位（Q4 执行者不得自豁免），
-    // 所以豁免只能由人在设置页决定——全局键必须管到这一条路，否则设了 auto 也没用。
-    await h.settings.patch({ default_review_mode: 'auto' });
+    // 所以免审核直通只能由人在设置页决定——全局键必须管到这一条路，否则设了也没用。
+    // （2026-10-09 裁定移除 auto 后这一键只剩 human/none 两值，清单 §14 判据②；这里取 none。）
+    await h.settings.patch({ default_review_mode: 'none' });
     try {
       const result = (await call('board.create_task', {
         ...baseInput,
@@ -713,9 +1076,7 @@ describe('board.create_task 直接创建（direct）', () => {
         confirmation_mode: 'direct',
       })) as { task_id: string };
       const row = await h.prisma.task.findUnique({ where: { id: result.task_id } });
-      expect(row?.reviewMode).toBe('auto');
-      // 轨道位不在此处换：只有 complete 分流才写 review_track（草案 §3.4）。
-      expect(row?.reviewTrack).toBe('human');
+      expect(row?.reviewMode).toBe('none');
     } finally {
       await h.settings.patch({ default_review_mode: 'human' });
     }

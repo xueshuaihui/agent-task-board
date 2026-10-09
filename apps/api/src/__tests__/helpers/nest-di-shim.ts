@@ -6,7 +6,6 @@ import { AgentController } from '../../agent/agent.controller';
 import { ClaimService } from '../../agent/claim.service';
 import { LeaseService } from '../../agent/lease.service';
 import { McpPolicyService } from '../../agent/mcp-policy.service';
-import { ReviewQueueService } from '../../agent/review-queue.service';
 import { WritebackService } from '../../agent/writeback.service';
 import { ArtifactSignService } from '../../artifacts/artifact-sign.service';
 import { ArtifactsService } from '../../artifacts/artifacts.service';
@@ -95,7 +94,6 @@ export function applyDiShim(): void {
   declare(SkillsController, [SkillsService]);
   declare(McpPolicyService, [PrismaService, AuditService]);
   // 0020 §3.3（A2）：自动审核队列服务（claim_next_review / submit_review 的落点）。
-  declare(ReviewQueueService, [PrismaService, TasksService, AgentQueryService]);
 
   // index 5 由 @Inject(LEASE_SWEEP_OPTIONS) 自行声明，Object 只用来把数组撑到构造参数个数。
   declare(LeaseService, [PrismaService, SettingsService, AuditService, EventsService, NotificationsService, Object]);
@@ -104,7 +102,7 @@ export function applyDiShim(): void {
   // （真机侧由 AgentModule import TasksModule 提供，字段校验只有一份实现）。
   declare(WritebackService, [PrismaService, LeaseService, AuditService, EventsService, NotificationsService, AgentQueryService, TasksService]);
   declare(AgentController, [ClaimService, LeaseService, WritebackService, AgentQueryService]);
-  declare(McpController, [ClaimService, LeaseService, WritebackService, AgentQueryService, SkillsService, McpPolicyService, BreakdownService, CreationService, SettingsService, ReviewQueueService]);
+  declare(McpController, [ClaimService, LeaseService, WritebackService, AgentQueryService, SkillsService, McpPolicyService, BreakdownService, CreationService, SettingsService]);
 
   // ── tasks
   declare(TasksService, [

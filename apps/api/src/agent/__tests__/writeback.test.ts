@@ -111,16 +111,16 @@ describe('正常持有 → complete_task', () => {
   });
 });
 
-describe('审核方式三分流（0020 草案 §3.4）', () => {
+describe('审核方式两分流（0020 草案 §3.4；2026-10-09 裁定移除 auto 支后剩 human/none）', () => {
   /** 认领一支指定 `review_mode` 的任务：分流只看任务上那一列，其余链路与 human 支同源。 */
-  async function claimWithMode(mode: 'human' | 'auto' | 'none') {
+  async function claimWithMode(mode: 'human' | 'none') {
     await seedTask(h.prisma, 'T-1', { reviewMode: mode });
     const key = tripleOf(await h.claims.claim(CLAIM, agent));
     h.emitted.length = 0;
     return key;
   }
 
-  it('human：REVIEW + 轨道 human，通知与评论逐字沿用原口径', async () => {
+  it('human：REVIEW，通知与评论逐字沿用原口径（人审回归面）', async () => {
     const key = await claimWithMode('human');
 
     const result = await h.writeback.complete(completeSchema.parse({ ...key, summary: '人审' }), agent);
@@ -129,31 +129,13 @@ describe('审核方式三分流（0020 草案 §3.4）', () => {
     const task = await h.prisma.task.findUniqueOrThrow({ where: { id: 'T-1' } });
     expect(task.status).toBe('REVIEW');
     expect(task.reviewMode).toBe('human');
-    expect(task.reviewTrack).toBe('human');
     // 审核表单靠 current_run_id 定位被审 Run，human 支不能动它。
     expect(task.currentRunId).toBe(key.run_id);
     expect(await h.prisma.notification.count({ where: { kind: 'review_pending' } })).toBe(1);
-    expect(await h.prisma.notification.count({ where: { kind: 'review_auto_pending' } })).toBe(0);
+    // 只推这一条：拆链后不再有第二种审核通知（`review_auto_pending` 的 kind 已随 0023 出词表）。
+    expect(await h.prisma.notification.count({ where: { taskId: 'T-1' } })).toBe(1);
     expect(
       await h.prisma.comment.count({ where: { content: 'Agent 已完成执行，进入待审核：人审' } }),
-    ).toBe(1);
-    expect(events('task.moved')[0]?.data).toEqual({ id: 'T-1', from: 'RUNNING', to: 'REVIEW' });
-  });
-
-  it('auto：REVIEW + 轨道 auto，推「等待自动审核」而不是 review_pending', async () => {
-    const key = await claimWithMode('auto');
-
-    const result = await h.writeback.complete(completeSchema.parse({ ...key, summary: '机审' }), agent);
-
-    // auto 此刻只是「等待自动审核」，还没通过——目标状态仍是 REVIEW（通过通知归 A2）。
-    expect(result.task_status).toBe('REVIEW');
-    const task = await h.prisma.task.findUniqueOrThrow({ where: { id: 'T-1' } });
-    expect(task.status).toBe('REVIEW');
-    expect(task.reviewTrack).toBe('auto');
-    expect(await h.prisma.notification.count({ where: { kind: 'review_auto_pending' } })).toBe(1);
-    expect(await h.prisma.notification.count({ where: { kind: 'review_pending' } })).toBe(0);
-    expect(
-      await h.prisma.comment.count({ where: { content: 'Agent 已完成执行，进入待自动审核：机审' } }),
     ).toBe(1);
     expect(events('task.moved')[0]?.data).toEqual({ id: 'T-1', from: 'RUNNING', to: 'REVIEW' });
   });
@@ -173,7 +155,6 @@ describe('审核方式三分流（0020 草案 §3.4）', () => {
     expect(task.leaseExpiresAt).toBeNull();
     // 与审核通过出口对齐：DONE 是终态，不留指向已结案 Run 的 current_run_id。
     expect(task.currentRunId).toBeNull();
-    expect(task.reviewTrack).toBe('human');
 
     const comment = await h.prisma.comment.findFirstOrThrow({ where: { type: 'status_change' } });
     expect(comment.content).toContain('免审核直通（review_mode=none）');
@@ -184,7 +165,8 @@ describe('审核方式三分流（0020 草案 §3.4）', () => {
       reason: '免审核直通（review_mode=none）',
     });
     expect(await h.prisma.notification.count({ where: { kind: 'review_pending' } })).toBe(0);
-    expect(await h.prisma.notification.count({ where: { kind: 'review_auto_pending' } })).toBe(0);
+    // 直通路一条通知都不推（审核通知两种都已出词表；beforeEach 清空后按 taskId 数）。
+    expect(await h.prisma.notification.count({ where: { taskId: 'T-1' } })).toBe(0);
     expect(events('task.moved')[0]?.data).toEqual({ id: 'T-1', from: 'RUNNING', to: 'DONE' });
   });
 

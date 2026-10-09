@@ -148,3 +148,77 @@ describe('数据层异常经真 HTTP 出口后的形状（13 章错误体）', (
     expect(errorCode(missing)).toBe('NOT_FOUND');
   });
 });
+
+/**
+ * 清单 §14 判据②的出口面（2026-10-09 裁定「Agent 当审核方」整链移除）。
+ *
+ * `review_mode` 词表由 human/auto/none 收窄为 human/none（迁移 0023 的列级 CHECK 同值），
+ * 三个写面都必须：① 拒 `auto`、② 报 `VALIDATION_FAILED` 而不是塌回 `INTERNAL`、
+ * ③ 把可接受值念全（13 章细化口径：`details[].message` 里给出 `"human"|"none"`）。
+ *
+ * MCP 面单独说明：Agent 侧**从来没有** `review_mode` 入参位（0020 草案 Q4「执行者不得自豁免」
+ * 的硬不变量），所以「MCP 写 auto」能且只能表现为「未知字段被 `.strict()` 拒」——
+ * 这比词表校验更严，本用例把它一并钉住，防止哪天有人为了「兼容」把这个键加回去。
+ */
+describe('review_mode 词表收窄后的三处写面出口（清单 §14 判据②）', () => {
+  const accepted = /"human"\|"none"/;
+
+  it('REST 建单写 auto → 422 VALIDATION_FAILED，details 点名 review_mode 并念全 human/none', async () => {
+    const res = await ui.post(`${API}/tasks`, { title: '写 auto 的建单', type: '需求', review_mode: 'auto' });
+    expect(res.status, res.text).toBe(422);
+    expect(errorCode(res)).toBe('VALIDATION_FAILED');
+    expect(errorMessage(res)).not.toContain('内部错误');
+    const details = (res.body as { error: { details?: { path: string; message: string }[] } }).error.details ?? [];
+    const hit = details.find((item) => item.path === 'review_mode');
+    expect(hit, JSON.stringify(details)).toBeDefined();
+    expect(hit!.message).toMatch(accepted);
+  });
+
+  it('REST 编辑写 auto → 同一形状（PATCH /tasks/:id 与建单共用那份 userTaskPatchSchema）', async () => {
+    const created = await ui.post(`${API}/tasks`, { title: '写 auto 的编辑对象', type: '需求' });
+    expect(created.status, created.text).toBe(201);
+    const id = (created.body as { id: string }).id;
+
+    const res = await ui.patch(`${API}/tasks/${id}`, { review_mode: 'auto' });
+    expect(res.status, res.text).toBe(422);
+    expect(errorCode(res)).toBe('VALIDATION_FAILED');
+    const details = (res.body as { error: { details?: { path: string; message: string }[] } }).error.details ?? [];
+    expect(details.find((item) => item.path === 'review_mode')?.message).toMatch(accepted);
+
+    // human / none 两值照常可写：收窄不等于把人审与免审直通一起关掉。
+    expect((await ui.patch(`${API}/tasks/${id}`, { review_mode: 'none' })).status).toBe(200);
+    expect((await ui.patch(`${API}/tasks/${id}`, { review_mode: 'human' })).status).toBe(200);
+  });
+
+  it('设置写 default_review_mode=auto → 422 且 out_of_range 详情念全 human/none', async () => {
+    const res = await ui.patch(`${API}/settings`, { default_review_mode: 'auto' });
+    expect(res.status, res.text).toBe(422);
+    expect(errorCode(res)).toBe('VALIDATION_FAILED');
+    const details = (res.body as { error: { details?: { path: string; code: string; message: string }[] } }).error
+      .details ?? [];
+    expect(details).toHaveLength(1);
+    expect(details[0].path).toBe('default_review_mode');
+    expect(details[0].code).toBe('out_of_range');
+    expect(details[0].message).toMatch(accepted);
+
+    // 存活的两值可写，且写进去就生效（SettingsService「有行用行」）。
+    expect((await ui.patch(`${API}/settings`, { default_review_mode: 'none' })).status).toBe(200);
+    expect((await ui.patch(`${API}/settings`, { default_review_mode: 'human' })).status).toBe(200);
+  });
+
+  it('MCP 面写 review_mode 仍是「不可写键」：auto 与 none 一律按未知字段拒（Q4 不得自豁免）', async () => {
+    for (const mode of ['auto', 'none']) {
+      const res = await mcpCall('board.create_task', {
+        title: `MCP 侧写 review_mode=${mode}`,
+        type: '需求',
+        session_id: 'conv-14-review-mode',
+        agent_name: 'qoder-error-refinement',
+        confirmation_mode: 'direct',
+        review_mode: mode,
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.result?.isError, res.text).toBe(true);
+      expect((res.body.result?.structuredContent ?? {}).code).toBe('VALIDATION_FAILED');
+    }
+  });
+});

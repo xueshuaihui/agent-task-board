@@ -99,8 +99,8 @@ describe('Agent Token 不能调用任何用户接口', () => {
         reason: 'r',
         detail: 'd',
       }),
-      // 0020 A2 §3.4 的换轨出口与 review 同组（UI scope）：Agent Token 打过来同样 403。
-      agent.claims.post(`${API}/tasks/${readyTaskId}/review/escalate`, {}),
+      // 0020 A2 §3.4 的换轨出口（`POST /tasks/:id/review/escalate`）随 2026-10-09 裁定
+      // 「Agent 当审核方整链移除」下线，端点已不存在 → 不再是 403 面，见下面单独一条用例。
       agent.claims.get(`${API}/settings`),
       agent.claims.get(`${API}/tokens`),
       agent.claims.get(`${API}/field-defs`),
@@ -113,6 +113,15 @@ describe('Agent Token 不能调用任何用户接口', () => {
     const results = await Promise.all(calls);
     expect(results.map((res) => res.status)).toEqual(results.map(() => 403));
     expect(results.map((res) => errorCode(res))).toEqual(results.map(() => 'FORBIDDEN'));
+  });
+
+  it('拆掉的换轨端点整条不存在（清单 §14：UI 凭证也是 404，不是「在但被权限挡住」）', async () => {
+    // 反面情形是「路由还挂着、只是加了个开关」——那是兼容壳，不是拆除。
+    // 两种凭证都得撞在路由层之外（Nest 无匹配 → 404 NOT_FOUND，进不了 controller）。
+    for (const sender of [ui, agent.claims]) {
+      const res = await sender.post(`${API}/tasks/${readyTaskId}/review/escalate`, {});
+      expect(res.status).toBe(404);
+    }
   });
 });
 
