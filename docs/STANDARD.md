@@ -562,6 +562,7 @@ npx prisma migrate deploy
 |`TASK_RUNNING`|409|删除／归档 `RUNNING` 任务，或 UI 侧 `PATCH /tasks/{id}` 试图编辑执行中的任务（v0.0.4 §16.1 起 Agent 的 `update_task` 不在这一条：持当前租约即放行，见下）|UI|
 |`TASK_NOT_EDITABLE`|409|v0.0.4 §16.1 MCP `update_task`（全字段 PATCH）的第三支守卫：任务停在 `BLOCKED`／`REVIEW`／`DONE`／`FAILED` 这些编辑窗口之外的状态。`message` 与 `details[]` 必须指名该走的链路（BLOCKED＝人工处理后转 READY 重认领、REVIEW＝审核表单、DONE＝终态需新建任务、FAILED＝转回 READY 重认领），`context` 带 `task_id/status/route`|Agent|
 |`ARCHIVE_BLOCKED_BY_DEPENDENCY`|409|归档仍是未完成任务的前置（4\.3\.1 规则 3）|UI / 定时任务|
+|`ARCHIVE_BLOCKED_BY_CHILDREN`|409|需求类型归档时仍有活跃子任务（子任务未完成且未归档）|UI / REST|
 |`DEPENDENCY_CYCLE`|409|新增依赖成环（9\.3）|UI|
 |`LEASE_EXPIRED`|410|租约已过期（4\.3\.2）|Agent|
 |`LEASE_REVOKED`|410|租约被用户强制停止吊销（4\.3\.2）|Agent|

@@ -262,14 +262,30 @@ describe('执行中与终态的额外约束', () => {
     expect(errorMessage(back)).toBe(USER_COPY.dragOutOfDone);
   });
 
-  it('只有已完成可以归档，其余五列一律 409', async () => {
-    for (const status of ['BACKLOG', 'READY', 'RUNNING', 'BLOCKED', 'REVIEW', 'FAILED'] as const) {
-      const fixture = await taskIn(t, status, `不能归档 ${status}`);
+  it('普通任务须 DONE 才能归档；需求类型允许任意状态但须无活跃子任务', async () => {
+    // 普通任务（非需求类型）：BACKLOG/READY 状态不该能归档（RUNNING/BLOCKED/REVIEW/FAILED 因状态锁无法改 type，逻辑由代码守卫保证）
+    for (const status of ['BACKLOG', 'READY'] as const) {
+      const fixture = await taskIn(t, status, `普通任务不能归档 ${status}`);
+      // 将任务类型改为非需求类型（缺陷）
+      await ui.patch(`${API}/tasks/${fixture.id}`, { type: '缺陷' });
       const res = await ui.post(`${API}/tasks/${fixture.id}/archive`, {});
-      expect(res.status, `${status} 不该能归档`).toBe(409);
+      expect(res.status, `普通任务(${status}) 不该能归档`).toBe(409);
       expect(errorCode(res)).toBe('ILLEGAL_TRANSITION');
       expect(errorMessage(res)).toBe('只有已完成的任务可以归档');
     }
+
+    // 需求类型：有活跃子任务时拒绝归档
+    const requirement = await taskIn(t, 'BACKLOG', '有子任务的需求');
+    await newTask(t, { title: '活跃子任务', parent_task_id: requirement.id, type: '子任务' });
+    const blockedRes = await ui.post(`${API}/tasks/${requirement.id}/archive`, {});
+    expect(blockedRes.status).toBe(409);
+    expect(errorCode(blockedRes)).toBe('ARCHIVE_BLOCKED_BY_CHILDREN');
+
+    // 需求类型：无子任务时允许归档（即使需求本身不在 DONE 状态）
+    const requirement2 = await taskIn(t, 'READY', '无子任务的需求');
+    const allowedRes = await ui.post(`${API}/tasks/${requirement2.id}/archive`, {});
+    expect(allowedRes.status).toBe(201);
+    expect(allowedRes.body.archived).toBe(true);
   });
 
   it('批量流转逐条判定：合法项生效，非法项带着原因进 skipped（6.13）', async () => {
