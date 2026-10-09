@@ -13,8 +13,8 @@ import { REVIEW_MODE_CHOICES, reviewModeBody } from '../review-mode-field';
 const WEB_SRC = resolve(import.meta.dirname, '../../..');
 
 describe('reviewModeBody（建单请求体的审核方式腿）', () => {
-  it('三枚实值各自原样落键，取值域不超出后端 REVIEW_MODES', () => {
-    expect(REVIEW_MODE_CHOICES).toEqual(['human', 'auto', 'none']);
+  it('两枚实值各自原样落键，取值域不超出后端 REVIEW_MODES（auto 已随 Agent 审核链移除）', () => {
+    expect(REVIEW_MODE_CHOICES).toEqual(['human', 'none']);
     for (const mode of REVIEW_MODE_CHOICES) {
       expect(reviewModeBody(mode)).toEqual({ review_mode: mode });
     }

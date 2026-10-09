@@ -145,13 +145,8 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
               { label: '类型', value: detail.type },
               { label: '优先级', value: priorityText(detail.priority) },
               {
-                // 0020 §3.4：换过轨的 auto 任务要说明「Agent 不再领它」，否则用户会一直等；
-                // 但 review_mode 仍是 auto（PATCH 只改轨道位，不改方式）。
                 label: '审核方式',
-                value:
-                  detail.review_mode === 'auto' && detail.review_track === 'human'
-                    ? `${REVIEW_MODE_LABEL.auto}（已转由你审核）`
-                    : REVIEW_MODE_LABEL[detail.review_mode],
+                value: REVIEW_MODE_LABEL[detail.review_mode],
               },
               {
                 // §19.14·86（W2-b）：只读行从「分组」改为「所属需求」——看板可见面

@@ -96,10 +96,8 @@ function ReviewCard({ review }: { review: Review }) {
           {labelOf(CONCLUSION_TEXT, review.conclusion)}
         </span>
         <span className="flex-1" />
-        {/* §3.2：Agent 审的记 Token 名、人审的不署名——「这条是谁判的」在审核记录里必须可见。 */}
-        <Badge tone={review.reviewer_type === 'agent' ? 'outline' : 'neutral'}>
-          {reviewerSignature(review)}
-        </Badge>
+        {/* 署名口径收在 reviewerSignature()：这台机器只有一个人审，一律显示「人工审核」。 */}
+        <Badge tone="neutral">{reviewerSignature()}</Badge>
         <span className="shrink-0 text-aux text-text-tertiary">{formatDateTime(review.created_at)}</span>
         {review.run_id ? <Mono className="shrink-0">{review.run_id}</Mono> : null}
       </header>

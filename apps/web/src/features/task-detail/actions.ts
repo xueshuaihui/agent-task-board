@@ -31,7 +31,6 @@ export type ActionId =
   | 'view_logs'
   | 'review'
   | 'reject_rerun'
-  | 'escalate_review'
   | 'archive'
   | 'restore'
   | 'delete';
@@ -130,17 +129,6 @@ function extraActions(detail: TaskDetail): TaskAction[] {
       return [
         { id: 'review', label: '审核 →', slot: 'primary' },
         { id: 'reject_rerun', label: '退回重跑', slot: 'secondary', hint: '填驳回表单' },
-        // 0020 §3.4：接管入口只对「还在自动队列里」的任务出现，换过轨就不再给（服务端也会 409）。
-        ...(detail.review_mode === 'auto' && detail.review_track === 'auto'
-          ? [
-              {
-                id: 'escalate_review' as const,
-                label: '转人工审核',
-                slot: 'menu' as const,
-                hint: '不再等 Agent，改由你审',
-              },
-            ]
-          : []),
       ];
     default:
       // 20.2 末段：库里出现表外状态时不给任何写入口，避免按猜的矩阵发请求。

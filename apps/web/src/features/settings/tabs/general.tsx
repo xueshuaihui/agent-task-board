@@ -43,16 +43,11 @@ const CREATION_MODE_OPTIONS = [
 ] as const;
 
 /**
- * 0020 §3.5 的默认审核方式。措辞必须点明「谁来审」：自动队列由用户自己起的 Agent Token
- * 领取（§3.2），平台不起审核进程，所以不写「系统自动审核」这种会让人以为产品在后台跑模型的字。
+ * 默认审核方式（2026-10-09 裁定后只剩两枚：人工审核 / 免审核）。
+ * 「Agent 当审核方」的 auto 档已整链移除；审核一律由人在界面完成。
  */
 const REVIEW_MODE_OPTIONS = [
   { value: 'human', label: REVIEW_MODE_LABEL.human, description: '执行完落「待审核」，由你给结论（默认）' },
-  {
-    value: 'auto',
-    label: REVIEW_MODE_LABEL.auto,
-    description: '落「待审核」后进自动队列：非执行者的 Agent Token 领走审核，拿不准会转回人工',
-  },
   { value: 'none', label: REVIEW_MODE_LABEL.none, description: '执行完直接落「已完成」，不经审核' },
 ] as const;
 

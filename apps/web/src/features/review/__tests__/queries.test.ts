@@ -72,16 +72,8 @@ describe('artifactsSourceRun', () => {
   });
 });
 
-describe('reviewerSignature（0020 §3.2 的审核记录署名）', () => {
-  it('Agent 审的记 Token 名；名字缺失（历史行）也不写成空字符串', () => {
-    expect(reviewerSignature({ reviewer_type: 'agent', reviewer_name: 'reviewer-b' })).toBe(
-      'Agent · reviewer-b',
-    );
-    expect(reviewerSignature({ reviewer_type: 'agent', reviewer_name: null })).toBe('Agent 审核');
-  });
-
+describe('reviewerSignature（审核记录署名）', () => {
   it('人工审核不署名：单用户本地应用里署操作者名只是噪声', () => {
-    expect(reviewerSignature({ reviewer_type: 'user', reviewer_name: null })).toBe('人工审核');
-    expect(reviewerSignature({ reviewer_type: 'user', reviewer_name: 'xuesh' })).toBe('人工审核');
+    expect(reviewerSignature()).toBe('人工审核');
   });
 });

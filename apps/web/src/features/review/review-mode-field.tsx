@@ -5,7 +5,7 @@ import type { ReviewMode } from '@/api/types';
 /** 建单表单的取值：`''` = 不传 `review_mode`，由服务端 `resolveReviewMode` 吃全局默认键。 */
 export type ReviewModeChoice = '' | ReviewMode;
 
-export const REVIEW_MODE_CHOICES: ReviewMode[] = ['human', 'auto', 'none'];
+export const REVIEW_MODE_CHOICES: ReviewMode[] = ['human', 'none'];
 
 /**
  * 「审核方式」选择器——建单弹窗 / 看板快速新建 / 详情编辑三处共用一份。
@@ -35,7 +35,7 @@ export function ReviewModeField({
       label="审核方式"
       hint={
         allowDefault
-          ? `「等 Agent 审」由你自己起的 Agent Token 领取审核，拿不准时它会转回人工；免审核的任务执行完直接落已完成`
+          ? '人工审核的任务执行完落「待审核」由你给结论；免审核的任务执行完直接落已完成'
           : `改这里只影响本任务；新任务仍按设置页的默认值（当前：${defaultLabel}）`
       }
       error={error}

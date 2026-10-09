@@ -61,13 +61,11 @@ export function lastReview(reviews: readonly Review[] | undefined): Review | nul
 }
 
 /**
- * 0020 §3.2 审核记录的署名口径：Agent 记 Token 名（谁审的要可追责），人由本地 UI 操作、
- * 这台机器上只有你一个操作者，所以不署名——避免出现「人工 · xuesh」这种噪声。
+ * 审核记录署名口径：这台机器上只有你一个操作者，人不署名——避免出现
+ * 「人工 · xuesh」这种噪声。「Agent 当审核方」链移除后（2026-10-09 裁定），
+ * 审核记录一律出自人；口径收在这一个函数里，审核页与详情抽屉共用。
  */
-export function reviewerSignature(review: Pick<Review, 'reviewer_type' | 'reviewer_name'>): string {
-  if (review.reviewer_type === 'agent') {
-    return review.reviewer_name ? `Agent · ${review.reviewer_name}` : 'Agent 审核';
-  }
+export function reviewerSignature(): string {
   return '人工审核';
 }
 

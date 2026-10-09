@@ -1,34 +1,29 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { TaskCard } from '@/api/types';
-import { reviewBadgeState } from '../model';
+import { REVIEW_BADGE_LABEL } from '../model';
 
 /**
- * 0020 §3.4 的角标判定：待审核列里三种任务共用一列，靠角标分开——
- * 分不开时人会把「等 Agent 审」的一直等着，或以为「已转人工」的还要等 Agent。
+ * 待审核列卡片角标（2026-10-09 裁定后只剩人审 Bell 一态）：
+ * 原三例里的两例（auto∧track=auto 的 Bot 态、auto 已被人接管的换轨态）随
+ * 「Agent 当审核方」整链移除——那两种任务形态不再存在，判定函数也删了。
+ * 这里钉住剩下的 Bell 态文案与「Bot 角标不得回流」的源码闸。
  */
 
-const card = (review_mode: TaskCard['review_mode'], review_track: TaskCard['review_track']): Pick<TaskCard, 'review_mode' | 'review_track'> => ({
-  review_mode,
-  review_track,
-});
+const WEB_SRC = resolve(import.meta.dirname, '../../..');
 
-describe('reviewBadgeState', () => {
-  it('auto ∧ track=auto → 等 Agent 领审核（唯一一种不是等自己审的）', () => {
-    expect(reviewBadgeState(card('auto', 'auto'))).toMatchObject({ autoWaiting: true, label: '等待自动审核' });
+describe('待审核列卡片角标', () => {
+  it('Bell 态文案仍是「待你审核」', () => {
+    expect(REVIEW_BADGE_LABEL).toBe('待你审核');
   });
 
-  it('auto 已被人接管 → 不再是自动态，且要说清「不再进自动队列」', () => {
-    const state = reviewBadgeState(card('auto', 'human'));
-    expect(state.autoWaiting).toBe(false);
-    expect(state.tip).toContain('不再进自动审核队列');
-  });
-
-  it('human 任务与免审残留态走同一份人审文案（none 正常不落 REVIEW，出现时不静默）', () => {
-    expect(reviewBadgeState(card('human', 'human'))).toEqual({
-      autoWaiting: false,
-      tip: '待你审核',
-      label: '待你审核',
-    });
-    expect(reviewBadgeState(card('none', 'human')).autoWaiting).toBe(false);
+  it('卡片视图只剩 Bell 一态：不再渲染 Bot 角标，也不再读 review_track', () => {
+    const source = readFileSync(resolve(WEB_SRC, 'features/board/task-card-view.tsx'), 'utf8');
+    expect(source).toContain('<Bell');
+    // 注释里允许提「Bot 态已移除」，但 JSX 与 lucide import 里不许再有 Bot 图标。
+    expect(source).not.toMatch(/<Bot[\s/>]/);
+    expect(source).not.toMatch(/^\s*Bot,\s*$/m);
+    expect(source).not.toContain('review_track');
+    expect(source).not.toContain('reviewBadgeState');
   });
 });

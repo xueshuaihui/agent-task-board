@@ -8,7 +8,6 @@ import { actionsFor, headerMenuItems, type TaskAction } from './actions';
 import {
   useArchiveTask,
   useDeleteTask,
-  useEscalateReviewTask,
   useRestoreTask,
   useStopTask,
   useTransitionTask,
@@ -48,7 +47,6 @@ export function useDrawerActions({ detail, onJumpToLogs }: DrawerActionsOptions)
   const stop = useStopTask(detail.id);
   const archive = useArchiveTask(detail.id);
   const restore = useRestoreTask(detail.id);
-  const escalateReview = useEscalateReviewTask(detail.id);
   const remove = useDeleteTask(detail.id);
 
   const actions = actionsFor(detail);
@@ -75,9 +73,6 @@ export function useDrawerActions({ detail, onJumpToLogs }: DrawerActionsOptions)
       case 'view_logs':
         setBusyId(null);
         onJumpToLogs(detail.current_run_id);
-        return;
-      case 'escalate_review':
-        escalateReview.mutate(undefined, settle(action));
         return;
       case 'stop':
         stop.mutate(undefined, settle(action));
@@ -168,8 +163,6 @@ function successText(action: TaskAction): string {
       return '已归档（任务列表页「已归档」可查，6.13.1）';
     case 'restore':
       return '已恢复为未归档';
-    case 'escalate_review':
-      return '已转由你审核：该任务不再进自动审核队列';
     case 'delete':
       return '已删除任务';
     default:

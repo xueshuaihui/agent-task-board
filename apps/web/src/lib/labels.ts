@@ -9,8 +9,6 @@ import type {
   NotificationKind,
   ReviewConclusion,
   ReviewMode,
-  ReviewTrack,
-  ReviewerType,
   RunStatus,
   StopReason,
   TaskStatus,
@@ -65,25 +63,12 @@ export const REVIEW_CONCLUSION_LABEL: Record<ReviewConclusion, string> = {
 };
 
 /**
- * 0020 §3.1 任务审核方式的展示名。「等 Agent 审」而不是「自动审」是因为口径要说清
- * 谁来审——队列由用户自己起的 Agent Token 领取（§3.2），平台不起审核进程。
+ * 任务审核方式的展示名。2026-10-09 裁定移除「Agent 当审核方」链后只剩两枚；
+ * 「谁来审」的口径要说清：待审核列里的任务一律由人给结论，平台不起审核进程。
  */
 export const REVIEW_MODE_LABEL: Record<ReviewMode, string> = {
   human: '人工审核',
-  auto: '等 Agent 审',
   none: '免审核',
-};
-
-/** §3.4 当前审核轨道：auto = 还在自动队列里，human = 已由人接管。 */
-export const REVIEW_TRACK_LABEL: Record<ReviewTrack, string> = {
-  auto: '自动队列',
-  human: '由你审核',
-};
-
-/** §3.2 审核记录署名口径：人不署名，Agent 记 Token 名。 */
-export const REVIEWER_TYPE_LABEL: Record<ReviewerType, string> = {
-  user: '人工',
-  agent: 'Agent',
 };
 
 export const DEPENDENCY_TYPE_LABEL: Record<DependencyType, string> = {
@@ -122,9 +107,6 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   lease_expired: '租约过期',
   review_rejected: '审核被驳回',
   task_unblocked: '依赖已解锁',
-  // 0020 §3.4：自动审核轨道的两段——「等待自动审核」与「自动审核已通过」。
-  review_auto_pending: '等待自动审核',
-  review_auto_passed: '自动审核通过',
 };
 
 export const FIELD_TYPE_LABEL: Record<FieldType, string> = {

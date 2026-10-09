@@ -59,16 +59,6 @@ export function useStopTask(taskId: string) {
   );
 }
 
-/**
- * 0020 §3.4：把人从自动审核队列里摘出来——只换 `review_track`，不写审核结论。
- * 已换轨 / 不在待审核列回 409，基座的失败 Toast 文案即服务端那句，不再包一层。
- */
-export function useEscalateReviewTask(taskId: string) {
-  return useApiMutation(() => api.tasks.escalateReview(taskId), {
-    invalidate: () => keysFor(taskId),
-  });
-}
-
 export function useArchiveTask(taskId: string) {
   return useApiMutation(() => api.tasks.archive(taskId), {
     invalidate: () => keysFor(taskId),

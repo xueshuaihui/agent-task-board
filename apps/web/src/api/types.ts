@@ -38,17 +38,9 @@ export type StopReason = (typeof STOP_REASONS)[number];
 export const REVIEW_CONCLUSIONS = ['APPROVE', 'REJECT'] as const;
 export type ReviewConclusion = (typeof REVIEW_CONCLUSIONS)[number];
 
-/** 0020 草案 §3.1：任务级审核方式（human 人审 / auto 进自动审核队列 / none 免审直通）。 */
-export const REVIEW_MODES = ['human', 'auto', 'none'] as const;
+/** 2026-10-09 裁定：任务级审核方式只剩两枚——human 人审 / none 免审直通（「Agent 当审核方」的 auto 已整链移除）。 */
+export const REVIEW_MODES = ['human', 'none'] as const;
 export type ReviewMode = (typeof REVIEW_MODES)[number];
-
-/** §3.4：当前由谁审——自动轨可被 Agent 换轨成人轨，换轨后 Agent 不再领取。 */
-export const REVIEW_TRACKS = ['auto', 'human'] as const;
-export type ReviewTrack = (typeof REVIEW_TRACKS)[number];
-
-/** §3.2：审核记录署名（人 = UI 操作者，不署名；Agent = Token 名）。 */
-export const REVIEWER_TYPES = ['user', 'agent'] as const;
-export type ReviewerType = (typeof REVIEWER_TYPES)[number];
 
 export const RETURN_TARGETS = ['BACKLOG', 'READY'] as const;
 export type ReturnTarget = (typeof RETURN_TARGETS)[number];
@@ -82,9 +74,6 @@ export const NOTIFICATION_KINDS = [
   'lease_expired',
   'review_rejected',
   'task_unblocked',
-  // 0020 草案 §3.4：自动审核轨道的两段通知——前者在 complete_task 分流时推，后者由自动审核通过后推。
-  'review_auto_pending',
-  'review_auto_passed',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
@@ -292,12 +281,6 @@ export interface TaskCard {
   parent?: { id: string; title: string; done: number; total: number } | null;
   /** v0.0.4 §8.6（W8-a4）：任务来源（'user' | 'agent'），与 api TaskCardDto 对齐；agent 直建任务挂 5 秒撤销入口。 */
   origin_type: string;
-  /**
-   * 0020 草案 §3.6：审核方式与当前审核轨道，卡片快照与详情同源常返。
-   * 看板 REVIEW 列的「等待自动审核 / 待你审核」两态、审核入口的显隐都读这两个键。
-   */
-  review_mode: ReviewMode;
-  review_track: ReviewTrack;
 }
 
 export interface CardArtifact {
@@ -318,6 +301,11 @@ export interface TaskDetail extends TaskCard {
   claimed_at: string | null;
   depends_on: DependencyRef[];
   blocks: DependencyRef[];
+  /**
+   * 1009 拆档后卡片快照不再携带审核方式（看板角标只剩人审一态）；
+   * 详情侧仍常返——概览 Tab 的「审核方式」展示与编辑（human/none）读它。
+   */
+  review_mode: ReviewMode;
   /**
    * 0919 5.2/5.3：子任务全量列表（后端 `familyFields()` 恒回，无子任务为空数组）。
    * 只有「需求」类型会有非空 children。
@@ -440,9 +428,6 @@ export interface Review {
   detail: string;
   return_to: string | null;
   priority_adj: number | null;
-  /** 0020 §3.2：审核人身份位。人审不署名（reviewer_name 为 null），Agent 审记 Token 名。 */
-  reviewer_type: ReviewerType;
-  reviewer_name: string | null;
   created_at: string | null;
 }
 
@@ -767,11 +752,6 @@ export interface ReviewInput {
   return_to?: ReturnTarget;
   priority_adj?: number;
   run_id?: string;
-}
-
-/** 0020 §3.4：人侧「转人工审核」——只换轨不写审核结论，理由选填（落评论）。 */
-export interface EscalateReviewInput {
-  reason?: string;
 }
 
 export interface CommentInput {

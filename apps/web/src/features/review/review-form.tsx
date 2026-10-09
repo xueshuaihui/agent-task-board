@@ -20,7 +20,7 @@ import {
   useSettings,
   useTaskOverview,
 } from '@/api';
-import type { ReviewConclusion, ReviewInput, RunArtifact, TaskDetail } from '@/api/types';
+import type { ReviewConclusion, ReviewInput, RunArtifact } from '@/api/types';
 import type { ReviewPrefill } from '@/app/store/shell';
 import {
   Badge,
@@ -187,31 +187,6 @@ function ReviewFormBody({
 
   /* ---------------------------------------------------------------- 提交 */
 
-  /**
-   * 0020 §3.4：人主动接管一支自动轨任务。只换轨道位（`review_track` auto→human），
-   * 不写审核结论、不改 `review_mode`——表单继续开着，人接着按人审的路子提交结论。
-   * 并发（Agent 恰好也领了它）回 409，走与提交失败同一句条幅文案，不另立口径。
-   */
-  const escalate = useApiMutation<void, TaskDetail>(() => api.tasks.escalateReview(taskId), {
-    invalidate: () => [qk.boardRoot, qk.tasksRoot, qk.taskRoot(taskId), qk.notificationsRoot],
-    toastOnError: false,
-    onSuccess: () => {
-      setBanner(null);
-      toast.success('已转由你审核', `${taskId} · 该任务不再进自动审核队列`);
-    },
-    onSettled: (_data, error) => {
-      if (!error) return;
-      const code = isApiError(error) ? error.code : null;
-      setBanner({
-        text:
-          code === 'ILLEGAL_TRANSITION' || code === 'NOT_FOUND' || code === 'TASK_GONE'
-            ? '该任务状态已变化'
-            : errorMessage(error),
-        error,
-      });
-    },
-  });
-
   const submit = useApiMutation<ReviewInput, unknown>(
     (body) => api.tasks.review(taskId, body),
     {
@@ -318,9 +293,6 @@ function ReviewFormBody({
   const history = reviewHistory(reviews.data?.items);
   const status = task?.status ?? 'REVIEW';
   const offQueue = status !== 'REVIEW';
-  // §3.4：接管入口只在「自动轨且还没被人接管」时出现；接管成功后 track=human，按钮自己消失。
-  const canEscalate =
-    task !== undefined && task.review_mode === 'auto' && task.review_track === 'auto' && !offQueue;
 
   // 6.10.3 的上限走同一个设置项（20.9），与详情抽屉一致，审核表单不自立第二口径。
   const maxMb = settings.data?.artifact_max_mb ?? 20;
@@ -350,16 +322,6 @@ function ReviewFormBody({
             {banner ? null : '⌘ / Ctrl + Enter 提交'}
           </span>
           <Button onClick={onClose}>取消</Button>
-          {canEscalate ? (
-            <Button
-              variant="ghost"
-              loading={escalate.isPending}
-              onClick={() => void escalate.mutate()}
-              title="不等 Agent，由你直接审这支"
-            >
-              转人工审核
-            </Button>
-          ) : null}
           {/* DESIGN §4 审核：结论即强调——通过走 primary 渐变，驳回切换 outlineDanger 描红。 */}
           <Button
             variant={draft.conclusion === 'REJECT' ? 'outlineDanger' : 'primary'}
