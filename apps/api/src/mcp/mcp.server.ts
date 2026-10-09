@@ -9,8 +9,8 @@ import { buildAgentTools, parseToolInput, type AgentToolContext } from './agent-
 
 export type { AgentToolContext };
 
-/** MCP Server 的标识名，客户端配置里的 `agent-task-board` 与它对应（10.2）。 */
-export const MCP_SERVER_NAME = 'agent-task-board';
+/** MCP Server 的标识名，客户端配置里的 `jarvis-workbench` 与它对应（10.2）。 */
+export const MCP_SERVER_NAME = 'jarvis-workbench';
 
 /** #46 唤醒词：客户端 Agent 在对话里监测它，服务端把口径经 instructions 下发（见下）。 */
 export const MCP_WAKE_WORD = '贾维斯';
