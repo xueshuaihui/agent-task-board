@@ -513,12 +513,38 @@ export class TasksService {
     return this.getCard(id);
   }
 
-  /** 4.3.1 规则 3 + 6.13：归档只允许 DONE，且不能仍是未完成任务的 blocks 前置。 */
+  /**
+   * 4.3.1 规则 3 + 6.13：归档规则分两支——普通任务必须 DONE；需求类型放宽到任意状态，
+   * 但需检查子任务是否都已完成或已归档（避免归档一个还挂着活跃子任务的需求）。
+   * 依赖守卫对两者同样生效：不能是未完成任务的 blocks 前置。
+   */
   async archive(id: string): Promise<{ id: string; archived: boolean }> {
     const task = await this.requireTask(id);
-    if (task.status !== 'DONE') {
+    const isRequirement = task.type === '需求';
+
+    // 非需求类型：沿用原有规则——必须 DONE
+    if (!isRequirement && task.status !== 'DONE') {
       throw new ApiException('ILLEGAL_TRANSITION', '只有已完成的任务可以归档');
     }
+
+    // 需求类型：检查子任务完成度（允许归档的条件是「无活跃子任务」）
+    if (isRequirement) {
+      const children = await this.prisma.task.findMany({
+        where: { parentTaskId: id },
+        select: { id: true, status: true, archivedAt: true },
+      });
+      const activeChildren = children.filter((child) => !child.archivedAt && child.status !== 'DONE');
+      if (activeChildren.length > 0) {
+        throw new ApiException(
+          'ARCHIVE_BLOCKED_BY_CHILDREN',
+          `需求下还有 ${activeChildren.length} 个活跃子任务，请先完成或归档这些子任务`,
+          undefined,
+          { active_children: activeChildren.map((c) => c.id) },
+        );
+      }
+    }
+
+    // 依赖守卫：不能是未完成任务的 blocks 前置（对需求和普通任务同样生效）
     const blockers = await this.unfinishedDependents(id);
     if (blockers.length > 0) {
       throw new ApiException(
@@ -528,6 +554,7 @@ export class TasksService {
         { downstream: blockers.map((row) => row.id) },
       );
     }
+
     await this.prisma.task.update({
       where: { id },
       data: { archivedAt: nowSql(), leaseId: null, leaseExpiresAt: null, updatedAt: nowSql() },
@@ -639,7 +666,7 @@ export class TasksService {
   async addDependency(
     id: string,
     dependsOn: string,
-    // 0021 将 DDL 的 type CHECK 扩为 blocks/relates/review，签名随 DEP_TYPES 取宽（不再写字面联合）。
+    // 0023 随「Agent 当审核方」整链移除把 DDL 的 type CHECK 收回 blocks/relates（0021 曾扩出 review），签名随 DEP_TYPES 取宽（不再写字面联合）。
     type: DependencyType,
   ): Promise<TaskDetailDto> {
     await this.requireTask(id);

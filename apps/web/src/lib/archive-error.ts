@@ -20,10 +20,18 @@ export function archiveBlockedCount(text: string): number | null {
 
 /** 单任务归档/恢复的失败：409 的 `context.downstream` 就是阻塞它的未完成任务。 */
 export function archiveErrorText(error: unknown): string {
-  if (isApiError(error) && error.code === 'ARCHIVE_BLOCKED_BY_DEPENDENCY') {
-    const downstream = error.context.downstream;
-    const count = Array.isArray(downstream) ? downstream.length : archiveBlockedCount(error.message);
-    return COPY.archiveBlocked(count ?? 1);
+  if (isApiError(error)) {
+    if (error.code === 'ARCHIVE_BLOCKED_BY_DEPENDENCY') {
+      const downstream = error.context.downstream;
+      const count = Array.isArray(downstream) ? downstream.length : archiveBlockedCount(error.message);
+      return COPY.archiveBlocked(count ?? 1);
+    }
+    // 需求归档：子任务未完成
+    if (error.code === 'ARCHIVE_BLOCKED_BY_CHILDREN') {
+      const activeChildren = error.context.active_children;
+      const count = Array.isArray(activeChildren) ? activeChildren.length : null;
+      return `需求下还有${count ? ` ${count} ` : ''}个活跃子任务，请先完成或归档这些子任务`;
+    }
   }
   return errorMessage(error);
 }
@@ -35,6 +43,12 @@ export function failureText(reason: string): string {
   const message = split > 0 ? reason.slice(split + 2).trim() : reason.trim();
   if (code === 'ARCHIVE_BLOCKED_BY_DEPENDENCY') {
     return COPY.archiveBlocked(archiveBlockedCount(message) ?? archiveBlockedCount(reason) ?? 1);
+  }
+  if (code === 'ARCHIVE_BLOCKED_BY_CHILDREN') {
+    // 从 message 中提取数字（「需求下还有 N 个活跃子任务」）
+    const match = /(\d+)/.exec(message);
+    const count = match ? match[1] : '';
+    return `需求下还有${count ? ` ${count} ` : ''}个活跃子任务，请先完成或归档这些子任务`;
   }
   if (message) return message;
   return ERROR_CODE_COPY[code as ErrorCode] ?? ERROR_CODE_COPY.UNKNOWN;

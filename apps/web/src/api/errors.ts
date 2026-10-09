@@ -60,6 +60,7 @@ export const ERROR_CODE_COPY: Record<ErrorCode, string> = {
   // §16.1：停在 BLOCKED/REVIEW/DONE/FAILED——服务端 message 会指名该走哪条链路，这里只兜底。
   TASK_NOT_EDITABLE: '任务当前状态不在可编辑窗口内（已阻塞、待审核、已完成或已失败）',
   ARCHIVE_BLOCKED_BY_DEPENDENCY: '该任务仍是其他未完成任务的前置，无法归档',
+  ARCHIVE_BLOCKED_BY_CHILDREN: '需求下还有活跃子任务，请先完成或归档这些子任务',
   DEPENDENCY_CYCLE: '依赖关系形成环，已取消保存',
   LEASE_EXPIRED: COPY.leaseExpired,
   LEASE_REVOKED: COPY.leaseRevoked,
