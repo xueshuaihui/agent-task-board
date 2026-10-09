@@ -415,18 +415,18 @@ function clientSnippet(client: ClientKind, url: string, token: string): string {
   const auth = `Bearer ${token}`;
   if (client === 'qoder') {
     return JSON.stringify(
-      { mcpServers: { 'agent-task-board': { url, headers: { Authorization: auth } } } },
+      { mcpServers: { 'jarvis-workbench': { url, headers: { Authorization: auth } } } },
       null,
       2,
     );
   }
   if (client === 'claude') {
-    return `claude mcp add --transport http agent-task-board ${url} --header "Authorization: ${auth}"`;
+    return `claude mcp add --transport http jarvis-workbench ${url} --header "Authorization: ${auth}"`;
   }
   if (client === 'codex') {
     return [
       '# ~/.codex/config.toml',
-      '[mcp_servers.agent-task-board]',
+      '[mcp_servers.jarvis-workbench]',
       `url = "${url}"`,
       'bearer_token_env_var = "ATB_MCP_TOKEN"',
       '',
@@ -434,7 +434,7 @@ function clientSnippet(client: ClientKind, url: string, token: string): string {
     ].join('\n');
   }
   return JSON.stringify(
-    { mcpServers: { 'agent-task-board': { url, headers: { Authorization: auth } } } },
+    { mcpServers: { 'jarvis-workbench': { url, headers: { Authorization: auth } } } },
     null,
     2,
   );

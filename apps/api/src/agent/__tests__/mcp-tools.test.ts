@@ -112,7 +112,7 @@ describe('MCP 工具面', () => {
   it('tools/list 暴露 12 章基础工具、W6 技能/策略工具与 W7 board.* 拆解工具，都带 JSON Schema', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((tool) => tool.name).sort()).toEqual(W6_TOOL_NAMES);
-    expect(MCP_SERVER_NAME).toBe('agent-task-board');
+    expect(MCP_SERVER_NAME).toBe('jarvis-workbench');
     for (const tool of tools) {
       expect(tool.description).toBeTruthy();
       expect(tool.inputSchema.type).toBe('object');

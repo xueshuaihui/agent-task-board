@@ -176,7 +176,7 @@ export function buildVocabulary(input: VocabularyInput) {
       pattern: CAPABILITY_RE.source,
       max_length: 64,
       namespaces: [...CAPABILITY_NAMESPACES],
-      examples: ['language:java', 'framework:nestjs', 'repo:agent-task-board', 'tool:git'],
+      examples: ['language:java', 'framework:nestjs', 'repo:jarvis-workbench', 'tool:git'],
       matching: '约定外的命名空间不校验取值、按字符串全等匹配（无通配符）；任务 required_capabilities ⊆ Token 生效能力集合才可领',
     },
     skill: {
