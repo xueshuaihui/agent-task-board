@@ -20,14 +20,16 @@ import { toCallToolResult } from '../../mcp/mcp.server';
 const repoRoot = path.resolve(__dirname, '../../../../..');
 const webTypes = readFileSync(path.join(repoRoot, 'apps/web/src/api/types.ts'), 'utf8');
 const webErrorsCopy = readFileSync(path.join(repoRoot, 'apps/web/src/api/errors.ts'), 'utf8');
-const designDoc = readFileSync(path.join(repoRoot, 'docs/Agent Task Board 产品与设计文档 v1.5.md'), 'utf8');
+const designDoc = readFileSync(path.join(repoRoot, 'docs/STANDARD.md'), 'utf8');
 
-/** 第十三章码表那一段：从 `## 统一错误码` 起、到十四章标题止（表外的一律不参与判定）。 */
+/** 码表那一段：从 `## 11. 统一错误码` 起、到下一个二级标题止（表外的一律不参与判定）。 */
 function docCodeTable(): string {
-  const start = designDoc.indexOf('## 统一错误码');
-  const end = designDoc.indexOf('# 十四、', start);
-  expect(start, '文档里找不到「## 统一错误码」').toBeGreaterThan(-1);
-  expect(end, '文档里找不到十四章标题（码表段落收不住）').toBeGreaterThan(start);
+  const start = designDoc.indexOf('## 11. 统一错误码');
+  expect(start, '文档里找不到「## 11. 统一错误码」').toBeGreaterThan(-1);
+  // 找下一个二级标题作为边界，如果没有则取到文件末尾
+  const afterStart = designDoc.slice(start + 1);
+  const nextHeading = afterStart.match(/^## (?!11\. 统一错误码)/m);
+  const end = nextHeading && nextHeading.index !== undefined ? start + nextHeading.index : designDoc.length;
   return designDoc.slice(start, end);
 }
 
