@@ -30,7 +30,7 @@
 > 删需求卡片 500 根因（0022 弱引用）+ Group 在 web 整体下线、导航改「需求」（r1–r6）+ 任务审核方式可配置（0020）+
 > 自动审核器 **A1 数据层**（0021）+ BLOCKED 失败死路（`87c8963`）+ 建单绑技能（`226f275`）。
 > **迁移水位 0019 → 0022**，故 §3 的真库首启核验已就地改到 0022 并补 0020–0022 结构核验；§1–§12 其余 mac 项对 beta.9 同样成立、无需重走。
-> ⚠️ **本批的「有没有自动审核」必须分两层讲清（2026-09-29 自我纠错，此前本块写的是「装 beta.9 看不到自动审核行为」——那句错）**：
+> ⚠️ **本批的「有没有自动审核」必须分两层讲清（2026-10-09 自我纠错，此前本块写的是「装 beta.9 看不到自动审核行为」——那句错）**：
 > **① Agent 审核链在 beta.9 里是活的**：0020 那条棒的 A2 队列（commit `9297c5f`，已核为本 tag 的祖先）已随包发布——
 > MCP `claim_next_review`/`submit_review` + `apps/api/src/agent/review-queue.service.ts` + `writeback.service.ts:239-242`
 > 的 `review_mode='auto'` 分流都在包内；任务设成 `auto` 后，外部 Agent Token 能领取并回写 APPROVE/REJECT/ESCALATE。
@@ -38,7 +38,7 @@
 > `task_dependencies.type='review'` 无产出路径、四个审核设置键（`review_auto_dispatch`/`review_batch_max_targets`/
 > `review_max_rounds`/`review_rubric_skill`）零消费者、批次抽屉不存在。tag note 里那句「A2–A4 未实现」用的是**第六版的 A 编号**，
 > 与 0020 那条棒的 A2 同名不同物——tag 已发布不改注解（改要 force 移 tag），纠正以本节与下一批 tag 说明为准。
-> **2026-09-29 追加裁定**：用户判定「Agent 当审核方」这条设计多余，**整条链要拆掉后重新设计**（见 §14）。
+> **2026-10-09 追加裁定**：用户判定「Agent 当审核方」这条设计多余，**整条链要拆掉后重新设计**（见 §14）。
 
 > **截至 2026-09-25（tag v0.0.4-beta.7 → `5ed5861` 已切、CI run 36086497632）**：dev 可验面已全绿——§6.2/§6.3/§6.4/§6.5/§7.1/§7.2(前二)/§7.3/§7.4 与 §9–§11 的 dev 腿逐条勾销（批次记录在矩阵「beta.6 之后：dev 演练真机轮」节，该轮修掉 `96f7fb7`/`9777249`/`c3fa31e`/`e27d26e` 四缺陷）；G 批（§10、§11）与 0925 批（§12：31 条编码技能收录 + 分类两级树化）均已在 dev HEAD 真机走查（/tmp 副本环境 c6：两级筛选栏、搜「编码」41 条、双角色两行卡片、0018/0019 增量与 fresh 双路径实测）。**剩余未勾项全部依赖打包 dmg**：§0–§5、§6.1、§7.2-③ 托盘深色可见性、§9 的 beta 包复验腿、§10.1 经典占位滚动条档与 §10.2/§10.3 真实客户端实调、§11 打包环境滚动条挤压与最小窗横滚手势、§12 的包内首启核验（真库 0006→0019 直跳是本批最大真实路径）。
 
@@ -267,7 +267,7 @@
   - ②真机删一张拆解产出的需求卡片：不再出现「本地服务内部错误」，拆解历史页仍可打开（指针归空的会话读面）。
   - ③包内遇库锁（另一进程占库）时的写动作：界面显示存储被占的细化文案，折叠「详情」里能读到引擎原文一行。
   - ④MCP 面在**真实 Agent 客户端**里回细化码 + `detail`（此前只到协议层与 InMemoryTransport，见 §6.5/§10.2 同类口径）。
-  - ⑤**Agent 审核链的包内现状核验**（2026-09-29 纠错后的口径，替换此前写反的「不应看到任何自动审核行为」）：装 beta.9 **能**用外部 Agent Token 走 `claim_next_review` → `submit_review` 把一支 `review_mode='auto'` 的任务审掉，并落 `reviewer_type='agent'` + 通知 `review_auto_passed`（该 commit `9297c5f` 已核为本 tag 祖先）；用不到的只是**批次形态**——`review_batch` 恒 0、无批次抽屉、四个审核设置键零消费者。此条是随后「移除 Agent 审核」那片的起点基线：拆完按同一动作反向复验（领不到、提交不了、界面无 auto 选项）。
+  - ⑤**Agent 审核链的包内现状核验**（2026-10-09 纠错后的口径，替换此前写反的「不应看到任何自动审核行为」）：装 beta.9 **能**用外部 Agent Token 走 `claim_next_review` → `submit_review` 把一支 `review_mode='auto'` 的任务审掉，并落 `reviewer_type='agent'` + 通知 `review_auto_passed`（该 commit `9297c5f` 已核为本 tag 祖先）；用不到的只是**批次形态**——`review_batch` 恒 0、无批次抽屉、四个审核设置键零消费者。此条是随后「移除 Agent 审核」那片的起点基线：拆完按同一动作反向复验（领不到、提交不了、界面无 auto 选项）。
     ——**状态注：【1009 移除中】**（§14 裁定后 S1 正在拆 `apps/api/**`+数据层、S2 拆 `apps/web/**`，本条此刻仍按 beta.9 包现状走查；S1/S2 落地后本条翻为上述反向复验口径，由 S4 执行）。
   - ⑥包内导航与页面文案确为「需求」（Group 字样不应残留），看板列不随筛选折叠（r5 拍板）在 dmg 的经典滚动条档复验。
   - ⑦Windows：beta.9 是**第二个**含 `.exe` 的对外包（首个是 beta.8），真机安装与首启仍未验证，口径见 `docs/发布手册.md` §1.3「已证/未证」，另立清单、不并进 #14 关单。
@@ -275,7 +275,7 @@
 
 **本节门禁**：见上条门禁项；走查脚本与截图留档在 `/tmp/atb-walk/`（本机临时目录，**不作为验收载体**，真机按本节条目重跑）。
 
-## 14. 2026-09-29 裁定：Agent 审核功能判多余，整链移除后重新设计
+## 14. 2026-10-09 裁定：Agent 审核功能判多余，整链移除后重新设计
 
 用户在真实使用过程中判定「让 Agent 当审核方」这条设计多余，令**完全移除、重新设计**。四条拍板（本轮定死，实现棒不得自行收窄）：
 
@@ -312,6 +312,6 @@
 | §10.2 G-2 `update_task` | 协议层过（2026-09-24 · dev，InMemoryTransport 全链路 17 用例），客户端实调待包 | MCP 工具 26→27。守卫三支（拍板）：RUNNING 须持当前租约（与 `update_progress` 同 `leases.verify` 口径）、BACKLOG/READY 免租约、其余四状态拒 409 `TASK_NOT_EDITABLE` 且 details 指名该走的链路。字段面逐字取 `taskPatchSchema.shape`（13 可写字段），校验/审计只有 `TasksService.applyPatch` 一份；**REST `PATCH /tasks/:id` 的 RUNNING 即拒一字未动**（既有测试 + 新增红线用例双向锁住）；`status`/`assignee` 不在可写键内，改不到状态机与执行权。 |
 | §10.3 G-3 `update_skill` | 协议层过（同上，16 用例），客户端实调待包 | 27→28。可写面 = UI `skillPatchSchema` 除 `status` 外全部；`status` **有意排除**（UI 发布=`POST /versions` 快照 + `PATCH {status}` 两步，agent 面无快照工具，只改状态会让 `current_version` 与 content 脱节），`mcp_dependencies` 与 UI PATCH 面一致不可写。守卫全复用 `SkillsService.patch`（默认技能 `SKILL_READONLY`、子技能自引用/成环 `SKILL_REF_SELF`/`SKILL_REF_CYCLE`），`@AuthScope('ui')` 未摘。词表回显补在 agent 入口层：`parseToolInput` details 追加 `received`、hint 拼「可接受值 + 当前收到」，`get_vocabulary` 新增 `skill_categories`；REST 的裸 zod 422 形状 UI 在用、锁进测试未改。 |
 | §11 G-5 看板列宽 | 过（2026-09-24 · dev 真机浏览器，非打包 dmg），打包环境待复验 | 用户拍板「全列常驻等分 + 暂无任务」，覆盖 PRD v1.5 §4.1/§5 的「空列折叠为 40px 竖条」。修法删概念：`model.ts::columnCollapsed` 连函数删除、`board-column.tsx` 的 `collapsed` prop/`w-column-collapsed` 分支/列头竖条形态/条件包裹全清、40px 定档 token 与随之失去对象的 `transition-[width]` 一并删；`total === 0 && defaultView` 那条整页空态规则未动。实测：1940px 真窗口无筛选 7×228 → 加 `P3 低` 后仍 7×228（修复前 698/698/40×5 且空列无「暂无任务」），5 个空列全部显示「暂无任务」；960/1280/1600 三档（同源 iframe 真视口，各跑无筛选与 P3 两态）列数恒 7、单列恒 180px、容器 clientW/scrollW = 848/1356、1032/1356、1352/1356（横滚只在列行内）、三档页面级 `scrollWidth === clientWidth` 零横向溢出；B4 列内竖滚未退化（需求池 clientH 1225 < scrollH 1450）。新增 7 例单测（`renderToStaticMarkup` 真渲列组件）。 |
-| §13 beta.9 批（报错细化 / 0022 删除根因 / 0021 A1） | dev 过（2026-09-29 · /tmp 副本走查 + 真故障注入，非打包 dmg），包内待复验 | 42 判定面（36 读 + 3 设置写 + 3 建单写）**42/42 细化文案**，泄漏「本地服务内部错误」0、引擎原文裸露主文案 0、念成空态 0，三档 960/1280/1600 各留截图；注入后均恢复 200。两条闸：`list-empty-vs-error.gate.test.ts`（128 `.tsx`、43 折叠点、offenders 0，豁免须写理由）+ REST/MCP/Web 码表一致性。门禁 api 70 files/778 tests + boot:smoke PASS、web 30 files/277 tests + build。两条硬事实入档：**WAL 库锁只挡写**（读面测锁必假绿）、**settings 有 memo**（`GET /settings` 不碰表）。0022 已验：删拆解产出的需求 → 200、会话与草案留、指针归空。**本批承诺边界（2026-09-29 纠错后口径）**：0020 的 Agent 审核队列（`9297c5f`：MCP 两工具 + `ReviewQueueService` + `auto` 分流）**已在包内可用**，未接线的只是第六版草案的批次形态（`review_batch` 恒 0、无批次抽屉、四键零消费者）；用户已裁定「Agent 当审核方」这条设计多余、要拆掉重设计（见 §0 追加块与 §13 待包⑤）。记档未改：设置「通用」写报错落在该列末尾（`general.tsx:254`，960 档 y≈1497 在折叠线下）。
+| §13 beta.9 批（报错细化 / 0022 删除根因 / 0021 A1） | dev 过（2026-09-29 · /tmp 副本走查 + 真故障注入，非打包 dmg），包内待复验 | 42 判定面（36 读 + 3 设置写 + 3 建单写）**42/42 细化文案**，泄漏「本地服务内部错误」0、引擎原文裸露主文案 0、念成空态 0，三档 960/1280/1600 各留截图；注入后均恢复 200。两条闸：`list-empty-vs-error.gate.test.ts`（128 `.tsx`、43 折叠点、offenders 0，豁免须写理由）+ REST/MCP/Web 码表一致性。门禁 api 70 files/778 tests + boot:smoke PASS、web 30 files/277 tests + build。两条硬事实入档：**WAL 库锁只挡写**（读面测锁必假绿）、**settings 有 memo**（`GET /settings` 不碰表）。0022 已验：删拆解产出的需求 → 200、会话与草案留、指针归空。**本批承诺边界（2026-10-09 纠错后口径）**：0020 的 Agent 审核队列（`9297c5f`：MCP 两工具 + `ReviewQueueService` + `auto` 分流）**已在包内可用**，未接线的只是第六版草案的批次形态（`review_batch` 恒 0、无批次抽屉、四键零消费者）；用户已裁定「Agent 当审核方」这条设计多余、要拆掉重设计（见 §0 追加块与 §13 待包⑤）。记档未改：设置「通用」写报错落在该列末尾（`general.tsx:254`，960 档 y≈1497 在折叠线下）。
 
 另记：**React Flow 归属水印**——流程图视图原先 `proOptions={{ hideAttribution: true }}`，控制台明确提示隐藏需订阅 Pro（本项目无订阅）。2026-09-24 拍板「恢复显示」，已随 `e27d26e` 改回 `hideAttribution: false`（与技能画布既有写法同风格），水印走 `globals.css` 既有的弱化配色（透明底 + `--color-text-tertiary`，深浅主题同一令牌），未加隐藏、未改色位。beta 包复验时确认深浅两套主题下不压内容即可。
