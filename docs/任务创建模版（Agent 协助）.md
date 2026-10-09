@@ -76,6 +76,8 @@ Agent 填好 JSON 后，你直接在看板 UI 新建任务时照抄字段即可�
 状态推进由流转接口 / Agent 认领事务产生，最终完成默认经人工审核（REVIEW → DONE）；
 建单时可对单个任务显式选 `review_mode`（`human` 默认 / `auto` 等 Agent 审 / `none` 免审核直通），
 缺省值取设置项 `default_review_mode`。该字段**不在 Agent 的 `update_task` 可写清单里**——执行者改不了自己任务的审核方式。
+（**`auto` 值按 `docs/v0.0.4/beta真机验证清单.md` §14 裁定【1009 移除中】**：S1/S2 落地后建单只剩 `human`/`none` 两档、下拉与词表去掉 auto；
+`human` 与 `none` 行为不变。当前 beta.9 包内三值可选是现状。）
 
 **Agent 填写守则**：
 

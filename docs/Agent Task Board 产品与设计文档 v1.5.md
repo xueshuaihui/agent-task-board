@@ -5,6 +5,8 @@
 
 > 一个桌面端任务看板（Tauri 原生主窗口 \+ 常驻本地服务）。用户手动创建任务；Agent 客户端（Codex、Qoder、Claude Code、Cursor 等）通过自身定时任务，经 MCP HTTP / REST API 领取任务并执行；执行结果回写看板；任务默认强制人工审核，填写建议、原因、详情后流转（v0.0.4 0020 起可按任务显式选「等 Agent 审」或「免审核」，豁免留痕且执行者不可自豁免）。支持任务依赖、模板、导入导出、批量归档。
 > 
+> **2026 裁定更新（`docs/v0.0.4/beta真机验证清单.md` §14）**：「等 Agent 审」（Agent 当审核方）判为多余、【1009 移除中】（S1/S2 落地、S4 收口复验；当前 beta.9 包内仍在）；人工审核与「免审核」直通保留、行为不变；重新设计另开一轮。上文括号内「等 Agent 审」为移除前的历史口径，非本文档的既定方向推荐。
+> 
 > 
 
 
@@ -154,7 +156,7 @@ Codex、Qoder、Claude Code、Cursor 等 Agent 客户端已具备定时任务与
 
 3. 结果回写：Agent 回写进度、日志、产物。
 
-4. 人工审核：任务默认由人审核，填写建议、原因、详情；单个任务可显式改「等 Agent 审」（非执行者的审核者 Token 领队列回结论，拿不准转回人工）或「免审核」（执行完直接完成）。
+4. 人工审核：任务默认由人审核，填写建议、原因、详情；单个任务可显式改「等 Agent 审」（非执行者的审核者 Token 领队列回结论，拿不准转回人工）或「免审核」（执行完直接完成）。——其中「等 Agent 审」按清单 §14 裁定**【1009 移除中】**（S1/S2 落地、S4 收口），人工审核与「免审核」为保留项。
 
 5. 审核反馈：审核意见保留，Agent 下次可读取。
 
@@ -192,7 +194,7 @@ Codex、Qoder、Claude Code、Cursor 等 Agent 客户端已具备定时任务与
 
 4. 不做外部任务同步。
 
-5. 不做自动审核。
+5. 不做自动审核。（本条为 v1.5 原始非目标；v0.0.4 0020 曾开「Agent 当审核方」通道，与本子句冲突——清单 §14 裁定该通道**【1009 移除中】**、重新设计另开一轮；本子句与裁定的方向一致，但新审核方案是否沿用「不做」口径由另起的设计轮裁定，本档不预判。）
 
 6. 不做任务强制拆解。
 
@@ -245,7 +247,7 @@ Codex、Qoder、Claude Code、Cursor 等 Agent 客户端已具备定时任务与
 |Run|任务的一次执行尝试|
 |Lease|任务租约，防止重复执行|
 |Artifact|Agent 产物（diff、报告、日志、PR 链接）|
-|Review|审核记录（建议、原因、详情）＋ 结论来源（`reviewer_type`：user / agent，agent 记 Token 名）|
+|Review|审核记录（建议、原因、详情）＋ 结论来源（`reviewer_type`：user / agent，agent 记 Token 名）——「agent 出结论」一侧按清单 §14 裁定**【1009 移除中】**（S1 落地为准，人工审核记录不受影响）|
 |Token|Agent 接入凭证|
 |Custom Field|用户自定义任务字段|
 |Field Def|自定义字段定义|
@@ -282,7 +284,7 @@ Codex、Qoder、Claude Code、Cursor 等 Agent 客户端已具备定时任务与
 |需求池|`BACKLOG`|新建任务、驳回回退的任务|
 |待执行|`READY`|可被 Agent 领取（含被阻塞任务，显示阻塞角标）|
 |执行中|`RUNNING`|Agent 已认领，正在执行；**不可由拖拽产生**|
-|待审核|`REVIEW`|Agent 执行完，等待出结论（列内两轨：等人工 / 等 Agent 审，见 6.5）|
+|待审核|`REVIEW`|Agent 执行完，等待出结论（列内两轨：等人工 / 等 Agent 审，见 6.5；「等 Agent 审」轨按清单 §14 裁定**【1009 移除中】**，目标态列内只剩等人工一轨）|
 |已完成|`DONE`|审核通过|
 |异常/失败|`FAILED`|Agent 上报失败、租约超时、或用户强制停止|
 
@@ -341,7 +343,7 @@ Codex、Qoder、Claude Code、Cursor 等 Agent 客户端已具备定时任务与
 |审核通过|待审核 → 已完成|审核表单，必填建议、原因、详情|
 |驳回|待审核 → 待执行（默认）/ 需求池|审核表单，必填建议、原因、详情；可选调整优先级|
 |**退回重跑**|待审核 → 待执行|等价于「驳回」：弹审核表单并预填 结论=驳回、退回目标=待执行，三字段仍必填（可「复用上次意见」一键填充）|
-|**转人工审核**|不改状态（`review_track` auto → human）|任务在「等 Agent 审」轨上时可用：卡片/审核表单的「转人工审核」，此后自动审核队列不再领取该任务（人优先）；不写审核结论|
+|**转人工审核**|不改状态（`review_track` auto → human）|任务在「等 Agent 审」轨上时可用：卡片/审核表单的「转人工审核」，此后自动审核队列不再领取该任务（人优先）；不写审核结论。**本动作只存在于「等 Agent 审」轨，随该链按清单 §14 裁定整体【1009 移除中】**（S1/S2 落地后矩阵此行作废，人工审核表单不动；编号保留在此作账目）|
 |重试|异常/失败 → 待执行 / 需求池|无|
 |置顶 / 取消置顶|不改状态|任意状态可用，影响抓取顺序（5\.6）|
 |归档|不改状态，置 `archived_at`|**仅 `DONE`**，且无未完成的前置任务引用它（4\.3\.1 规则 3）|
@@ -356,9 +358,9 @@ Codex、Qoder、Claude Code、Cursor 等 Agent 客户端已具备定时任务与
 
 - 待执行 → 执行中：原子认领（依赖已满足）
 
-- 执行中 → 待审核：完成回写（任务 `review_mode = none` 时直接 → 已完成；`auto` 时落待审核的自动轨）
+- 执行中 → 待审核：完成回写（任务 `review_mode = none` 时直接 → 已完成；`auto` 时落待审核的自动轨——**`auto` 分流按清单 §14 裁定【1009 移除中】**，目标态只剩 human/none 两分支）
 
-- 待审核 → 已完成 / 待执行：审核者 Token（**非该 Run 的执行者**）领取并回结论，见 6\.5
+- 待审核 → 已完成 / 待执行：审核者 Token（**非该 Run 的执行者**）领取并回结论，见 6\.5——**本条描述的即「Agent 当审核方」链，按 §14 裁定【1009 移除中】**；目标态该流转只由人在审核表单触发
 
 - 执行中 → 异常/失败：上报失败
 
@@ -880,16 +882,24 @@ ORDER BY pinned DESC, priority ASC, created_at ASC
 7. **审核方式可按任务配置**（v0\.0\.4 0020）：`tasks.review_mode` 三值 —— `human`（默认，等人工）/ `auto`（等 Agent 审）/ `none`（免审核直通）。
    缺省值由设置项 `default_review_mode` 统一供给三条建单路（REST 建单、Agent 直建、拆解确认页建子任务），建单时显式选择才覆盖。
    `none` 不产生审核记录，评论与审计各记一笔「免审核直通」。
+   ——按清单 §14 裁定，本条中的 `auto` 值**【1009 移除中】**：目标态词表只剩 `human`/`none`，`auto` 在建单/编辑/设置三处下拉消失（§14 判据②）；
+   `human` 与 `none` 的行为口径一字不变。编号保留在此作账目，S4 收口后按判据②翻正。
 
 8. **自动审核链路（Q2：审核者 Token 认领队列，平台不起任何进程）**：`review_mode = auto` 的任务完成回写后落待审核的自动轨
    （`review_track = auto`），由调用方另起的**非执行者** Agent Token 经 `claim_next_review`（只读领取：任务 \+ 被审 Run \+ 日志）
    与 `submit_review`（`APPROVE` / `REJECT` / `ESCALATE`）出结论。硬门禁两条：
    审核者 == 被审 Run 的执行者 → 拒 `SELF_REVIEW_FORBIDDEN`；`review_mode` 不在 Agent 的 `update_task` 可写键清单里（执行者不可自豁免）。
    结论落库与人工审核走同一条实现，`reviews.reviewer_type = agent` \+ Token 名留痕，界面署名 `Agent · <Token 名>`。
+   ——**本条整条（「Agent 当审核方」链路本体）按清单 §14 裁定【1009 移除中】**：MCP `claim_next_review`/`submit_review`、
+   `ReviewQueueService`、`auto` 分流、`review_track`、`reviewer_type='agent'` 产出点与 `review_auto_*` 两枚通知 kind 均在移除范围
+   （beta.9 包内该链仍可用是现状；S1 数据层+API、S2 界面落地，S4 按 §14 判据①②③反向复验）。**重新设计另开一轮，本条不构成新方案**。
+   编号保留在此作账目，不删条以免 6.5 编号断裂。
 
 9. **兜底：不确定 → 升级人工，不设超时定时器**（Q3）。两个入口等价：审核器回 `ESCALATE`、人点「转人工审核」
    （4\.3）——都只把 `review_track` 换成 `human` 并推 `review_pending`，不写审核结论。
    此后自动队列不再领取该任务（**人优先**）；没人在线时任务就一直等在列里，不产生任何不可预期的自动流转。
+   ——本条是第 8 条链路的兜底件，**随链按 §14 裁定一并【1009 移除中】**（`escalate`/换轨只在自动轨上有意义；人工审核本无「升级」一说）。
+   编号保留在此作账目。
 
     
 
@@ -919,6 +929,8 @@ Agent 下次领取该任务时，`get_task` / `get_review_feedback` 返回最近
 
 自动审核（6\.5 第 8 条 `submit_review`）的结论走同一份 `reviews` 表与同一条回写链，因此审核器驳回的三字段
 同样出现在这里——执行侧不需要区分「上一条是谁判的」。
+（本节这段的前提是「Agent 当审核方」链，**按清单 §14 裁定【1009 移除中】**：目标态 `review_feedback` 只可能来自人工驳回；
+上例 JSON 与人工链路部分不受影响。）
 
 
 
@@ -928,7 +940,7 @@ Agent 下次领取该任务时，`get_task` / `get_review_feedback` 返回最近
 
 事件：任务进入待审核、执行失败、租约超时、审核驳回、依赖解锁（对应 `notifications.kind`，见 20\.2）。
 
-自动审核链路（6\.5 第 7、8 条）另加两枚 kind，口径与上面同一条链，只是「等谁」不同：
+自动审核链路（6\.5 第 7、8 条）另加两枚 kind，口径与上面同一条链，只是「等谁」不同（**两枚均按清单 §14 裁定【1009 移除中】**——S1 落地后不再产生；下列描述为 beta.9 包内现状）：
 
 - `review_auto_pending`：`review_mode = auto` 的任务完成回写后落待审核的自动轨时推——此刻在等审核器，不占用人；
   **它不进「待处理」白名单**（通知中心 13\.9），因为要人做的事还没落到人头上；人随时可在卡片上「转人工审核」抢跑，
@@ -2085,6 +2097,9 @@ CREATE TABLE notifications (
 CREATE INDEX idx_notif_unread ON notifications(read_at) WHERE read_at IS NULL;
 ```
 
+（上列 kind CHECK 中的 `review_auto_pending` / `review_auto_passed` 两枚属「Agent 当审核方」链，**按清单 §14 裁定【1009 移除中】**；
+此处 DDL 是 0020 已应用事实的留档，目标态词表收缩与表结构处置以 S1 的移除迁移为准。）
+
 
 
 ---
@@ -2435,7 +2450,7 @@ CREATE INDEX idx_notif_unread ON notifications(read_at) WHERE read_at IS NULL;
 
 
 
-`notification.created` 在 6\.7 的各类事件（`review_pending` / `run_failed` / `lease_expired` / `review_rejected` / `task_unblocked`，W8 的 `creation_request`，0020 的 `review_auto_pending` / `review_auto_passed`）落库时各发一条，载荷里的 `unread_count` 由服务端算好带上。顶栏铃铛与托盘角标**只**订阅这一个事件，不从不相关的 `task.*` 里猜计数；`lease.expired` 仍单独保留，因为看板卡片的倒计时要变红（原型 3\.3），那是渲染态而非通知。
+`notification.created` 在 6\.7 的各类事件（`review_pending` / `run_failed` / `lease_expired` / `review_rejected` / `task_unblocked`，W8 的 `creation_request`，0020 的 `review_auto_pending` / `review_auto_passed`——后两枚**按清单 §14 裁定【1009 移除中】**，目标态不再发出）落库时各发一条，载荷里的 `unread_count` 由服务端算好带上。顶栏铃铛与托盘角标**只**订阅这一个事件，不从不相关的 `task.*` 里猜计数；`lease.expired` 仍单独保留，因为看板卡片的倒计时要变红（原型 3\.3），那是渲染态而非通知。
 
 
 
@@ -2472,7 +2487,7 @@ CREATE INDEX idx_notif_unread ON notifications(read_at) WHERE read_at IS NULL;
 |`FIELD_IN_USE`|409|删除被任务引用的字段定义，`details.task_count` 给出引用数（13 章字段接口）|UI|
 |`INVALID_BACKUP_NAME`|400|恢复入参不符合 `^atb-\d{8}-\d{6}\.db$`，或含路径分隔符（组装路径前的白名单校验，13 章备份接口）|UI|
 |`BACKUP_NOT_FOUND`|404|文件名合法但磁盘上不存在——备份列表来自磁盘扫描，两次请求之间可能被人手动删除|UI|
-|`SELF_REVIEW_FORBIDDEN`|403|0020 §3\.3/Q4 自审硬门禁：审核者 Token 与被审 Run 的执行者 Token 是同一枚。`message` 指名该换哪类凭证|Agent|
+|`SELF_REVIEW_FORBIDDEN`|403|0020 §3\.3/Q4 自审硬门禁：审核者 Token 与被审 Run 的执行者 Token 是同一枚。`message` 指名该换哪类凭证。**本码随「Agent 当审核方」链按清单 §14 裁定【1009 移除中】**（S1 落地后本行从码表清除；行目保留在此作账目，S4 按 §14 判据③收口）|Agent|
 |`INVALID_PARAM`|422|入参**形状**不合（枚举越界、id 含非法字符、WS 用查询参数带凭证），区别于 `VALIDATION_FAILED` 的逐字段业务校验|全部|
 |`SKILL_BOUND`|409|8 章：删除仍被任务绑定的技能，`context.bound_count` 给出绑定任务数|UI|
 |`SKILL_ID_CONFLICT`|409|§9\.8\.4 导入撞同 ID 且未指定策略，回「覆盖更新／跳过」两选|UI|
@@ -3016,7 +3031,7 @@ while True:
 |`comments.type`|`comment` `log` `status_change`|`comment`|`log` 只能由 Agent 追加|见 20\.8|
 |`artifacts.type`|`diff` `image` `text` `log` `markdown` `json` `html` `pdf` `link` `file`|服务端推导|与 6\.10\.1 的预览器一一对应|服务端|
 |`api_tokens.enabled`|`1` `0`|`1`|`0` 时该 Token 全部调用返回 `401`，不删行以保留 Run 归属|UI|
-|`notifications.kind`|`review_pending` `run_failed` `lease_expired` `review_rejected` `task_unblocked` `creation_request` `review_auto_pending` `review_auto_passed`|—|对应 6\.7 的各类事件（后三枚分别来自 W8 会话创建、0020 自动审核队列）；词表权威在迁移 0014 / 0020 的 CHECK|服务端|
+|`notifications.kind`|`review_pending` `run_failed` `lease_expired` `review_rejected` `task_unblocked` `creation_request` `review_auto_pending` `review_auto_passed`|—|对应 6\.7 的各类事件（后三枚分别来自 W8 会话创建、0020 自动审核队列）；词表权威在迁移 0014 / 0020 的 CHECK。**末两枚 `review_auto_*` 按清单 §14 裁定【1009 移除中】**：S1 落地后从词表收缩，历史行处置随其移除迁移定形，此处不预判|服务端|
 |`audit_logs.actor_type`|`user` `agent` `system`|—|—|服务端|
 |`audit_logs.action`|`task_create` `task_update` `task_transition` `task_stop` `task_delete` `task_archive` `archive_skipped` `run_claim` `run_writeback` `lease_expire` `review_submit` `dep_add` `dep_remove` `field_def_change` `template_change` `token_issue` `token_revoke` `token_use` `import` `export` `backup` `restore` `settings_change`|—|6\.8 的记录范围|服务端|
 |`audit_logs.target_type`|`task` `run` `review` `dependency` `field_def` `template` `token` `settings` `data`|—|—|服务端|
@@ -3146,7 +3161,7 @@ effective = 入参 capabilities 非空 ? 入参 : api_tokens.capabilities
 |`task_types`|string[]|`["需求","缺陷","子任务","巡检","重构"]`|✅|20\.3|
 |`ui_theme`|`system` `light` `dark`|`system`|✅|—|
 |`review_reuse_last_opinion`|bool|`true`|✅|审核表单预填上次意见（6\.5）|
-|`default_review_mode`|`human` `auto` `none`|`human`|✅|新建任务的审核方式缺省值，三条建单路共用（6\.5 第 7 条）|
+|`default_review_mode`|`human` `auto` `none`|`human`|✅|新建任务的审核方式缺省值，三条建单路共用（6\.5 第 7 条）。**`auto` 值按清单 §14 裁定【1009 移除中】**：目标态该下拉与词表只剩 `human`/`none`（§14 判据②），键本身与其余两值行为不变|
 
 
 **端口不在本表**：端口由 `ATB_PORT` 环境变量 → `~/.agent-board/config.json` 的 `port` → 默认 `7788` 三级决定（10\.3），**不写进 `settings`**，也不在设置页开放修改——改端口会让四家已配置的 MCP URL 全部失效，只能走「端口被占用」流程由用户显式确认（10\.3）。同理，开机自启本期不做（10\.3），因此也没有对应设置项。
