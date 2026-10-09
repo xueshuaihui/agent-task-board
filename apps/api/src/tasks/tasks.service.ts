@@ -13,7 +13,6 @@ import {
   TRIGGER_TYPES,
   isKnownEnum,
   type DependencyType,
-  type ReviewerType,
   type TaskStatus,
 } from '../contract/enums';
 import {
@@ -372,20 +371,16 @@ export class TasksService {
   }
 
   /**
-   * 4.3 的审核落点。**人工与自动审核共用这一条实现**（0020 草案 §3.3：A2 的 submit_review
-   * 不另开一份流转，reviews 落行、清租约与 `current_run_id`、状态评论、审计、驳回通知、
-   * `releaseDownstream`、事件都只有这一处）。
+   * 4.3 的审核落点，也是唯一的审核落点（2026-10-09 裁定：「外部 Agent 当审核方」那条链整条移除，
+   * 0020 草案 §3.3 让 A2 的 `submit_review` 复用这一份实现，本棒把那份复用连调用面一起删掉）：
+   * reviews 落行、清租约与 `current_run_id`、状态评论、审计、驳回通知、`releaseDownstream`、
+   * 事件都只有这一处。
    *
-   * `reviewer` 是审核人身份位（草案 §3.2）：缺省 = 人（REST 路径不传，行为、文案与上一版
-   * **逐字一致**，reviewer_name 维持不署名）；`type='agent'` 时 reviews 行记 Token 名、
-   * 审计 actorType 随 reviewer_type 走，并且 APPROVE 额外推 `review_auto_passed`
-   * （草案 §3.6：人工路径不推，`review_pending` 的语义不被污染）。
+   * 曾经挂在 `reviewer` 参数上的审核人身份位随之下线：人侧本来就不署名
+   * （`reviewer_name` 维持 null，与上一版逐字一致），库侧 `reviews.reviewer_type` 列已由
+   * 迁移 0023 删除。重新设计审核时再决定署名怎么写。
    */
-  async submitReview(
-    id: string,
-    input: ReviewInput,
-    reviewer?: { type: ReviewerType; name?: string },
-  ): Promise<TaskDetailDto> {
+  async submitReview(id: string, input: ReviewInput): Promise<TaskDetailDto> {
     const task = await this.requireTask(id);
     if (task.status !== 'REVIEW') {
       throw new ApiException('ILLEGAL_TRANSITION', '只有待审核的任务可以提交审核结论');
@@ -411,10 +406,6 @@ export class TasksService {
           detail: input.detail ?? '',
           returnTo: approved ? null : to,
           priorityAdj: input.priority_adj === undefined ? null : Number(input.priority_adj),
-          // 0020 草案 §3.2：审核人身份位。人侧不署名（reviewer_name 维持 null，与存量回填口径一致）；
-          // agent 侧记 api_tokens.name，卡片/详情/审核记录据此分辨「这条结论是谁给的」。
-          reviewerType: reviewer?.type ?? 'user',
-          reviewerName: reviewer?.name ?? null,
         },
       });
       if (input.priority_adj !== undefined) {
@@ -454,10 +445,9 @@ export class TasksService {
       });
       await this.audit.record(
         {
-          // 草案 §3.2：审计的 actorType 随 reviewer_type 走——人侧仍是 'user' 且不带 actorName，
-          // 与上一版逐字一致；agent 侧多一个署名，审核留痕能从审计反查 Token。
-          actorType: reviewer?.type ?? 'user',
-          actorName: reviewer?.name,
+          // 人审侧的审计 actorType 恒 'user' 且不带 actorName——与上一版逐字一致
+          // （上一版那个 `reviewer?.type ?? 'user'` 在唯一调用方不传参时就等价于 'user'）。
+          actorType: 'user',
           action: 'review_submit',
           targetType: 'review',
           targetId: id,
@@ -472,80 +462,11 @@ export class TasksService {
       await this.notifications.push('review_rejected', id, '你的任务被驳回，请查看审核意见');
     }
     if (approved) {
-      // 草案 §3.6：auto 通过不推 `review_pending`（那条只有人工队列），改推专属 kind
-      // `review_auto_passed`（点开看结论）；人审路径行为照旧——不推任何通过通知。
-      if (reviewer?.type === 'agent') {
-        await this.notifications.push('review_auto_passed', id, `任务 ${id} 自动审核通过，已完成`);
-      }
+      // 人工路径不推任何通过通知（草案 §3.6 的原口径）：Agent 侧那条 `review_auto_passed`
+      // 随整链移除一并下线，`review_pending` 的语义不被污染。
       await this.releaseDownstream(id);
     }
     this.events.emit('task.moved', { id, from: 'REVIEW', to });
-    this.events.emit('task.updated', { id });
-    return this.getDetail(id);
-  }
-
-  /**
-   * 0020 草案 §3.4 的换轨出口，两个入口共用这一份实现（A2）：
-   * 审核器 `submit_review(ESCALATE)` 与人侧卡片「转人工审核」（REST
-   * `POST /tasks/:id/review/escalate`）。把 REVIEW/track=auto 切成 track=human 并推
-   * `review_pending`——任务留在 REVIEW 列，不引入新状态、七列矩阵不动，也不写 reviews 行
-   * （reviews 的 CHECK 只允许 APPROVE/REJECT，升级不是审核结论）。
-   *
-   * 前置守卫按分支给明确错误；真正防「两条入口同时换轨」的是落点那条带
-   * `status='REVIEW' ∧ review_track='auto'` 条件的 `updateMany`——慢的一方条件落空，
-   * 只得到这一条 409，绝不重复评论/审计/通知。
-   */
-  async escalateToHuman(
-    id: string,
-    actor: { type: 'user' | 'agent'; name?: string },
-    reason?: string,
-  ): Promise<TaskDetailDto> {
-    const task = await this.requireTask(id);
-    if (task.status !== 'REVIEW') {
-      throw new ApiException('ILLEGAL_TRANSITION', '只有待审核的任务可以转人工审核');
-    }
-    if (task.reviewTrack !== 'auto') {
-      throw new ApiException('ILLEGAL_TRANSITION', '该任务已在人工审核队列，无需换轨');
-    }
-    const now = nowSql();
-    const changed = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.task.updateMany({
-        where: { id, status: 'REVIEW', reviewTrack: 'auto' },
-        data: { reviewTrack: 'human', updatedAt: now },
-      });
-      if (updated.count === 0) return false;
-      await tx.comment.create({
-        data: {
-          id: newId(),
-          taskId: id,
-          runId: task.currentRunId,
-          authorType: 'system',
-          type: 'status_change',
-          content: reason
-            ? `自动审核升级人工（原因：${reason.slice(0, 120)}）`
-            : '自动审核升级人工',
-        },
-      });
-      await this.audit.record(
-        {
-          actorType: actor.type,
-          actorName: actor.name,
-          action: 'task_update',
-          targetType: 'task',
-          targetId: id,
-          before: { review_track: 'auto' },
-          after: { review_track: 'human', reason: '自动审核升级人工' },
-        },
-        tx,
-      );
-      return true;
-    });
-    if (!changed) {
-      throw new ApiException('ILLEGAL_TRANSITION', '该任务已转人工审核，无需重复换轨');
-    }
-    // 换轨后「人优先、防抢跑」（草案 §3.4）：claim_next_review 不再领取 track=human 的任务，
-    // 这条 `review_pending` 就是把注意力交回人工队列的通知（措辞与 complete 的 human 支同源）。
-    await this.notifications.push('review_pending', id, `任务 ${id} 已完成，等待审核`);
     this.events.emit('task.updated', { id });
     return this.getDetail(id);
   }
@@ -1126,7 +1047,8 @@ export class TasksService {
             detail: review.detail,
             return_to: review.returnTo,
             priority_adj: review.priorityAdj,
-            reviewer_type: review.reviewerType,
+            // 结论来源位 `reviewer_type` 随迁移 0023 下线（拆完全库结论都来自人，恒值 = 零信息量）；
+            // `reviewer_name` 保留——它是「这条结论谁给的」的唯一留存署名位。
             reviewer_name: review.reviewerName,
             created_at: toIso(review.createdAt),
           };
@@ -1201,8 +1123,7 @@ export class TasksService {
         detail: row.detail,
         return_to: row.returnTo,
         priority_adj: row.priorityAdj,
-        // 0020 §3.6：审核人身份随列表返回——A2 的自动审核记录靠它区分「谁审的」。
-        reviewer_type: row.reviewerType,
+        // 0023：`reviewer_type` 列已删，列表只回署名位（见 `taskReviews` 上方注释）。
         reviewer_name: row.reviewerName,
         created_at: toIso(row.createdAt),
       })),
