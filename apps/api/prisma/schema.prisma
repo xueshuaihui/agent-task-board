@@ -113,10 +113,9 @@ model TaskDependency {
   id        String @id
   taskId    String @map("task_id")
   dependsOn String @map("depends_on")
-  // 边的种类。DDL 的 CHECK 词表自迁移 0021 起为 blocks/relates/review（0001 只有前两值）。
-  // `review` 是审核批次任务的**纯标记边**（草案 §3.2）：不参与认领的前置过滤、不参与环检测
-  // （与 relates 同级的处置），方向固定为 `批次 → 被审对象`（task_id=批次、depends_on=对象），
-  // N 条边即「这支批次审 N 个对象」；反查「被哪支活跃批次覆盖」走 idx_deps_depends_on。
+  // 边的种类。DDL 的 CHECK 词表 = 0001 的两值 blocks/relates。
+  // （0021 曾追加第三种边 `review` 作为审核批次任务的纯标记边，2026-10-09 裁定随「Agent 当审核方」
+  // 整链移除，迁移 0023 把词表收回两值并删了存量的 `review` 边。）
   type      String @default("blocks")
   createdAt String @default(dbgenerated("(datetime('now'))")) @map("created_at")
   task      Task   @relation("Dependents", fields: [taskId], references: [id], onDelete: Cascade)

@@ -309,17 +309,27 @@ WHERE key = 'default_review_mode'
 --     也是 fresh 路径的常态（0001 种子行是五词，0021 追加成六词，本段删回五词 = 与增量路径同终值）。
 --     判据同样取 json_each 的**元素等值**而不是 `value LIKE '%"审核"%'`：后者会连「审核任务」这类
 --     既有词一起误命中，把用户自己的词摘掉。
---   · `json_array_length(value) > 1` —— 只有一个元素（就是「审核」）时不动：摘空会得到 `[]`，
---     而 zod 的 `.min(1)` 让空词表整键 decode 失败，等于替用户把词表清空。
+--   · `EXISTS (… json_each … value <> '审核')` —— **摘完必须还剩至少一个词**才重写：只有一个元素
+--     （就是「审核」）时不动，否则得到 `[]`，而 zod 的 `.min(1)` 让空词表整键 decode 失败，
+--     等于替用户把词表清空。判据取「剩余元素数」而不是 `json_array_length(value) > 1`：后者挡不住
+--     `["审核","审核"]` 这种重复词形状（长度 2 但摘完仍是空）。
+--
+-- 重组必须 `ORDER BY j.key`（照 0015:64-70 / 0016:24-36 的先例与措辞）：SQLite 不保证聚合函数的
+-- 输入行序，裸 `json_group_array`  over json_each 属于「碰巧按数组下标出来」；本段的红线是
+-- 「用户原有的词与顺序一字不动」，顺序就得由显式 ORDER BY 兜，不靠运气。
 UPDATE settings
 SET value = (
-  SELECT json_group_array(j.value)
-  FROM json_each(settings.value) j
-  WHERE j.type = 'text' AND j.value <> '审核'
+  SELECT json_group_array(t.value)
+  FROM (
+    SELECT j.value AS value
+    FROM json_each(settings.value) AS j
+    WHERE j.type = 'text' AND j.value <> '审核'
+    ORDER BY j.key
+  ) AS t
 )
 WHERE key = 'task_types'
   AND json_valid(value)
   AND json_type(value, '$') = 'array'
   AND NOT EXISTS (SELECT 1 FROM json_each(settings.value) WHERE json_each.type <> 'text')
   AND EXISTS (SELECT 1 FROM json_each(settings.value) WHERE json_each.value = '审核')
-  AND json_array_length(value) > 1;
+  AND EXISTS (SELECT 1 FROM json_each(settings.value) WHERE json_each.value <> '审核');
