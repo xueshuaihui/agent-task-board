@@ -817,8 +817,15 @@ describe('迁移演练（/tmp 临时库，当前水位 0012/0020 → 目录顶�
       // none 支一字不变（免审直通路的行为不许被动摇）。
       expect(db.prepare(`SELECT review_mode FROM tasks WHERE id = 't_none'`).get()).toEqual({ review_mode: 'none' });
 
-      // ③ 其他业务列逐字零丢失（裁定第 2 条的边界澄清）。
-      expect(businessSnapshot(db)).toEqual(tasksBefore);
+      // ③ 其他业务列逐字零丢失（裁定第 2 条的边界澄清）。唯一例外是 `type` 列：
+      //    t_batch 的「审核」由本迁移第 6 段回落到列默认值 '需求'（D1 实测缺陷：5-c 摘词后
+      //    这类行若不动，PATCH 原样带 type 也会被生效词表拒成 422），其余列与其余行一字不差。
+      const tasksExpectedAfter = (tasksBefore as { id: string; type: string }[]).map((row) =>
+        row.type === '审核' ? { ...row, type: '需求' } : row,
+      );
+      expect(businessSnapshot(db)).toEqual(tasksExpectedAfter);
+      expect(db.prepare(`SELECT type FROM tasks WHERE id = 't_batch'`).get()).toEqual({ type: '需求' });
+      expect(db.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE type = '审核'`).get()).toEqual({ n: 0 });
       expect(reviewSnapshot(db)).toEqual(reviewsBefore);
       // 存量审核行本体不删：r_agent 那条只是失去来源标记，结论文案与署名照旧。
       expect(db.prepare(`SELECT COUNT(*) AS n FROM reviews`).get()).toEqual({ n: 2 });
@@ -914,6 +921,145 @@ describe('迁移演练（/tmp 临时库，当前水位 0012/0020 → 目录顶�
 
       db.close();
       freshDb.close();
+    } finally {
+      removeTempDirSync(root);
+      if (previous.data === undefined) delete process.env.ATB_DATA_DIR;
+      else process.env.ATB_DATA_DIR = previous.data;
+      if (previous.mig === undefined) delete process.env.ATB_MIGRATIONS_DIR;
+      else process.env.ATB_MIGRATIONS_DIR = previous.mig;
+      if (previous.logs === undefined) delete process.env.ATB_LOGS_DIR;
+      else process.env.ATB_LOGS_DIR = previous.logs;
+    }
+  });
+
+  it('迁移 0023 第 6 段：tasks.type「审核」存量行回落「需求」（①命中改写 ②无命中空转 ③邻行一字不动）', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'atb-0023-type-'));
+    const previous = {
+      data: process.env.ATB_DATA_DIR,
+      mig: process.env.ATB_MIGRATIONS_DIR,
+      logs: process.env.ATB_LOGS_DIR,
+    };
+    const orders3 = (count: number) => Array.from({ length: count }, (_, index) => index + 1);
+    const source = migrationsDir();
+    const stageUpTo = (cap: number, name: string): string => {
+      const dir = path.join(root, name);
+      mkdirSync(dir);
+      for (const entry of readdirSync(source)) {
+        if (/^\d+_/.test(entry) && Number(entry.split('_')[0]) <= cap) {
+          cpSync(path.join(source, entry), path.join(dir, entry), { recursive: true });
+        }
+      }
+      return dir;
+    };
+    const SENTINEL = '2020-01-01 00:00:00';
+    // 显式列清单只取 0023 之后仍幸存的列（review_track/review_batch 的删除面归上面双路径用例管），
+    // 本用例专注第 6 段的洗数口径：命中行回落、邻行与时间戳一字不动。
+    const taskRows = (db: DatabaseSync): Record<string, unknown>[] =>
+      db
+        .prepare(
+          `SELECT id, type, title, description, status, priority, tags, required_capabilities,
+                  custom_fields, pinned, due_at, archived_at, stop_reason, current_run_id, run_count,
+                  created_at, updated_at, group_id, parent_task_id, sort_order, skills, origin_type,
+                  origin_agent, origin_skill, origin_session_id, confirmation_mode, review_mode
+           FROM tasks ORDER BY id`,
+        )
+        .all() as Record<string, unknown>[];
+    const wordlistRow = (db: DatabaseSync): { value: string; updated_at: string } =>
+      db.prepare(`SELECT value, updated_at FROM settings WHERE key = 'task_types'`).get() as {
+        value: string;
+        updated_at: string;
+      };
+
+    try {
+      process.env.ATB_LOGS_DIR = path.join(root, 'logs');
+      mkdirSync(process.env.ATB_LOGS_DIR, { recursive: true });
+
+      // ── 库 A：0022 存量 + 词表含「审核」+ 有 type='审核' 行（形状① + ③）────────────
+      // t_shencha 是 D1 实测的场景：用户在界面下拉（读 0021 追加后的词表）手建的普通任务。
+      // t_shencha_zhong 是守卫面：含「审核」子串的用户自定义类型，精确等值判据不许误伤。
+      const hit = path.join(root, 'hit');
+      mkdirSync(hit);
+      process.env.ATB_DATA_DIR = hit;
+      process.env.ATB_MIGRATIONS_DIR = stageUpTo(22, 'migrations-0022');
+      expect(applyMigrations()).toEqual(orders3(22));
+      const dbA = new DatabaseSync(path.join(hit, 'jarvis.db'));
+      dbA.prepare(
+        `INSERT INTO tasks (id, type, title, status, created_at, updated_at) VALUES
+          ('t_shencha',       '审核',   '帮我评审这份方案', 'BACKLOG', '2026-01-01 00:00:00', ?),
+          ('t_shencha_zhong', '审核中', '用户自定义类型（含「审核」子串）', 'BACKLOG', '2026-01-02 00:00:00', ?),
+          ('t_bug',           '缺陷',   '登录页空指针',     'BACKLOG', '2026-01-03 00:00:00', ?)`,
+      ).run(SENTINEL, SENTINEL, SENTINEL);
+      // 词表是用户资产：既含 0021 追加的「审核」，也含用户自己加的「审核中」。updated_at 钉哨兵值。
+      dbA.prepare(`UPDATE settings SET value = '["需求","缺陷","子任务","巡检","重构","审核","审核中"]', updated_at = ? WHERE key = 'task_types'`).run(SENTINEL);
+      const rowsBeforeA = taskRows(dbA);
+      expect(rowsBeforeA).toHaveLength(3);
+
+      delete process.env.ATB_MIGRATIONS_DIR; // 水位 22 → 只重放 0023（含新第 6 段）
+      expect(applyMigrations()).toEqual([23]);
+      expect(applyMigrations()).toEqual([]); // 二次空转（幂等）
+
+      // ① 命中行落在回落目标：type='审核' → '需求'（列 DDL 默认值 / DEFAULT_TASK_TYPES[0]），
+      //    且不是「凭空造词」——回落值必须在生效词表内（见下面 PATCH 谓词断言）。
+      expect(dbA.prepare(`SELECT type FROM tasks WHERE id = 't_shencha'`).get()).toEqual({ type: '需求' });
+      expect(dbA.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE type = '审核'`).get()).toEqual({ n: 0 });
+      // 第 6 段不动 updated_at（洗数不是用户编辑，0009~0022 同口径）。
+      expect(
+        dbA.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE updated_at <> ?`).get(SENTINEL),
+      ).toEqual({ n: 0 });
+
+      // ③ 用户其它类型行一字不动：整行快照只允许 t_shencha 的 type 一处差异。
+      const rowsAfterA = taskRows(dbA);
+      expect(rowsAfterA).toEqual(
+        (rowsBeforeA as { id: string; type: string }[]).map((row) =>
+          row.type === '审核' ? { ...row, type: '需求' } : row,
+        ),
+      );
+      // 「审核中」活着：守卫是精确等值 `type = '审核'`，不是 LIKE（判据同 5-c 的元素等值）。
+      expect(dbA.prepare(`SELECT type FROM tasks WHERE id = 't_shencha_zhong'`).get()).toEqual({ type: '审核中' });
+
+      // 5-c 与第 6 段的配对面：词表只摘精确元素「审核」，「审核中」与其余词、原序一字不动。
+      const wordlistA = wordlistRow(dbA);
+      expect(wordlistA.value).toBe('["需求","缺陷","子任务","巡检","重构","审核中"]');
+      expect(wordlistA.updated_at).toBe(SENTINEL);
+
+      // PATCH 谓词面（tasks.service.ts:252-259：`types.includes(input.type)` 不中就 422
+      // 「任务类型「审核」不在词表内」）：升级后每一行的 type 都在生效词表里 ⇒ 用户 PATCH 这条
+      // 任务时**原样带行上的当前 type** 不再被拒——D1 实测的那条「正常任务从此改不动」被收口。
+      const vocabularyA = decodeSetting('task_types', wordlistA.value) as string[];
+      expect(vocabularyA).not.toContain('审核');
+      for (const row of rowsAfterA as { type: string }[]) {
+        expect(vocabularyA).toContain(row.type);
+      }
+      expect(Object.values(dbA.prepare('PRAGMA integrity_check').get() as Record<string, string>)).toEqual(['ok']);
+      expect(dbA.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+      dbA.close();
+
+      // ── 库 B：词表本无「审核」且无命中行 → 幂等空转，一行都不许被误改（形状②）────────
+      const idle = path.join(root, 'idle');
+      mkdirSync(idle);
+      process.env.ATB_DATA_DIR = idle;
+      process.env.ATB_MIGRATIONS_DIR = path.join(root, 'migrations-0022');
+      expect(applyMigrations()).toEqual(orders3(22));
+      const dbB = new DatabaseSync(path.join(idle, 'jarvis.db'));
+      dbB.prepare(
+        `INSERT INTO tasks (id, type, title, status, created_at, updated_at) VALUES
+          ('t_ok1', '需求',   '正常需求行',     'BACKLOG', '2026-01-01 00:00:00', ?),
+          ('t_ok2', '缺陷',   '正常缺陷行',     'BACKLOG', '2026-01-02 00:00:00', ?),
+          ('t_ok3', '审核过', '含子串的非命中行', 'BACKLOG', '2026-01-03 00:00:00', ?)`,
+      ).run(SENTINEL, SENTINEL, SENTINEL);
+      const wordlistB = '["需求","缺陷","子任务","巡检","重构","开学季"]';
+      dbB.prepare(`UPDATE settings SET value = ?, updated_at = ? WHERE key = 'task_types'`).run(wordlistB, SENTINEL);
+      const rowsBeforeB = taskRows(dbB);
+
+      delete process.env.ATB_MIGRATIONS_DIR;
+      expect(applyMigrations()).toEqual([23]);
+
+      // 空转结论：tasks 整表逐字节快照一字不动，词表行一字不动（5-c 的 EXISTS 守卫 + 第 6 段
+      // 的等值守卫各自拦住——没有精确命中的词/行时不写库，用户资产零损伤）。
+      expect(taskRows(dbB)).toEqual(rowsBeforeB);
+      expect(wordlistRow(dbB)).toEqual({ value: wordlistB, updated_at: SENTINEL });
+      expect(dbB.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE type = '审核'`).get()).toEqual({ n: 0 });
+      dbB.close();
     } finally {
       removeTempDirSync(root);
       if (previous.data === undefined) delete process.env.ATB_DATA_DIR;

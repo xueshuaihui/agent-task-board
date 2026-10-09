@@ -15,6 +15,10 @@
 --   5) settings：删四个零消费者的审核键（`review_auto_dispatch` / `review_batch_max_targets` /
 --      `review_max_rounds` / `review_rubric_skill`）；`default_review_mode` 键保留但取值收窄，
 --      生效行里落在新词表之外的值改写为 'human'；`task_types` 生效行稳健删除精确等于「审核」的元素。
+--   6) tasks（数据回落，无 schema 变更）：`type` 精确等于「审核」的存量行回落为 '需求'——
+--      第 5-c 段把词从词表摘掉后，这些行若不动，用户 PATCH 时哪怕原样带 type 也会被
+--      `tasks.service.ts:252-259` 的生效词表校验拒成 422「任务类型「审核」不在词表内」，
+--      一条原本正常的业务任务从此改不动（D1 于 2026-10-09 真机实测，见清单 §14 拍板②的边界）。
 --
 -- fresh 重放与增量升级终值一致（全项目硬约束，见本段末）：`SettingsService.all()` 是
 -- 「有行用行、无行才吃 DEFAULT_SETTINGS」（src/infra/settings.service.ts:26-37），
@@ -333,3 +337,35 @@ WHERE key = 'task_types'
   AND NOT EXISTS (SELECT 1 FROM json_each(settings.value) WHERE json_each.type <> 'text')
   AND EXISTS (SELECT 1 FROM json_each(settings.value) WHERE json_each.value = '审核')
   AND EXISTS (SELECT 1 FROM json_each(settings.value) WHERE json_each.value <> '审核');
+
+-- ============================================================================ 6) tasks.type 存量回落
+-- 上面 5-c 摘掉了词表里的「审核」词，但 `tasks.type='审核'` 的**存量行**还留在库里。
+-- 这不是纯理论态：0021 把「审核」追加进 `settings.task_types` 并随 v0.0.4-beta.9（tag d3f32c0）
+-- 发布，而界面建单的类型下拉读的就是这张词表，用户完全可能手建过 type=「审核」的普通任务
+-- （D1 于 2026-10-09 的真机脏库演练实测：升级后 /api/v1/board 仍返回「审核」chip，PATCH 该任务
+-- 哪怕原样带 type 也被 `tasks.service.ts:252-259` 拒成 422「任务类型「审核」不在词表内」）。
+-- 清单 §14 拍板②「不考虑历史数据」只允许弃**审核相关列**的取值；`tasks.type` 不是审核列，
+-- 这条任务的业务数据仍须零丢失、零损坏——所以必须把行落到生效词表内，而不是放着让它改不动。
+--
+-- 回落目标选 '需求'（判据三条）：
+--   · `type` 列的 DDL 默认值就是 '需求'（0001 建表与本文件 tasks_new:73）——不带类型建行时
+--     落的就是它，词表里最中性、永远存在的一枚（DEFAULT_TASK_TYPES[0]，contract/enums.ts:219）；
+--   · 语义上「审核」是 0021 为**批次任务**造的类型词，而批次从未真被建过（全仓零写入路径，
+--     见本文件头 1) 段）⇒ 命中的行几乎必然是用户在界面下拉里手建的普通任务，回落「需求」最贴；
+--   · 与本文件既有的两处「词表外值回落保守默认」同一条判据：5-b 把表外 default_review_mode 归
+--     'human'、第 1 段把表外 review_mode 归 human——都是回到现状默认而不是替用户造新概念。
+--
+-- 守卫写法照 5-c 与 0016（纯洗数先例）的口径：
+--   · `WHERE type = '审核'` —— **精确等值**，绝不用 LIKE：「审核中」这类包含「审核」子串的
+--     用户自定义类型一字不动（判据同 5-c 的元素等值 vs LIKE）；
+--   · 库里没有命中的行时整条空转（无命中即无写入），本段因此幂等：二次重放 0 行变化，
+--     增量库里「词表本无『审核』、也没有这类行」的形状一行都不许被误改；
+--   · 不动 `updated_at`：洗数是数据归位而非用户编辑（0009~0022 同口径，5-c 亦然）；
+--   · 不加 DB CHECK：`tasks.type` 从 0001 起就没有词表 CHECK——词表是 settings 生效行上的
+--     用户资产（可改名可加词），CHECK 会把词表冻进 DDL；词表校验的唯一落点就是服务层，
+--     所以收敛只能靠数据改写，这一段与 5-c 配对缺一不可。
+-- fresh 路径：0001 建库时无任何 tasks 行，本段天然空转；增量路径只写命中的行——两路终值一致
+-- （本段不动 schema，双路径的 DDL 一致性面见上面各段）。
+UPDATE tasks
+SET type = '需求'
+WHERE type = '审核';
