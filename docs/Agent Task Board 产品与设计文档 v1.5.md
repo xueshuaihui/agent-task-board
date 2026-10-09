@@ -2487,7 +2487,6 @@ CREATE INDEX idx_notif_unread ON notifications(read_at) WHERE read_at IS NULL;
 |`FIELD_IN_USE`|409|删除被任务引用的字段定义，`details.task_count` 给出引用数（13 章字段接口）|UI|
 |`INVALID_BACKUP_NAME`|400|恢复入参不符合 `^atb-\d{8}-\d{6}\.db$`，或含路径分隔符（组装路径前的白名单校验，13 章备份接口）|UI|
 |`BACKUP_NOT_FOUND`|404|文件名合法但磁盘上不存在——备份列表来自磁盘扫描，两次请求之间可能被人手动删除|UI|
-|`SELF_REVIEW_FORBIDDEN`|403|0020 §3\.3/Q4 自审硬门禁：审核者 Token 与被审 Run 的执行者 Token 是同一枚。`message` 指名该换哪类凭证。**本码随「Agent 当审核方」链按清单 §14 裁定【1009 移除中】**（S1 落地后本行从码表清除；行目保留在此作账目，S4 按 §14 判据③收口）|Agent|
 |`INVALID_PARAM`|422|入参**形状**不合（枚举越界、id 含非法字符、WS 用查询参数带凭证），区别于 `VALIDATION_FAILED` 的逐字段业务校验|全部|
 |`SKILL_BOUND`|409|8 章：删除仍被任务绑定的技能，`context.bound_count` 给出绑定任务数|UI|
 |`SKILL_ID_CONFLICT`|409|§9\.8\.4 导入撞同 ID 且未指定策略，回「覆盖更新／跳过」两选|UI|

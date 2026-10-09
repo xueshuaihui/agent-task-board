@@ -173,8 +173,6 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 export const ERROR_CODES = [
   'UNAUTHORIZED',
   'FORBIDDEN',
-  // 0020 草案 §3.3/Q4：审核者 Token == 被审 Run 的执行者 Token 时自审被硬门禁拦下。
-  'SELF_REVIEW_FORBIDDEN',
   'NOT_FOUND',
   'VALIDATION_FAILED',
   'INVALID_PARAM',

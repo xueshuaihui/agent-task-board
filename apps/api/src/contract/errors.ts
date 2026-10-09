@@ -2,13 +2,6 @@ export const ERROR_STATUS = {
   UNAUTHORIZED: 401,
   INVALID_BACKUP_NAME: 400,
   FORBIDDEN: 403,
-  // 0020 草案 §3.3/Q4：自动审核自审硬门禁（审核者 Token == 被审 Run 执行者时拒）。
-  // 2026-10-09 裁定「外部 Agent 当审核方整链移除」已删 ReviewQueueService 与 MCP 两工具，
-  // 所有 throw 处已清零——这一枚暂时是孤儿条目。
-  // **本棒暂留**：error-code-table.test.ts 要求「文档表里每一枚都在 ERROR_STATUS 里」
-  // （docs/…v1.5.md 的码表段落仍含此行），而本棒范围「只碰 apps/api/、不改 docs/」；
-  // 下一棒（docs 回写棒）须同步删 docs 码表行与本条目与 web 侧对应项。
-  SELF_REVIEW_FORBIDDEN: 403,
   NOT_FOUND: 404,
   ARTIFACT_LOST: 404,
   BACKUP_NOT_FOUND: 404,
@@ -62,7 +55,7 @@ export const ERROR_STATUS = {
   // 这一组的存在理由：它们过去一律落进 `INTERNAL`（界面「本地服务内部错误」），
   // 而其中多数恰恰是**用户自己能修**的（引用没清、开了两个实例、磁盘只读、库损坏）。
   // 出口只有两处：`infra/api-exception.filter.ts`（REST）与 `mcp/mcp.server.ts`（Agent），
-  // 两边都调 `contract/db-errors.ts` 的解码器——码表仍只有一份实现（与 SELF_REVIEW_FORBIDDEN 同口径）。
+  // 两边都调 `contract/db-errors.ts` 的解码器——码表仍只有一份实现。
   // 删除/更新时撞上外键（`ON DELETE` 动作不是 CASCADE 且仍有引用者）。
   // 区别于 ARCHIVE_BLOCKED_BY_DEPENDENCY（那是 blocks 边的业务护栏）：本码是 DDL 层的兜底，
   // 说明调用方绕过了业务护栏或库里存在设计外的引用者（0022 之前的拆解会话就是这种形状）。

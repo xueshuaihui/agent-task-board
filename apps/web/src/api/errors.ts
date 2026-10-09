@@ -50,8 +50,6 @@ export class ApiError extends Error {
 export const ERROR_CODE_COPY: Record<ErrorCode, string> = {
   UNAUTHORIZED: '本地服务拒绝了本次请求：UI 会话 Token 缺失或不匹配',
   FORBIDDEN: '该凭证无权调用此接口',
-  // 0020 §3.3/Q4：自审硬门禁（审核者 Token == 被审 Run 的执行者 Token）。
-  SELF_REVIEW_FORBIDDEN: '不能自己审核自己产生的执行记录，请换另一个 Agent 凭证提交审核',
   NOT_FOUND: '资源不存在或已被过滤',
   VALIDATION_FAILED: '有字段未通过校验',
   INVALID_PARAM: '参数不合法',
