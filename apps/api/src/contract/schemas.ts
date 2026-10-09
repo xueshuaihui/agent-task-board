@@ -183,16 +183,6 @@ export const reviewSchema = z
   });
 export type ReviewInput = z.infer<typeof reviewSchema>;
 
-/**
- * 0020 草案 §3.4 的换轨出口（REST `POST /tasks/:id/review/escalate`，卡片「转人工审核」按钮）：
- * 只把 REVIEW/track=auto 的任务切到 track=human，不写 reviews 行，所以没有结论字段；
- * reason 选填，只进系统评论与审计留痕。守卫与通知全部在 `TasksService.escalateToHuman`。
- */
-export const escalateReviewSchema = z.object({
-  reason: z.string().trim().max(2000).optional(),
-});
-export type EscalateReviewInput = z.infer<typeof escalateReviewSchema>;
-
 export const stopSchema = z.object({
   /** 4.3.1 规则 2：强制停止是人的操作，不要求理由，但给了就记进审计。 */
   reason: z.string().trim().max(2000).optional(),

@@ -2,8 +2,12 @@ export const ERROR_STATUS = {
   UNAUTHORIZED: 401,
   INVALID_BACKUP_NAME: 400,
   FORBIDDEN: 403,
-  // 0020 草案 §3.3/Q4：自动审核自审硬门禁——审核者 Token == 被审 Run 的执行者 Token 时拒。
-  // 13 章错误码只有一份实现，REST 与 MCP 共用（审核器在 MCP 面拿到的是 isError + 同一 code）。
+  // 0020 草案 §3.3/Q4：自动审核自审硬门禁（审核者 Token == 被审 Run 执行者时拒）。
+  // 2026-10-09 裁定「外部 Agent 当审核方整链移除」已删 ReviewQueueService 与 MCP 两工具，
+  // 所有 throw 处已清零——这一枚暂时是孤儿条目。
+  // **本棒暂留**：error-code-table.test.ts 要求「文档表里每一枚都在 ERROR_STATUS 里」
+  // （docs/…v1.5.md 的码表段落仍含此行），而本棒范围「只碰 apps/api/、不改 docs/」；
+  // 下一棒（docs 回写棒）须同步删 docs 码表行与本条目与 web 侧对应项。
   SELF_REVIEW_FORBIDDEN: 403,
   NOT_FOUND: 404,
   ARTIFACT_LOST: 404,

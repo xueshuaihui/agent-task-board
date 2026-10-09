@@ -49,35 +49,22 @@ export const REVIEW_CONCLUSIONS = ['APPROVE', 'REJECT'] as const;
 export type ReviewConclusion = (typeof REVIEW_CONCLUSIONS)[number];
 
 /**
- * 任务审核方式（草案 §3.1，迁移 0020 的 tasks.review_mode CHECK 同值）：
- * human=人工审核（默认，Q1「默认强制人工审核、任务级显式豁免」）/ auto=审核后入待自动审核队列 /
- * none=免审核直通。写面只有 REST create/PATCH 与全局默认键——update_task 的可写键清单恒不含它
+ * 任务审核方式（词表权威在迁移：0020 扩出 auto、**0023 拆掉「Agent 当审核方」整链后收回
+ * human/none 两值**，与迁移 0023 的 tasks.review_mode CHECK 同值）：
+ * human=结果强制人工审核（默认，Q1「默认强制人工审核、任务级显式豁免」）/ none=免审核直通。
+ * 写面只有 REST create/PATCH 与全局默认键——update_task 的可写键清单恒不含它
  * （Q4 硬不变量：执行者不得自豁免）。
  */
-export const REVIEW_MODES = ['human', 'auto', 'none'] as const;
+export const REVIEW_MODES = ['human', 'none'] as const;
 export type ReviewMode = (typeof REVIEW_MODES)[number];
-
-/**
- * REVIEW 列内的换轨位（草案 §3.4，迁移 0020 的 tasks.review_track CHECK 同值）：
- * auto=等审核器（claim_next_review 可领）/ human=人工待审（人优先，审核器不领）。
- * 只在 REVIEW 状态有意义，其余状态是遗留值、读面恒返回；换轨触发点（ESCALATE/转人工）在 A2。
- */
-export const REVIEW_TRACKS = ['auto', 'human'] as const;
-export type ReviewTrack = (typeof REVIEW_TRACKS)[number];
-
-/** reviews 行的结论来源（草案 §3.2，迁移 0020 的 reviews.reviewer_type CHECK 同值；存量行回填 user）。 */
-export const REVIEWER_TYPES = ['user', 'agent'] as const;
-export type ReviewerType = (typeof REVIEWER_TYPES)[number];
 
 export const RETURN_TARGETS = ['BACKLOG', 'READY'] as const;
 
 /**
- * 依赖边的种类（词表权威在迁移的列级 CHECK：0001 建表钉 blocks/relates，**0021 扩出 review**）。
- * `review` 是审核批次任务的**纯标记边**（自动审核器草案 §3.2）：方向固定 `批次 → 被审对象`
- * （task_id=批次、depends_on=对象），N 条边即「审 N 支」；它**不参与认领过滤、不参与环检测**
- * （与 relates 同级的处置）。反查「这支被哪支活跃批次覆盖」= `depends_on=? AND type='review'`。
+ * 依赖边的种类（词表权威在迁移的列级 CHECK：0001 建表钉 blocks/relates，0021 曾扩出 review，
+ * **0023 随「Agent 当审核方」整链移除收回两值**，存量纯标记边一并删除）。
  */
-export const DEP_TYPES = ['blocks', 'relates', 'review'] as const;
+export const DEP_TYPES = ['blocks', 'relates'] as const;
 export type DependencyType = (typeof DEP_TYPES)[number];
 
 export const AUTHOR_TYPES = ['user', 'agent', 'system'] as const;
@@ -109,12 +96,6 @@ export const NOTIFICATION_KINDS = [
   // v0.0.4 W8-a3 §13.9（r3）：会话创建通知规则键（light 待决请求 / silent·direct 创建成功）；
   // 落库词表权威在迁移 0014 的 notifications.kind CHECK。
   'creation_request',
-  // 自动审核链路两枚（草案 §3.4/§3.6，词表权威在迁移 0020 的 notifications.kind CHECK）：
-  // review_auto_pending = complete 分流进 REVIEW/track=auto（等待审核器认领）；
-  // review_auto_passed  = 审核器判通过、任务转 DONE 时通知——触发点在第二片 A2，
-  // 契约定稿与 CHECK 扩容在本片一次做完，A2 不再动 kind 枚举。
-  'review_auto_pending',
-  'review_auto_passed',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
@@ -231,16 +212,11 @@ export const BREAKDOWN_STATUS_LABEL: Record<BreakdownSessionStatus, string> = {
 
 /**
  * 任务类型缺省词表（设置项 task_types 的默认值，20 章全量表）。
- * 自动审核器草案 §3.1 追加第六词 `审核`，但它**是服务端保留类型**：
- * - 只有服务端建批路径造得出的批次任务（`tasks.review_batch=1`）用它；
- * - 四个建单面（REST 人建 / 看板快捷新建 / 拆解确认 / MCP `board.create_task` 与
- *   `create_tasks_batch`）一律拒绝用户手建该类型 → `422 TASK_TYPE_RESERVED`（N21），
- *   `get_vocabulary` 的 `task_types` 对 Agent 面也不含它——**这两道闸与词表过滤在 A4 片落地**，
- *   本片只落词表默认值（§7 第 4 条）；
- * - **行为判据是 `tasks.review_batch`，不是这个字符串**：用户可在设置里改名或删除该词，
- *   回路不得因此被打断（§3.1）。
+ * 0021 曾按自动审核器草案 §3.1 追加第六词 `审核`（服务端保留类型，只有建批路径用得上）；
+ * 2026-10-09 用户裁定「让外部 Agent 当审核方」这条设计多余，该链整条移除，词表跟着回到
+ * 0021 之前的五词（迁移 0023 第 5-c 段同步摘掉生效行里的那一个元素）。
  */
-export const DEFAULT_TASK_TYPES = ['需求', '缺陷', '子任务', '巡检', '重构', '审核'] as const;
+export const DEFAULT_TASK_TYPES = ['需求', '缺陷', '子任务', '巡检', '重构'] as const;
 
 /**
  * v0.0.4 W8 §8.2 会话创建确认模式三值（词表唯一来源）：
