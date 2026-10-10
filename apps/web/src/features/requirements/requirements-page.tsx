@@ -18,7 +18,7 @@ import {
   useTaskList,
   useTaskOverview,
 } from '@/api';
-import type { TaskCreateInput, TaskListItem, TaskPatchInput } from '@/api/types';
+import type { ArchivedFilter, TaskCreateInput, TaskListItem, TaskPatchInput } from '@/api/types';
 import { navigate } from '@/app/router';
 import { useFilterStore } from '@/app/store/filters';
 import { cn } from '@/lib/cn';
@@ -38,6 +38,7 @@ import {
   Menu,
   Pagination,
   Progress,
+  RadioGroup,
   Skeleton,
   StatusDot,
   Textarea,
@@ -70,11 +71,19 @@ import { useRequirementDrawerStore } from './requirement-store';
  * 生命周期全走任务级端点（§19.15·89）：新建 `POST /tasks {type:'需求'}`（**不发
  * `group_id`/`parent_task_id`**，服务端按 §5.2 落默认分组兜底）、编辑/归档/恢复/
  * 删除走单条 PATCH 与 `/tasks/{id}/archive|restore`、`DELETE /tasks/{id}`。
+ * 页头带归档三态筛选（不含已归档/包含/只看，6.13.1 与列表页同词表）——
+ * 「只看已归档」即归档需求的恢复入口，需求不再归档后就找不回。
  * §5.5 的「x/50」是分组配额，r6 后与需求数量无关——本页**不显示**任何配额提示。
  */
 
 /** 需求列表每页 50（口径给定的默认档）。 */
 const PAGE_SIZE = 50;
+/** 归档三态与任务列表页 `ARCHIVED_OPTIONS` 同词表（6.13.1）。 */
+const ARCHIVED_OPTIONS: readonly { value: string; label: string }[] = [
+  { value: 'false', label: '不含已归档' },
+  { value: 'all', label: '包含已归档' },
+  { value: 'true', label: '只看已归档' },
+];
 /** 20.3：`keyword` 服务端上限 120，超长前端先截。 */
 const KEYWORD_MAX = 120;
 /** 原型 3.8 同款：搜索框防抖 300ms。 */
@@ -124,6 +133,8 @@ export function RequirementsPage() {
   const mutations = useRequirementMutations();
 
   const [page, setPage] = useState(1);
+  /** 归档三态与列表页同口径（6.13.1）：不含已归档 / 包含 / 只看——「只看已归档」是恢复归档的入口。 */
+  const [archived, setArchived] = useState<ArchivedFilter>('false');
   const [keywordInput, setKeywordInput] = useState('');
   const [keyword, setKeyword] = useState('');
   useEffect(() => {
@@ -137,7 +148,7 @@ export function RequirementsPage() {
   /** 需求列表：全部条件走同一条 `GET /tasks`（keyword 也是它的参数，不另发请求、不做前端过滤）。 */
   const list = useTaskList({
     type: [REQUIREMENT_TYPE],
-    archived: 'false',
+    archived,
     page,
     page_size: PAGE_SIZE,
     sort: 'updated_at',
@@ -184,7 +195,16 @@ export function RequirementsPage() {
           <h1 className="text-page-title text-text-primary">需求</h1>
           <p className="text-aux text-text-secondary">共 {total} 条</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <RadioGroup
+            name="requirement-archived-filter"
+            value={archived}
+            options={ARCHIVED_OPTIONS}
+            onChange={(value) => {
+              setArchived(value as ArchivedFilter);
+              setPage(1);
+            }}
+          />
           <div className="relative w-[280px]">
             <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-text-tertiary" />
             <Input
@@ -227,11 +247,19 @@ export function RequirementsPage() {
         <div className="flex min-h-[320px] flex-1 items-center justify-center rounded-card border border-border bg-bg-surface">
           <EmptyState
             icon={<span aria-hidden className="text-2xl leading-none">📋</span>}
-            title={keyword ? '没有匹配的需求' : '还没有需求'}
+            title={
+              archived === 'true'
+                ? '没有已归档的需求'
+                : keyword
+                  ? '没有匹配的需求'
+                  : '还没有需求'
+            }
             description={
-              keyword
-                ? `没有标题、描述或 ID 命中「${keyword}」的需求`
-                : '需求是子任务的父卡片：先立需求，再拆子任务交给 Agent 执行'
+              archived === 'true'
+                ? '归档的需求会在这里出现，可以从卡片菜单「取消归档」恢复'
+                : keyword
+                  ? `没有标题、描述或 ID 命中「${keyword}」的需求`
+                  : '需求是子任务的父卡片：先立需求，再拆子任务交给 Agent 执行'
             }
             action={
               <Button
