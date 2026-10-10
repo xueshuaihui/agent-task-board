@@ -10,6 +10,7 @@ import { applyMigrations } from './infra/bootstrap';
 import { migrateLegacyDataDir } from './infra/data-dir-migration';
 import { sharedAppLogger } from './infra/logger';
 import { PrismaService } from './infra/prisma.service';
+import { queryParser } from './infra/query-parser';
 import { SettingsService } from './infra/settings.service';
 import { ensureDefaultSkills } from './skills/default-skills';
 
@@ -50,8 +51,14 @@ async function bootstrap(): Promise<void> {
   app.useBodyParser('urlencoded', { extended: true, limit: '2mb' });
 
   // Express 5 把默认值从 `extended` 改成了 `simple`，方括号键（20.7 的
-  // `custom_fields[key]=v`）就不再解析成对象了，这里显式设回来。
-  app.set('query parser', 'extended');
+  // `custom_fields[key]=v`）就不再解析成对象了，所以这里仍要 extended 语义。
+  // D-1：extended 走的是 qs 默认配置，而 qs 默认 `arrayLimit=20`——第 21 个同名多值参数
+  // 会退化成数字键对象，`stringListSchema` 认不出数组、422 invalid_union（curl/Agent 面
+  // 的 `?requirements[]=…` ×21 与 web `buildQuery` 发的重复键 `?requirements=…` ×21 同一条边界）。
+  // 换成显式 parser：保留 extended 的解析行为，只把 arrayLimit 抬到 1000。
+  // parser 本体在 `infra/query-parser.ts`，测试底座 `helpers/http-app.ts` 引用同一份，
+  // 两处不各写一遍字面量就不会漂移。
+  app.set('query parser', queryParser);
   app.useGlobalFilters(new ApiExceptionFilter());
 
   app.enableCors(corsOptions());

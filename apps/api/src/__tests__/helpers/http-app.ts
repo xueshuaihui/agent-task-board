@@ -12,6 +12,7 @@ import { LEASE_SWEEP_OPTIONS, LeaseService } from '../../agent/lease.service';
 import { ApiExceptionFilter } from '../../infra/api-exception.filter';
 import { applyMigrations } from '../../infra/bootstrap';
 import { PrismaService } from '../../infra/prisma.service';
+import { queryParser } from '../../infra/query-parser';
 import { applyDiShim } from './nest-di-shim';
 import { removeTempDir } from './temp-dir';
 
@@ -24,6 +25,8 @@ import { removeTempDir } from './temp-dir';
  * 2. 请求管线（body parser / query parser / 全局异常过滤器 / CORS）与 `src/main.ts` 同源：
  *    这些装配语句在 main.ts 里而不是 AppModule 里，测试不复制一遍就等于没测；
  *    CORS 是唯一一份 `common/cors.ts` 的配置，两处不会各写一份而漂移。
+ *    query parser 同理——它直接取 `infra/query-parser.ts` 导出的那一个函数（D-1 的
+ *    `arrayLimit` 就靠这条同源保证「测过的就是生产的」），不在这里重抄配置字面量。
  * 3. 每个测试文件一个进程一个库（vitest 默认 forks + isolate），互不干扰。
  */
 export interface TestApp {
@@ -107,7 +110,7 @@ export async function createTestApp(options: CreateTestAppOptions = {}): Promise
   });
   app.useBodyParser('json', { limit: '2mb' });
   app.useBodyParser('urlencoded', { extended: true, limit: '2mb' });
-  app.set('query parser', 'extended');
+  app.set('query parser', queryParser);
   app.useGlobalFilters(new ApiExceptionFilter());
 
   app.enableCors(corsOptions());
