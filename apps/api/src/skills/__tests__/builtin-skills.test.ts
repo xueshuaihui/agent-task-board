@@ -180,13 +180,15 @@ describe('千问迁移内置种子（#41）', () => {
     expect(existsSync(path.join(MD_DIR, 'quark-drive.md'))).toBe(false);
   });
 
-  it('④ 幂等：重复 ensure 不增行，列表 total=125（含 code-review），且分类真的落库', async () => {
+  it('④ 幂等：重复 ensure 不增行、不重写未变行，列表 total=125（含 code-review），且分类真的落库', async () => {
     const first = await ensureDefaultSkills(t.prisma);
     expect(first.created.length).toBe(DEFAULT_SKILL_SEEDS.length);
     expect(first.created.length).toBe(TOTAL_COUNT);
     const second = await ensureDefaultSkills(t.prisma);
     expect(second.created).toEqual([]);
-    expect(second.updated.length).toBe(TOTAL_COUNT);
+    // 第二次启动时库内已是种子终值：一个字节都不该写（旧实现无条件写 updated_at，
+    // 于是每次打开应用 125 条内置技能都显示「更新于 刚刚」——issue「技能的更新时间不对」）。
+    expect(second.updated).toEqual([]);
     expect(await t.prisma.skill.count({ where: { sourceType: 'default' } })).toBe(TOTAL_COUNT);
     const list = await ui.get(`${API}/skills?source=default`);
     expect(list.status).toBe(200);

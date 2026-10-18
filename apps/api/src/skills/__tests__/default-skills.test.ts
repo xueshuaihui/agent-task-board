@@ -65,13 +65,47 @@ describe('默认技能预置种子（①）', () => {
     expect(errorCode(deniedDelete)).toBe('SKILL_READONLY');
   });
 
-  it('重复预置幂等：无副本、走更新分支、内置内容随包刷新', async () => {
+  it('重复预置幂等：无副本、内容未变时一个字节都不写（updated_at 不随启动刷新）', async () => {
+    const seedId = DEFAULT_SKILL_SEEDS[0]!.id;
+    // 把 updated_at 钉到一个明确的历史时刻：启动路径一旦无条件刷新，这里就会被改成本次启动时间。
+    const past = '2020-01-01 00:00:00';
+    await t.prisma.skill.update({ where: { id: seedId }, data: { updatedAt: past } });
+
     const second = await ensureDefaultSkills(t.prisma);
     expect(second.created).toEqual([]);
-    expect(second.updated).toHaveLength(DEFAULT_SKILL_SEEDS.length);
+    // 内容与种子逐字段一致 ⇒ 更新分支连走都不走（这就是「技能更新时间不对」的修复点）。
+    expect(second.updated).toEqual([]);
+
+    const row = await t.prisma.skill.findUniqueOrThrow({
+      where: { id: seedId },
+      select: { updatedAt: true },
+    });
+    expect(row.updatedAt).toBe(past);
+
     const defaults = await ui.get(`${API}/skills?source=default`);
     expect(defaults.body.total).toBe(DEFAULT_SKILL_SEEDS.length);
-    expect(defaults.body.items.map((row: { id: string }) => row.id)).toContain(DEFAULT_SKILL_SEEDS[0]!.id);
+    expect(defaults.body.items.map((item: { id: string }) => item.id)).toContain(seedId);
+  });
+
+  it('内置内容随包变化时才刷新，并把 updated_at 推进到这一次真实变更', async () => {
+    const seed = DEFAULT_SKILL_SEEDS[0]!;
+    const stale = '2020-01-01 00:00:00';
+    await t.prisma.skill.update({
+      where: { id: seed.id },
+      data: { description: '被旧版本种子写坏的描述', updatedAt: stale },
+    });
+
+    const third = await ensureDefaultSkills(t.prisma);
+    expect(third.created).toEqual([]);
+    // 只有真的发生过漂移的那一条进 updated；其余 124 条内容没变，不动。
+    expect(third.updated).toEqual([seed.id]);
+
+    const row = await t.prisma.skill.findUniqueOrThrow({
+      where: { id: seed.id },
+      select: { description: true, updatedAt: true },
+    });
+    expect(row.description).toBe(seed.description);
+    expect(row.updatedAt).not.toBe(stale);
   });
 
   /**

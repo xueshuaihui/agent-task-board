@@ -98,25 +98,69 @@ export interface DefaultSkillSeedResult {
   updated: string[];
 }
 
+/** 内置行随包刷新的列（比对与写入共用同一份字段清单，避免两处漂移）。 */
+const BUILTIN_COLUMNS = [
+  'name',
+  'type',
+  'description',
+  'category',
+  'tags',
+  'currentVersion',
+  'content',
+  'mcpDependencies',
+  'sourceType',
+] as const;
+
+type BuiltinColumns = Record<(typeof BUILTIN_COLUMNS)[number], string>;
+
+/**
+ * 库内现值与种子终值是否逐字段相同。JSON 列（tags/content/mcpDependencies）按序列化串比：
+ * 写库走的就是这里同一个 `JSON.stringify(seed.xxx)`，所以同一份种子必然逐字相同；
+ * 历史上被旧版本种子或迁移写过别的格式时按「已变更」处理，刷新一次后回到稳定态。
+ */
+function sameAsSeed(row: BuiltinColumns, seed: BuiltinColumns): boolean {
+  return BUILTIN_COLUMNS.every((column) => row[column] === seed[column]);
+}
+
 /**
  * 启动时按 id upsert 默认技能：库内缺该行则新建（source=default、版本 builtin、只读派生）；
- * 已存在则刷新内置提供的元数据与内容（对齐「随安装包整体更新」），id/created_at 不动。
+ * 已存在且**随包内容有变化**才刷新（对齐「随安装包整体更新」），id/created_at 不动。
  * 幂等：重复执行不产生副本。默认技能不可被用户编辑（§9.1 只读守卫），刷新不会覆盖用户改动。
+ *
+ * WHY 要逐字段比对再决定写不写：早先的实现在更新分支无条件写 `updatedAt: nowSql()`，
+ * 于是每次启动都把 125 条内置技能的 updated_at 刷成本次打开的时间——技能列表里全部显示
+ * 「更新于 刚刚」，内置技能的真实变更时间彻底丢失（「技能更新时间不对，每次都是本次打开
+ * 的时间」）。updated_at 的语义是「这条技能上一次真的被改过」，不是「进程刚起来过」：
+ * 内容没变就一个字节都不写，内容变了才带 nowSql() 落一次。
  */
 export async function ensureDefaultSkills(prisma: PrismaService): Promise<DefaultSkillSeedResult> {
   const created: string[] = [];
   const updated: string[] = [];
   // #41 后种子近百条：存在性一次查齐，避免每条 seed 两次往返。
   const seededIds = DEFAULT_SKILL_SEEDS.map((seed) => seed.id);
-  const existingRows = await prisma.skill.findMany({ where: { id: { in: seededIds } }, select: { id: true } });
-  const existingIds = new Set(existingRows.map((row) => row.id));
+  const existingRows = await prisma.skill.findMany({
+    where: { id: { in: seededIds } },
+    select: {
+      id: true,
+      name: true,
+      type: true,
+      description: true,
+      category: true,
+      tags: true,
+      currentVersion: true,
+      content: true,
+      mcpDependencies: true,
+      sourceType: true,
+    },
+  });
+  const existing = new Map(existingRows.map((row) => [row.id, row]));
   // 写侧同理：125 条逐条 autocommit = 125 次 fsync，Windows  runner 盘上单次提交成本是 macOS
   // 的 10 倍+（run 36329045226：④ 双跑 ensure ~250 次提交撞穿 30s testTimeout，30012ms vs mac
   // 1283ms；同一条链路也是 Windows 用户每次启动的真机延迟）。改为数组形态 $transaction：
   // 事务内按数组顺序逐条执行（写序、幂等口径与逐条版一致），但整批只有一次往返、一次提交。
   const ops: Prisma.PrismaPromise<unknown>[] = [];
   for (const seed of DEFAULT_SKILL_SEEDS) {
-    const builtin = {
+    const builtin: BuiltinColumns = {
       name: seed.name,
       type: seed.type,
       description: seed.description,
@@ -129,7 +173,10 @@ export async function ensureDefaultSkills(prisma: PrismaService): Promise<Defaul
       mcpDependencies: JSON.stringify(seed.mcpDependencies),
       sourceType: 'default',
     };
-    if (existingIds.has(seed.id)) {
+    const current = existing.get(seed.id);
+    if (current) {
+      // 内容与种子一致 = 这次启动没有任何需要写的东西：连 updated_at 都不能碰。
+      if (sameAsSeed(current, builtin)) continue;
       ops.push(prisma.skill.update({ where: { id: seed.id }, data: { ...builtin, updatedAt: nowSql() } }));
       updated.push(seed.id);
     } else {
@@ -141,6 +188,7 @@ export async function ensureDefaultSkills(prisma: PrismaService): Promise<Defaul
       created.push(seed.id);
     }
   }
-  await prisma.$transaction(ops);
+  // ops 为空（全部命中且内容未变）时不发事务：空 $transaction 也是一次无意义往返。
+  if (ops.length > 0) await prisma.$transaction(ops);
   return { created, updated };
 }
