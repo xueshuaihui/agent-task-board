@@ -1,8 +1,8 @@
 # 贾维斯工作台（Jarvis Workbench）唯一标准文档
 
-**版本**: v0.0.4-beta.11  
+**版本**: v0.0.4-beta.12  
 **更新日期**: 2026-10-18  
-**状态**: 主分支稳定，beta.11 批次（MCP create_skill / 实时连接状态 / 内置技能时间）
+**状态**: 主分支稳定，beta.12 批次（技能发现面重做：精简目录 / 打分候选 / 按名取正文）
 
 ---
 
@@ -525,7 +525,7 @@ npm run tauri build
 ### 10.3 发版流程
 
 1. **代码冻结**：确保 main 分支绿色（CI 全绿）
-2. **打 Tag**：`git tag -a v0.0.4-beta.11 -m "..." && git push origin v0.0.4-beta.11`
+2. **打 Tag**：`git tag -a v0.0.4-beta.12 -m "..." && git push origin v0.0.4-beta.12`
 3. **CI 自动构建**：GitHub Actions 自动构建三平台安装包
 4. **发布 Release**：上传 DMG/EXE 到 GitHub Releases
 5. **真机验证**：按 `docs/v0.0.4/beta真机验证清单.md` 逐项验收
@@ -543,9 +543,9 @@ npx prisma migrate deploy
 
 ### 10.5 当前版本水位
 
-- **最新 Tag**：v0.0.4-beta.11（批次：MCP create_skill / 实时连接状态 / 内置技能 updatedAt）
+- **最新 Tag**：v0.0.4-beta.12（批次：技能发现面重做——list 精简目录 / search 打分候选 / get 按名取正文）
 - **迁移版本**：0023（拆掉 Agent 审核链）
-- **API 代码行数**：215 文件 / 40161 行（含测试）
+- **API 代码行数**：215 文件 / 40617 行（含测试）
 - **Web 代码行数**：264 文件 / 45158 行（含测试）
 
 ---
