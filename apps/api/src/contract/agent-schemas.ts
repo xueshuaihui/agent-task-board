@@ -12,7 +12,11 @@ import {
   taskPatchSchema,
   type TaskPatchInput,
 } from './schemas';
-import { skillPatchSchema, type SkillPatchInput } from '../skills/skills.dto';
+import {
+  skillCreateSchema,
+  skillPatchSchema,
+  type SkillPatchInput,
+} from '../skills/skills.dto';
 import {
   ARTIFACT_TYPE_DESC,
   CAPABILITIES_ARRAY_DESC,
@@ -22,6 +26,7 @@ import {
   PRIORITY_FIELD_DESC,
   PRIORITY_LEVELS_TEXT,
   SKILL_CATEGORY_DESC,
+  SKILL_TYPE_FIELD_DESC,
   TASK_TYPE_FILTER_DESC,
 } from './vocabulary';
 
@@ -332,6 +337,55 @@ export function skillPatchFromUpdateInput(input: UpdateSkillInput): SkillPatchIn
   }
   return patch as SkillPatchInput;
 }
+
+/**
+ * §16.1 `create_skill`：Agent 面新建技能（补「技能面只有三个读工具 + 一个 PATCH、
+ * 没有创建」的缺口——此前 Agent 只能改已有技能，建新技能必须回到 UI）。
+ *
+ * 字段**逐字取 REST 的 `skillCreateSchema.shape`**（同一批 zod 实例，连默认值一起复用：
+ * description 缺省 ''、category 缺省未分类、tags/content/test_cases/mcp_dependencies 缺省空），
+ * 不抄第二套校验；name 允许重名（r2 §9.2，唯一性由服务端分配的 id 保证）。
+ * `.describe()` 与 `update_skill` 同性质：只是给 tools/list 下发口径用的包装。
+ *
+ * 落库路径与 UI 的 `POST /skills` 完全同一份 `SkillsService.create`：DRAFT + v0.1.0，
+ * 并同步写一条「初始版本」快照（发布/回滚从这条起步）；source 固定 custom——
+ * Agent 建的技能不会是内置（default）也不是导入（imported）。
+ *
+ * 两处**明确不可传**：
+ *  - `status`：UI 的「发布」是版本快照 + 置状态两步，agent 面没有快照工具，只给 status
+ *    就等于允许把没有快照的内容标成已发布（与 update_skill 同一口径）。越权传它：
+ *    通道一被协议层按 inputSchema 剥掉（不影响创建），通道二由 `.strict()` 点名拒。
+ *  - `id` / `source`：id 由服务端生成（导入按同 id 归一是文件路径的特权，不开放给 agent），
+ *    source 恒为 custom，都不接受入参指定。
+ */
+const skillCreateShape = skillCreateSchema.shape;
+
+export const createSkillSchema = z
+  .object({
+    // 逐个从 shape 取（不走泛型辅助：泛型索引访问会把每个字段的推断拓宽成所有字段的联合）。
+    name: skillCreateShape.name.describe(
+      '技能名称（1-100 字符，首尾空白自动去掉）；允许与其它技能重名（唯一性由服务端分配的 id 保证）',
+    ),
+    type: skillCreateShape.type.describe(SKILL_TYPE_FIELD_DESC),
+    description: skillCreateShape.description.describe(
+      '技能描述（≤2000 字符）；可省，缺省空串。发布前检查要求描述不为空，建议创建时就写',
+    ),
+    category: skillCreateShape.category.describe(`${SKILL_CATEGORY_DESC}创建时缺省=未分类`),
+    tags: skillCreateShape.tags.describe(
+      '自由标签数组（≤20 个、单个 1-30 字符）；可省，缺省空。**整体覆盖**语义对创建无意义（新建即全量）；标签与分类互不推导，词表分类词/受众词会被服务端洗掉',
+    ),
+    content: skillCreateShape.content.describe(
+      '技能正文，结构化块模型 `{ blocks, entryBlockId }`（块类型见 get_vocabulary 的 skill.types；最小块 `{id, kind, title}`）；可省，缺省空正文。之后要改用 update_skill 整份回提。subskill 块用 skillRef 引用其它技能（skl_ 前缀）',
+    ),
+    test_cases: skillCreateShape.test_cases.describe(
+      '测试用例数组（≤50 条），元素 `{ id, name, input?, expected? }`；可省，缺省空。发布时随版本快照',
+    ),
+    mcp_dependencies: skillCreateShape.mcp_dependencies.describe(
+      'MCP 依赖声明数组（≤20 个），元素 `{ server, tools[], required?, reason? }`；可省，缺省空。与 UI 创建面同口径——PATCH 改不了它，只在创建与版本创建里出现',
+    ),
+  })
+  .strict();
+export type CreateSkillInput = z.infer<typeof createSkillSchema>;
 
 /**
  * §12.4/§12.6 `check_mcp_policy`：Agent 调第三方 MCP 前请求本地策略裁决。

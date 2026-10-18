@@ -12,6 +12,7 @@ import {
   checkMcpPolicySchema,
   claimSchema,
   completeSchema,
+  createSkillSchema,
   createTaskSchema,
   createTasksBatchSchema,
   creationRequestRefSchema,
@@ -34,6 +35,7 @@ import {
   type CheckMcpPolicyInput,
   type ClaimInput,
   type CompleteInput,
+  type CreateSkillInput,
   type CreateTaskToolInput,
   type CreateTasksBatchInput,
   type CreationRequestRefInput,
@@ -109,6 +111,8 @@ export interface AgentTool {
 /**
  * 12 章的九个基础工具 + v0.0.4 W6 §16.1 的人工块/恢复工具（block_task、wait_for_resume）
  * 与技能三工具（list_skills、get_skill、search_skills，只读，W2 语义由 SkillsService 保证）
+ * + v0.0.4 §16.1 的 create_skill（新建技能，落库路径与 UI 的 POST /skills 同一份
+ * SkillsService.create；补「技能面只有读工具 + PATCH、没有创建」的缺口）
  * + v0.0.4 W7 §16.1 的拆解五工具（board.begin_breakdown / report_progress / report_task_draft /
  * finish_breakdown / cancel_breakdown）
  * + v0.0.4 W8 §8.7 的 board.create_task（直建/静默两模式核心落库；light 决策闭环与
@@ -231,6 +235,22 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
       run: async (args, auth) => {
         agentOf(auth);
         return ctx.skills.list(args as SkillListQuery);
+      },
+    },
+    // ------------------------------------------- v0.0.4 §16.1：Agent 侧的技能创建（落库路径与 UI 的 POST /skills 同一份 SkillsService.create）
+    {
+      name: 'create_skill',
+      description:
+        '新建技能（§16.1）：name/type 必填，description/category/tags/content/test_cases/mcp_dependencies 可省，' +
+        '与 UI 的 POST /skills 同一份校验与落库（SkillsService.create：DRAFT + v0.1.0，同时写一条「初始版本」快照；source 恒为 custom）。' +
+        'type 创建后不可改（update_skill 与 REST PATCH 都没有 type），填之前先确认：取值见 get_vocabulary 的 skill.types。' +
+        'status 不可传：发布要先由人在 UI 走版本快照（agent 面没有快照工具，只置状态会让 current_version 与 content 脱节）。' +
+        '分类取值不确定先调 get_vocabulary（含 skill_categories 全量词表）；名称允许重名，唯一性由返回的 skill_id 保证',
+      input: createSkillSchema,
+      run: async (args, auth) => {
+        agentOf(auth);
+        // Agent 建的技能不会是内置、也不是导入：source 固定 custom（第三个参数是导入专用的 presetId，不传）。
+        return ctx.skills.create(args as CreateSkillInput, 'custom');
       },
     },
     // ------------------------------------------- v0.0.4 §16.1：Agent 侧的技能编辑（守卫与字段校验全在 SkillsService.patch，这里只做映射）

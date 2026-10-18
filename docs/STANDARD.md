@@ -343,6 +343,7 @@ BLOCKED → READY（人工处理后转回）
 | `list_skills` | 列出技能（可按分类/状态/标签过滤） |
 | `get_skill` | 获取技能详情 |
 | `search_skills` | 按关键字搜索技能 |
+| `create_skill` | 新建技能（落库同 UI 的 `POST /skills`：DRAFT + v0.1.0 + 初始版本快照，source=custom） |
 | `update_skill` | 全字段 PATCH 编辑技能 |
 
 ### 7.4 拆解工具（board.*）

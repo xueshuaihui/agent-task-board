@@ -75,6 +75,15 @@ export const SKILL_CATEGORY_DESC =
   `可选：${SKILL_CATEGORY_LIST_TEXT}；括号内的二级才是合法取值，编码开发/办公实用/研究分析是纯分组一级、不可直接提交，另接受空串 ''（=未分类）；不传=不改分类。` +
   `分类与 tags 是两件事：tags 是自由标签、不从词表推导（六个产研阶段词双角色：既是叶子又是合法标签）。`;
 
+/**
+ * `create_skill` 的 type 字段描述（与 get_vocabulary 的 `skill.types` 同一批常量）。
+ * 类型创建后不可改（`update_skill` 与 REST PATCH 的可写面都没有 type），所以这句话要写在
+ * 创建那一刻的入参描述里，而不是等 agent 建错了再来回改。
+ */
+export const SKILL_TYPE_FIELD_DESC =
+  `技能类型，取值：${SKILL_TYPES.join('/')}（8.1 词表，与迁移 CHECK 同源）；必填，创建后不可改。` +
+  `取值不确定先调 get_vocabulary（skill.types 全量词表），不要试错。`;
+
 /** §8.2 三种确认模式的语义表（get_vocabulary 与字段描述共用）。 */
 export const CONFIRMATION_MODE_SEMANTICS: Record<(typeof AGENT_CONFIRMATION_MODES)[number], string> = {
   direct: '直接创建：立即落库并记流水，不等人工确认',

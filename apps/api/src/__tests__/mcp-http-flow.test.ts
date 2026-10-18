@@ -69,6 +69,7 @@ const CHAPTER_12_TOOLS = [
   'check_mcp_policy',
   'claim_next_task',
   'complete_task',
+  'create_skill',
   'fail_task',
   'get_review_feedback',
   'get_skill',

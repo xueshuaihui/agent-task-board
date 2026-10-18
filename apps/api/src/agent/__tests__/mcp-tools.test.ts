@@ -40,6 +40,7 @@ const W6_TOOL_NAMES = [
   'check_mcp_policy',
   'claim_next_task',
   'complete_task',
+  'create_skill',
   'fail_task',
   'get_review_feedback',
   'get_skill',
@@ -418,6 +419,85 @@ describe('MCP 工具面', () => {
     ] as const) {
       await expect(callAgentTool(skillCtx(), ui, name, args)).rejects.toMatchObject({ code: 'FORBIDDEN' });
     }
+  });
+
+  // ------------------------------------------ §16.1 create_skill：补「技能面只能改、不能建」的缺口
+
+  it('create_skill 落库与 UI 的 POST /skills 同口径：DRAFT + v0.1.0 + 初始版本快照 + source=custom', async () => {
+    const created = structured(
+      await call('create_skill', {
+        name: 'Agent 建的技能',
+        type: 'steps',
+        description: '由 MCP 创建',
+        category: '开发与实现',
+        tags: ['自动化', '数据分析', '质量与安全'],
+        // 只给最小块，验证 content 走的是同一份 skillContentSchema
+        content: { blocks: [{ id: 'b1', kind: 'step', title: '第一步' }], entryBlockId: 'b1' },
+        test_cases: [{ id: 'c1', name: '冒烟' }],
+        mcp_dependencies: [{ server: 'github', tools: ['get_pull_request'] }],
+      }),
+    )!;
+
+    expect(created).toMatchObject({
+      name: 'Agent 建的技能',
+      type: 'steps',
+      status: 'DRAFT',
+      current_version: 'v0.1.0',
+      category: '开发与实现',
+      source: 'custom',
+      readonly: false,
+    });
+    // 0925 拍板二：写入侧同样过 freeTagsOf——叶子词「数据分析」被洗掉，
+    // 六个产研阶段词是双角色特例（「质量与安全」既是分类叶子又是合法阶段标签）要保留。
+    expect(created.tags).toEqual(['自动化', '质量与安全']);
+    expect(created.content).toMatchObject({ entryBlockId: 'b1' });
+    expect(created.mcp_dependencies).toEqual([
+      { server: 'github', tools: ['get_pull_request'], required: true },
+    ]);
+    // 创建即写一条 v0.1.0 快照：发布/回滚从这条起步。
+    const versions = await h.prisma.skillVersion.findMany({ where: { skillId: String(created.id) } });
+    expect(versions).toHaveLength(1);
+    expect(versions[0]).toMatchObject({ version: 'v0.1.0', changelog: '初始版本' });
+
+    // 回到读工具能立刻查到（同一条落库路径，不是平行实现）。
+    const fetched = structured(await call('get_skill', { skill_id: created.id }))!;
+    expect(fetched.name).toBe('Agent 建的技能');
+  });
+
+  it('create_skill 只填必填项也能建（description/tags/content 等按 zod 默认值落空）', async () => {
+    const created = structured(await call('create_skill', { name: '最简技能', type: 'prompt' }))!;
+    expect(created).toMatchObject({
+      description: '',
+      category: '',
+      tags: [],
+      source: 'custom',
+      status: 'DRAFT',
+    });
+    expect(created.content).toEqual({ blocks: [], entryBlockId: null });
+  });
+
+  it('create_skill 拒收 status / id / source（.strict 点名），type 词表外 422 并回显可接受值', async () => {
+    // 发布要先由人走版本快照：只给 status 就会出现 current_version 与 content 脱节。
+    await expect(
+      callAgentTool(skillCtx(), agent, 'create_skill', { name: '越权', type: 'prompt', status: 'PUBLISHED' }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    await expect(
+      callAgentTool(skillCtx(), agent, 'create_skill', { name: '越权', type: 'prompt', id: 'skl_x' }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    // type 词表外：走 agent 入口的 422（B6 口径：details 里列出全部可接受值，不用回头翻文档）。
+    const error = await callAgentTool(skillCtx(), agent, 'create_skill', {
+      name: '类型错',
+      type: 'not-a-type',
+    }).catch((thrown: unknown) => thrown);
+    expect(error).toMatchObject({ code: 'VALIDATION_FAILED' });
+    expect(JSON.stringify(error)).toContain('workflow');
+  });
+
+  it('create_skill 拒绝 UI 会话 Token（与技能读工具同一条作用域守卫）', async () => {
+    await expect(
+      callAgentTool(skillCtx(), ui, 'create_skill', { name: 'x', type: 'prompt' }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 
   // ---------------------------------------- v0.0.4 W6 §12.4/§12.6：check_mcp_policy / report_mcp_call
