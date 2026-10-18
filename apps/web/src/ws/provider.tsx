@@ -12,6 +12,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { onUnauthorized } from '@/api/client';
 import type { WsEventName, WsEventPayloads, WsFrame } from '@/api/types';
 import { useUnreadStore } from '@/app/store/unread';
+import { COPY } from '@/lib/copy';
 import { WsClient, type WsStatus } from './client';
 import { applyEvent, refreshAfterReconnect } from './invalidate';
 
@@ -133,7 +134,8 @@ export function useWSWarning(): { visible: boolean; text: string } {
     if (status === 'open' || status === 'idle') return { visible: false, text: '' };
     return {
       visible: true,
-      text: status === 'reconnecting' ? '实时连接已断开，正在重连…' : '实时连接已断开',
+      // 文案取 COPY：顶栏连接角标与这条横幅读同一份措辞，不会一处「正在重连」一处「已断开」。
+      text: status === 'reconnecting' ? COPY.wsReconnecting : COPY.wsGone,
     };
   }, [status]);
 }

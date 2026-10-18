@@ -89,6 +89,8 @@ export class WsClient {
     this.socket = socket;
 
     socket.onopen = () => {
+      // 迟到回调一律丢弃：状态只认「当前持有的那条 socket」（见 onclose 的注释）。
+      if (this.socket !== socket) return;
       const reconnected = this.everOpened;
       this.everOpened = true;
       this.attempt = 0;
@@ -97,6 +99,7 @@ export class WsClient {
     };
 
     socket.onmessage = (event: MessageEvent<string>) => {
+      if (this.socket !== socket) return;
       // 任何入站**数据帧**都是存活证据：服务端每 25 秒随 ping 发一条 heartbeat，浏览器收得到数据帧
       // 却看不到控制帧，所以 60 秒死线只能这么喂（心跳在 parseFrame 里被丢弃，不进失效表）。
       this.armDeadTimer();
@@ -110,6 +113,16 @@ export class WsClient {
     };
 
     socket.onclose = (event: CloseEvent) => {
+      /**
+       * 只有「当前这条」socket 的关闭才算数。
+       *
+       * WHY：`connect()` 在旧连接处于 CLOSING 时不会早退（早退只挡 OPEN/CONNECTING），
+       * 于是会出现「新 socket 已经建好、旧 socket 的 onclose 才迟到」的窗口。旧回调如果照旧
+       * `this.socket = null` + `scheduleRetry()`，就会把正在用的新连接从客户端引用里摘掉，
+       * 再排一次多余的重连：顶栏角标于是从「已连接」掉回「重连中」——连接明明还在，
+       * 状态却丢了（issue「连接状态丢失」）。
+       */
+      if (this.socket !== socket) return;
       const wasRequested = this.stopped;
       this.socket = null;
       this.clearDeadTimer();
