@@ -364,22 +364,43 @@ describe('MCP 工具面', () => {
     );
   }
 
-  it('list_skills 返回 items/total，只读不写库、不建租约', async () => {
+  it('list_skills 只回精简目录：不含正文/测试用例/MCP 依赖，体积不随正文增长', async () => {
+    // 正文刻意写大：目录若把 content 一起带上，返回体积会跟着内容线性膨胀。
     await seedSkill({
       name: '代码审查',
       description: '四步审查',
       tags: ['质量'],
+      content: { blocks: [{ id: 'b1', kind: 'prompt', title: '开场', prompt: 'x'.repeat(20_000) }], entryBlockId: 'b1' },
       mcp_dependencies: [{ server: 'github', tools: ['get_pull_request'], required: true }],
     });
     const result = await call('list_skills', {});
     const payload = structured(result)!;
     expect(result.isError).toBeUndefined();
     expect(payload.total).toBe(1);
-    const [item] = payload.items as { name: string; readonly: boolean; mcp_dependencies: unknown[] }[];
-    expect(item.name).toBe('代码审查');
-    expect(item.readonly).toBe(false);
-    expect(item.mcp_dependencies).toHaveLength(1);
+    const [item] = payload.items as Record<string, unknown>[];
+    expect(item).toMatchObject({
+      name: '代码审查',
+      skill_id: expect.stringMatching(/^skl_/),
+      readonly: false,
+    });
+    // 正文三件套一律不出现在目录里（否则 124 条内置技能一次就是 1.0 MB）
+    expect(item!.content).toBeUndefined();
+    expect(item!.test_cases).toBeUndefined();
+    expect(item!.mcp_dependencies).toBeUndefined();
+    // 20 KB 的正文不该让目录长过 2 KB：这条是防「以后又把正文塞回来」的回归线。
+    expect(JSON.stringify(payload).length).toBeLessThan(2_000);
     expect(await h.prisma.taskRun.count()).toBe(0);
+  });
+
+  it('list_skills 支持 limit/offset 翻页，total 是过滤后总数', async () => {
+    for (const name of ['甲技能', '乙技能', '丙技能']) await seedSkill({ name });
+    const first = structured(await call('list_skills', { limit: 2 }))!;
+    expect(first).toMatchObject({ total: 3, returned: 2, limit: 2, offset: 0 });
+    expect(String(first.next)).toContain('offset=2');
+
+    const second = structured(await call('list_skills', { limit: 2, offset: 2 }))!;
+    expect(second).toMatchObject({ total: 3, returned: 1, offset: 2 });
+    expect(String(second.next)).toContain('列完');
   });
 
   it('list_skills 按 source 过滤命中三来源（W2 语义）', async () => {
@@ -409,6 +430,71 @@ describe('MCP 工具面', () => {
     await expect(callAgentTool(skillCtx(), agent, 'search_skills', { keyword: '' })).rejects.toMatchObject({
       code: 'VALIDATION_FAILED',
     });
+  });
+
+  // ------------------- 技能发现面：用户说个大概 → 服务端给候选 → 用户挑（不让人回 UI 抄名字）
+
+  it('search_skills 近义词也能命中：说「代码评审」时库里叫「代码审查」照样给候选', async () => {
+    const created = await seedSkill({ name: '代码审查', description: '四步审查改动' });
+    const hit = structured(await call('search_skills', { keyword: '代码评审' }))!;
+    const items = hit.items as { skill_id: string; score: number; matched_on: string }[];
+    // 子串口径下这里恒 0 命中（"代码评审" 不含于 "代码审查"），能命中全靠相似度兜底。
+    expect(items[0]).toMatchObject({ skill_id: created.id, matched_on: 'similarity' });
+    expect(items[0]!.score).toBeGreaterThan(0);
+    expect(String(hit.next)).toContain('get_skill');
+  });
+
+  it('search_skills 分差 <15 时 ambiguous=true，next 要求交给用户选', async () => {
+    await seedSkill({ name: '代码审查' });
+    await seedSkill({ name: '代码审计' });
+    const hit = structured(await call('search_skills', { keyword: '代码审' }))!;
+    expect(hit.ambiguous).toBe(true);
+    expect(String(hit.next)).toContain('让用户选');
+    // 候选带 score/matched_on，agent 能向用户解释「为什么是这几条」
+    expect(hit.items).toHaveLength(2);
+    // 两条都是「名称前缀命中」= 80 分，分差 0 → 正是要靠 ambiguous 交给人选的情形
+    expect((hit.items as { matched_on: string }[])[0]!.matched_on).toBe('name_prefix');
+  });
+
+  it('search_skills 名称全等命中时 ambiguous=false，next 直接给出 skill_id', async () => {
+    const created = await seedSkill({ name: '数据库迁移' });
+    await seedSkill({ name: '数据库迁移检查' });
+    const hit = structured(await call('search_skills', { keyword: '数据库迁移' }))!;
+    expect(hit.ambiguous).toBe(false);
+    expect((hit.items as { skill_id: string }[])[0]!.skill_id).toBe(created.id);
+    expect(String(hit.next)).toContain(created.id);
+  });
+
+  it('get_skill 支持按名称取正文：唯一命中直取、重名回 candidates、查无此名指向 search_skills', async () => {
+    const created = await seedSkill({ name: '编排技能', type: 'workflow' });
+    const byName = structured(await call('get_skill', { skill_name: '编排技能' }))!;
+    expect(byName).toMatchObject({ id: created.id, name: '编排技能' });
+    expect(Array.isArray((byName as { versions: unknown[] }).versions)).toBe(true);
+
+    // 大小写不敏感：内置技能里有 ASCII 名（code-review 这类）
+    const ascii = await seedSkill({ name: 'Code-Review' });
+    expect(structured(await call('get_skill', { skill_name: 'code-review' }))).toMatchObject({
+      id: ascii.id,
+    });
+
+    // 重名不替用户挑：回 candidates，让 agent 列给用户
+    await seedSkill({ name: '重名技能' });
+    await seedSkill({ name: '重名技能' });
+    const dup = structured(await call('get_skill', { skill_name: '重名技能' }))!;
+    expect(dup.ambiguous).toBe(true);
+    expect((dup.candidates as unknown[]).length).toBe(2);
+
+    const missing = await call('get_skill', { skill_name: '不存在的技能' });
+    expect(missing.isError).toBe(true);
+    expect(structured(missing)!.code).toBe('NOT_FOUND');
+    expect(String(structured(missing)!.message)).toContain('search_skills');
+
+    // id 与 name 必须且只能给一个：都没给 / 都给 一律 422
+    for (const args of [{}, { skill_id: created.id, skill_name: '编排技能' }]) {
+      await expect(callAgentTool(skillCtx(), agent, 'get_skill', args)).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+      });
+    }
   });
 
   it('技能三工具拒绝 UI 会话 Token（agent 组专属，SKILL 读侧也守作用域）', async () => {

@@ -340,9 +340,9 @@ BLOCKED → READY（人工处理后转回）
 
 | 工具名 | 说明 |
 |--------|------|
-| `list_skills` | 列出技能（可按分类/状态/标签过滤） |
-| `get_skill` | 获取技能详情 |
-| `search_skills` | 按关键字搜索技能 |
+| `list_skills` | 列出技能目录（精简字段，**不含正文**；可按分类/状态/标签过滤，limit/offset 翻页） |
+| `get_skill` | 按 `skill_id` **或** `skill_name` 取正文（含版本历史与 MCP 依赖；重名回 `candidates` 让用户选） |
+| `search_skills` | 按用户说法打分给候选（名称/描述/分类/标签 + 近义兜底，恒给候选；`ambiguous=true` 时让用户选） |
 | `create_skill` | 新建技能（落库同 UI 的 `POST /skills`：DRAFT + v0.1.0 + 初始版本快照，source=custom） |
 | `update_skill` | 全字段 PATCH 编辑技能 |
 

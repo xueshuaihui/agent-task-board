@@ -36,6 +36,7 @@ export function buildMcpInstructions(mode: McpWakeMode): string {
     `唤醒词：「${MCP_WAKE_WORD}」。用户消息以它开头或明确呼唤它（如「${MCP_WAKE_WORD}，创建一个任务：明天发布」）时，进入 Jarvis Workbench 工作模式：直接用本服务的工具完成该请求，不要反问是否使用工具。`,
     exitRule,
     '与唤醒无关的普通对话，不要主动调用本服务的工具。',
+    '需要用到平台技能时：先 search_skills(keyword=用户的说法) 拿候选（服务端打分，可容近义词/错字）；候选多于一条或 ambiguous=true 时，把候选的名称+一句话描述列给用户选，不要自行挑定；用户选定后再 get_skill(skill_id=...) 取正文。list_skills 只回精简目录（不含正文），不要用它取正文。',
     `模式在应用「设置 → MCP 设置」中更改，改动自下一次工具响应起即时生效、无需客户端重连；以每次工具返回附带的「【${MCP_WAKE_WORD}】当前会话模式」行为准。`,
   ].join('\n');
 }

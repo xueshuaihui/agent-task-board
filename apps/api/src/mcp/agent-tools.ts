@@ -63,14 +63,32 @@ import { buildVocabulary } from '../contract/vocabulary';
 import { skillListQuerySchema, type SkillListQuery } from '../skills/skills.dto';
 import type { SkillsService } from '../skills/skills.service';
 
-/** v0.0.4 W6 §16.1 的技能工具入参：list 沿用 UI 侧的过滤形状；search 关键字必填；get 只要 id。 */
+/**
+ * §16.1 技能发现面：list 给精简目录（分页）、search 给打分候选、get 按 id **或名称**取正文。
+ * get_skill 的「二选一」在 schema 层表达不了（.refine 会变成 ZodEffects，注册工具要求 ZodObject），
+ * 所以放在 run 里校验，抛同一个 VALIDATION_FAILED 码。
+ */
 const getSkillSchema = z.object({
   skill_id: z
     .string()
     .trim()
     .min(1)
     .max(64)
-    .describe('技能 ID（skl_ 前缀），来自 list_skills/search_skills 的结果；不能按名称直接查（名称查询用 search_skills）'),
+    .optional()
+    .describe('技能 ID（skl_ 前缀），来自 list_skills / search_skills 的 skill_id；与 skill_name 二选一'),
+  skill_name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe(
+      '技能名称，全等匹配、大小写不敏感（与 skill_id 二选一）：名称确定时可直接查到正文；重名会回 { ambiguous, candidates } 让用户选，不会自行挑一个',
+    ),
+});
+const listSkillsSchema = skillListQuerySchema.extend({
+  limit: z.number().int().min(1).max(200).optional().describe('返回条数（1-200，默认 50）'),
+  offset: z.number().int().min(0).optional().describe('跳过条数（默认 0），与返回的 total 配合翻页'),
 });
 const searchSkillsSchema = skillListQuerySchema.extend({
   keyword: z
@@ -78,7 +96,10 @@ const searchSkillsSchema = skillListQuerySchema.extend({
     .trim()
     .min(1)
     .max(100)
-    .describe('搜索关键字（1-100 字符），必填：命中技能名称、描述、分类、标签，无关键字不要调本工具'),
+    .describe(
+      '用户的说法（1-100 字符），可以含近义词与错字：服务端按名称/描述/分类/标签打分排序，返回候选而不是空数组',
+    ),
+  limit: z.number().int().min(1).max(50).optional().describe('候选上限（1-50，默认 8）'),
 });
 
 /** B6 词表工具：无入参——一次调用返回服务端当前全部词表口径，agent 不再试错猜值。 */
@@ -211,30 +232,58 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
     },
     {
       name: 'list_skills',
-      description: '列出技能（§16.1；可按 type/status/tag/source/keyword 过滤，只读，Agent 凭证专属）',
-      input: skillListQuerySchema,
+      description:
+        '列出技能目录（§16.1，只读，Agent 凭证专属）：只回 skill_id/name/description(≤120 字)/type/status/category/tags/source，' +
+        '**不含正文**（content/test_cases/mcp_dependencies）；可按 type/status/tag/source/keyword 过滤，limit/offset 翻页。' +
+        '要正文用 get_skill。已知用户想要什么时优先 search_skills，别翻全量目录',
+      input: listSkillsSchema,
       run: async (args, auth) => {
         agentOf(auth);
-        return ctx.skills.list(args as SkillListQuery);
+        const input = args as SkillListQuery & { limit?: number; offset?: number };
+        return ctx.skills.listBrief(input, input.limit ?? 50, input.offset ?? 0);
       },
     },
     {
       name: 'get_skill',
-      description: '获取技能详情（含版本历史与 MCP 依赖，§16.1）',
+      description:
+        '取技能正文（§16.1，含版本历史与 MCP 依赖）：skill_id 与 skill_name 必须且只能给一个。' +
+        '名称全等、大小写不敏感；同名多条时返回 { ambiguous: true, candidates } 让用户选，不会自行挑一条。' +
+        '正文只在详情里出——目录类结果（list_skills/search_skills）都不带 content',
       input: getSkillSchema,
       run: async (args, auth) => {
         agentOf(auth);
-        const { skill_id: skillId } = args as { skill_id: string };
-        return ctx.skills.detail(skillId);
+        const input = args as { skill_id?: string; skill_name?: string };
+        if (Boolean(input.skill_id) === Boolean(input.skill_name)) {
+          throw new ApiException('VALIDATION_FAILED', 'skill_id 与 skill_name 必须且只能给一个');
+        }
+        if (input.skill_id) return ctx.skills.detail(input.skill_id);
+        const matches = await ctx.skills.findByName(input.skill_name!);
+        if (matches.length === 0) {
+          throw new ApiException(
+            'NOT_FOUND',
+            `没有名为「${input.skill_name}」的技能；先 search_skills(keyword="${input.skill_name}") 拿候选，再按 skill_id 查`,
+          );
+        }
+        if (matches.length === 1) return ctx.skills.detail(matches[0]!.skill_id);
+        return {
+          ambiguous: true,
+          skill_name: input.skill_name,
+          candidates: matches,
+          next: `存在 ${matches.length} 个同名技能：把 candidates 列给用户选，选定后再用 get_skill(skill_id=...) 取正文`,
+        };
       },
     },
     {
       name: 'search_skills',
-      description: '按关键字搜索技能（keyword 必填；命中 name/description/category/tags，§16.1）',
+      description:
+        '按用户的说法找技能候选（§16.1，只读）：keyword 必填、可含近义词/错字，服务端按名称/描述/分类/标签打分排序，' +
+        '**恒给候选而不是空数组**；返回项含 score 与 matched_on，返回体含 ambiguous 与 next。' +
+        'ambiguous=true 或候选多于 1 条时，把候选（名称 + 一句话描述）列给用户选，不要自行挑定；选定后用 get_skill 取正文',
       input: searchSkillsSchema,
       run: async (args, auth) => {
         agentOf(auth);
-        return ctx.skills.list(args as SkillListQuery);
+        const input = args as SkillListQuery & { limit?: number };
+        return ctx.skills.searchBrief(input, input.limit ?? 8);
       },
     },
     // ------------------------------------------- v0.0.4 §16.1：Agent 侧的技能创建（落库路径与 UI 的 POST /skills 同一份 SkillsService.create）
