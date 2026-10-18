@@ -14,11 +14,16 @@ import {
   type SkillContent,
   type SkillCreateInput,
   type SkillDto,
+  type SkillBriefDto,
+  type SkillBriefListResult,
   type SkillImportMarkdownInput,
   type SkillListQuery,
+  type SkillMatchField,
   type SkillMcpDependency,
   type SkillOrigin,
   type SkillPatchInput,
+  type SkillSearchHit,
+  type SkillSearchResult,
   type SkillSource,
   type SkillStatus,
   type SkillTestCase,
@@ -94,6 +99,189 @@ function toDto(row: Skill): SkillDto {
   };
 }
 
+// ---------------------------------------------------------------- 发现面（MCP 精简读）
+
+/**
+ * 发现面的列投影：`content` / `test_cases` / `mcp_dependencies` 三列**不进 SQL 结果**。
+ *
+ * WHY 单独一套：`list()` / `detail()` 回的是 REST 与编辑器要的完整 `SkillDto`（带正文），
+ * 而 `list_skills` / `search_skills` 只是「让 agent 知道有哪些技能」。实测 124 条内置技能
+ * 完整 JSON = 1.0 MB，只要 id/name/type/description 时是 22 KB——差 45 倍，差距全在正文列。
+ * 用同一个 findMany() 会在解码阶段就把 1 MB 拉出来（125 行 × 平均 8.3 KB），所以连 SQL 层
+ * 也要把正文列摘掉，而不是查出来再丢。
+ */
+const SKILL_BRIEF_SELECT = {
+  id: true,
+  name: true,
+  type: true,
+  status: true,
+  description: true,
+  tags: true,
+  category: true,
+  sourceType: true,
+  currentVersion: true,
+  updatedAt: true,
+} as const;
+
+type SkillBriefRow = {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  description: string;
+  tags: string | null;
+  category: string | null;
+  sourceType: string | null;
+  currentVersion: string;
+  updatedAt: string | null;
+};
+
+/** 目录里的一句话描述上限：候选展示够用，又不至于把 2000 字的描述整段塞进上下文。 */
+const BRIEF_DESCRIPTION_CLIP = 120;
+
+function sourceOf(row: { sourceType: string | null }): SkillOrigin {
+  return row.sourceType === 'default' || row.sourceType === 'imported' ? row.sourceType : 'custom';
+}
+
+function toBrief(row: SkillBriefRow): SkillBriefDto {
+  const description = row.description ?? '';
+  const source = sourceOf(row);
+  return {
+    skill_id: row.id,
+    name: row.name,
+    description:
+      description.length > BRIEF_DESCRIPTION_CLIP
+        ? `${description.slice(0, BRIEF_DESCRIPTION_CLIP)}…`
+        : description,
+    type: row.type as SkillType,
+    status: row.status as SkillStatus,
+    category: toSkillCategory(row.category ?? ''),
+    tags: parseJson<string[]>(row.tags, []),
+    source,
+    // §9.1 只读判定与 toDto 同一口径：按来源推导，列上不存 readonly。
+    readonly: source === 'default',
+    current_version: row.currentVersion,
+    updated_at: toIso(row.updatedAt),
+  };
+}
+
+/** 中文字符二元组：中文没有空格分词，"代码评审" vs "代码审查" 靠它拿到非零相似度。 */
+function bigrams(text: string): Set<string> {
+  const chars = [...text.toLowerCase().replace(/\s+/gu, '')];
+  const set = new Set<string>();
+  for (let index = 0; index < chars.length - 1; index += 1) {
+    set.add(`${chars[index]}${chars[index + 1]}`);
+  }
+  if (chars.length === 1) set.add(chars[0]!);
+  return set;
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let shared = 0;
+  for (const item of a) if (b.has(item)) shared += 1;
+  return shared / (a.size + b.size - shared);
+}
+
+interface Scored {
+  score: number;
+  matched_on: SkillMatchField;
+}
+
+/**
+ * 单个词项的打分。分值阶梯（顺序即优先级）：
+ * 名称全等 100 / 前缀 80 / 子串 70 / 分类 50 / 标签 45 / 描述 30 / 相似度 ≤30。
+ *
+ * 相似度必须兜住「用户说的和库里的名字不一样」——子串匹配对近义词是无能为力的
+ * （"代码评审" 与 "代码审查" 互相不含），而这类不命中正是用户被迫回平台查名字的直接原因。
+ */
+function scoreOne(row: SkillBriefRow, term: string): Scored {
+  const query = term.toLowerCase();
+  if (!query) return { score: 0, matched_on: 'none' };
+  const name = row.name.toLowerCase();
+  if (name === query) return { score: 100, matched_on: 'name_exact' };
+  if (name.startsWith(query)) return { score: 80, matched_on: 'name_prefix' };
+  if (name.includes(query)) return { score: 70, matched_on: 'name' };
+
+  const category = toSkillCategory(row.category ?? '');
+  if (category !== '' && (category === term || parentOfCategory(category) === term)) {
+    return { score: 50, matched_on: 'category' };
+  }
+  const tags = parseJson<string[]>(row.tags, []);
+  if (tags.some((tag) => tag.toLowerCase() === query)) return { score: 45, matched_on: 'tag' };
+
+  const description = (row.description ?? '').toLowerCase();
+  if (description.includes(query)) return { score: 30, matched_on: 'description' };
+
+  const similarity = Math.max(
+    jaccard(bigrams(query), bigrams(name)),
+    jaccard(bigrams(query), bigrams(description)) * 0.8,
+  );
+  // 阈值 0.15 是实测口径：3 个 bigram 里命中 1 个（如 "代码评审" vs "代码审查"）即 0.2，
+  // 能进候选；再低就会把全库都捞成 similarity，候选反而失效。
+  if (similarity >= 0.15) {
+    return { score: Math.max(5, Math.round(similarity * 30)), matched_on: 'similarity' };
+  }
+  return { score: 0, matched_on: 'none' };
+}
+
+/** 多词查询（"code review" / "审查 代码"）按词项取最高分，取最像的那个命中面。 */
+function scoreCandidate(row: SkillBriefRow, keyword: string): Scored {
+  const terms = [...new Set(
+    [keyword, ...keyword.split(/[\s,，、;；/]+/u)]
+      .map((term) => term.trim())
+      .filter((term) => term.length >= 2),
+  )];
+  let best: Scored = { score: 0, matched_on: 'none' };
+  for (const term of terms) {
+    const scored = scoreOne(row, term);
+    if (scored.score > best.score) best = scored;
+  }
+  return best;
+}
+
+/** 目录/搜索共用的元数据过滤（类型/状态/来源/标签），不含关键字。 */
+function matchesMetaFilter(row: SkillBriefRow, query: SkillListQuery): boolean {
+  if (query.type && row.type !== query.type) return false;
+  if (query.status && row.status !== query.status) return false;
+  if (query.source && sourceOf(row) !== query.source) return false;
+  if (query.tag && !parseJson<string[]>(row.tags, []).includes(query.tag)) return false;
+  return true;
+}
+
+/** 与 `list()` 逐字对齐的子串过滤（名称/描述/分类/一级词/标签），共用于 list_skills。 */
+function matchesKeywordSubstring(row: SkillBriefRow, keyword?: string): boolean {
+  const query = keyword?.trim().toLowerCase();
+  if (!query) return true;
+  const category = toSkillCategory(row.category ?? '');
+  return [row.name, row.description ?? '', category, parentOfCategory(category) ?? '', ...parseJson<string[]>(row.tags, [])]
+    .filter((field) => field !== '')
+    .some((field) => field.toLowerCase().includes(query));
+}
+
+/** 给 agent 的下一步：候选唯一才允许自己往下走，不唯一就交给用户选。 */
+function searchNextHint(items: SkillSearchHit[], ambiguous: boolean): string {
+  if (items.length === 0) {
+    return '没有候选：换更短、更口语的关键词再搜一次（如把「帮我跑一遍代码评审」缩成「代码评审」）；仍为空可调 list_skills 浏览目录（只含名称与描述）';
+  }
+  const top = items[0]!;
+  if (ambiguous) {
+    return `候选分数接近（top1=${top.score}，ambiguous=true）：把前 ${items.length} 条的名称 + 一句话描述列给用户，让用户选一个，不要自行挑定；选定后 get_skill(skill_id=...) 取正文`;
+  }
+  if (top.matched_on === 'name_exact') {
+    return `名称全等命中「${top.name}」，可直接 get_skill(skill_id="${top.skill_id}") 取正文`;
+  }
+  return `最相近的是「${top.name}」（score=${top.score}，命中面=${top.matched_on}）：若与用户说法不一致，先向用户确认再 get_skill(skill_id="${top.skill_id}")`;
+}
+
+function listNextHint(total: number, offset: number, returned: number): string {
+  const remaining = total - offset - returned;
+  if (remaining > 0) {
+    return `还有 ${remaining} 条：用 offset=${offset + returned} 继续翻页；只要正文请用 get_skill(skill_id=...)`;
+  }
+  return '目录已列完；要正文请用 get_skill(skill_id=...)（list_skills 不含 content/test_cases/mcp_dependencies）';
+}
+
 @Injectable()
 export class SkillsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -131,6 +319,74 @@ export class SkillsService {
       })
       .map(toDto);
     return { items, total: items.length };
+  }
+
+  /**
+   * 发现面列表（`list_skills`）：只回精简目录，正文一律走 `get_skill`。
+   *
+   * 关键字过滤沿用 `list()` 的子串口径（与 UI 搜索框逐字一致），不做模糊打分——
+   * 「按意图找技能」是 `searchBrief` 的职责。两个工具各管一件事，agent 才不会选错。
+   */
+  async listBrief(query: SkillListQuery, limit = 50, offset = 0): Promise<SkillBriefListResult> {
+    const rows = await this.prisma.skill.findMany({
+      select: SKILL_BRIEF_SELECT,
+      orderBy: { updatedAt: 'desc' },
+    });
+    const matched = rows.filter(
+      (row) => matchesMetaFilter(row, query) && matchesKeywordSubstring(row, query.keyword),
+    );
+    const page = matched.slice(offset, offset + limit);
+    return {
+      items: page.map(toBrief),
+      total: matched.length,
+      returned: page.length,
+      limit,
+      offset,
+      next: listNextHint(matched.length, offset, page.length),
+    };
+  }
+
+  /**
+   * 意图 → 候选（`search_skills`）：**永远给候选，不给空数组**。
+   *
+   * 用户说的是「帮我做代码评审」，库里可能叫「代码审查」或 `code-review`：子串匹配在这种
+   * 场景恒 0 命中，agent 于是无路可走、只能让人回平台翻技能库。这里改成打分排序 + 近义兜底，
+   * 并把「分不出来就让用户选」写成返回值里的 `ambiguous` / `next`，而不是靠提示词自觉。
+   */
+  async searchBrief(query: SkillListQuery, limit = 8): Promise<SkillSearchResult> {
+    const rows = await this.prisma.skill.findMany({
+      select: SKILL_BRIEF_SELECT,
+      orderBy: { updatedAt: 'desc' },
+    });
+    const keyword = query.keyword?.trim() ?? '';
+    const hits: SkillSearchHit[] = rows
+      .filter((row) => matchesMetaFilter(row, query))
+      .map((row) => ({ row, ...scoreCandidate(row, keyword) }))
+      .filter((hit) => hit.score > 0)
+      // 同分保持 findMany 的 updatedAt desc（Array#sort 稳定）——最近维护的先出现。
+      .sort((left, right) => right.score - left.score)
+      .map(({ row, score, matched_on }) => ({ ...toBrief(row), score, matched_on }));
+    const items = hits.slice(0, limit);
+    // 分差 < 15 视为「分不出来」：ambiguous 是契约级硬信号，agent 必须把候选交给用户选。
+    const ambiguous = items.length > 1 && items[0]!.score - items[1]!.score < 15;
+    return {
+      items,
+      total: hits.length,
+      returned: items.length,
+      ambiguous,
+      next: searchNextHint(items, ambiguous),
+    };
+  }
+
+  /** `get_skill(skill_name)` 的解析：名称全等、大小写不敏感；重名全部返回，由调用方决定怎么问。 */
+  async findByName(name: string): Promise<SkillBriefDto[]> {
+    const query = name.trim().toLowerCase();
+    if (!query) return [];
+    const rows = await this.prisma.skill.findMany({
+      select: SKILL_BRIEF_SELECT,
+      orderBy: { updatedAt: 'desc' },
+    });
+    return rows.filter((row) => row.name.toLowerCase() === query).map(toBrief);
   }
 
   /** 详情：Skill + 版本摘要 + 绑定任务数（8.2）。 */

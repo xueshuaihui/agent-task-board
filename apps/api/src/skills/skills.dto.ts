@@ -309,6 +309,70 @@ export interface SkillDto {
   stats?: { bound_task_count: number };
 }
 
+// ---------------------------------------------------------------- 发现面（MCP 精简读模型）
+
+/**
+ * `list_skills` / `search_skills` 的返回单元：**不含 content / test_cases / mcp_dependencies**。
+ *
+ * WHY：全量 `SkillDto` 带上正文后，124 条内置技能的 JSON 是 1.0 MB（实测，平均每条 8.3 KB），
+ * 而只要「有哪些技能」的话同一批数据只需 22 KB。agent 为了拿一个名字必须吞 1 MB，理性选择
+ * 就是根本不查、回 UI 抄名字——发现面因此必须另立一个精简读模型，而不是复用 SkillDto。
+ */
+export interface SkillBriefDto {
+  skill_id: string;
+  name: string;
+  description: string;
+  type: SkillType;
+  status: SkillStatus;
+  category: SkillCategoryOrNone;
+  tags: string[];
+  source: SkillOrigin;
+  readonly: boolean;
+  current_version: string;
+  updated_at: string | null;
+}
+
+/** 候选的命中面：让 agent 能向用户解释「为什么是它」，也便于测试锁定打分口径。 */
+export type SkillMatchField =
+  | 'name_exact'
+  | 'name_prefix'
+  | 'name'
+  | 'category'
+  | 'tag'
+  | 'description'
+  | 'similarity'
+  | 'none';
+
+export interface SkillSearchHit extends SkillBriefDto {
+  score: number;
+  matched_on: SkillMatchField;
+}
+
+/**
+ * `search_skills` 的返回体：**永远返回候选而不是空数组**（近义/错字由 similarity 兜底）。
+ *
+ * `ambiguous` 是给 agent 的硬信号：top1 与 top2 分差 < 15 时不许自行挑定，必须把候选列给
+ * 用户选——这正是「用户说个大概，再由用户挑具体技能」的流程落点。
+ */
+export interface SkillSearchResult {
+  items: SkillSearchHit[];
+  /** 打分 > 0 的全部候选数（可能大于 items.length）。 */
+  total: number;
+  returned: number;
+  ambiguous: boolean;
+  next: string;
+}
+
+/** `list_skills` 的返回体：精简目录 + 分页信息，翻页靠 limit/offset。 */
+export interface SkillBriefListResult {
+  items: SkillBriefDto[];
+  total: number;
+  returned: number;
+  limit: number;
+  offset: number;
+  next: string;
+}
+
 /** 8.6 测试运行：无用例时单次运行（旧形态 + mode），有用例时逐个运行。 */
 export interface SkillTestSingle {
   mode: 'single';
