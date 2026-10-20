@@ -1,7 +1,21 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { ArrowLeft, CheckCircle2, Circle, Loader2, Plus, Undo2 } from 'lucide-react';
-import { BREAKDOWN_STATUS_LABEL, type BreakdownDraftEdit, type BreakdownSession } from '@/api/types';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Circle,
+  Copy,
+  Loader2,
+  Plus,
+  RotateCcw,
+  Undo2,
+} from 'lucide-react';
+import {
+  BREAKDOWN_STATUS_LABEL,
+  type BreakdownDraft,
+  type BreakdownDraftEdit,
+  type BreakdownSession,
+} from '@/api/types';
 import { api } from '@/api';
 import { navigate } from '@/app/router';
 import { useSkills } from '@/features/skills/hooks';
@@ -14,6 +28,8 @@ import {
   useBreakdownCancel,
   useBreakdownConfirm,
   useBreakdownDraftWrite,
+  useBreakdownRegenerateDraft,
+  useBreakdownRegenerateSession,
   useBreakdownSession,
   useBreakdownSessions,
 } from './queries';
@@ -21,24 +37,38 @@ import { DraftCard } from './draft-card';
 import { BreakdownStatusBadge, SessionSwitcher } from './session-switcher';
 import { useBreakdownOverlayStore } from './store';
 import { SessionActionDialog } from './session-action-dialog';
+import { RegenerationDialog } from './regeneration-dialog';
 import { DraftFlowGraph } from './draft-graph';
 import { DraftEditor } from './draft-editor';
-import { addDraft, applyRegeneration, hasDependencyCycle, nextDraftRef, patchDraft, removeDraft, toggleDependency } from './draft-edit';
+import { addDraft, hasDependencyCycle, nextDraftRef, patchDraft, removeDraft, toggleDependency } from './draft-edit';
+import { copyTextWithFallback } from './copy-text';
+import {
+  breakdownCopyInstruction,
+  canConfirmBreakdown,
+  confirmBlockedReason,
+  hasPendingRegeneration,
+} from './regeneration';
 import type { AnnotatedDraft } from './skill-status';
 
 /** §7.8「撤销：5 秒内可撤销」——确认动作延迟 5 秒提交，期间可撤销（api 无事后撤销端点）。 */
 const CONFIRM_UNDO_SECONDS = 5;
 
 /**
- * 拆解创建页（§7.3，**覆盖层不是独立路由**）：13.8「覆盖内容区 + 工具栏」——
- * portal 出 `fixed` 层，`left` 让开左侧导航（`--atb-nav-w`，与通知中心同一口径）。
+ * 拆解创建页（§7.3）的**两种外壳，一份内容**（#4.3 方案 B）：
+ * - 覆盖层（`BreakdownOverlay`）：portal 出 `fixed` 层，`left` 让开左侧导航
+ *   （`--atb-nav-w`，与通知中心同一口径），仍负责「有未处理会话」的快捷入口；
+ * - 二级页面（`features/breakdown/breakdown-page.tsx`，`#/requirements/breakdown`）：
+ *   把 `BreakdownWorkspace` 铺在内容区，提供进行中/历史、需求过滤与 cursor 分页。
+ * 覆盖层不是独立路由的旧口径只对「会话本体」成立——#4.3 起历史/归档需要可直达的
+ * 页面地址，但主导航仍不出现「拆解」项。
  *
  * 布局按 PRD ASCII 稿：
- * - 头：← 返回 · 「正在接收 Agent 拆解」/「拆解完成：{需求}」 · [取消] [确认创建]；
+ * - 头：← 返回 ·「正在接收 Agent 拆解」/「拆解完成：{需求}」· [取消] [整份重新生成] [确认创建]；
  * - 顶：会话切换器（§7.3 多会话并发，进行中红点）；
  * - 体：进度清单 + 进度条（阶段 3）、已识别任务卡片流（阶段 4）、状态收尾信息；
  * - v0.0.4 W7 遗留 b1 补齐：待确认页流程图（§7.3）、草案最小编辑（§7.4）、
- *   确认后 5 秒撤销窗口（§7.8）；b3 起草案编辑接服务端写端点（乐观更新 + 失败回滚）。
+ *   确认后 5 秒撤销窗口（§7.8）；b3 起草案编辑接服务端写端点（乐观更新 + 失败回滚）；
+ *   #4 起单条/整份重生成带说明，pending 期间禁用确认并给「复制唤起指令」。
  */
 export interface BreakdownOverlayProps {
   onClose: () => void;
@@ -46,38 +76,14 @@ export interface BreakdownOverlayProps {
 
 export function BreakdownOverlay({ onClose }: BreakdownOverlayProps) {
   const reduced = useReducedMotion();
-  const sessions = useBreakdownSessions();
+  /** 覆盖层只承载未终结会话（#4：浮标/快捷入口口径），历史会话在二级页面查看。 */
+  const sessions = useBreakdownSessions({ scope: 'active' });
   const activeId = useBreakdownOverlayStore((state) => state.activeId);
   const setActive = useBreakdownOverlayStore((state) => state.setActive);
 
   const list = useMemo(() => sessions.data ?? [], [sessions.data]);
-  // activeId 失效（首开、或该会话被删）时回落到最新会话（列表按 created_at 倒序）。
+  // activeId 失效（首开、或该会话已终结被 active 过滤掉）时回落到最新会话。
   const currentId = activeId && list.some((s) => s.id === activeId) ? activeId : (list[0]?.id ?? null);
-  const detail = useBreakdownSession(currentId);
-  const session = detail.data?.session ?? list.find((s) => s.id === currentId) ?? null;
-
-  /* W7 遗留 b3：草案编辑走服务端写端点（POST|PATCH|DELETE /drafts），
-   * 读视图永远是 GET 详情 + 乐观覆盖，不再有「暂存于本页」的本地数组。
-   * 条款 81：GET 详情的草案带 skills_status 逐条解析态（drafts 元素为 AnnotatedDraft）。 */
-  const [selectedRef, setSelectedRef] = useState<string | null>(null);
-  useEffect(() => {
-    setSelectedRef(null);
-  }, [currentId]);
-  const drafts = detail.data?.drafts ?? [];
-
-  const body = (
-    <BreakdownOverlayBody sessions={sessions} detail={detail} hasSession={session !== null}>
-      {session ? (
-        <SessionDetail
-          session={session}
-          detail={detail.data}
-          drafts={drafts}
-          selectedRef={selectedRef}
-          onSelectDraft={setSelectedRef}
-        />
-      ) : null}
-    </BreakdownOverlayBody>
-  );
 
   return (
     <motion.div
@@ -91,30 +97,182 @@ export function BreakdownOverlay({ onClose }: BreakdownOverlayProps) {
       className="fixed inset-y-0 right-0 z-40 flex min-w-0 flex-col bg-bg-app"
       style={{ left: 'var(--atb-nav-w, 0px)' }}
     >
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-bg-surface px-3">
-        <IconButton variant="ghost" label="返回" onClick={onClose} data-testid="breakdown-back">
-          <ArrowLeft className="size-4" aria-hidden />
-        </IconButton>
-        <h2 className="min-w-0 flex-1 truncate text-section-title text-text-primary">
-          {session?.status === 'receiving'
-            ? '正在接收 Agent 拆解'
-            : session?.status === 'reviewing'
-              ? `拆解完成：${session.parent_title}`
-              : (session?.parent_title ?? '拆解会话')}
-        </h2>
-        {session ? <SessionActions session={session} draftCount={drafts.length} /> : null}
-      </header>
-      <SessionSwitcher sessions={list} activeId={currentId} onSelect={setActive} />
-      <div className="atb-scroll min-h-0 flex-1 overflow-y-auto">{body}</div>
+      <BreakdownWorkspace
+        variant="overlay"
+        sessions={list}
+        activeId={currentId}
+        onSelectSession={setActive}
+        onBack={onClose}
+        listStatus={sessions}
+      />
     </motion.div>
   );
 }
 
-/** 本节只吃查询结果的这几项（结构上兼容 `useQuery` 返回值，单测可直传假对象）。 */
-interface BreakdownQueryState {
+/** 列表/详情查询的三态判据（与 useQuery 返回值结构兼容，单测可直传假对象）。 */
+export interface BreakdownQueryState {
   isPending: boolean;
   isError: boolean;
   error?: unknown;
+}
+
+export interface BreakdownWorkspaceProps {
+  variant: 'overlay' | 'page';
+  /** 切换器数据源；页面历史详情传空数组（历史不并发切换）。 */
+  sessions: BreakdownSession[];
+  activeId: string | null;
+  onSelectSession: (id: string) => void;
+  /** overlay = 关闭；page = 返回需求页（由外壳决定）。 */
+  onBack: () => void;
+  listStatus: BreakdownQueryState;
+  emptyDescription?: string;
+}
+
+/**
+ * #4.3 共享内容：覆盖层与二级页面都渲染这一份（避免两套业务 JSX 漂移）。
+ * 详情自己查（`useBreakdownSession(activeId)`）；外壳只负责定位/滚动与页头返回。
+ */
+export function BreakdownWorkspace({
+  variant,
+  sessions,
+  activeId,
+  onSelectSession,
+  onBack,
+  listStatus,
+  emptyDescription,
+}: BreakdownWorkspaceProps) {
+  const toast = useToast();
+  const detail = useBreakdownSession(activeId);
+  const session = detail.data?.session ?? sessions.find((s) => s.id === activeId) ?? null;
+  const drafts = detail.data?.drafts ?? [];
+
+  const [selectedRef, setSelectedRef] = useState<string | null>(null);
+  useEffect(() => {
+    setSelectedRef(null);
+  }, [activeId]);
+
+  /** #4 重生成目标：null=关闭；draft=单条；session=整份。 */
+  const [regenTarget, setRegenTarget] = useState<
+    { kind: 'draft'; ref: string } | { kind: 'session' } | null
+  >(null);
+  const regenerateDraft = useBreakdownRegenerateDraft();
+  const regenerateSession = useBreakdownRegenerateSession();
+  const regenBusy = regenerateDraft.isPending || regenerateSession.isPending;
+
+  const title =
+    session?.status === 'receiving'
+      ? '正在接收 Agent 拆解'
+      : session?.status === 'reviewing'
+        ? `拆解完成：${session.parent_title}`
+        : (session?.parent_title ?? '拆解会话');
+
+  const copyInstruction = async (input?: { refs?: string[]; note?: string | null }) => {
+    if (!session) return;
+    const pending = drafts.filter((draft) => draft.regeneration_pending);
+    // 单条按钮显式给 ref；会话横幅按拍板文案只带 session id/说明/revision。
+    const refs = input?.refs;
+    // 先看 pending 草案自己的说明：会话级 revision_note 永不清理，不能盖掉后来的单条请求。
+    const note =
+      input?.note !== undefined
+        ? input.note
+        : pending.length > 0
+          ? (pending.find((draft) => draft.regeneration_note)?.regeneration_note ?? null)
+          : session.status === 'receiving'
+            ? session.revision_note
+            : null;
+    const text = breakdownCopyInstruction({
+      sessionId: session.id,
+      revision: session.revision,
+      note,
+      refs,
+    });
+    const copied = await copyTextWithFallback(text);
+    if (copied) {
+      toast.success('唤起指令已复制', '粘贴到 Agent 会话即可让它继续等待或读取最新草案');
+    } else {
+      toast.error('复制失败', '请手动选中指令文本复制（浏览器可能拦截了剪贴板权限）');
+    }
+  };
+
+  const submitRegeneration = async (note: string) => {
+    if (!session || !regenTarget) return;
+    try {
+      if (regenTarget.kind === 'draft') {
+        await regenerateDraft.mutateAsync({ id: session.id, ref: regenTarget.ref, note });
+        toast.success('已请求重新生成草案', `等待 Agent 重报 #${regenTarget.ref}`);
+      } else {
+        await regenerateSession.mutateAsync({ id: session.id, note });
+        toast.success('已请求整份重新生成', '会话已回到接收中，请等待 Agent 重报');
+      }
+      setRegenTarget(null);
+    } catch {
+      /* useApiMutation 已按服务端 message 弹错误 Toast，留在窗内可重试。 */
+    }
+  };
+
+  return (
+    <div
+      className={cn(
+        'flex min-h-0 min-w-0 flex-1 flex-col',
+        variant === 'page' && 'overflow-hidden rounded-card border border-border bg-bg-surface',
+      )}
+    >
+      <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-border bg-bg-surface px-3 py-1.5">
+        {variant === 'overlay' ? (
+          <IconButton variant="ghost" label="返回" onClick={onBack} data-testid="breakdown-back">
+            <ArrowLeft className="size-4" aria-hidden />
+          </IconButton>
+        ) : null}
+        <h2 className="min-w-0 flex-1 truncate text-section-title text-text-primary">{title}</h2>
+        {session ? (
+          <SessionActions
+            session={session}
+            drafts={drafts}
+            onRegenerateSession={() => setRegenTarget({ kind: 'session' })}
+          />
+        ) : null}
+      </header>
+      {sessions.length > 0 ? (
+        <SessionSwitcher sessions={sessions} activeId={activeId} onSelect={onSelectSession} />
+      ) : null}
+      <div className={cn('min-h-0 flex-1', variant === 'overlay' && 'atb-scroll overflow-y-auto')}>
+        <BreakdownOverlayBody
+          sessions={listStatus}
+          detail={detail}
+          hasSession={session !== null}
+          emptyDescription={emptyDescription}
+        >
+          {session ? (
+            <SessionDetail
+              session={session}
+              detail={detail.data}
+              drafts={drafts}
+              selectedRef={selectedRef}
+              onSelectDraft={setSelectedRef}
+              onRegenerateDraft={(ref) => setRegenTarget({ kind: 'draft', ref })}
+              onCopyDraftInstruction={(draft) =>
+                void copyInstruction({ refs: [draft.ref], note: draft.regeneration_note ?? null })
+              }
+              onCopySessionInstruction={() => void copyInstruction()}
+            />
+          ) : null}
+        </BreakdownOverlayBody>
+      </div>
+      {session ? (
+        <RegenerationDialog
+          open={regenTarget !== null}
+          kind={regenTarget?.kind ?? 'session'}
+          session={session}
+          draftRef={regenTarget?.kind === 'draft' ? regenTarget.ref : null}
+          busy={regenBusy}
+          onClose={() => {
+            if (!regenBusy) setRegenTarget(null);
+          }}
+          onSubmit={(note) => void submitRegeneration(note)}
+        />
+      ) : null}
+    </div>
+  );
 }
 
 /**
@@ -133,12 +291,14 @@ export function BreakdownOverlayBody({
   sessions,
   detail,
   hasSession,
+  emptyDescription = 'Agent 调用 board.begin_breakdown 后会话会出现在这里。',
   children,
 }: {
   sessions: BreakdownQueryState;
   detail: BreakdownQueryState;
-  /** 列表或详情任一处能给出会话对象就算有（`session` 的取法见 BreakdownOverlay）。 */
+  /** 列表或详情任一处能给出会话对象就算有（`session` 的取法见 BreakdownWorkspace）。 */
   hasSession: boolean;
+  emptyDescription?: string;
   children: ReactNode;
 }) {
   if (sessions.isError) {
@@ -157,13 +317,7 @@ export function BreakdownOverlayBody({
     );
   }
   if (!hasSession && !sessions.isPending) {
-    return (
-      <EmptyState
-        title="还没有拆解会话"
-        description="Agent 调用 board.begin_breakdown 后会话会出现在这里。"
-        className="m-4"
-      />
-    );
+    return <EmptyState title="还没有拆解会话" description={emptyDescription} className="m-4" />;
   }
   if (!hasSession || detail.isPending) {
     return (
@@ -178,7 +332,15 @@ export function BreakdownOverlayBody({
 }
 
 /** 头部右侧动作区：receiving/reviewing 可取消，只有 reviewing 能确认创建（§7.7）。 */
-function SessionActions({ session, draftCount }: { session: BreakdownSession; draftCount: number }) {
+function SessionActions({
+  session,
+  drafts,
+  onRegenerateSession,
+}: {
+  session: BreakdownSession;
+  drafts: readonly BreakdownDraft[];
+  onRegenerateSession: () => void;
+}) {
   const toast = useToast();
   const hide = useBreakdownOverlayStore((state) => state.hide);
   const confirm = useBreakdownConfirm();
@@ -187,6 +349,11 @@ function SessionActions({ session, draftCount }: { session: BreakdownSession; dr
   /* §7.8 撤销窗口：confirm 落库后没有服务端撤销端点，故实现为「延迟 5 秒提交、
    * 期间可撤销」——倒计时归零才真正打 POST confirm。 */
   const [countdown, setCountdown] = useState<number | null>(null);
+
+  const draftCount = drafts.length;
+  const pendingRegeneration = hasPendingRegeneration(drafts);
+  const blockedReason = confirmBlockedReason(session.status, drafts);
+  const canConfirm = canConfirmBreakdown(session.status, drafts);
 
   const runConfirm = async () => {
     try {
@@ -264,22 +431,40 @@ function SessionActions({ session, draftCount }: { session: BreakdownSession; dr
   }
 
   return (
-    <div className="flex shrink-0 items-center gap-2">
+    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+      {pendingRegeneration && session.status === 'reviewing' ? (
+        <span className="text-aux text-status-review" data-testid="breakdown-confirm-blocked">
+          {blockedReason ?? '有草案待 Agent 重报，确认创建已禁用'}
+        </span>
+      ) : null}
       {canCancel ? (
         <Button variant="default" size="sm" onClick={() => setDialog('cancel')} data-testid="breakdown-cancel-btn">
           取消
         </Button>
       ) : null}
       {session.status === 'reviewing' ? (
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => setDialog('confirm')}
-          loading={confirm.isPending}
-          data-testid="breakdown-confirm-btn"
-        >
-          确认创建
-        </Button>
+        <>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={onRegenerateSession}
+            data-testid="breakdown-regenerate-session"
+          >
+            <RotateCcw className="size-3.5" aria-hidden />
+            整份重新生成
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setDialog('confirm')}
+            disabled={!canConfirm}
+            title={blockedReason ?? undefined}
+            loading={confirm.isPending}
+            data-testid="breakdown-confirm-btn"
+          >
+            确认创建
+          </Button>
+        </>
       ) : null}
       {session.status === 'completed' && session.parent_task_id ? (
         <Button
@@ -311,6 +496,64 @@ function SessionActions({ session, draftCount }: { session: BreakdownSession; dr
   );
 }
 
+/**
+ * #4：待重报横幅（单条或整份都显示）——
+ * 说明/时间来自草案级或会话级字段；「复制唤起指令」把 session id、note、
+ * after_revision 与 board.wait_for_breakdown / board.get_breakdown 建议一起交给 Agent。
+ */
+function RegenerationNotice({
+  session,
+  drafts,
+  onCopy,
+}: {
+  session: BreakdownSession;
+  drafts: readonly AnnotatedDraft[];
+  onCopy: () => void;
+}) {
+  const pending = drafts.filter((draft) => draft.regeneration_pending);
+  const sessionLevel = session.status === 'receiving' && session.revision_requested_at !== null;
+  if (pending.length === 0 && !sessionLevel) return null;
+  /* 会话级 revision_note/requested_at 服务端不会清零：有 pending 草案时先读草案自己的
+   * 说明/时刻，避免上一次整份重生成的旧说明盖住这次单条请求。 */
+  const note =
+    pending.length > 0
+      ? (pending.find((draft) => draft.regeneration_note)?.regeneration_note ?? null)
+      : session.revision_note;
+  const requestedAt =
+    pending.length > 0
+      ? (pending.find((draft) => draft.regeneration_requested_at)?.regeneration_requested_at ?? null)
+      : session.revision_requested_at;
+  return (
+    <div
+      className="flex flex-col gap-2 rounded-card border border-status-review/40 bg-status-review-soft px-3 py-2 text-aux text-text-primary"
+      data-testid="breakdown-regeneration-notice"
+    >
+      <p className="flex items-center gap-2 font-medium">
+        <Loader2 className="size-3.5 animate-spin text-status-review" aria-hidden />
+        {pending.length > 0
+          ? `等待 Agent 重报（${pending.map((draft) => `#${draft.ref}`).join('、')}）`
+          : '等待 Agent 重报（整份）'}
+      </p>
+      {note ? <p className="text-text-secondary">说明：{note}</p> : null}
+      {requestedAt ? (
+        <p className="text-text-tertiary">
+          请求于 {formatDateTime(requestedAt)} · 当前 revision {session.revision}
+        </p>
+      ) : null}
+      <Button
+        variant="default"
+        size="sm"
+        className="self-start"
+        onClick={onCopy}
+        data-testid="breakdown-copy-instruction"
+      >
+        <Copy className="size-3.5" aria-hidden />
+        复制唤起指令
+      </Button>
+    </div>
+  );
+}
+
 /** 单会话主体：进度清单（阶段 3）+ 草案卡片流（阶段 4）+ 待确认流程图/编辑（§7.3/7.4，写侧接服务端）+ 状态收尾。 */
 function SessionDetail({
   session,
@@ -318,6 +561,9 @@ function SessionDetail({
   drafts,
   selectedRef,
   onSelectDraft,
+  onRegenerateDraft,
+  onCopyDraftInstruction,
+  onCopySessionInstruction,
 }: {
   session: BreakdownSession;
   detail: ReturnType<typeof useBreakdownSession>['data'];
@@ -325,6 +571,10 @@ function SessionDetail({
   drafts: AnnotatedDraft[];
   selectedRef: string | null;
   onSelectDraft: (ref: string | null) => void;
+  /** #4：打开单条重生成说明输入（真正的 API 调用在 BreakdownWorkspace）。 */
+  onRegenerateDraft: (ref: string) => void;
+  onCopyDraftInstruction: (draft: AnnotatedDraft) => void;
+  onCopySessionInstruction: () => void;
 }) {
   const toast = useToast();
   const write = useBreakdownDraftWrite(session.id);
@@ -361,10 +611,6 @@ function SessionDetail({
   const removeOne = (ref: string) =>
     write.commit(removeDraft(drafts, ref), () => api.breakdown.deleteDraft(session.id, ref));
 
-  /** §7.4「重新生成」（条款 81）：重置草案待 Agent 重报——本地清空只是乐观态，哨兵在服务端。 */
-  const regenerateOne = (ref: string) =>
-    write.commit(applyRegeneration(drafts, ref), () => api.breakdown.regenerateDraft(session.id, ref));
-
   /** 点边/点开关共用：断边失败（成环/自环）时给文案，成功后 PATCH 依赖边集合。 */
   const toggleDep = (from: string, to: string) => {
     const result = toggleDependency(drafts, from, to);
@@ -392,7 +638,17 @@ function SessionDetail({
         <p className="line-clamp-2 text-body text-text-primary" title={session.requirement_text}>
           {session.requirement_text}
         </p>
+        {session.revision_requested_at && session.status === 'receiving' ? (
+          <p className="text-aux text-text-secondary" data-testid="breakdown-session-revision">
+            已请求整份重新生成
+            {session.revision_note ? `：${session.revision_note}` : ''} ·{' '}
+            {formatDateTime(session.revision_requested_at)} · revision {session.revision}
+          </p>
+        ) : null}
       </Card>
+
+      {/* #4：待重报横幅（单条/整份都能看到复制唤起指令）。 */}
+      <RegenerationNotice session={session} drafts={drafts} onCopy={onCopySessionInstruction} />
 
       {/* 阶段 3：进度清单 + 「已完成 x/y」 + 进度条。 */}
       {progress.length > 0 ? (
@@ -466,7 +722,7 @@ function SessionDetail({
               onPatch={patchOne}
               onDelete={removeOne}
               onAdd={addOne}
-              onRegenerate={regenerateOne}
+              onRegenerate={onRegenerateDraft}
               skillNames={skillNames}
             />
           ) : null}
@@ -488,20 +744,33 @@ function SessionDetail({
         ) : (
           <div className={cn('grid grid-cols-1 gap-2', 'min-[720px]:grid-cols-2')} data-testid="breakdown-drafts">
             {drafts.map((draft) => (
-              <button
-                key={draft.id}
-                type="button"
-                disabled={!reviewing}
-                onClick={() => onSelectDraft(draft.ref)}
-                className={cn(
-                  'min-w-0 rounded-card text-left',
-                  reviewing && 'cursor-pointer transition-shadow hover:ring-1 hover:ring-primary/40',
-                  selectedRef === draft.ref && 'ring-2 ring-primary',
-                )}
-                data-testid="breakdown-draft-open"
-              >
-                <DraftCard draft={draft} skillNames={skillNames} />
-              </button>
+              <div key={draft.id} className="flex min-w-0 flex-col gap-1">
+                <button
+                  type="button"
+                  disabled={!reviewing}
+                  onClick={() => onSelectDraft(draft.ref)}
+                  className={cn(
+                    'min-w-0 rounded-card text-left',
+                    reviewing && 'cursor-pointer transition-shadow hover:ring-1 hover:ring-primary/40',
+                    selectedRef === draft.ref && 'ring-2 ring-primary',
+                  )}
+                  data-testid="breakdown-draft-open"
+                >
+                  <DraftCard draft={draft} skillNames={skillNames} />
+                </button>
+                {draft.regeneration_pending ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="self-start text-primary"
+                    onClick={() => onCopyDraftInstruction(draft)}
+                    data-testid="breakdown-copy-draft-instruction"
+                  >
+                    <Copy className="size-3.5" aria-hidden />
+                    复制唤起指令
+                  </Button>
+                ) : null}
+              </div>
             ))}
           </div>
         )}

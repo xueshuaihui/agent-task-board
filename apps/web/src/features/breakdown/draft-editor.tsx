@@ -27,7 +27,7 @@ export function toggleDraftSkillId(selectedIds: readonly string[], skillId: stri
  * 多选增删切换（D-3），条款 81 的歧义/未解析重选走 onPatch({ skill_ids })）、
  * 验收标准（逐条编辑/增删，
  * onPatch({ acceptance })）、依赖连/断、删草案、加草案；「重新生成」调专用端点
- * （重置该草案待 Agent 重报，见 onRegenerate）。父需求原文（session.requirement_text）不可编辑。
+ * （#4 起先由覆盖层收集可选说明，再重置该草案待 Agent 重报，见 onRegenerate）。父需求原文（session.requirement_text）不可编辑。
  *
  * 变更全部经 onPatch/onDelete/onAdd 上抛给 overlay 的真实 mutation（乐观更新 +
  * 失败回滚）；离散控件即时提交，标题/描述/验收条目这类连续输入本地缓冲、失焦才落库，

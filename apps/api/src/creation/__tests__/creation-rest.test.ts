@@ -50,6 +50,44 @@ describe('POST /api/v1/creation-requests', () => {
     expect(res.status).toBe(422);
     expect(errorCode(res)).toBe('VALIDATION_FAILED');
   });
+
+  it('requested_review_mode 回显为拟用 review_mode；用户 decision edit 可改最终落库值', async () => {
+    const res = await ui.post(`${API}/creation-requests`, {
+      title: unique('REST 请求审核方式'),
+      type: '缺陷',
+      agent_name: 'qoder-1',
+      requested_review_mode: 'none',
+    });
+    expect(res.status, res.text).toBe(201);
+    const view = res.body as CreationRequestView;
+    expect(view).toMatchObject({ requested_review_mode: 'none', review_mode: 'none' });
+
+    const decided = await ui.post(`${API}/creation-requests/${view.request_id}/decision`, {
+      action: 'edit',
+      payload: { review_mode: 'human' },
+    });
+    expect(decided.status, decided.text).toBe(201);
+    const decidedView = decided.body as CreationRequestView;
+    expect(decidedView).toMatchObject({ status: 'edited', review_mode: 'human' });
+    const task = await ui.get(`${API}/tasks/${decidedView.task_id}`);
+    expect(task.status).toBe(200);
+    expect((task.body as { review_mode: string }).review_mode).toBe('human');
+  });
+
+  it('decision payload 的 review_mode 越表（auto）→ 422，请求保持待决', async () => {
+    const view = await postRequest(unique('REST 审核方式越表'));
+    const bad = await ui.post(`${API}/creation-requests/${view.request_id}/decision`, {
+      action: 'edit',
+      payload: { review_mode: 'auto' },
+    });
+    expect(bad.status, bad.text).toBe(422);
+    expect(errorCode(bad)).toBe('VALIDATION_FAILED');
+
+    const list = await ui.get(`${API}/creation-requests`);
+    const still = (list.body as CreationRequestView[]).find((item) => item.request_id === view.request_id);
+    expect(still?.status).toBe('pending');
+    await svc.decide(view.request_id, { action: 'cancel' });
+  });
 });
 
 describe('GET /api/v1/creation-requests', () => {

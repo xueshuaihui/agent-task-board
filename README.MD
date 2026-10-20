@@ -93,9 +93,10 @@ hdiutil create -volname "Jarvis Workbench" \
 ### Agent 接入（让执行方干活）
 
 1. **设置 → Token** 签发 Agent Token（与 UI Token 分组，互不可调用对方接口）；
-2. Agent 走 **MCP**（`http://127.0.0.1:7788/mcp`）或 **REST** 九个工具：
-   `list_ready_tasks` → `claim_next_task`（建租约）→ `update_progress` / `append_log` → `complete_task`；
-3. Cursor 用户可直接用现成调度脚本 `scripts/cursor-agent-poll.mjs`（轮询认领，免写接入代码）。
+2. Agent 走 **MCP**（`http://127.0.0.1:7788/mcp`）或 **REST** 的基础执行闭环：
+   `list_ready_tasks` → `claim_next_task`（建租约）→ `update_progress` / `append_log` → `complete_task`；工具总面随版本增减，以 `tools/list` 返回为准；
+3. **执行协议**：`get_task` 先读 `requirement.execution_rules` 与 `effective_skills`（`source` 标来源，同 id 需求优先）；`update_progress` 按节奏真实上报（领取 0–5%、阶段 10–90%、完成前 100%、每 2–3 分钟或阶段变化一次；可只传 `message`，服务端单调不回退）；`heartbeat` 只续租，不代表进度；
+4. Cursor 用户可直接用现成调度脚本 `scripts/cursor-agent-poll.mjs`（轮询认领 + 进度上报，免写接入代码）。
 
 ### 数据在哪
 

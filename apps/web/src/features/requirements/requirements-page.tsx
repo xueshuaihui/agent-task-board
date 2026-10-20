@@ -4,8 +4,10 @@ import {
   Archive,
   ArchiveRestore,
   FilePlus2,
+  History,
   MoreHorizontal,
   Pencil,
+  ScrollText,
   Search,
   SquareKanban,
   Trash2,
@@ -217,6 +219,14 @@ export function RequirementsPage() {
             />
           </div>
           <Button
+            size="sm"
+            icon={<History className="size-4" aria-hidden />}
+            onClick={() => navigate('breakdown')}
+            data-testid="requirements-breakdown-history"
+          >
+            拆解记录
+          </Button>
+          <Button
             variant="primary"
             icon={<FilePlus2 className="size-4" aria-hidden />}
             onClick={() => setFormTarget('create')}
@@ -373,6 +383,12 @@ function RequirementCard({
           {priorityText(task.priority)}
         </Badge>
         <Badge tone="neutral">{task.status_label}</Badge>
+        {/* #8：列表/看板不背规则全文，只按卡片布尔提示「有执行规则」。 */}
+        {task.has_execution_rules ? (
+          <Badge tone="outline" icon={<ScrollText className="size-3" aria-hidden />}>
+            有执行规则
+          </Badge>
+        ) : null}
         {archived ? <Badge tone="neutral">已归档</Badge> : null}
       </div>
 
@@ -431,6 +447,14 @@ function RequirementMenu({
         groups={[
           {
             items: [
+              // #4.3：从单条需求直达它的拆解历史（页面带 requirement 过滤）。
+              {
+                id: 'breakdown-history',
+                label: '拆解历史',
+                icon: <History className="size-3.5" aria-hidden />,
+                onSelect: () =>
+                  navigate('breakdown', `?requirement=${encodeURIComponent(task.id)}`),
+              },
               {
                 id: 'edit',
                 label: '编辑',

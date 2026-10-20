@@ -12,7 +12,8 @@ import { BreakdownService } from '../breakdown/breakdown.service';
 import { CreationService } from '../creation/creation.service';
 import { SkillsService } from '../skills/skills.service';
 import { SettingsService } from '../infra/settings.service';
-import { createAgentMcpServer, type AgentToolContext } from './mcp.server';
+import { assertNoRawReviewMode } from './agent-tools';
+import { createAgentMcpServer, toCallToolResult, type AgentToolContext } from './mcp.server';
 
 /**
  * 19.2 第 6 项（有状态 SSE 还是无状态 Streamable HTTP）未拍板，切换点集中在这一个常量上。
@@ -44,6 +45,26 @@ export class McpController {
 
   @Post()
   async post(@Req() req: Request, @Res() res: Response, @Auth() auth: RequestAuth): Promise<void> {
+    // Q4 的入口守卫必须在 SDK 按 inputSchema 解析之前：zod 的 object 会静默剥离未知键，
+    // 等进到 registerTool 回调时 review_mode/reviewMode 已经不见了。这里直接看 JSON-RPC
+    // 原始信封，把「显式 422」走成与其它工具错误一致的 isError 结果。
+    const rawCall = toolCallOf(req.body);
+    if (rawCall) {
+      try {
+        assertNoRawReviewMode(rawCall.name, rawCall.args);
+      } catch (error) {
+        const result = await toCallToolResult(async () => {
+          throw error;
+        });
+        res.status(200).json({
+          jsonrpc: '2.0',
+          id: (req.body as { id?: unknown }).id ?? null,
+          result,
+        });
+        return;
+      }
+    }
+
     const context: AgentToolContext = {
       claims: this.claims,
       leases: this.leases,
@@ -98,4 +119,16 @@ export class McpController {
       error: { code: -32000, message: '本服务以无状态 Streamable HTTP 运行，不支持独立 SSE 流' },
     });
   }
+}
+
+/** 从 JSON-RPC 信封里取 `tools/call` 的工具名与原始 arguments；其它方法返回 null。 */
+function toolCallOf(body: unknown): { name: string; args: unknown } | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const message = body as Record<string, unknown>;
+  if (message.method !== 'tools/call') return null;
+  const params = message.params;
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return null;
+  const name = (params as Record<string, unknown>).name;
+  if (typeof name !== 'string') return null;
+  return { name, args: (params as Record<string, unknown>).arguments };
 }

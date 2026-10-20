@@ -1,4 +1,4 @@
-import { memo, type KeyboardEvent, type MouseEvent, type ReactElement } from 'react';
+import { memo, useEffect, useState, type KeyboardEvent, type MouseEvent, type ReactElement } from 'react';
 import { useReducedMotion } from 'motion/react';
 import {
   Bell,
@@ -33,6 +33,7 @@ import {
 } from './model';
 import { CardMenu } from './card-menu';
 import type { CardActions } from './card-actions';
+import { progressReportDisplay } from './progress-staleness';
 import { useLeaseTick, type RunOverlay } from './use-run-overlay';
 
 /**
@@ -329,7 +330,8 @@ function RunningBody({ card, overlay }: { card: TaskCard; overlay: RunOverlay })
     return (
       <div className="mt-2 flex flex-col gap-1">
         <p className="truncate text-aux text-text-secondary">
-          {card.agent_name ?? 'Agent'} 已运行 {formatRelative(card.updated_at)} · 等待 Agent 上报进度
+          {card.agent_name ?? 'Agent'} 已运行 {formatRelative(card.updated_at)} ·{' '}
+          {card.progress_updated_at ? '已收到进展，等待数值进度' : '等待 Agent 上报进度'}
         </p>
         {/* 不确定态：无百分比可报，aria-hidden，语义由上方文案承载（20.2） */}
         <div aria-hidden className="h-1 w-full overflow-hidden rounded-full bg-bg-muted">
@@ -341,6 +343,7 @@ function RunningBody({ card, overlay }: { card: TaskCard; overlay: RunOverlay })
             )}
           />
         </div>
+        <ProgressReportLine at={card.progress_updated_at} />
       </div>
     );
   }
@@ -353,8 +356,42 @@ function RunningBody({ card, overlay }: { card: TaskCard; overlay: RunOverlay })
       {/* §4 看板：执行中进度条带流动高光（租约过期转红时高光仍在，语义是「还在跑」） */}
       <Progress value={progress} danger={overlay.leaseExpired === true} flowing />
       {message ? <p className="truncate text-aux text-text-tertiary">{message}</p> : null}
+      <ProgressReportLine at={card.progress_updated_at} />
     </div>
   );
+}
+
+/**
+ * 「最后上报 X」行（Issue #6）：无时间戳（历史 Run）整行不渲染；距上次上报
+ * ≥ 5 分钟只加一枚橙色「可能已停滞」提示——不改任务状态、不断言 Agent 已停止，
+ * 回收与否仍由服务端租约判定。文案纯展示，与 reduced-motion 无关。
+ */
+function ProgressReportLine({ at }: { at: string | null }) {
+  const now = useProgressReportTick(at !== null);
+  const info = progressReportDisplay(at, now);
+  if (!info.text) return null;
+  return (
+    <p className="flex min-w-0 items-center gap-1.5 text-aux">
+      <span className="truncate text-text-tertiary">{info.text}</span>
+      {info.stale ? (
+        <span className="shrink-0 rounded-badge bg-status-running-soft px-1 py-px text-[10px] font-medium text-status-running">
+          可能已停滞
+        </span>
+      ) : null}
+    </p>
+  );
+}
+
+/** 30s 一跳的本地时钟：最后上报文案只精确到分钟，不必复用租约的 1s 计时。 */
+function useProgressReportTick(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, [active]);
+  return now;
 }
 
 function ArtifactIcon({ artifact }: { artifact: CardArtifact }) {

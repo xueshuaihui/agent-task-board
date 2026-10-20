@@ -5,6 +5,7 @@ import { cn } from '@/lib/cn';
 import { priorityText } from '@/lib/labels';
 import { priorityStyle } from '@/lib/status-style';
 import { transitions } from '@/lib/motion';
+import { formatDateTime } from '@/lib/time';
 import { skillStatusOf, type AnnotatedDraft } from './skill-status';
 
 /**
@@ -48,13 +49,25 @@ export function DraftCard({ draft, skillNames }: DraftCardProps) {
         </div>
 
         {draft.regeneration_pending ? (
-          // §7.4「重新生成」（条款 81）：已重置待 Agent 重报——与歧义技能同一告警语汇。
-          <Badge
-            className="self-start bg-status-review-soft text-status-review"
-            icon={<AlertTriangle className="size-3" aria-hidden />}
-          >
-            待 Agent 重新生成
-          </Badge>
+          // §7.4「重新生成」（条款 81 + #4）：已重置待 Agent 重报——与歧义技能同一告警语汇。
+          <div className="flex flex-col gap-1" data-testid="breakdown-draft-regeneration-pending">
+            <Badge
+              className="self-start bg-status-review-soft text-status-review"
+              icon={<AlertTriangle className="size-3" aria-hidden />}
+            >
+              等待 Agent 重报
+            </Badge>
+            {draft.regeneration_note ? (
+              <p className="line-clamp-2 text-aux text-text-secondary" title={draft.regeneration_note}>
+                说明：{draft.regeneration_note}
+              </p>
+            ) : null}
+            {draft.regeneration_requested_at ? (
+              <p className="text-aux text-text-tertiary">
+                请求于 {formatDateTime(draft.regeneration_requested_at)}
+              </p>
+            ) : null}
+          </div>
         ) : null}
 
         {draft.description ? (

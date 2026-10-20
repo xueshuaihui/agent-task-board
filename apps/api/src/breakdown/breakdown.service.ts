@@ -37,6 +37,46 @@ export interface BreakdownDraftInput {
   sort_order?: number;
 }
 
+/**
+ * #4 会话列表过滤与分页（GET /breakdown/sessions 的 query 入参）。
+ * `scope` 缺省 all（保持旧调用兼容）；`include_archived` 默认 false；
+ * `cursor` 是上一页最后一条的会话 id（keyset 分页，按 created_at DESC, id DESC）。
+ */
+export interface BreakdownListQuery {
+  scope?: 'active' | 'history' | 'all';
+  include_archived?: boolean;
+  requirement_id?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+/**
+ * #4 `board.wait_for_breakdown` 的返回。Agent 依据 action 决定下一步：
+ * draft_regenerate / session_regenerate 要重报草案，user_edited 只读最新内容，
+ * confirmed / cancelled / interrupted 结束，timeout 带 revision 续等。
+ */
+export interface BreakdownWaitResult {
+  session_id: string;
+  status: BreakdownSessionStatus;
+  revision: number;
+  changed: boolean;
+  action:
+    | 'draft_regenerate'
+    | 'session_regenerate'
+    | 'user_edited'
+    | 'reviewing'
+    | 'receiving'
+    | 'confirmed'
+    | 'cancelled'
+    | 'interrupted'
+    | 'timeout';
+  refs: string[];
+  note: string | null;
+  notes: { ref: string; note: string | null; requested_at: string | null }[];
+  /** 中文一句话，告诉 Agent 下一步怎么做。 */
+  message: string;
+}
+
 /** §7.5：finish 时的技能解析报告（确认页据此标「同名歧义」/黄色告警）。 */
 export interface SkillResolutionReport {
   /** 同名多技能、已按「取最近更新者」落定。 */
@@ -57,6 +97,12 @@ interface SessionRow {
   skill_used: string | null;
   estimated_tasks: number | null;
   actual_tasks: number | null;
+  /** #4：每次「重新生成」+1（0=从未），与 note/requested_at 配对供确认页与审计使用。 */
+  revision: number;
+  revision_note: string | null;
+  revision_requested_at: string | null;
+  /** #4 列表过滤用派生列：父需求任务被归档时非空（无父任务/未归档均为 NULL）。 */
+  parent_archived_at?: string | null;
   created_at: string;
   finished_at: string | null;
   confirmed_at: string | null;
@@ -72,13 +118,20 @@ interface DraftRow {
   priority: number | null;
   skill_ids: string | null;
   acceptance: string | null;
+  /** 历史行可能仍是旧哨兵对象 `{"regeneration_pending":true}`（只读兼容）；新写入恒为 string[]。 */
   depends_on: string | null;
+  /** #4：显式重生成列（0024）；旧库哨兵行由读路径兼容，不保证本列为 1。 */
+  regeneration_pending: number;
+  regeneration_note: string | null;
+  regeneration_requested_at: string | null;
   sort_order: number | null;
 }
 
 const SESSION_COLUMNS = `
   id, requirement_text, group_id, parent_title, parent_description, parent_task_id,
   status, agent_name, skill_used, estimated_tasks, actual_tasks,
+  revision, revision_note, revision_requested_at,
+  (SELECT archived_at FROM tasks WHERE tasks.id = breakdown_sessions.parent_task_id) AS parent_archived_at,
   created_at, finished_at, confirmed_at, cancelled_at`;
 
 /**
@@ -140,13 +193,20 @@ export class BreakdownService {
         session_id: sessionId,
       });
     }
-    await this.prisma.$executeRawUnsafe(
-      `INSERT INTO breakdown_progress (session_id, step, total, message) VALUES (?, ?, ?, ?)`,
-      sessionId,
-      input.step,
-      input.total,
-      input.message ?? null,
-    );
+    // #4：进度上报也算会话内容变化——写入流水与 revision+1 同事务，避免「进度落了、修订号没动」。
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        `INSERT INTO breakdown_progress (session_id, step, total, message) VALUES (?, ?, ?, ?)`,
+        sessionId,
+        input.step,
+        input.total,
+        input.message ?? null,
+      );
+      await tx.$executeRawUnsafe(
+        `UPDATE breakdown_sessions SET revision = revision + 1 WHERE id = ?`,
+        sessionId,
+      );
+    });
     this.events.emit('breakdown.progress', { session_id: sessionId, step: input.step, total: input.total });
   }
 
@@ -154,9 +214,10 @@ export class BreakdownService {
    * 同 (session_id, ref) 再上报即整体覆盖（§7.6 UNIQUE；阶段 4 允许 Agent 修订草案）。
    *
    * 守卫（工单 #34 B 口径）：会话 receiving 照旧；reviewing 只放行「被重新生成」的那条
-   * 草案——即 §7.4 用户点了「重新生成」、行上挂着 regeneration_pending 哨兵、正等 Agent
-   * 重报的 ref。哨兵草案本就是空壳（title 占位、描述/技能/验收全清），覆盖它不碰人工
-   * 编辑成果；其余 reviewing 期重报（无哨兵的新旧 ref）仍 409，终态一律不变。
+   * 草案——即 §7.4 用户点了「重新生成」、行上挂着 regeneration_pending（显式列；旧库
+   * 行兼容 depends_on JSON 哨兵）、正等 Agent 重报的 ref。待重报草案本就是空壳（title
+   * 占位、描述/技能/验收全清），覆盖它不碰人工编辑成果；其余 reviewing 期重报（无待重报
+   * 标记的新旧 ref）仍 409，终态一律不变。
    */
   async reportDraft(sessionId: string, input: BreakdownDraftInput): Promise<DraftDtoShape> {
     const session = await this.requireSession(sessionId);
@@ -193,21 +254,31 @@ export class BreakdownService {
       JSON.stringify(dependsOn),
       input.sort_order ?? 0,
     ];
+    // #4：整行覆盖时显式清零重生成三列——Agent 重报即「销账」，单草案与会话级重生成同法。
     const sql = `INSERT INTO breakdown_drafts (id, session_id, ref, title, description, priority, skill_ids, acceptance, depends_on, sort_order)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(session_id, ref) DO UPDATE SET
          title = excluded.title, description = excluded.description, priority = excluded.priority,
          skill_ids = excluded.skill_ids, acceptance = excluded.acceptance,
-         depends_on = excluded.depends_on, sort_order = excluded.sort_order`;
+         depends_on = excluded.depends_on, sort_order = excluded.sort_order,
+         regeneration_pending = 0, regeneration_note = NULL, regeneration_requested_at = NULL`;
     if (regenerationReplay) {
-      // 哨兵覆盖与用户侧写端点同款并发守卫：'reviewing' 判定与写在同一事务原子命中，
+      // 重报与用户侧写端点同款并发守卫：'reviewing' 判定与写在同一事务原子命中，
       // 抢先流转（confirm / 超时收敛）即 409，不给「已确认的会话」补草案。
+      // guardReviewingUpdate 自带 revision+1，#4 不再二次递增。
       await this.prisma.$transaction(async (tx) => {
         this.assertReviewingGuard(await guardReviewingUpdate(tx, sessionId));
         await tx.$executeRawUnsafe(sql, ...values);
       });
     } else {
-      await this.prisma.$executeRawUnsafe(sql, ...values);
+      // #4：receiving 正常上报（含同 ref 覆盖）也是内容变化——upsert 与 revision+1 同事务。
+      await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(sql, ...values);
+        await tx.$executeRawUnsafe(
+          `UPDATE breakdown_sessions SET revision = revision + 1 WHERE id = ?`,
+          sessionId,
+        );
+      });
     }
     const row = await this.drafts(sessionId);
     const dto = toDraftDto(row.find((d) => d.ref === ref)!);
@@ -217,19 +288,20 @@ export class BreakdownService {
 
   /**
    * #34：本条上报是否属于「重报被重新生成的草案」。仅 reviewing + 该 ref 已存在且
-   * depends_on 列仍是 regeneration_pending 哨兵时为真；ref 空白/未知/无哨兵一律假
-   * （调用方据此回落到原 409 守卫，reviewing 期新增 ref 依旧被拒）。
+   * 挂着待重报标记（0024 显式列 regeneration_pending=1；旧库行仍认 depends_on JSON
+   * 哨兵）时为真；ref 空白/未知/无标记一律假（调用方据此回落到原 409 守卫，
+   * reviewing 期新增 ref 依旧被拒）。
    */
   private async isRegenerationReplay(session: SessionDtoShape, rawRef: string): Promise<boolean> {
     if (session.status !== 'reviewing') return false;
     const ref = typeof rawRef === 'string' ? rawRef.trim() : '';
     if (!ref) return false;
     const row = (await this.drafts(session.id)).find((draft) => draft.ref === ref);
-    return row !== undefined && hasRegenerationFlag(row.depends_on);
+    return row !== undefined && isRegenerationPending(row);
   }
 
   /**
-   * #34：重报哨兵草案时就地跑 §7.5 解析——复用 resolveSkills 的同一判据（id 直通、
+   * #34：重报待重生成草案时就地跑 §7.5 解析——复用 resolveSkills 的同一判据（id 直通、
    * 名字精确匹配、同名取最近更新者），传回已解析值；报告不外抛（会话已过 finish，
    * 确认页的告警由 GET 侧 annotateSkills 逐条复原，条款 81 既有口径）。
    */
@@ -246,6 +318,9 @@ export class BreakdownService {
         skill_ids: JSON.stringify(skillIds),
         acceptance: '[]',
         depends_on: '[]',
+        regeneration_pending: 0,
+        regeneration_note: null,
+        regeneration_requested_at: null,
         sort_order: null,
       },
     ]);
@@ -258,6 +333,12 @@ export class BreakdownService {
     const session = await this.requireSession(sessionId);
     this.assertStatus(session, 'receiving', ['receiving']);
     const drafts = await this.drafts(sessionId);
+
+    // #4：会话级重生成后存在未重报草案时，finish 必须硬性拦住——否则 Agent 可无视
+    // 用户的「整份重新生成」直接收尾，旧草案被剪成空会话，用户的请求被静默吞掉。
+    // Agent 必须先逐条重报 refs（新方案想换 ref，也需把旧 ref 全部重报销账）。
+    this.assertNoPendingRegeneration(drafts, sessionId);
+
     this.assertDraftGraph(drafts, sessionId);
     const resolution = await this.resolveSkills(drafts);
 
@@ -270,7 +351,9 @@ export class BreakdownService {
         );
       }
       await tx.$executeRawUnsafe(
-        `UPDATE breakdown_sessions SET status = 'reviewing', finished_at = datetime('now'), actual_tasks = ? WHERE id = ?`,
+        `UPDATE breakdown_sessions
+            SET status = 'reviewing', finished_at = datetime('now'), actual_tasks = ?, revision = revision + 1
+          WHERE id = ?`,
         drafts.length,
         sessionId,
       );
@@ -313,6 +396,9 @@ export class BreakdownService {
     const drafts = (await this.drafts(sessionId)).sort(
       (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.ref.localeCompare(b.ref),
     );
+    // #4：单草案重生成后 Agent 未重报时，确认必须被硬性拦住——空壳草案建出来的任务
+    // 只有占位标题，等于把用户的「重新生成」静默吞掉。
+    this.assertNoPendingRegeneration(drafts, sessionId);
     this.assertDraftGraph(drafts, sessionId);
     if (session.group_id) await this.assertActiveGroup(session.group_id);
 
@@ -396,7 +482,9 @@ export class BreakdownService {
       }
 
       await tx.$executeRawUnsafe(
-        `UPDATE breakdown_sessions SET status = 'completed', confirmed_at = datetime('now'), parent_task_id = ? WHERE id = ?`,
+        `UPDATE breakdown_sessions
+            SET status = 'completed', confirmed_at = datetime('now'), parent_task_id = ?, revision = revision + 1
+          WHERE id = ?`,
         parentTaskId,
         sessionId,
       );
@@ -429,7 +517,7 @@ export class BreakdownService {
   /**
    * §7.4「添加任务」用户侧写入口：与 Agent 面 reportDraft 同表同约束
    * （UNIQUE(session_id, ref)、priority 0~3、ref 自环/未知前置/成环一律拒），
-   * 差别只在守卫状态——reportDraft 要 receiving（#34 后仅再放行「重新生成」哨兵草案的
+   * 差别只在守卫状态——reportDraft 要 receiving（#34 后仅再放行「重新生成」待重报草案的
    * 重报），这里要 reviewing（§7.7 待确认期编辑）。
    * ref 可省略：服务端按会话内数字后缀取号 t{max+1}；显式传的 ref 已被占用 →
    * 409 BREAKDOWN_DRAFT_REF_TAKEN。
@@ -503,8 +591,9 @@ export class BreakdownService {
       this.assertProspectiveGraph(existing, ref, nextDeps, sessionId);
     }
 
-    // depends_on 未显式改动时：若行上挂着「待重新生成」哨兵（JSON 对象，
-    // parseArray 会误吞成 []），原样保留——改标题/描述不该悄悄清除待重报态。
+    // depends_on 未显式改动时原样保留待重报态：显式列行不动；旧库行若仍是 JSON 哨兵
+    // （parseArray 会误吞成 []）也原样保留——改标题/描述不该悄悄清除待重报。
+    // 显式传 depends_on 视为用户接管依赖边：写入规范化数组，并清空 regeneration 三列。
     const nextDependsOn =
       patch.depends_on === undefined
         ? hasRegenerationFlag(row.depends_on)
@@ -544,11 +633,17 @@ export class BreakdownService {
       depends_on: nextDependsOn,
       sort_order: patch.sort_order ?? row.sort_order ?? 0,
     };
+    // #4：只有显式改 depends_on 才清重生成三列（用户接管依赖边）；改标题/描述等局部编辑
+    // 保持「待 Agent 重报」不动。guardReviewingUpdate 自带 revision+1。
+    const regenerationReset =
+      patch.depends_on === undefined
+        ? ''
+        : ', regeneration_pending = 0, regeneration_note = NULL, regeneration_requested_at = NULL';
     await this.prisma.$transaction(async (tx) => {
       this.assertReviewingGuard(await guardReviewingUpdate(tx, sessionId));
       await tx.$executeRawUnsafe(
         `UPDATE breakdown_drafts
-            SET title = ?, description = ?, priority = ?, skill_ids = ?, acceptance = ?, depends_on = ?, sort_order = ?
+            SET title = ?, description = ?, priority = ?, skill_ids = ?, acceptance = ?, depends_on = ?, sort_order = ?${regenerationReset}
           WHERE id = ?`,
         next.title,
         next.description,
@@ -594,34 +689,138 @@ export class BreakdownService {
   }
 
   /**
-   * §7.4「重新生成」（条款 81 补齐）：重置该草案待 Agent 重报——title 置占位、
-   * description/skill_ids/acceptance 清空，depends_on 列改存「待重报」哨兵（见
-   * REGENERATION_PLACEHOLDER_TITLE 注释）。priority/sort_order 属用户在确认页
-   * 可调的排布字段，原样保留。仅 reviewing 可写，并发守卫与其余写端点同款；
-   * 广播既有 `breakdown.task_draft` 事件，读侧回 GET 拿真相。
-   * #34 配对：哨兵在位时 Agent 可用 `board.report_task_draft` 重报该 ref，整行覆盖后
-   * 哨兵消失；用户在确认页上的其余编辑不受影响。
+   * §7.4「重新生成」（条款 81 补齐 + #4）：重置该草案待 Agent 重报——title 置占位、
+   * description/skill_ids/acceptance/depends_on 清空，显式列 regeneration_pending=1，
+   * 并记录用户的改写说明与请求时刻。priority/sort_order 属用户在确认页可调的排布
+   * 字段，原样保留。仅 reviewing 可写，并发守卫与其余写端点同款（revision+1）。
+   * 广播既有 `breakdown.task_draft`（确认页刷新）与 `breakdown.revision_requested`
+   * （scope=draft，携带 note）。#34 配对：Agent 用 `board.report_task_draft` 重报
+   * 该 ref 即整行覆盖并清空重生成三列；用户在确认页上的其余编辑不受影响。
    */
-  async userRegenerateDraft(sessionId: string, ref: string): Promise<DraftDtoShape[]> {
+  async userRegenerateDraft(sessionId: string, ref: string, note?: string): Promise<DraftDtoShape[]> {
     const session = await this.requireSession(sessionId);
     this.assertStatus(session, 'reviewing', ['reviewing']);
     const existing = await this.drafts(sessionId);
     const row = existing.find((draft) => draft.ref === ref);
     if (!row) throw draftNotFound(sessionId, ref);
+    const regenerationNote = normalizeNote(note);
 
     await this.prisma.$transaction(async (tx) => {
       this.assertReviewingGuard(await guardReviewingUpdate(tx, sessionId));
       await tx.$executeRawUnsafe(
         `UPDATE breakdown_drafts
-            SET title = ?, description = NULL, skill_ids = '[]', acceptance = '[]', depends_on = ?
+            SET title = ?, description = NULL, skill_ids = '[]', acceptance = '[]', depends_on = '[]',
+                regeneration_pending = 1, regeneration_note = ?, regeneration_requested_at = datetime('now')
           WHERE id = ?`,
         REGENERATION_PLACEHOLDER_TITLE,
-        regenerationFlagJson(),
+        regenerationNote,
         row.id,
       );
     });
     this.events.emit('breakdown.task_draft', { session_id: sessionId, ref });
+    this.events.emit('breakdown.revision_requested', {
+      session_id: sessionId,
+      scope: 'draft',
+      refs: [ref],
+      note: regenerationNote,
+    });
     return (await this.drafts(sessionId)).map(toDraftDto);
+  }
+
+  /**
+   * #4 整份重生成：reviewing 会话交给 Agent 按用户的 note 重新拆一遍。所有草案重置为
+   * 「待重报空壳」而不是删除——确认页在等待期间仍能看到旧计划与待重生成标记；Agent
+   * 重报同 ref 即清 pending；会话级重生成后未重报的 ref 会阻塞 finish（409），
+   * 调用方须逐条重报销账（见 finish / assertNoPendingRegeneration）。
+   * 会话回 receiving，revision 由 guardReviewingUpdate 递增（会话级只跳一格），并记录
+   * revision_note/requested_at。审计 breakdown_regenerate（user）。
+   */
+  async regenerateSession(sessionId: string, note?: string): Promise<BreakdownSessionDetail> {
+    const session = await this.requireSession(sessionId);
+    this.assertStatus(session, 'reviewing', ['reviewing']);
+    const regenerationNote = normalizeNote(note);
+    const refs = (await this.drafts(sessionId)).map((draft) => draft.ref);
+
+    await this.prisma.$transaction(async (tx) => {
+      this.assertReviewingGuard(await guardReviewingUpdate(tx, sessionId));
+      await tx.$executeRawUnsafe(
+        `UPDATE breakdown_drafts
+            SET title = ?, description = NULL, skill_ids = '[]', acceptance = '[]', depends_on = '[]',
+                regeneration_pending = 1, regeneration_note = ?, regeneration_requested_at = datetime('now')
+          WHERE session_id = ?`,
+        REGENERATION_PLACEHOLDER_TITLE,
+        regenerationNote,
+        sessionId,
+      );
+      await tx.$executeRawUnsafe(
+        `UPDATE breakdown_sessions
+            SET status = 'receiving', finished_at = NULL, revision_note = ?, revision_requested_at = datetime('now')
+          WHERE id = ?`,
+        regenerationNote,
+        sessionId,
+      );
+    });
+    await this.audit.record({
+      actorType: 'user',
+      action: 'breakdown_regenerate',
+      targetType: 'breakdown_session',
+      targetId: sessionId,
+      before: { status: 'reviewing' },
+      after: { status: 'receiving', note: regenerationNote },
+    });
+    this.events.emit('breakdown.revision_requested', {
+      session_id: sessionId,
+      scope: 'session',
+      refs,
+      note: regenerationNote,
+    });
+    return this.get(sessionId);
+  }
+
+  // ---------------------------------------------------------- 阶段 6：finish 后的长轮询
+
+  /**
+   * #4：`board.wait_for_breakdown`——finish 之后 Agent 不退出，挂在这里等用户动作。
+   * 每 1000ms 只读一次 sessions + drafts（不跑 skill 注解等读侧重活），直到：
+   *  - 终态：completed→confirmed、cancelled→cancelled、interrupted→interrupted（不看 revision）；
+   *  - reviewing 出现待重报草案（draft_regenerate）或 revision 越过基线（user_edited）；
+   *  - receiving：有 revision_requested_at → session_regenerate，否则 → receiving（继续上报）；
+   *  - 超时：timeout，changed 仍按 revision 是否越过基线给出。
+   * 基线：省略 afterRevision 时取本次调用开始时的 revision；显式传入时以调用方最后看到的为准。
+   * 并发安全：每轮都重新查库，不缓存快照；sleep 不占事件循环。
+   */
+  async waitForBreakdown(
+    sessionId: string,
+    afterRevision?: number,
+    timeoutSeconds = 25,
+  ): Promise<BreakdownWaitResult> {
+    let session = await this.requireSession(sessionId);
+    const baseline =
+      typeof afterRevision === 'number' && Number.isFinite(afterRevision)
+        ? afterRevision
+        : session.revision;
+    const timeout = clampWaitSeconds(timeoutSeconds);
+    const deadline = Date.now() + timeout * 1000;
+    let drafts = await this.drafts(sessionId);
+
+    for (;;) {
+      const action = waitActionOf(session, drafts, baseline);
+      if (action) return toWaitResult(session, drafts, baseline, action);
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        // 超时前最后读一次：返回最新 revision/status，Agent 用 after_revision 续等不会漏拍。
+        [session, drafts] = await Promise.all([
+          this.requireSession(sessionId),
+          this.drafts(sessionId),
+        ]);
+        return toWaitResult(session, drafts, baseline, 'timeout');
+      }
+      await sleep(Math.min(WAIT_POLL_INTERVAL_MS, remaining));
+      [session, drafts] = await Promise.all([
+        this.requireSession(sessionId),
+        this.drafts(sessionId),
+      ]);
+    }
   }
 
   // ---------------------------------------------------------------- 取消与读侧
@@ -630,7 +829,9 @@ export class BreakdownService {
     const session = await this.requireSession(sessionId);
     this.assertStatus(session, 'receiving 或 reviewing', ['receiving', 'reviewing']);
     await this.prisma.$executeRawUnsafe(
-      `UPDATE breakdown_sessions SET status = 'cancelled', cancelled_at = datetime('now') WHERE id = ?`,
+      `UPDATE breakdown_sessions
+          SET status = 'cancelled', cancelled_at = datetime('now'), revision = revision + 1
+        WHERE id = ?`,
       sessionId,
     );
     await this.audit.record({
@@ -669,9 +870,58 @@ export class BreakdownService {
     };
   }
 
-  async list(): Promise<SessionDtoShape[]> {
+  /**
+   * #4 列表：scope（active/history/all）+ 归档父需求过滤 + 需求过滤 + keyset 分页。
+   * 返回仍是数组（不改响应外形）；默认 limit=100（clamp 1..500）。cursor 指向
+   * (created_at, id) 的 keyset 条件，created_at 秒级并列时用 id（UUIDv7）稳定排序。
+   */
+  async list(query: BreakdownListQuery = {}): Promise<SessionDtoShape[]> {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    const scope = query.scope ?? 'all';
+    if (scope === 'active') {
+      conditions.push(`status IN ('receiving', 'reviewing', 'creating')`);
+    } else if (scope === 'history') {
+      conditions.push(`status IN ('completed', 'cancelled', 'interrupted')`);
+    }
+
+    // include_archived=false（默认）时排除父需求已归档的会话。表不设别名：派生列表达式
+    // 直接引用 breakdown_sessions.parent_task_id，list 与 requireSession 共用同一列拼装。
+    if (query.include_archived !== true) {
+      conditions.push(
+        `(parent_task_id IS NULL OR (SELECT archived_at FROM tasks WHERE tasks.id = breakdown_sessions.parent_task_id) IS NULL)`,
+      );
+    }
+
+    const requirementId = query.requirement_id?.trim();
+    if (requirementId) {
+      conditions.push(`parent_task_id = ?`);
+      params.push(requirementId);
+    }
+
+    if (query.cursor) {
+      const cursorRows = await this.prisma.$queryRawUnsafe<{ created_at: string }[]>(
+        `SELECT created_at FROM breakdown_sessions WHERE id = ?`,
+        query.cursor,
+      );
+      const cursorRow = cursorRows[0];
+      if (!cursorRow) {
+        throw new ApiException('INVALID_PARAM', 'cursor 指向的拆解会话不存在', undefined, {
+          cursor: query.cursor,
+        });
+      }
+      conditions.push(`(created_at < ? OR (created_at = ? AND id < ?))`);
+      params.push(cursorRow.created_at, cursorRow.created_at, query.cursor);
+    }
+
+    const rawLimit = query.limit ?? 100;
+    const limit = Math.min(500, Math.max(1, Number.isFinite(rawLimit) ? Math.trunc(rawLimit) : 100));
+    const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
     const rows = await this.prisma.$queryRawUnsafe<SessionRow[]>(
-      `SELECT ${SESSION_COLUMNS} FROM breakdown_sessions ORDER BY created_at DESC, id DESC`,
+      `SELECT ${SESSION_COLUMNS} FROM breakdown_sessions${where} ORDER BY created_at DESC, id DESC LIMIT ?`,
+      ...params,
+      limit,
     );
     return rows.map(toSessionDto);
   }
@@ -698,6 +948,22 @@ export class BreakdownService {
         { session_id: session.id, status: session.status, allowed },
       );
     }
+  }
+
+  /**
+   * #4：finish / confirm 共用的硬性守卫——存在待重生成草案（显式列或旧哨兵）即 409，
+   * 既不让占位空壳建成任务，也不让会话级重生成被「不重报直接收尾」静默吞掉。
+   * 旧哨兵只会出现在 reviewing（confirm 侧）；receiving 的 finish 只认显式列。
+   */
+  private assertNoPendingRegeneration(drafts: DraftRow[], sessionId: string): void {
+    const refs = drafts.filter(isRegenerationPending).map((draft) => draft.ref);
+    if (refs.length === 0) return;
+    throw new ApiException(
+      'BREAKDOWN_REGENERATION_PENDING',
+      `存在待重新生成的草案（refs: ${refs.join(', ')}），请等待 Agent 重报或先取消`,
+      undefined,
+      { session_id: sessionId, refs },
+    );
   }
 
   /** §7.8 依赖成环→拒绝：草案 ref 图（confirm 时可能被页面编辑过，finish/confirm 两侧都查）。 */
@@ -875,7 +1141,11 @@ export class BreakdownService {
     return { perDraft, report };
   }
 
-  /** §7.7：status 条件 UPDATE 命中 0 行＝写事务开始时会话已不在 reviewing（confirm/超时收敛抢先），统一 409。 */
+  /**
+   * §7.7：status 条件 UPDATE 命中 0 行＝写事务开始时会话已不在 reviewing（confirm/超时收敛
+   * 抢先），统一 409。#4：命中时同一语句顺带 revision+1——所有用户侧写端点（含 Agent 对
+   * 重生成草案的重报）共用这一处递增，调用处不要二次递增。
+   */
   private assertReviewingGuard(affected: number): void {
     if (affected === 0) {
       throw new ApiException(
@@ -903,6 +1173,9 @@ export class BreakdownService {
         skill_ids: '[]',
         acceptance: '[]',
         depends_on: JSON.stringify(nextDeps),
+        regeneration_pending: 0,
+        regeneration_note: null,
+        regeneration_requested_at: null,
         sort_order: null,
       });
     }
@@ -911,7 +1184,8 @@ export class BreakdownService {
 
   private async drafts(sessionId: string): Promise<DraftRow[]> {
     return this.prisma.$queryRawUnsafe<DraftRow[]>(
-      `SELECT id, session_id, ref, title, description, priority, skill_ids, acceptance, depends_on, sort_order
+      `SELECT id, session_id, ref, title, description, priority, skill_ids, acceptance, depends_on,
+              regeneration_pending, regeneration_note, regeneration_requested_at, sort_order
          FROM breakdown_drafts WHERE session_id = ? ORDER BY sort_order ASC, ref ASC`,
       sessionId,
     );
@@ -947,6 +1221,10 @@ export interface DraftDtoShape {
   skills_status?: SkillStatusEntry[];
   /** §7.4「重新生成」：草案已重置、待 Agent 重报。仅置真时出现（旧消费者零扰动）。 */
   regeneration_pending?: boolean;
+  /** #4：用户本次重生成想改什么（未填为 null）；仅 pending 时与 requested_at 一起透出。 */
+  regeneration_note?: string | null;
+  /** #4：重生成请求时刻；旧哨兵行无历史时刻，为 null。 */
+  regeneration_requested_at?: string | null;
   /** 裁定 3「重选即消歧」：技能列表由用户显式重选落定。仅置真时出现（旧消费者零扰动）。 */
   user_disambiguated?: boolean;
 }
@@ -997,23 +1275,148 @@ function toDraftDto(row: DraftRow): DraftDtoShape {
     depends_on: parseArray<string>(row.depends_on),
     sort_order: row.sort_order ?? 0,
   };
-  if (hasRegenerationFlag(row.depends_on)) dto.regeneration_pending = true;
+  // #4：显式列或旧哨兵任一为真即 pending；pending 时同时透出 note/requested_at
+  //（旧哨兵行二者为 null）。非 pending 不出现三字段，旧消费者零扰动。
+  if (isRegenerationPending(row)) {
+    dto.regeneration_pending = true;
+    dto.regeneration_note = row.regeneration_note ?? null;
+    dto.regeneration_requested_at = row.regeneration_requested_at ?? null;
+  }
   if (skills.userDisambiguated) dto.user_disambiguated = true;
   return dto;
 }
 
+// ------------------------------------------- #4 wait_for_breakdown 的轮询与动作判定
+
+const WAIT_POLL_INTERVAL_MS = 1000;
+const WAIT_TIMEOUT_DEFAULT_SECONDS = 25;
+const WAIT_TIMEOUT_MAX_SECONDS = 55;
+
+type BreakdownWaitAction = BreakdownWaitResult['action'];
+
+/** 服务层兜底 1..55 秒；zod 层已限制 5..55（测试与内部调用可传更短）。 */
+function clampWaitSeconds(seconds: number | undefined): number {
+  const value =
+    typeof seconds === 'number' && Number.isFinite(seconds)
+      ? Math.trunc(seconds)
+      : WAIT_TIMEOUT_DEFAULT_SECONDS;
+  return Math.min(WAIT_TIMEOUT_MAX_SECONDS, Math.max(1, value));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
- * §7.4「重新生成」哨兵（条款 81 补齐）：纯本地架构服务端回调不了 Agent，
- * 「重新生成」= 把草案重置为**待 Agent 重报**。「待重报」状态存进 depends_on 列的
- * JSON 对象 `{"regeneration_pending":true}`——parseArray 对非数组一律回 []，
- * finish/confirm/读侧全部自然降级为「无依赖」，零 Prisma 迁移。
+ * 一次快照上的动作判定；null = 还没有用户动作，继续轮询。
+ * 优先级：终态 → reviewing（待重报 > 用户编辑）→ receiving（会话级重生成 > 继续上报）。
+ */
+function waitActionOf(
+  session: SessionDtoShape,
+  drafts: DraftRow[],
+  baseline: number,
+): Exclude<BreakdownWaitAction, 'timeout'> | null {
+  if (session.status === 'completed') return 'confirmed';
+  if (session.status === 'cancelled') return 'cancelled';
+  if (session.status === 'interrupted') return 'interrupted';
+  if (session.status === 'reviewing') {
+    if (drafts.some(isRegenerationPending)) return 'draft_regenerate';
+    if (session.revision > baseline) return 'user_edited';
+    // 用户还没动：继续等，until 超时。
+    return null;
+  }
+  if (session.status === 'receiving') {
+    // 会话级重生成会写 revision_requested_at；Agent 自己的上报只递增 revision、不写该列。
+    if (session.revision_requested_at) return 'session_regenerate';
+    return 'receiving';
+  }
+  // creating 是 confirm 事务内的瞬时中间态：没有可执行动作，继续等到终态或超时。
+  return null;
+}
+
+function toWaitResult(
+  session: SessionDtoShape,
+  drafts: DraftRow[],
+  baseline: number,
+  action: BreakdownWaitAction,
+): BreakdownWaitResult {
+  const pending = drafts.filter(isRegenerationPending);
+  const notes = pending.map((draft) => ({
+    ref: draft.ref,
+    note: draft.regeneration_note ?? null,
+    requested_at: draft.regeneration_requested_at ?? null,
+  }));
+  const refs =
+    action === 'draft_regenerate' || action === 'session_regenerate'
+      ? pending.map((draft) => draft.ref)
+      : [];
+  // 单草案重生成可能带不同说明：note 汇总为全部非空说明（多条用「；」连接）；
+  // 会话级重生成以会话上的 revision_note 为准。
+  const note =
+    action === 'draft_regenerate'
+      ? uniqueNotes(notes).join('；') || null
+      : action === 'session_regenerate'
+        ? session.revision_note ?? null
+        : null;
+  return {
+    session_id: session.id,
+    status: session.status,
+    revision: session.revision,
+    changed: session.revision > baseline,
+    action,
+    refs,
+    note,
+    notes,
+    message: waitMessage(action, refs, note),
+  };
+}
+
+function uniqueNotes(notes: { note: string | null }[]): string[] {
+  return [...new Set(notes.map((entry) => entry.note).filter((note): note is string => Boolean(note)))];
+}
+
+/** 按 action 给出可执行的中文下一步；Agent 只读 MCP 描述与 instructions，文案必须点名工具。 */
+function waitMessage(action: BreakdownWaitAction, refs: string[], note: string | null): string {
+  switch (action) {
+    case 'draft_regenerate':
+      return `用户要求重新生成草案 ${refs.join('、')}${note ? `（说明：${note}）` : ''}：请用 board.report_task_draft 逐条重报这些 ref，落实说明中的修改；重报后会话仍在待确认（无需 finish），继续等待时先调 board.get_breakdown 取最新 revision 作为 after_revision，或省略 after_revision 从现在开始等。`;
+    case 'session_regenerate':
+      return `用户要求整份重新拆解${note ? `（说明：${note}）` : ''}：先调 board.get_breakdown 查看全量草案与会话说明，按说明重报（receiving 期可新增/覆盖 ref），完成后调 board.finish_breakdown。`;
+    case 'user_edited':
+      return '用户编辑了草案但未要求重生成：请调 board.get_breakdown 读取最新内容，不要覆盖用户的编辑；随后用返回的 session.revision 作为 after_revision 再调 board.wait_for_breakdown。';
+    case 'confirmed':
+      return '会话已确认并创建任务，结束。';
+    case 'cancelled':
+      return '会话已被用户取消，结束。';
+    case 'interrupted':
+      return '会话已中断（超过保留期或异常），结束；草案可查不可确认。';
+    case 'receiving':
+      return '会话正在接收拆解结果：继续用 board.report_task_draft 上报草案（同 ref 会覆盖），完成后调 board.finish_breakdown。';
+    case 'reviewing':
+      return '用户尚未操作，继续调用 board.wait_for_breakdown 等待。';
+    case 'timeout':
+      return '本次等待超时、用户还没有动作：请带上当前 revision（after_revision）再次调用 board.wait_for_breakdown 继续等待。';
+  }
+}
+
+/**
+ * §7.4「重新生成」占位标题。纯本地架构服务端回调不了 Agent，「重新生成」= 把草案
+ * 重置为**待 Agent 重报**。新写入把标记落在 0024 的显式列（regeneration_pending/
+ * note/requested_at）；depends_on 恢复纯数组。历史库行可能仍把标记存成 depends_on
+ * 的 JSON 对象 `{"regeneration_pending":true}`——读路径继续兼容（isRegenerationPending），
+ * 但新写入一律走显式列。
  */
 const REGENERATION_PLACEHOLDER_TITLE = '（待重新生成）';
 
-function regenerationFlagJson(): string {
-  return JSON.stringify({ regeneration_pending: true });
+/** #4：待重报判定——显式列优先，旧哨兵只读兼容（迁移 0024 已把存量行转成显式列）。 */
+function isRegenerationPending(row: Pick<DraftRow, 'regeneration_pending' | 'depends_on'>): boolean {
+  return (
+    (typeof row.regeneration_pending === 'number' ? row.regeneration_pending : Number(row.regeneration_pending)) === 1 ||
+    hasRegenerationFlag(row.depends_on)
+  );
 }
 
+/** 历史哨兵只读兼容：旧库行 depends_on 里的 JSON 对象 `{"regeneration_pending":true}`。 */
 function hasRegenerationFlag(json: string | null): boolean {
   if (!json) return false;
   try {
@@ -1024,14 +1427,27 @@ function hasRegenerationFlag(json: string | null): boolean {
   }
 }
 
+/** #4：重生成说明规整——trim；空串/undefined → null；>2000 字服务层兜底 422。 */
+function normalizeNote(note: string | undefined | null): string | null {
+  if (note === undefined || note === null) return null;
+  const trimmed = note.trim();
+  if (!trimmed) return null;
+  if (trimmed.length > 2000) {
+    throw new ApiException('VALIDATION_FAILED', '重生成说明不能超过 2000 字', [
+      { path: 'note', code: 'too_big', message: '≤ 2000' },
+    ]);
+  }
+  return trimmed;
+}
+
 /**
  * 裁定 3（2026-09-21）「重选即消歧」的标记载体：skill_ids 列除既有的 JSON 数组外，
  * 新增对象形 `{"skill_ids":[...], "user_disambiguated":true}`——只在用户 PATCH 显式
- * id 列表时落标记，未标记行仍存纯数组（旧消费者零扰动）。选它而不选 depends_on 哨兵
- * 同款「对象顶掉数组」：技能列表不能被标记顶掉（confirm/toDraftDto 都要读 id），
- * 数组旁挂哨兵又会污染逐值消费者；对象包数组让 parseArray 对未升级读者自然降级
+ * id 列表时落标记，未标记行仍存纯数组（旧消费者零扰动）。选它而不是「另起一列 JSON
+ * 对象顶掉数组」：技能列表不能被标记顶掉（confirm/toDraftDto 都要读 id），
+ * 数组旁挂标记又会污染逐值消费者；对象包数组让 parseArray 对未升级读者自然降级
  * ——本仓库内 skill_ids 的读方只有本文件，已全部走 parseSkillIdsColumn。
- * reportDraft（含 #34 哨兵 B 通道重报）整行覆盖必写回纯数组，标记随覆盖消失，
+ * reportDraft（含 #34 待重报 B 通道重报）整行覆盖必写回纯数组，标记随覆盖消失，
  * 回到名字碰撞解析原语义（条款 81 口径一字不动）。
  */
 interface SkillIdsColumn {
@@ -1097,10 +1513,11 @@ function text(value: string, field: string): string {
 /**
  * 并发守卫（b2e97c2 confirm 的状态条件 UPDATE 同款）：'reviewing' 判定与后续写在
  * 同一事务里原子命中；返回 0 行即别的动作（confirm / 超时收敛）已抢先流转。
+ * #4：命中时顺带 revision+1——会话内容将被本次写端点改变，调用处不再二次递增。
  */
 async function guardReviewingUpdate(tx: Prisma.TransactionClient, sessionId: string): Promise<number> {
   return tx.$executeRawUnsafe(
-    `UPDATE breakdown_sessions SET status = 'reviewing' WHERE id = ? AND status = 'reviewing'`,
+    `UPDATE breakdown_sessions SET status = 'reviewing', revision = revision + 1 WHERE id = ? AND status = 'reviewing'`,
     sessionId,
   );
 }

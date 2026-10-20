@@ -1,16 +1,19 @@
 import { useMemo, useState } from 'react';
 import { Pencil } from 'lucide-react';
-import { fieldErrorsOf, useFieldDefs, useSettings, useTags } from '@/api';
+import { fieldErrorsOf, useFieldDefs, useSettings, useTags, useTaskOverview } from '@/api';
 import type { FieldDef, ReviewMode, TaskDetail, TaskTab } from '@/api';
 import { Badge, Button, ErrorCopy, ErrorText, Field, Input, Progress, Select, TagBadge, Textarea } from '@/components/ui';
 import { priorityText, REVIEW_MODE_LABEL, statusLabel } from '@/lib/labels';
 import { formatDateTime } from '@/lib/time';
 import { useShellStore } from '@/app/store/shell';
+import { useSkills } from '@/features/skills';
+import { hasInheritedContext } from '@/features/requirements/requirement-context';
 import {
   requirementMoveBody,
   useRequirementOptions,
 } from '@/features/requirements/use-requirement-options';
 import { useRequirementDrawerStore } from '@/features/requirements/requirement-store';
+import type { TaskDetailView } from '../types';
 import { ReviewModeField } from '@/features/review/review-mode-field';
 import {
   applicableFieldDefs,
@@ -57,6 +60,16 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
   const tags = useTags();
   const patch = usePatchTask(taskId);
   const [editing, setEditing] = useState(false);
+
+  // #8：子任务的继承上下文来自父需求。两个 hook 都无条件调用（null 时查询自动 disabled），
+  // 只按 detail.parent 决定是否渲染，避免条件 hook。
+  const parentOverview = useTaskOverview(detail.parent?.id ?? null);
+  const parentDetail: TaskDetailView | undefined = parentOverview.data;
+  const allSkills = useSkills(undefined, { enabled: Boolean(detail.parent?.id) });
+  const skillNames = useMemo(
+    () => new Map((allSkills.data?.items ?? []).map((skill) => [skill.id, skill.name])),
+    [allSkills.data?.items],
+  );
 
   const defs = useMemo(
     () => applicableFieldDefs(fieldDefs.data?.items ?? [], detail.type),
@@ -109,6 +122,24 @@ export function OverviewTab({ taskId, detail, onGoToTab }: OverviewTabProps) {
     <div className="flex flex-col gap-5">
       {/* 0919 7.2 面包屑：子任务头部显示所属需求，点击打开需求抽屉（features/requirements）。 */}
       {detail.parent ? <ParentSummaryLine parent={detail.parent} /> : null}
+      {detail.parent ? (
+        parentDetail ? (
+          <InheritedRequirementBlock
+            requirement={parentDetail}
+            skillNames={skillNames}
+            skillsError={allSkills.isError ? allSkills.error : null}
+          />
+        ) : parentOverview.isError ? (
+          <InlineError
+            text={
+              <ErrorText
+                text="需求执行规则与强制技能加载失败，这一块暂不显示"
+                error={parentOverview.error}
+              />
+            }
+          />
+        ) : null
+      ) : null}
       <Section title="描述" meta="编辑见「基本信息 · 编辑」表单">
         {detail.description ? <MarkdownLite text={detail.description} /> : <p className="text-body text-text-tertiary">无描述</p>}
       </Section>
@@ -289,6 +320,89 @@ function ParentSummaryLine({ parent }: { parent: NonNullable<TaskDetail['parent'
       </span>
       <Progress value={percent} className="h-1 w-20 shrink-0" />
     </div>
+  );
+}
+
+/**
+ * #8 子任务的「继承自需求（强制）」只读块：规则全文 + 规则更新时间 + 需求技能名。
+ * 需求没规则也没技能时整块不渲染（由纯函数 `hasInheritedContext` 判定）。
+ */
+function InheritedRequirementBlock({
+  requirement,
+  skillNames,
+  skillsError,
+}: {
+  requirement: TaskDetailView;
+  skillNames: ReadonlyMap<string, string>;
+  /** 技能总表查询失败时名称退化为 ID，这里补一行 tier-2 说明。 */
+  skillsError: unknown;
+}) {
+  const openRequirement = useRequirementDrawerStore((state) => state.openRequirement);
+  const skills = requirement.skills ?? [];
+  if (!hasInheritedContext(requirement.execution_rules, skills.length)) return null;
+  const rulesText =
+    requirement.execution_rules && requirement.execution_rules.trim() !== ''
+      ? requirement.execution_rules
+      : null;
+
+  return (
+    <section
+      aria-label="继承自需求的执行规则与强制技能"
+      className="flex flex-col gap-2 rounded-card border border-border bg-bg-surface p-3"
+    >
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <h3 className="text-card-title font-semibold text-text-primary">继承自需求（强制）</h3>
+        <Badge tone="outline">只读</Badge>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => openRequirement(requirement.id)}
+        title={`打开需求 ${requirement.id}`}
+        className="min-w-0 self-start truncate text-body text-text-primary hover:text-primary"
+      >
+        {requirement.title}
+      </button>
+
+      {rulesText ? (
+        <div className="flex flex-col gap-1">
+          <span className="text-aux text-text-secondary">执行规则</span>
+          <p
+            className="whitespace-pre-wrap break-words rounded-control bg-bg-muted px-2 py-1.5 text-body text-text-primary"
+            data-selectable
+          >
+            {rulesText}
+          </p>
+        </div>
+      ) : (
+        <p className="text-aux text-text-tertiary">需求未设置执行规则。</p>
+      )}
+
+      <p className="text-aux text-text-tertiary">
+        规则最后更新：
+        {requirement.execution_rules_updated_at
+          ? formatDateTime(requirement.execution_rules_updated_at)
+          : '尚未设置'}
+      </p>
+
+      {skills.length > 0 ? (
+        <div className="flex flex-col gap-1">
+          <span className="text-aux text-text-secondary">需求强制技能</span>
+          <span className="flex flex-wrap gap-1">
+            {skills.map((ref) => (
+              <Badge key={ref.skill_id} tone="neutral">
+                {skillNames.get(ref.skill_id) ?? ref.skill_id}
+              </Badge>
+            ))}
+          </span>
+          {skillsError ? (
+            <InlineError
+              text={<ErrorText text="需求技能名称加载失败，暂显示技能 ID" error={skillsError} />}
+            />
+          ) : null}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

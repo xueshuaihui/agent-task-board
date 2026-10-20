@@ -1,7 +1,9 @@
+import { useEffect } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
 import { ListChecks } from 'lucide-react';
 import { errorMessage } from '@/api';
+import { useRoute } from '@/app/router';
 import { useWSEvent } from '@/ws';
 import { cn } from '@/lib/cn';
 import { isBreakdownPending } from './status-meta';
@@ -12,24 +14,37 @@ import { useBreakdownOverlayStore } from './store';
 /**
  * 拆解覆盖层的全局宿主（`app/overlay-slot.tsx` 挂一次）：
  * - 阶段 2（§7.2）：`breakdown.started` 到达且当前不在拆解页 → 自动进入最新会话；
- *   已在页内时只让切换器长出一枚新会话（列表查询由 ws/invalidate 刷新），不抢视图。
- * - 浮标入口：覆盖层关闭、且存在未终结会话（接收中/待确认/创建中）时，右下角常驻
- *   计数入口——错过 WS 瞬间或从托盘回来后进页不回翻路由（§7.3「不是独立路由」）。
+ *   已在拆解二级页面时**不弹覆盖层**，只依赖 `ws/invalidate.ts` 的失效让页面列表刷新。
+ * - 浮标入口：覆盖层关闭、不在拆解页、且存在未终结会话（接收中/待确认/创建中）时，
+ *   右下角常驻计数入口——错过 WS 瞬间或从托盘回来后进页不回翻路由。
  *   会话列表报错时浮标也要出现（数字给「—」）：隐藏浮标等于把失败说成「没有待处理会话」。
- * - 数据失效不在这里写：breakdown.* 五条已接进 `src/ws/invalidate.ts` 的统一表。
+ * - #4.3 方案 B 起拆解也有二级页面（`#/requirements/breakdown`），页面与覆盖层
+ *   共用 `BreakdownWorkspace`；本宿主只负责覆盖层与浮标，页面存在期间两者都不出现。
+ * - 数据失效不在这里写：breakdown.* 六条（含 #4 `breakdown.revision_requested`）
+ *   已接进 `src/ws/invalidate.ts` 的统一表。
  */
 export function BreakdownOverlayHost() {
+  const route = useRoute();
+  const onBreakdownPage = route.name === 'breakdown';
   const open = useBreakdownOverlayStore((state) => state.open);
   const hide = useBreakdownOverlayStore((state) => state.hide);
-  const sessions = useBreakdownSessions();
+  /** 覆盖层/浮标只承载未终结会话；历史会话在二级页面查看。 */
+  const sessions = useBreakdownSessions({ scope: 'active' });
   const pendingCount = (sessions.data ?? []).filter((s) => isBreakdownPending(s.status)).length;
   /* 计数档（2026-09-29「列表报错被渲染成空状态」）：报错时 `sessions.data ?? []` 把待处理数折成 0，
    * 而 0 在本处的既有语义是「隐藏浮标」——失败与「确实没有待处理会话」于是长得一模一样。
    * 报错时浮标照常出现、数字给「—」（0 是一个断言，破折号不是），文案说明是加载失败；
    * 点进去由覆盖层给细化文案 + 折叠详情（浮标自身是 <button>，不能再嵌折叠按钮）。 */
-  const showPill = !open && (sessions.isError || pendingCount > 0);
+  const showPill = !open && !onBreakdownPage && (sessions.isError || pendingCount > 0);
+
+  // 从覆盖层直接深链到拆解页时，把打开状态收掉——否则离开页面后旧覆盖层会诈尸。
+  useEffect(() => {
+    if (onBreakdownPage && open) hide();
+  }, [onBreakdownPage, open, hide]);
 
   useWSEvent(['breakdown.started'], ({ data }) => {
+    // 已在拆解页时只让列表失效刷新（ws/invalidate.ts），不抢页面、不叠覆盖层。
+    if (onBreakdownPage) return;
     const store = useBreakdownOverlayStore.getState();
     if (!store.open) store.show(data.session_id);
   });
@@ -38,7 +53,9 @@ export function BreakdownOverlayHost() {
     <>
       {createPortal(
         <AnimatePresence>
-          {open ? <BreakdownOverlay key="breakdown-overlay" onClose={hide} /> : null}
+          {open && !onBreakdownPage ? (
+            <BreakdownOverlay key="breakdown-overlay" onClose={hide} />
+          ) : null}
         </AnimatePresence>,
         document.body,
       )}

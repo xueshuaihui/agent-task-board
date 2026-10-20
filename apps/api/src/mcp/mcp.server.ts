@@ -5,7 +5,7 @@ import { toApiExceptionFromError } from '../contract/db-errors';
 import { appVersion } from '../common/version';
 import { DEFAULT_SETTINGS, type Settings } from '../contract/settings';
 import type { RequestAuth } from '../auth/auth.scope';
-import { buildAgentTools, parseToolInput, type AgentToolContext } from './agent-tools';
+import { assertNoRawReviewMode, buildAgentTools, parseToolInput, type AgentToolContext } from './agent-tools';
 
 export type { AgentToolContext };
 
@@ -29,15 +29,18 @@ export type McpWakeMode = Settings['mcp_wake_mode'];
 export function buildMcpInstructions(mode: McpWakeMode): string {
   const exitRule =
     mode === 'continuous'
-      ? `当前为连续模式：进入工作模式后保持，把后续请求继续当作看板操作处理，直到用户明确说「${MCP_WAKE_EXIT}」或同义的退出指令；退出时简短确认一次，此后不再主动调用工具。`
-      : '当前为单次模式：本轮唤醒对应的操作完成后即退出工作模式，此后不含唤醒词的请求按普通对话处理。';
+      ? `当前为连续模式：保持工作模式，后续请求继续当作看板操作，直到用户明确说「${MCP_WAKE_EXIT}」或同义指令；退出时简短确认一次，此后不再主动调用工具。`
+      : '当前为单次模式：本轮唤醒对应的操作完成后即退出工作模式；不含唤醒词的请求按普通对话处理。';
   return [
-    '本服务提供 Jarvis Workbench 看板的 MCP 工具（任务创建、领取、回写、技能查询、需求拆解等）。',
-    `唤醒词：「${MCP_WAKE_WORD}」。用户消息以它开头或明确呼唤它（如「${MCP_WAKE_WORD}，创建一个任务：明天发布」）时，进入 Jarvis Workbench 工作模式：直接用本服务的工具完成该请求，不要反问是否使用工具。`,
+    '本服务提供 Jarvis Workbench 看板 MCP 工具（任务创建、领取、回写、技能与需求拆解等）。',
+    `唤醒词：「${MCP_WAKE_WORD}」。用户消息以它开头或明确呼唤它（如「${MCP_WAKE_WORD}，创建一个任务：明天发布」）时，进入 Jarvis Workbench 工作模式：直接用本服务的工具完成，不要反问是否使用工具。`,
     exitRule,
-    '与唤醒无关的普通对话，不要主动调用本服务的工具。',
-    '需要用到平台技能时：先 search_skills(keyword=用户的说法) 拿候选（服务端打分，可容近义词/错字）；候选多于一条或 ambiguous=true 时，把候选的名称+一句话描述列给用户选，不要自行挑定；用户选定后再 get_skill(skill_id=...) 取正文。list_skills 只回精简目录（不含正文），不要用它取正文。',
-    `模式在应用「设置 → MCP 设置」中更改，改动自下一次工具响应起即时生效、无需客户端重连；以每次工具返回附带的「【${MCP_WAKE_WORD}】当前会话模式」行为准。`,
+    '无关对话不要主动调用本服务的工具。',
+    '执行进度：领取后报 0-5%，阶段按 10-90%，完成前报 100%；至少每 2-3 分钟或阶段变化用 update_progress 上报（可只传 message；heartbeat 只续租、不算进度）。',
+    '需求规则：requirement 为所属需求：execution_rules 非空时必须按规则执行；requirement.skills 为强制技能；effective_skills 为需求∪任务合并清单（source 标来源，同 id 需求优先）。规则/技能领取时冻结：运行中需求改动不影响本 Run，新领取取最新；规则与需求技能只能用户改，update_task 改会 422。',
+    '需求拆解：board.finish_breakdown 后不结束，用返回的 session.revision 作 after_revision 调 board.wait_for_breakdown 长轮询；draft_regenerate 按 refs 用 board.report_task_draft 重报并落实 note；session_regenerate 先 board.get_breakdown 再按 note 重报并重新 finish；timeout 带当前 revision 续等；confirmed/cancelled/interrupted 才结束。',
+    '需要平台技能时：先 search_skills(keyword=用户说法) 拿候选；多于一条或 ambiguous=true 时列给用户选，不要自行挑定；选定后 get_skill 取正文（list_skills 只回目录）。',
+    `模式在「设置 → MCP 设置」中更改，改动自下一次工具响应即时生效、无需重连；以工具返回的「【${MCP_WAKE_WORD}】当前会话模式」为准。`,
   ].join('\n');
 }
 
@@ -76,6 +79,8 @@ export function createAgentMcpServer(
       tool.name,
       { description: tool.description, inputSchema: tool.input.shape },
       async (args: unknown) => {
+        // Q4：未知键 review_mode/reviewMode 必须在 zod 解析（剥离未知键）之前显式拒。
+        assertNoRawReviewMode(tool.name, args);
         const result = await toCallToolResult(() =>
           tool.run(parseToolInput(tool.input, args), auth),
         );
@@ -100,6 +105,7 @@ export async function callAgentTool(
 ): Promise<unknown> {
   const tool = buildAgentTools(ctx).find((item) => item.name === name);
   if (!tool) throw new ApiException('NOT_FOUND', `未知 MCP 工具 ${name}`);
+  assertNoRawReviewMode(name, rawArgs);
   return tool.run(parseToolInput(tool.input, rawArgs), auth);
 }
 

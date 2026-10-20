@@ -7,8 +7,10 @@ import {
   blockedSchema,
   breakdownBeginSchema,
   breakdownDraftReportSchema,
+  breakdownGetSchema,
   breakdownProgressReportSchema,
   breakdownSessionActionSchema,
+  breakdownWaitSchema,
   checkMcpPolicySchema,
   claimSchema,
   completeSchema,
@@ -30,8 +32,10 @@ import {
   type BlockedInput,
   type BreakdownBeginToolInput,
   type BreakdownDraftReportInput,
+  type BreakdownGetInput,
   type BreakdownProgressReportInput,
   type BreakdownSessionActionInput,
+  type BreakdownWaitInput,
   type CheckMcpPolicyInput,
   type ClaimInput,
   type CompleteInput,
@@ -50,7 +54,7 @@ import {
   type UpdateTaskInput,
   type WaitResumeInput,
 } from '../agent/agent-inputs';
-import { skillPatchFromUpdateInput } from '../contract/agent-schemas';
+import { PROGRESS_CONTRACT, skillPatchFromUpdateInput } from '../contract/agent-schemas';
 import type { AgentQueryService } from '../agent/agent-query.service';
 import type { ClaimService } from '../agent/claim.service';
 import type { LeaseService } from '../agent/lease.service';
@@ -114,7 +118,7 @@ export interface AgentToolContext {
   skills: SkillsService;
   /** v0.0.4 W6 §12.6：check_mcp_policy / report_mcp_call 的策略裁决与审计落点。 */
   policy: McpPolicyService;
-  /** v0.0.4 W7 §16.1：board.* 拆解五工具的生命周期落点（begin/progress/draft/finish/cancel）。 */
+  /** v0.0.4 W7 §16.1：board.* 拆解工具的生命周期落点（begin/progress/draft/finish/cancel + #4 的 get/wait）。 */
   breakdown: BreakdownService;
   /** v0.0.4 W8 §8.7：board.create_task 的会话创建闭环落点（三模式 + 轻确认决策闭环/状态轮询）。 */
   creation: CreationService;
@@ -129,13 +133,51 @@ export interface AgentTool {
   run: (args: unknown, auth: RequestAuth) => Promise<unknown>;
 }
 
+/** Agent 面绝不允许直接出现的审核方式键（Q4：执行者不得自豁免）。 */
+const RAW_REVIEW_MODE_KEYS = ['review_mode', 'reviewMode'] as const;
+const RAW_REVIEW_MODE_MESSAGE =
+  '审核方式不能由 Agent 直接设置（Q4）；light 模式请用 requested_review_mode，最终由用户在轻确认卡决定；direct/silent 不接受审核方式参数';
+const RAW_REVIEW_MODE_HINT =
+  '不要传 review_mode/reviewMode；light 模式请用 requested_review_mode，最终值由用户在轻确认卡决定；direct/silent 不接受审核方式参数';
+
+/**
+ * MCP 入口的 Q4 卫士：`review_mode` / `reviewMode` 不是 schema 声明字段，而 zod 的
+ * object 解析会**静默剥离**未知键——若只靠 schema，Agent 传了 review_mode 也能建单成功。
+ * 因此必须在 `parseToolInput` 之前显式检查原始入参并回 422，且只覆盖两个创建工具；
+ * 其他工具的面不变（不引入全局 `.strict()`，避免把既有的兼容入参一起打成 422）。
+ */
+export function assertNoRawReviewMode(toolName: string, args: unknown): void {
+  if (toolName !== 'board.create_task' && toolName !== 'board.create_tasks_batch') return;
+  if (!isRecord(args)) return;
+  assertNoRawReviewModeKeys(args, '');
+  if (toolName === 'board.create_tasks_batch' && Array.isArray(args.tasks)) {
+    args.tasks.forEach((item, index) => {
+      if (isRecord(item)) assertNoRawReviewModeKeys(item, `tasks.${index}.`);
+    });
+  }
+}
+
+function assertNoRawReviewModeKeys(record: Record<string, unknown>, pathPrefix: string): void {
+  for (const key of RAW_REVIEW_MODE_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) continue;
+    throw new ApiException('VALIDATION_FAILED', RAW_REVIEW_MODE_MESSAGE, [
+      { path: `${pathPrefix}${key}`, code: 'forbidden_key', message: RAW_REVIEW_MODE_HINT },
+    ]);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 /**
  * 12 章的九个基础工具 + v0.0.4 W6 §16.1 的人工块/恢复工具（block_task、wait_for_resume）
  * 与技能三工具（list_skills、get_skill、search_skills，只读，W2 语义由 SkillsService 保证）
  * + v0.0.4 §16.1 的 create_skill（新建技能，落库路径与 UI 的 POST /skills 同一份
  * SkillsService.create；补「技能面只有读工具 + PATCH、没有创建」的缺口）
- * + v0.0.4 W7 §16.1 的拆解五工具（board.begin_breakdown / report_progress / report_task_draft /
- * finish_breakdown / cancel_breakdown）
+ * + v0.0.4 W7 §16.1 的拆解工具（board.begin_breakdown / report_progress / report_task_draft /
+ * finish_breakdown / cancel_breakdown），#4 追加 board.get_breakdown / board.wait_for_breakdown
+ * （finish 后长轮询用户确认/重生成动作）
  * + v0.0.4 W8 §8.7 的 board.create_task（直建/静默两模式核心落库；light 决策闭环与
  * board.wait_for_confirmation、get_creation_status 归下一切片）
  * + v0.0.4 §16.1 的 update_task（全字段 PATCH：RUNNING 需持当前租约、BACKLOG/READY 免租约、
@@ -151,7 +193,8 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
   return [
     {
       name: 'list_ready_tasks',
-      description: '查询可领取任务（服务端已过滤阻塞依赖与能力不匹配，只读，不产生租约）',
+      description:
+        '查询可领取任务（服务端已过滤阻塞依赖与能力不匹配，只读，不产生租约；摘要带 requirement_id/requirement_title 与 has_execution_rules）',
       input: listReadyQuerySchema,
       run: (args, auth) => ctx.claims.listReady(args as ListReadyInput, auth),
     },
@@ -163,13 +206,16 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
     },
     {
       name: 'get_task',
-      description: '获取任务详情（含审核意见、自定义字段、依赖）',
+      description:
+        '获取任务详情（含审核意见、自定义字段、依赖、requirement 与 effective_skills；执行前先读 requirement.execution_rules）',
       input: getTaskSchema,
       run: (args, auth) => ctx.query.getTask(args as GetTaskInput, auth),
     },
     {
       name: 'update_progress',
-      description: '更新进度，需 task_id + run_id + lease_id 三元组',
+      description:
+        `更新执行进度，需 task_id + run_id + lease_id 三元组。节奏：${PROGRESS_CONTRACT}。` +
+        '服务端只单调钳制（传入更低的值不会回退）、并记录最后上报时间；两个字段至少给一个，仅报一句话时只传 message',
       input: progressSchema,
       run: (args, auth) => ctx.writeback.updateProgress(args as ProgressInput, auth),
     },
@@ -378,7 +424,8 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
     {
       name: 'board.report_task_draft',
       description:
-        '上报单个任务草案（§7.2 阶段 4；同 ref 重报即覆盖；skill_ids 可填技能名，finish 时统一解析 §7.5）',
+        '上报单个任务草案（§7.2 阶段 4；同 ref 重报即覆盖；skill_ids 可填技能名，finish 时统一解析 §7.5）。' +
+        'receiving 期可随时上报/覆盖；reviewing 期只有「待重新生成」的 ref（wait_for_breakdown 返回 draft_regenerate 的 refs）可重报，其余 ref 一律 409',
       input: breakdownDraftReportSchema,
       run: async (args, auth) => {
         agentOf(auth);
@@ -389,7 +436,8 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
     {
       name: 'board.finish_breakdown',
       description:
-        '完成拆解：依赖图校验 + 技能名→ID 解析（§7.5），会话转 reviewing 等用户确认；返回 skill_resolution 告警',
+        '完成拆解：依赖图校验 + 技能名→ID 解析（§7.5），会话转 reviewing 等用户确认；返回 skill_resolution 告警与 session.revision（作为 board.wait_for_breakdown 的 after_revision）。' +
+        '会话级重生成后若仍有未重报草案，返回 409 BREAKDOWN_REGENERATION_PENDING（error.refs 逐条列出）；先用 board.report_task_draft 重报这些 ref，再调 finish',
       input: breakdownSessionActionSchema,
       run: async (args, auth) => {
         agentOf(auth);
@@ -405,6 +453,33 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
         agentOf(auth);
         const { session_id: sessionId } = args as BreakdownSessionActionInput;
         return ctx.breakdown.cancel(sessionId);
+      },
+    },
+    {
+      name: 'board.get_breakdown',
+      description:
+        '读取拆解会话全量状态（session + drafts + progress + skill_resolution），含 revision 与每条草案的 regeneration_note/requested_at；' +
+        '重生成后先用本工具看最新草案再重报（Agent 凭证专属）',
+      input: breakdownGetSchema,
+      run: async (args, auth) => {
+        agentOf(auth);
+        const { session_id: sessionId } = args as BreakdownGetInput;
+        return ctx.breakdown.get(sessionId);
+      },
+    },
+    {
+      name: 'board.wait_for_breakdown',
+      description:
+        'finish_breakdown 后长轮询用户动作（Agent 凭证专属）：返回 action/refs/note/revision。' +
+        'draft_regenerate 用 board.report_task_draft 重报 refs 中的草案并落实 note；' +
+        'session_regenerate 先 board.get_breakdown 再按 note 重报、重新 finish；' +
+        'user_edited 只读最新内容、不要覆盖用户编辑；timeout 就带上 revision 再调一次；' +
+        'confirmed/cancelled/interrupted 才结束',
+      input: breakdownWaitSchema,
+      run: async (args, auth) => {
+        agentOf(auth);
+        const { session_id: sessionId, after_revision, timeout_seconds } = args as BreakdownWaitInput;
+        return ctx.breakdown.waitForBreakdown(sessionId, after_revision, timeout_seconds);
       },
     },
     // ------------------------------------------- v0.0.4 W8 §8.7：会话创建闭环（Agent 凭证专属）

@@ -1,14 +1,31 @@
-import { useRef, useState } from 'react';
-import { Network } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { Network, X } from 'lucide-react';
+import { api, qk, useApiMutation } from '@/api';
+import type { TaskAggregate, TaskDetail } from '@/api';
+import { taskSkillsApi, useSkills } from '@/features/skills';
+import { SKILL_TYPE_META } from '@/features/skills/meta';
+import { SkillPicker } from '@/features/skills/skill-picker';
 import { useTaskOverview } from '@/features/task-detail/queries';
 import { SubtasksSection } from '@/features/task-detail/subtasks';
 import { CommentsTab } from '@/features/task-detail/tabs/comments';
-import { InlineError, LoadingBlock } from '@/features/task-detail/ui-bits';
-import type { TaskAggregate, TaskDetail } from '@/api';
-import { Badge, Button, Drawer, ErrorCopy, Progress, StatusDot, Tabs, type TabItem } from '@/components/ui';
+import type { TaskDetailView, TaskSkillRefView } from '@/features/task-detail/types';
+import { InlineError, LoadingBlock, Section } from '@/features/task-detail/ui-bits';
+import {
+  Badge,
+  Button,
+  Drawer,
+  ErrorCopy,
+  Progress,
+  StatusDot,
+  Tabs,
+  Textarea,
+  useToast,
+  type TabItem,
+} from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { priorityText } from '@/lib/labels';
 import { priorityStyle, statusStyle } from '@/lib/status-style';
+import { formatDateTime } from '@/lib/time';
 import { openDependencyGraph } from './dependency-graph-modal';
 import { useRequirementDrawerStore } from './requirement-store';
 
@@ -22,15 +39,16 @@ import { useRequirementDrawerStore } from './requirement-store';
  * - 看板/列表卡片的需求角标（4.8，`requirement-badge.tsx`）；
  * - 拆解完成后结果条上的「查看需求」（B13 泳道下线后原泳道头入口移除，其余入口不变）。
  *
- * Tab：子任务（2.md 6.2）/ 依赖图（6.3，复用 features/dependency-graph 的 Dialog 能力）/
- * 活动（评论，复用任务详情的 CommentsTab）。概览内容（描述、进度、基本信息）压在头部与
- * 子任务 Tab 顶部，不单设「概览」页——需求本身没有执行/审核维度，Tab 越少越好找。
+ * Tab：子任务（2.md 6.2）/ 执行规则（#8）/ 依赖图（6.3，复用 features/dependency-graph 的
+ * Dialog 能力）/ 活动（评论，复用任务详情的 CommentsTab）。概览内容（描述、进度、基本信息）
+ * 压在头部与子任务 Tab 顶部，不单设「概览」页——需求本身没有执行/审核维度，Tab 越少越好找。
  */
 
-type RequirementTab = 'subtasks' | 'graph' | 'activity';
+type RequirementTab = 'subtasks' | 'rules' | 'graph' | 'activity';
 
 const TAB_ITEMS: readonly TabItem[] = [
   { value: 'subtasks', label: '子任务' },
+  { value: 'rules', label: '执行规则' },
   { value: 'graph', label: '依赖图' },
   { value: 'activity', label: '活动' },
 ];
@@ -95,7 +113,8 @@ function RequirementDrawerBody({
   open,
   onClose,
 }: {
-  detail: TaskDetail;
+  /** TaskDetailView：后端详情实际下发 `skills`，基座 TaskDetail 未声明。 */
+  detail: TaskDetailView;
   open: boolean;
   onClose: () => void;
 }) {
@@ -160,10 +179,172 @@ function RequirementDrawerBody({
             aggregate={detail.aggregate ?? null}
           />
         ) : null}
+        {tab === 'rules' ? <ExecutionRulesTab detail={detail} /> : null}
         {tab === 'graph' ? <GraphTab detail={detail} /> : null}
         {tab === 'activity' ? <CommentsTab taskId={detail.id} /> : null}
       </div>
     </Drawer>
+  );
+}
+
+/**
+ * #8 执行规则 Tab：规则与强制技能是两个独立保存动作。
+ *
+ * - 规则：`PATCH /tasks/{id} {execution_rules}`，空串归一为 null；成功失效任务根 +
+ *   board/tasks 前缀（与 SkillsTab 同口径）。
+ * - 技能：复用既有 `tasks.skills` 绑定，写 `taskSkillsApi.set`（全量提交）。
+ * - 技能列表挂了只降级技能区，规则仍可编辑（tier-2）。
+ */
+function ExecutionRulesTab({ detail }: { detail: TaskDetailView }) {
+  const toast = useToast();
+  const allSkills = useSkills();
+  const [rules, setRules] = useState(detail.execution_rules ?? '');
+
+  const bound = useMemo(() => detail.skills ?? [], [detail.skills]);
+  const boundIds = useMemo(() => new Set(bound.map((ref) => ref.skill_id)), [bound]);
+  const byId = useMemo(
+    () => new Map((allSkills.data?.items ?? []).map((skill) => [skill.id, skill])),
+    [allSkills.data?.items],
+  );
+  const candidates = useMemo(
+    () =>
+      (allSkills.data?.items ?? []).filter(
+        (skill) => skill.status !== 'ARCHIVED' && !boundIds.has(skill.id),
+      ),
+    [allSkills.data?.items, boundIds],
+  );
+
+  const saveRules = useApiMutation(
+    (value: string | null) => api.tasks.patch(detail.id, { execution_rules: value }),
+    {
+      invalidate: () => [qk.taskRoot(detail.id), qk.boardRoot, qk.tasksRoot],
+      onSuccess: (updated) => {
+        setRules(updated.execution_rules ?? '');
+        toast.success('执行规则已保存');
+      },
+    },
+  );
+
+  const setSkills = useApiMutation(
+    (refs: TaskSkillRefView[]) =>
+      taskSkillsApi.set(
+        detail.id,
+        refs.map((ref) => ({ skill_id: ref.skill_id, version: ref.version ?? undefined })),
+      ),
+    {
+      invalidate: () => [qk.taskRoot(detail.id), qk.boardRoot, qk.tasksRoot],
+      onSuccess: () => toast.success('强制技能已更新'),
+    },
+  );
+
+  const dirty = rules !== (detail.execution_rules ?? '');
+
+  const saveRulesNow = () => {
+    if (saveRules.isPending) return;
+    saveRules.mutate(rules.trim() === '' ? null : rules);
+  };
+
+  const bind = (skillId: string) => {
+    if (setSkills.isPending) return;
+    setSkills.mutate([...bound, { skill_id: skillId }]);
+  };
+
+  const unbind = (skillId: string) => {
+    if (setSkills.isPending) return;
+    setSkills.mutate(bound.filter((ref) => ref.skill_id !== skillId));
+  };
+
+  return (
+    <div className="flex flex-col gap-5">
+      <Section title="执行规则" meta={`${rules.length} / 20000 字`}>
+        <p className="text-aux text-text-secondary">
+          规则会随子任务被 Agent 领取时注入并冻结快照；v1 为软强制（不阻断领取），运行中修改只影响下一次领取。
+        </p>
+        <Textarea
+          aria-label="需求执行规则"
+          rows={10}
+          maxLength={20000}
+          value={rules}
+          placeholder="例如：所有子任务必须先补测试；禁止修改 CI 配置…"
+          onChange={(event) => setRules(event.target.value)}
+        />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-aux text-text-tertiary">
+            最后更新：
+            {detail.execution_rules_updated_at
+              ? formatDateTime(detail.execution_rules_updated_at)
+              : '尚未设置'}
+          </span>
+          <Button
+            size="sm"
+            variant="primary"
+            loading={saveRules.isPending}
+            disabled={!dirty || saveRules.isPending}
+            onClick={saveRulesNow}
+          >
+            保存规则
+          </Button>
+        </div>
+        {saveRules.isError ? <InlineError text={<ErrorCopy error={saveRules.error} />} /> : null}
+      </Section>
+
+      <Section title="强制技能" meta={bound.length > 0 ? `(${bound.length})` : undefined}>
+        <p className="text-aux text-text-secondary">
+          这些技能会随需求强制注入子任务执行，领取时快照；运行中修改只影响下一次领取。
+        </p>
+
+        {allSkills.isPending ? (
+          <LoadingBlock lines={4} />
+        ) : allSkills.isError ? (
+          <InlineError text={<ErrorCopy error={allSkills.error} />} />
+        ) : (
+          <>
+            {bound.length === 0 ? (
+              <p className="text-aux text-text-tertiary">尚未绑定强制技能。</p>
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {bound.map((ref) => {
+                  const skill = byId.get(ref.skill_id);
+                  return (
+                    <li key={ref.skill_id} className="flex min-w-0 items-center gap-2">
+                      <span className="min-w-0 flex-1 truncate text-body text-text-primary">
+                        {skill?.name ?? ref.skill_id}
+                        <span className="ml-2 font-mono text-aux text-text-tertiary">
+                          {ref.version ?? skill?.current_version ?? '—'}
+                        </span>
+                      </span>
+                      {skill ? (
+                        <Badge tone="outline">
+                          {SKILL_TYPE_META[skill.type]?.label ?? skill.type}
+                        </Badge>
+                      ) : null}
+                      <Button
+                        size="iconSm"
+                        variant="ghost"
+                        aria-label={`解绑 ${skill?.name ?? ref.skill_id}`}
+                        icon={<X className="size-3.5" />}
+                        disabled={setSkills.isPending}
+                        onClick={() => unbind(ref.skill_id)}
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {setSkills.isError ? <InlineError text={<ErrorCopy error={setSkills.error} />} /> : null}
+            <SkillPicker
+              candidates={candidates}
+              multiple
+              selectedIds={bound.map((ref) => ref.skill_id)}
+              onSelect={(skill) => bind(skill.id)}
+              placeholder="搜索技能（名称 / 分类 / 类型 / 标签 / ID，草稿与已发布）"
+              emptyText="没有可绑定的技能"
+              ariaLabel="强制技能候选"
+            />
+          </>
+        )}
+      </Section>
+    </div>
   );
 }
 

@@ -20,6 +20,9 @@ export const WS_EVENTS = [
   'breakdown.progress',
   'breakdown.task_draft',
   'breakdown.finished',
+  // #4 重生成闭环：用户请求重生成（单草案 / 整份会话）时广播，
+  // 载荷 { session_id, scope: 'draft'|'session', refs: string[], note: string|null }。
+  'breakdown.revision_requested',
   'breakdown.cancelled',
   // v0.0.4 W8-a2 §8.7/§16.3 轻确认卡片下发（决策经 REST 回传，终结态卡片靠本地倒计时收敛，
   // 与 PRD 事件表逐行对齐——不私加 resolved 事件）。

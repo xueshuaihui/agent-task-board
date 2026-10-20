@@ -792,8 +792,8 @@ describe('迁移演练（/tmp 临时库，当前水位 0012/0020 → 目录顶�
       expect(columnNames(before, 'reviews')).toContain('reviewer_type');
       before.close();
 
-      delete process.env.ATB_MIGRATIONS_DIR; // 切回全量目录：水位 22 → 只重放 0023
-      expect(applyMigrations()).toEqual([23]);
+      delete process.env.ATB_MIGRATIONS_DIR; // 切回全量目录：水位 22 → 重放 0023 至目录顶（0024 及以后的新迁移一并应用）
+      expect(applyMigrations()).toEqual(orders2(top).slice(22));
       expect(applyMigrations()).toEqual([]); // 二次空转（幂等）
 
       const db = new DatabaseSync(path.join(upgraded, 'jarvis.db'));
@@ -940,6 +940,7 @@ describe('迁移演练（/tmp 临时库，当前水位 0012/0020 → 目录顶�
       logs: process.env.ATB_LOGS_DIR,
     };
     const orders3 = (count: number) => Array.from({ length: count }, (_, index) => index + 1);
+    const top = migrationTop();
     const source = migrationsDir();
     const stageUpTo = (cap: number, name: string): string => {
       const dir = path.join(root, name);
@@ -994,8 +995,8 @@ describe('迁移演练（/tmp 临时库，当前水位 0012/0020 → 目录顶�
       const rowsBeforeA = taskRows(dbA);
       expect(rowsBeforeA).toHaveLength(3);
 
-      delete process.env.ATB_MIGRATIONS_DIR; // 水位 22 → 只重放 0023（含新第 6 段）
-      expect(applyMigrations()).toEqual([23]);
+      delete process.env.ATB_MIGRATIONS_DIR; // 水位 22 → 重放 0023 至目录顶（含第 6 段与后续新迁移）
+      expect(applyMigrations()).toEqual(orders3(top).slice(22));
       expect(applyMigrations()).toEqual([]); // 二次空转（幂等）
 
       // ① 命中行落在回落目标：type='审核' → '需求'（列 DDL 默认值 / DEFAULT_TASK_TYPES[0]），
@@ -1052,7 +1053,7 @@ describe('迁移演练（/tmp 临时库，当前水位 0012/0020 → 目录顶�
       const rowsBeforeB = taskRows(dbB);
 
       delete process.env.ATB_MIGRATIONS_DIR;
-      expect(applyMigrations()).toEqual([23]);
+      expect(applyMigrations()).toEqual(orders3(top).slice(22));
 
       // 空转结论：tasks 整表逐字节快照一字不动，词表行一字不动（5-c 的 EXISTS 守卫 + 第 6 段
       // 的等值守卫各自拦住——没有精确命中的词/行时不写库，用户资产零损伤）。

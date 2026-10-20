@@ -163,14 +163,17 @@ describe('reportDraft × reviewing + 哨兵：单草案重报放行（#34 B 口�
   it('不变：终态一律拒绝（completed 确认后再重报、interrupted 带哨兵也不放行）', async () => {
     const done = await reviewingSession();
     await svc.userRegenerateDraft(done.id, 'd1');
+    // #4：待重生成期间 confirm 被硬性拦住，Agent 重报销账后才会放行。
+    await expectError(() => svc.confirm(done.id), 'BREAKDOWN_REGENERATION_PENDING', 409);
+    await svc.reportDraft(done.id, { ref: 'd1', title: '重报后确认' });
     await svc.confirm(done.id);
     await expectError(
       () => svc.reportDraft(done.id, { ref: 'd1', title: '确认之后才来的重报' }),
       'BREAKDOWN_BAD_STATE',
       409,
     );
-    const stillPending = await svc.get(done.id);
-    expect(stillPending.drafts.find((d) => d.ref === 'd1')?.regeneration_pending).toBe(true);
+    const confirmed = await svc.get(done.id);
+    expect(confirmed.drafts.find((d) => d.ref === 'd1')?.regeneration_pending).toBeUndefined();
 
     const interrupted = await reviewingSession();
     await svc.userRegenerateDraft(interrupted.id, 'd1');

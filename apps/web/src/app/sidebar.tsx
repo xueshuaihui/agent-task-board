@@ -4,6 +4,7 @@ import {
   Kanban,
   ListChecks,
   ListTodo,
+  ListTree,
   PanelLeftClose,
   PanelLeftOpen,
   Settings as SettingsIcon,
@@ -31,6 +32,9 @@ const NAV_ICON: Record<RouteName, ComponentType<SVGProps<SVGSVGElement>>> = {
   // 列表卡」，ListChecks（列表 + 对勾）既贴合页面形态，又与 tasks 的 ListTodo 同形
   // 不同义、和 board 的 Kanban 不撞形。
   requirements: ListChecks,
+  // #4.3 方案 B：拆解是需求下的二级路由（`#/requirements/breakdown`），不在
+  // NAV_ORDER，这里给一个图标只为满足 Record 完整性；高亮跟着「需求」走。
+  breakdown: ListTree,
   skills: Sparkles,
   review: ClipboardList,
   settings: SettingsIcon,
@@ -61,7 +65,9 @@ export function Sidebar() {
 
       <nav aria-label="主导航" className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 py-3">
         {NAV_ORDER.map((name) => {
-          const active = route.name === name;
+          // 二级页面（#4.3 拆解）仍属于「需求」这一导航域：主项保持高亮。
+          const active =
+            route.name === name || (name === 'requirements' && route.name === 'breakdown');
           const Icon = NAV_ICON[name];
           const label = ROUTES[name].label;
           return (

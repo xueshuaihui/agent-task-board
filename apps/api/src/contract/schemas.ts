@@ -97,6 +97,12 @@ export const taskCreateSchema = z.object({
   skills: taskSkillRefsSchema.default([]),
   // 任务审核方式（草案 §3.1，0020 三值）：缺省=按全局默认键 default_review_mode 落（服务层解析）。
   review_mode: z.enum(REVIEW_MODES).optional(),
+  /**
+   * #8 需求级执行规则（0024 加列）：自由文本，仅用户面可写（Agent 的 `create_task` 走另一份
+   * `agent-schemas.createTaskSchema`，`update_task` 的可写键从下面的基底 shape 派生）。
+   * 落库前按 trim 归一；空串视同未填，库内存 NULL。
+   */
+  execution_rules: z.string().trim().max(20000).optional(),
 });
 export type TaskCreateInput = z.infer<typeof taskCreateSchema>;
 
@@ -134,17 +140,27 @@ export const taskPatchSchema = z
 export type TaskPatchInput = z.infer<typeof taskPatchSchema>;
 
 /**
- * 用户侧 PATCH（REST `PATCH /tasks/:id` 专用）：基底 + `review_mode`（草案 §3.1，0020）。
+ * 用户侧 PATCH（REST `PATCH /tasks/:id` 专用）：基底 + `review_mode`（草案 §3.1，0020）
+ * + `execution_rules`（#8 需求级强制规则，0024）。
  *
- * WHY 单独扩一份、不把 review_mode 加进基底：`update_task` 的可写键清单从基底 shape 的键
- * **机械派生**（TASK_PATCH_FIELDS），加进基底等于把「执行者给自己免审核」的口子递给 Agent。
- * Agent 面 `updateTaskSchema` 不吃这份扩展（`.strict()` 直接 422 点名未知键、MCP 通道先剥键），
- * 有负向用例锁死。RUNNING 期间整条 PATCH 被既有「执行中不可编辑」守卫挡住（8.1）。
+ * WHY 单独扩一份、不把这两个键加进基底：`update_task` 的可写键清单从基底 shape 的键
+ * **机械派生**（TASK_PATCH_FIELDS），加进基底等于把「执行者给自己免审核 / 改自己的执行规则」
+ * 的口子递给 Agent。Agent 面 `updateTaskSchema` 不吃这份扩展（`.strict()` 直接 422 点名
+ * 未知键、MCP 通道先剥键），有负向用例锁死。RUNNING 期间整条 PATCH 被既有「执行中不可编辑」
+ * 守卫挡住（8.1）。
  */
 export const userTaskPatchSchema = z
-  .object({ ...taskPatchShape, review_mode: z.enum(REVIEW_MODES).optional() })
+  .object({
+    ...taskPatchShape,
+    review_mode: z.enum(REVIEW_MODES).optional(),
+    /** #8：传 null 或空白串 = 清空规则（时间戳仍刷新，见 TasksService.applyPatch）。 */
+    execution_rules: z.string().trim().max(20000).nullable().optional(),
+  })
   .refine((value) => Object.keys(value).length > 0, noPatchFields);
-export type UserTaskPatchInput = TaskPatchInput & { review_mode?: ReviewMode };
+export type UserTaskPatchInput = TaskPatchInput & {
+  review_mode?: ReviewMode;
+  execution_rules?: string | null;
+};
 
 export const transitionSchema = z.object({
   to: z.enum(TASK_STATUS),

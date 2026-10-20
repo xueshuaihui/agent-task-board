@@ -130,7 +130,7 @@
 ### 6.5 B6 MCP 词表（Agent 侧，可与 §5 合跑）
 
 - [x] MCP 客户端列工具可见 `get_vocabulary`；调用一次返回 task_types/priority/confirmation_mode/状态流转等全词表（2026-09-24 R-C-1 **协议层**实测：对无状态 Streamable HTTP `POST /mcp`（Bearer agent token，JSON-RPC，非 mock）发 `tools/list` → 26 个工具含 `get_vocabulary`；`tools/call get_vocabulary {}` 一次拿全 `task_types.default/current=[需求,缺陷,子任务,巡检,重构]`、`priority.values=[0,1,2,3]`+中文档名+default、`confirmation_mode`（direct/light/silent + 语义 + 优先级）、`task_status.values=[BACKLOG,READY,RUNNING,BLOCKED,REVIEW,DONE,FAILED]` + `transitions` 全表（RUNNING 只能由 claim 产生、DONE 终态、REVIEW 出边需审核表单）、capability 命名空间规则、skill 类型/状态/来源、`artifact_types`+uri_rule、`log_level`、breakdown 会话状态。**仍待补**：在真实 MCP 客户端（Qoder）会话里肉眼确认工具列表可见——客户端只是渲染同一份 `tools/list`，随 §5 合跑时补一眼）
-> **现状注（2026-10-09）**：当前 `agent-tools.ts` 注册工具数为 28（0020 曾加两条审核工具至 30，随后按 §14 裁定移除 → 回到 28）。上文的 26/27 为历史实测数字，保留作账目。
+> **现状注（2026-10-21）**：`agent-tools.ts` 当前注册工具数为 31（0020 曾加两条审核工具至 30，按 §14 裁定移除回到 28；S4 之后补 `create_skill` 至 29；#4 再追加 `board.get_breakdown` / `board.wait_for_breakdown` 至 31）。上文的 26/27 与 28 均为当时实测历史值，保留作账目。
 - [x] Agent 传错词表值（如不存在的任务类型）时 422 错误回显可接受值列表，Agent 能据此一次改对、不再试错刷测试数据（R-C-1 实测：REST `POST /tasks {"type":"TODO"}` → **422** `任务类型「TODO」不在词表内` + `details[{path:type,code:unknown_type,message:"可选：需求 / 缺陷 / 子任务 / 巡检 / 重构"}]`（`"数据同步"` 同形态）；`transition {"to":"TODO"}` → **422** `invalid_value` 且 message 直接列出 7 个合法状态；MCP `board.create_task type=TODO` → HTTP 200 信封 + `isError:true`，`content[0].text` 内有完整 422 体含可接受值。**同轮查出并修 2 处回显折损**：①`structuredContent` 只带 `{code,message}`，把可接受值整块丢了（`mcp.server.ts` 的 `toCallToolResult` catch 分支只并 `error.context` 不并 `details`），而只解析 structuredContent 通道的客户端正是 B6 要救的那类——已随本批补上 details（追加式，`code/message` 契约不变）；②`priority:9` 被 MCP SDK 自身 schema 先挡下（`-32602 Too big: expected number to be <=3`），走不到 B6 的 hint 路径、因此不产出可接受值列表——**已知现象，本轮不改**（改法是给 input schema 加字段描述/放宽到词表校验，属另行裁定））
 
 ## 7. beta.6 新增批（B8–B11 修复 + B12→B15 分组过滤重构 + B14 导航折叠）
@@ -214,8 +214,8 @@
 - [x] 字段面**逐字取 REST `taskPatchSchema.shape`**（13 个可写字段，同一批 zod 实例），字段级校验（type 词表 + 可接受值回显、priority 0-3、tags、skills 归属/版本、parent 层级 ≤2、group 存在、custom_fields 增量合并）与审计/事件只有 `TasksService.applyPatch` 一份实现，Agent 面走 `patchAsAgent` 窄入口。**REST 行为一字未动**：`PATCH /tasks/:id` 对 RUNNING 仍 `TASK_RUNNING`（既有 `state-machine.test.ts:205` + 本轮新增的 REST 红线用例双向锁住），审计 `actorType` 分 user/agent。
 - [x] 越权面：`status` / `assignee` / 租约列根本不在可写键里，状态机与执行权改不到（MCP 协议层按 inputSchema 先剥未声明键，非 HTTP 直连通道才由 `.strict()` 报 422）。
 - [ ] 待 beta 包/真机：Qoder 客户端里 27 个工具可见、`update_task` 实调一次（dev 只验到 `InMemoryTransport` 全链路 17 用例）。
-> **现状注（2026-10-09）**：当前 `agent-tools.ts` 注册工具数为 28（0020 曾加两条审核工具至 30，随后按 §14 裁定移除 → 回到 28）。上文的 26/27 为历史实测数字，保留作账目。
-- 已记档的两个已知边界（不在本片修）：①`updateTask` 读状态与写入之间是毫秒级窗口，人在这几毫秒里强制停止则守卫判的是旧状态——与 REST `patch()` **同风险面**（现有实现本来也是读后写），要收严应在 `applyPatch` 内做 `updateMany where status=before.status` 乐观并发，那是独立一条改动；②`parseToolInput` 的 `received` 回显对**所有**工具生效，若将来某工具的枚举字段承载凭证/隐私值，会把原值带进错误体（当前 28 个工具入参不含 token 类字段，判断为可接受；收紧口径可对 `*_token`/`secret` 路径掩码）。
+> **现状注（2026-10-21）**：`agent-tools.ts` 当前注册工具数为 31（0020 曾加两条审核工具至 30，按 §14 裁定移除回到 28；S4 之后补 `create_skill` 至 29；#4 再追加 `board.get_breakdown` / `board.wait_for_breakdown` 至 31）。上文的 26/27 与 28 均为当时实测历史值，保留作账目。
+- 已记档的两个已知边界（不在本片修）：①`updateTask` 读状态与写入之间是毫秒级窗口，人在这几毫秒里强制停止则守卫判的是旧状态——与 REST `patch()` **同风险面**（现有实现本来也是读后写），要收严应在 `applyPatch` 内做 `updateMany where status=before.status` 乐观并发，那是独立一条改动；②`parseToolInput` 的 `received` 回显对**所有**工具生效，若将来某工具的枚举字段承载凭证/隐私值，会把原值带进错误体（当前 31 个工具入参不含 token 类字段，判断为可接受；收紧口径可对 `*_token`/`secret` 路径掩码）。
 
 ### 10.3 G-3 `update_skill`（`3ae627f`，27→28）
 

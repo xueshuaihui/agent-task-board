@@ -12,9 +12,10 @@ import { useSkills } from '@/features/skills/hooks';
 import { Badge, Button, ErrorText, IconButton, Progress, useToast } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { transitions } from '@/lib/motion';
-import { priorityLabel } from '@/lib/labels';
+import { REVIEW_MODE_LABEL, priorityLabel } from '@/lib/labels';
 import { CreationEditDialog } from './creation-edit-dialog';
 import { decideCreationRequest } from './queries';
+import { creationReviewModeNotice } from './review-mode-notice';
 import {
   agentUndoMsLeft,
   useCreationStore,
@@ -26,9 +27,9 @@ import {
  * 「📋 创建任务？」 + 载荷摘要 + 需求/类型/优先级/技能 + 来自哪个 Agent +
  * [取消][编辑][创建] + 锚 `expires_at` 的倒计时条（§8.3 的 30 秒超时）。
  *
- * §19.14·84（v0.0.4 W2-b）：确认卡归看板可见面，归属行展示「需求」而非
- * 「📁 组名」——值 = 该载荷所在分组唯一需求卡的标题（经候选反查），
- * 组内无需求（或需求所在组已归档）回退「未分配」。
+ * §19.14·84（v0.0.4 W2-b）/#5：确认卡归看板可见面，归属行展示「需求」而非
+ * 「📁 组名」——#5 起优先按 `parent_task_id` 精确反查需求标题；旧请求仍回退到
+ * 「该载荷所在分组唯一需求卡」（经候选反查），组内无需求时「未分配」。
  *
  * 三条终态推进路径（api 侧终结不广播，PRD §16.3 明确不私加 resolved 事件）：
  * 1. decision 回包成功 → 用回包视图收口（created/cancelled）；
@@ -105,11 +106,21 @@ export function CreationCard({ card }: CreationCardProps) {
   const requirements = useRequirementOptions();
   const skills = useSkills(undefined, { enabled: card.skills.length > 0 });
 
-  // 归属展示 = 载荷所在分组唯一需求卡的标题；无需求回退「未分配」（§19.14·84）。
-  const requirementTitle = useMemo(
-    () => requirementTitleForGroup(requirements.data, card.group_id),
-    [requirements.data, card.group_id],
-  );
+  /* 归属反查：#5 之后请求自带 parent_task_id，按 id 精确命中需求候选；
+   * 旧请求（字段为空）仍走 group_id→需求标题的兼容路径。父任务存在但候选里查不到时
+   * 只能显示 id/「未知需求」——回落「未分配」等于断言「这张卡没挂需求」，没有根据。 */
+  const requirement = useMemo(() => {
+    if (card.parent_task_id) {
+      const hit = requirements.data.find((option) => option.id === card.parent_task_id);
+      return hit
+        ? { title: hit.title, missingId: null }
+        : { title: null, missingId: card.parent_task_id };
+    }
+    return {
+      title: requirementTitleForGroup(requirements.data, card.group_id),
+      missingId: null,
+    };
+  }, [requirements.data, card.group_id, card.parent_task_id]);
   /* tier-2（2026-09-29「列表报错被渲染成空状态」）：这一行是**展示层反查**，反查没成立就不能
    * 说「未分配」（那是"这张卡没挂需求"这句没根据的话），也不能一路显示读取中把 30 秒确认窗
    * 变成猜谜。pending → 「读取中…」、error → 「需求反查失败」＋折叠原因；「创建」按钮照常可用
@@ -118,11 +129,25 @@ export function CreationCard({ card }: CreationCardProps) {
     <ErrorText text="📌 需求：反查失败，创建后请在详情确认归属" error={requirements.error} />
   ) : requirements.isPending ? (
     <span className="min-w-0 max-w-full truncate">📌 需求：读取中…</span>
+  ) : requirement.missingId ? (
+    <span
+      className="min-w-0 max-w-full truncate"
+      title={`未找到需求 ${requirement.missingId}`}
+    >
+      📌 需求：未知需求（{requirement.missingId}）
+    </span>
   ) : (
-    <span className="min-w-0 max-w-full truncate" title={requirementTitle ?? '未分配'}>
-      {requirementTitle ? `📌 需求：${requirementTitle}` : '未分配'}
+    <span className="min-w-0 max-w-full truncate" title={requirement.title ?? '未分配'}>
+      {requirement.title ? `📌 需求：${requirement.title}` : '未分配'}
     </span>
   );
+
+  // #5 Q4：实际值始终展示；请求与拟用值不同时升级为显眼提示，相同则安静注明「Agent 请求」。
+  const reviewNotice = creationReviewModeNotice(card.requested_review_mode, card.review_mode);
+  const reviewModeBadge =
+    reviewNotice?.kind === 'quiet'
+      ? reviewNotice.text
+      : `审核：${REVIEW_MODE_LABEL[card.review_mode]}`;
   /* 技能名同样只是展示层回填：查不到时回落原 slug/引用名（不是「没有技能」，行照样渲染），
    * 所以这一路不需要错误面——`skillNames.length` 取自载荷本身，不受查询状态影响。 */
   const skillNames = useMemo(() => {
@@ -202,7 +227,19 @@ export function CreationCard({ card }: CreationCardProps) {
           {requirementLabel}
           <Badge tone="outline">{card.type}</Badge>
           <Badge tone="outline">{priorityLabel(card.priority)}</Badge>
+          <Badge tone="outline">{reviewModeBadge}</Badge>
         </div>
+
+        {/* 终态卡不再喊「请确认」：决策已落地，请求差异只属于待决期的动作提示。 */}
+        {reviewNotice?.kind === 'alert' && pending ? (
+          <p
+            className="flex items-start gap-1.5 rounded-control border border-status-review/40 bg-status-review-soft px-2 py-1.5 text-aux font-medium text-status-review"
+            data-testid="creation-review-mode-request"
+          >
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            <span>{reviewNotice.text}</span>
+          </p>
+        ) : null}
 
         {skillNames.length > 0 ? (
           <div className="flex flex-wrap items-center gap-1.5">

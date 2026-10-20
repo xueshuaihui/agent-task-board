@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { createTaskSchema } from '../contract/agent-schemas';
+import { REVIEW_MODES } from '../contract/enums';
 
 /**
  * v0.0.4 W8-a2 §16.2「creation-requests」两写端点的入参契约。
@@ -16,6 +17,11 @@ export const creationRequestCreateSchema = z.object({
   priority: s.priority,
   tags: s.tags,
   skills: s.skills,
+  parent_task_id: s.parent_task_id,
+  requested_review_mode: s.requested_review_mode,
+  // REST/UI 面可以直接指定拟用审核方式（用户是唯一能落 review_mode 的一方）；
+  // Agent 的 MCP 面没有这个键，只能走 requested_review_mode 请求。
+  review_mode: z.enum(REVIEW_MODES).optional(),
   // REST 入口可能没有会话上下文（session_id 在 create_task 是必填记账键，这里降级可选）。
   session_id: s.session_id.optional().nullable(),
   agent_name: s.agent_name,
@@ -38,6 +44,9 @@ export const creationDecisionSchema = z
         priority: s.priority,
         tags: s.tags,
         skills: s.skills,
+        parent_task_id: s.parent_task_id,
+        // 用户决策是唯一能落 review_mode 的地方（Agent 只能请求、不能决定）。
+        review_mode: z.enum(REVIEW_MODES).optional(),
       })
       .partial()
       .optional(),

@@ -31,6 +31,7 @@ import { useAddDependency, useRemoveDependency } from '@/features/dependency-gra
 import type { BoardMutations } from '@/features/board/mutations';
 import { DependencyEdge } from './DependencyEdge';
 import { FLOW_NODE_HEIGHT, FLOW_NODE_SIMPLE_HEIGHT, TaskFlowNode, statusColor, type TaskFlowNodeData } from './TaskFlowNode';
+import { edgeAnimationEnabled, isRunningStatus } from './flow-motion';
 import { blockingChain, criticalPath, focusSet } from './graph-model';
 import { getFlowLayout, hydrateFlowLayout, useViewPrefsStore, writeFlowLayout, type FlowLayout } from './view-prefs';
 
@@ -129,6 +130,14 @@ function FlowCanvas({ tasks, edges, edgesLoading, mutations, onRequestDelete }: 
     return focusSet(focus.anchor, focus.scope, ids, edges);
   }, [focus, ids, edges]);
 
+  /* 运行态动效阈值（Issue #7）：「同屏」按聚焦过滤后的可见任务计数；
+   * 超过 20 个 RUNNING 时关闭连线动画（节点呼吸保留），避免大图动画开销叠加。 */
+  const runningCount = useMemo(() => {
+    const scoped = visibleIds ? tasks.filter((task) => visibleIds.has(task.id)) : tasks;
+    return scoped.reduce((count, task) => count + (isRunningStatus(task.status) ? 1 : 0), 0);
+  }, [tasks, visibleIds]);
+  const animateEdges = edgeAnimationEnabled(runningCount);
+
   /* 分层布局：Kahn 拓扑分层（复用依赖图算法），LR 时交换 x/y 实现「从左到右」。 */
   const positioned = useMemo(() => {
     const layoutInput = visibleIds ? tasks.filter((task) => visibleIds.has(task.id)) : tasks;
@@ -162,6 +171,8 @@ function FlowCanvas({ tasks, edges, edgesLoading, mutations, onRequestDelete }: 
           status: node.status,
           priority: node.priority,
           progress: node.progress,
+          // #6：进度条 title 用的最后上报时间（历史 Run 为 null，节点不伪造）。
+          progressUpdatedAt: cardById.get(node.id)?.progress_updated_at ?? null,
           blockedCount: cardById.get(node.id)?.blocked.count ?? 0,
           agentName: cardById.get(node.id)?.agent_name ?? null,
           simplified,
@@ -192,9 +203,15 @@ function FlowCanvas({ tasks, edges, edgesLoading, mutations, onRequestDelete }: 
             onCritical: critical.edges.has(edge.depId),
             onBlocking: blocked.edges.has(edge.depId),
             dimmed: false,
+            // Issue #7：RUNNING 相邻信息逐边注入；animate 是全局阈值闸门，
+            // DependencyEdge 里再由 shouldAnimateEdge 收口 blocks/relates。
+            running:
+              isRunningStatus(cardById.get(edge.from)?.status) ||
+              isRunningStatus(cardById.get(edge.to)?.status),
+            animate: animateEdges,
           },
         })),
-    [edges, visibleIds, cardById, critical, blocked],
+    [edges, visibleIds, cardById, critical, blocked, animateEdges],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>([]);

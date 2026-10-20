@@ -438,6 +438,93 @@
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
 
+/* ------------------------------------------------- v0.0.4 Issue #7 运行态动效 */
+
+/* 运行中节点：呼吸光晕。box-shadow 不参与布局，节点几何尺寸不变；
+ * 颜色走 --color-status-running，深色主题自动跟随 token。 */
+.atb-flow-node.is-running {
+  animation: atb-flow-node-breathe 2.4s ease-in-out infinite;
+}
+@keyframes atb-flow-node-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-status-running) 35%, transparent),
+      0 0 10px 1px color-mix(in srgb, var(--color-status-running) 16%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--color-status-running) 55%, transparent),
+      0 0 20px 5px color-mix(in srgb, var(--color-status-running) 28%, transparent);
+  }
+}
+
+/* 运行中节点：流动虚线描边（SVG 覆盖层，绝对定位在节点外侧，不占布局）。
+ * 只动 stroke-dashoffset，不触发 layout。 */
+.atb-flow-node-ring {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+}
+.atb-flow-node-ring rect {
+  fill: none;
+  stroke: var(--color-status-running);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 5 5;
+  opacity: 0.55;
+  animation: atb-flow-node-dash 1.6s linear infinite;
+}
+@keyframes atb-flow-node-dash {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+/* 简化态没有状态行：右上角脉冲圆点（opacity + transform，不占布局）。 */
+.atb-flow-node.is-running .atb-flow-status-dot {
+  animation: atb-flow-node-pulse 1.6s ease-in-out infinite;
+}
+@keyframes atb-flow-node-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+/* 运行中相邻 blocks 连线：流动虚线。负 offset 与 SVG 路径方向一致，
+ * 虚线从 source 流向 target，保留「前置 → 被阻塞」的方向语义。 */
+.react-flow__edge .atb-flow-edge--running {
+  stroke-dasharray: 7 5;
+  animation: atb-flow-edge-dash 1.6s linear infinite;
+}
+@keyframes atb-flow-edge-dash {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+/* reduced-motion：运行态全部静止；静态运行色/虚线保留，信息不丢。 */
+@media (prefers-reduced-motion: reduce) {
+  .atb-flow-node.is-running,
+  .atb-flow-node-ring rect,
+  .atb-flow-node.is-running .atb-flow-status-dot,
+  .react-flow__edge .atb-flow-edge--running {
+    animation: none !important;
+  }
+}
+
 /* ============== Toast 动效收口（motion-spec §4.6 / §9-P1-9） ==============
  * sonner v2 的 toast 出入场是纯状态驱动 CSS（li 上 data-mounted/data-removed
  * 切 --y + opacity，内置 400ms 默认缓动、-100% 离屏位移）。若在卡片根上自写

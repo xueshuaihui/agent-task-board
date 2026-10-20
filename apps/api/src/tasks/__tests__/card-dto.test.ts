@@ -27,6 +27,7 @@ function row(overrides: Partial<TaskRow>): TaskRow {
     updated_at: null,
     progress: null,
     progress_msg: null,
+    progress_updated_at: null,
     agent_name: null,
     blocked_count: 0,
     artifact_count: 0,
@@ -67,5 +68,21 @@ describe('toCardDto 的 origin_type', () => {
   it('建列前的旧行/测试造行缺列回落 user', () => {
     expect(toCardDto(row({ origin_type: null })).origin_type).toBe('user');
     expect(toCardDto(row({})).origin_type).toBe('user');
+  });
+});
+
+// #8：卡片只暴露「有没有规则」的布尔，规则全文只走详情（列表/看板不背 20000 字符）。
+describe('toCardDto 的 has_execution_rules', () => {
+  it('有规则文本 → true（不把全文塞进卡片）', () => {
+    const card = toCardDto(row({ execution_rules: '执行前先跑 pnpm test' }));
+    expect(card.has_execution_rules).toBe(true);
+    expect(card).not.toHaveProperty('execution_rules');
+  });
+
+  it('无规则 / 空串 / 纯空白 / 旧行缺列 → false', () => {
+    expect(toCardDto(row({ execution_rules: null })).has_execution_rules).toBe(false);
+    expect(toCardDto(row({ execution_rules: '' })).has_execution_rules).toBe(false);
+    expect(toCardDto(row({ execution_rules: '   \n' })).has_execution_rules).toBe(false);
+    expect(toCardDto(row({})).has_execution_rules).toBe(false);
   });
 });

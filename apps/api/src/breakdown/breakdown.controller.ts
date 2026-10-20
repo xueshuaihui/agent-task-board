@@ -1,10 +1,17 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { AuthScope } from '../auth/auth.scope';
+import { zod } from '../infra/zod.pipe';
+import {
+  breakdownListQuerySchema,
+  breakdownRegenerateBodySchema,
+  type BreakdownListQueryInput,
+  type BreakdownRegenerateBody,
+} from './breakdown.dto';
 import { BreakdownService, type BreakdownDraftInput } from './breakdown.service';
 
 /**
  * v0.0.4 W7 拆解 REST 端点（PRD §16.2「拆解」小节四行，逐一对应）：
- *   GET  /api/v1/breakdown/sessions        会话列表
+ *   GET  /api/v1/breakdown/sessions        会话列表（#4：scope/include_archived/requirement_id/limit/cursor）
  *   GET  /api/v1/breakdown/sessions/{id}   会话详情（session + drafts + progress，确认页数据源）
  *   POST /api/v1/breakdown/sessions/{id}/confirm  确认创建（§7.8 单事务全成或全滚）
  *   POST /api/v1/breakdown/sessions/{id}/cancel   取消
@@ -14,8 +21,10 @@ import { BreakdownService, type BreakdownDraftInput } from './breakdown.service'
  *   PATCH  /api/v1/breakdown/sessions/{id}/drafts/{ref}    改标题/描述/优先级/技能/验收/依赖边集合
  *   DELETE /api/v1/breakdown/sessions/{id}/drafts/{ref}    删除任务（级联清悬空 depends_on）
  *   POST   /api/v1/breakdown/sessions/{id}/drafts/{ref}/regenerate
- *                                                          重新生成=重置待 Agent 重报（条款81）
- * 四条仅 reviewing 可写（§7.7），与 confirm 同款 status 条件 UPDATE 并发守卫。
+ *                                                          单草案重新生成=重置待 Agent 重报（条款81，body 可选 note）
+ *   POST   /api/v1/breakdown/sessions/{id}/regenerate       #4 整份重新生成（body 可选 note），会话回 receiving
+ * 以上用户侧写端点仅 reviewing 可写（§7.7），与 confirm 同款 status 条件 UPDATE 并发守卫；
+ * 每次写命中都会让会话 revision+1（#4）。
  *
  * 全部 UI 凭证组：begin/进度/草案/完成是 Agent 面（§16.1 board.* MCP 工具），
  * REST 只覆盖用户在确认页上的读与决策；Agent Token 调这里由全局守卫回 FORBIDDEN。
@@ -27,8 +36,8 @@ export class BreakdownController {
   constructor(private readonly breakdown: BreakdownService) {}
 
   @Get('sessions')
-  list() {
-    return this.breakdown.list();
+  list(@Query(zod(breakdownListQuerySchema)) query: BreakdownListQueryInput) {
+    return this.breakdown.list(query);
   }
 
   @Get('sessions/:id')
@@ -44,6 +53,15 @@ export class BreakdownController {
   @Post('sessions/:id/cancel')
   cancel(@Param('id') id: string) {
     return this.breakdown.cancel(id);
+  }
+
+  /** #4 整份重新生成：reviewing → receiving，所有草案挂待重报，body 可选 { note }。 */
+  @Post('sessions/:id/regenerate')
+  regenerateSession(
+    @Param('id') id: string,
+    @Body(zod(breakdownRegenerateBodySchema)) body: BreakdownRegenerateBody,
+  ) {
+    return this.breakdown.regenerateSession(id, body?.note);
   }
 
   @Post('sessions/:id/drafts')
@@ -65,8 +83,13 @@ export class BreakdownController {
     return this.breakdown.userDeleteDraft(id, decodeURIComponent(ref));
   }
 
+  /** 单草案重新生成：body 可选 { note }，#4 起随事件与 DTO 透出说明/请求时刻。 */
   @Post('sessions/:id/drafts/:ref/regenerate')
-  regenerateDraft(@Param('id') id: string, @Param('ref') ref: string) {
-    return this.breakdown.userRegenerateDraft(id, decodeURIComponent(ref));
+  regenerateDraft(
+    @Param('id') id: string,
+    @Param('ref') ref: string,
+    @Body(zod(breakdownRegenerateBodySchema)) body: BreakdownRegenerateBody,
+  ) {
+    return this.breakdown.userRegenerateDraft(id, decodeURIComponent(ref), body?.note);
   }
 }

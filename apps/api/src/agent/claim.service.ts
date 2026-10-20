@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ApiException } from '../contract/errors';
+import { PROGRESS_CONTRACT } from '../contract/agent-schemas';
 import type { ClaimReason } from '../contract/enums';
 import { uuidv7, nextRunId } from '../contract/ids';
 import { toIso } from '../contract/time';
@@ -14,6 +15,11 @@ import { agentOf, type AgentAuth } from './agent-auth';
 import type { ClaimInput, ListReadyInput } from './agent-inputs';
 import type { ClaimResult } from './agent-task.dto';
 import { AgentQueryService } from './agent-query.service';
+import {
+  buildRequirementSnapshot,
+  buildRulesSnapshot,
+  digestRulesSnapshot,
+} from './requirement-context';
 import {
   capabilitiesCovered,
   effectiveCapabilities,
@@ -135,6 +141,32 @@ export class ClaimService {
         );
         if (changed === 0) continue;
 
+        // #8：领取时把需求规则 + 技能引用 + 有效技能冻结进本次 Run。
+        // 与回执载荷共用 requirement-context 的合并口径；运行中需求被改不影响本快照，
+        // 下一次领取重新读库取最新规则。
+        const candidateTask = await tx.task.findUnique({
+          where: { id: candidate.id },
+          select: { skills: true, parentTaskId: true },
+        });
+        if (!candidateTask) throw new ClaimMiss('all_blocked');
+        const parent = candidateTask.parentTaskId
+          ? await tx.task.findUnique({
+              where: { id: candidateTask.parentTaskId },
+              select: {
+                id: true,
+                title: true,
+                type: true,
+                skills: true,
+                executionRules: true,
+                executionRulesUpdatedAt: true,
+              },
+            })
+          : null;
+        const snapshot = buildRequirementSnapshot(candidateTask.skills, parent);
+        // captured_at 用 ISO（与 toIso 输出同形），不进 digest。
+        const rulesSnapshot = buildRulesSnapshot(snapshot, new Date().toISOString());
+        const rulesDigest = digestRulesSnapshot(snapshot);
+
         await tx.taskRun.create({
           data: {
             id: runId,
@@ -146,6 +178,8 @@ export class ClaimService {
             status: 'RUNNING',
             triggerType: 'agent_poll',
             leaseId,
+            rulesSnapshot: JSON.stringify(rulesSnapshot),
+            rulesDigest,
           },
         });
         await tx.$executeRawUnsafe(`UPDATE tasks SET run_count = run_count + 1 WHERE id = ?`, candidate.id);
@@ -170,7 +204,7 @@ export class ClaimService {
           `SELECT lease_expires_at FROM tasks WHERE id = ?`,
           candidate.id,
         );
-        return { taskId: candidate.id, runId, expiresAt: rows[0]?.lease_expires_at ?? null };
+        return { taskId: candidate.id, runId, expiresAt: rows[0]?.lease_expires_at ?? null, rulesDigest };
       }
 
       // 理论上不可达：写锁已在本事务持有，占位条件不会被别人抢先满足。
@@ -188,6 +222,10 @@ export class ClaimService {
         expires_at: toIso(claimed.expiresAt),
         ttl_minutes: ttl,
       },
+      // #6：认领成功即把执行进度节奏回给 Agent（与 update_progress 描述同一段话）。
+      progress_contract: PROGRESS_CONTRACT,
+      // #8：与 task_runs.rules_digest 同值，Agent 可据此核对「本次执行依据哪版规则」。
+      rules_digest: claimed.rulesDigest,
     };
   }
 

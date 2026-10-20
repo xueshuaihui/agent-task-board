@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 
 /**
- * 拆解创建页的宿主状态（§7.3「覆盖层，不是独立路由」）。
+ * 拆解创建页的宿主状态（§7.3；#4.3 方案 B 起覆盖层与二级页面 `#/requirements/breakdown`
+ * 共存：覆盖层仍是「有未处理会话」的快捷入口，历史/归档走二级页面）。
  *
  * 与 `features/requirements/requirement-store.ts` 同一模式：入口（WS 自动进入、
  * 浮标按钮、切换器）都通过 `useBreakdownOverlayStore.getState()` 操作，

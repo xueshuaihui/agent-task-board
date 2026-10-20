@@ -1,6 +1,7 @@
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@xyflow/react';
 import { cn } from '@/lib/cn';
 import { DEPENDENCY_TYPE_LABEL } from '@/lib/labels';
+import { shouldAnimateEdge } from './flow-motion';
 
 /**
  * 流程图连线（§6.4.4 连线规格 + §6.4.10「边 label / edgeLabelRenderer」）：
@@ -8,6 +9,10 @@ import { DEPENDENCY_TYPE_LABEL } from '@/lib/labels';
  * - 关键路径加粗 3px 橙、阻塞链红色；悬停高亮主色（globals.css 的 `.atb-flow-edge:hover`）；
  * - label 用 EdgeLabelRenderer 画在 DOM 层，标注依赖类型中文；箭头由视图层
  *   `markerEnd: MarkerType.ArrowClosed`（颜色与描边同档）给出。
+ *
+ * 运行态（Issue #7）：仅「blocks 边 + 任一端 RUNNING + 同屏 RUNNING 未超阈值」时
+ * 追加 `atb-flow-edge--running`，由 globals.css 做 stroke-dashoffset 流动；
+ * relates 无论端点状态都保持静态。`running` / `animate` 由 FlowBoardView 组装边时注入。
  */
 
 export interface FlowEdgeData extends Record<string, unknown> {
@@ -15,6 +20,10 @@ export interface FlowEdgeData extends Record<string, unknown> {
   onCritical: boolean;
   onBlocking: boolean;
   dimmed: boolean;
+  /** 边任一端处于 RUNNING（视图层注入，原始事实）。 */
+  running: boolean;
+  /** 同屏 RUNNING 节点数未超阈值，允许连线动画（视图层注入）。 */
+  animate: boolean;
 }
 
 export function DependencyEdge(props: EdgeProps) {
@@ -30,13 +39,23 @@ export function DependencyEdge(props: EdgeProps) {
   const critical = data?.onCritical === true;
   const blocking = data?.onBlocking === true;
   const dashed = data?.depType === 'relates';
+  const running = shouldAnimateEdge({
+    depType: data?.depType,
+    running: data?.running === true,
+    // 兼容旧数据：没带阈值字段时按允许处理（只有 RUNNING 才会真正动）。
+    animate: data?.animate !== false,
+  });
 
   return (
     <>
       <BaseEdge
         id={props.id}
         path={path}
-        className={cn('atb-flow-edge', data?.dimmed && 'atb-flow-edge--dimmed')}
+        className={cn(
+          'atb-flow-edge',
+          running && 'atb-flow-edge--running',
+          data?.dimmed && 'atb-flow-edge--dimmed',
+        )}
         style={{
           strokeWidth: critical ? 3 : 2,
           strokeDasharray: dashed ? '6 4' : undefined,

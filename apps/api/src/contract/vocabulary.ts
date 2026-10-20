@@ -170,6 +170,10 @@ export function buildVocabulary(input: VocabularyInput) {
       },
       default: input.defaultReviewMode,
       precedence: '建单入参 review_mode > 设置项 default_review_mode > human',
+      // 本片（#5）新增口径：Agent 只能经 light 模式的 requested_review_mode 提请求，
+      // 最终值由用户在轻确认卡决定；direct/silent 或直接传 review_mode 一律 422。
+      agent_request:
+        'Agent 只能传 requested_review_mode 且仅 light 模式；最终值由用户在轻确认卡决定；direct/silent 传审核方式 422',
       note: '执行者不得自豁免——update_task 的可写键清单不含 review_mode',
     },
     review_conclusion: {

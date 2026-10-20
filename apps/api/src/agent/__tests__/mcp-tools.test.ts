@@ -18,7 +18,8 @@ let client: Client;
 
 /**
  * §12 + §16.1 已落地子集（9 基础 + W6 的 block_task / wait_for_resume / 技能三工具 / 策略二工具
- * + W7 的 board.* 拆解五工具 + W8-a2 的创建闭环三工具
+ * + W7 的 board.* 拆解五工具 + #4 追加的 board.get_breakdown / board.wait_for_breakdown
+ * + W8-a2 的创建闭环三工具
  * （board.create_task / get_creation_status / wait_for_confirmation，§8.7 r3）
  * + W8-a3 的 board.create_tasks_batch（§8.7 批量轻量版）
  * + B6 的 get_vocabulary（词表只读）+ §16.1 的 update_task / update_skill（全字段 PATCH：
@@ -33,9 +34,11 @@ const W6_TOOL_NAMES = [
   'board.create_task',
   'board.create_tasks_batch',
   'board.finish_breakdown',
+  'board.get_breakdown',
   'board.get_creation_status',
   'board.report_progress',
   'board.report_task_draft',
+  'board.wait_for_breakdown',
   'board.wait_for_confirmation',
   'check_mcp_policy',
   'claim_next_task',

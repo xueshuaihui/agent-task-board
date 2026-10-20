@@ -1,8 +1,8 @@
 import { useMemo, useRef, useState } from 'react';
 import { Plus, X } from 'lucide-react';
-import { qk, useApiMutation } from '@/api';
+import { qk, useApiMutation, useTaskOverview } from '@/api';
 import { navigate } from '@/app/router';
-import { Badge, Button, ErrorCopy } from '@/components/ui';
+import { Badge, Button, ErrorCopy, ErrorText } from '@/components/ui';
 import {
   SkillDetailDrawer,
   taskSkillsApi,
@@ -30,6 +30,9 @@ import type { TaskDetailView, TaskSkillRefView } from '../types';
 export function SkillsTab({ detail }: { detail: TaskDetailView }) {
   const taskId = detail.id;
   const all = useSkills();
+  // #8：父需求的技能只读展示与来源标注。hook 无条件调用，无父任务时查询自动 disabled。
+  const parentOverview = useTaskOverview(detail.parent?.id ?? null);
+  const parentDetail: TaskDetailView | undefined = parentOverview.data;
   const [detailId, setDetailId] = useState<string | undefined>(undefined);
   // 候选含 DRAFT 与 PUBLISHED（排除 ARCHIVED）：下发语义不变（后端按绑定版本下发，
   // 10.1 未限制草稿），草稿技能可先绑定、发布后生效。查询匹配交给 SkillPicker（本地零请求）。
@@ -40,6 +43,15 @@ export function SkillsTab({ detail }: { detail: TaskDetailView }) {
     [all.data?.items],
   );
   const boundIds = useMemo(() => new Set(bound.map((ref) => ref.skill_id)), [bound]);
+  const parentSkills = useMemo(() => parentDetail?.skills ?? [], [parentDetail?.skills]);
+  const parentSkillIds = useMemo(
+    () => new Set(parentSkills.map((ref) => ref.skill_id)),
+    [parentSkills],
+  );
+  const inheritedOnly = useMemo(
+    () => parentSkills.filter((ref) => !boundIds.has(ref.skill_id)),
+    [parentSkills, boundIds],
+  );
 
   const setSkills = useApiMutation(
     (refs: TaskSkillRefView[]) =>
@@ -75,7 +87,9 @@ export function SkillsTab({ detail }: { detail: TaskDetailView }) {
       <Section title="已绑定技能" meta={bound.length > 0 ? `(${bound.length})` : undefined}>
         {bound.length === 0 ? (
           <p className="text-aux text-text-tertiary">
-            未绑定技能：Agent 领取任务时不会注入任何技能（10.2）。
+            {inheritedOnly.length > 0
+              ? '任务本身未绑定技能；执行时会继承所属需求的强制技能（见下方只读小节）。'
+              : '未绑定技能：Agent 领取任务时不会注入任何技能（10.2）。'}
           </p>
         ) : (
           <ul className="flex flex-col gap-1">
@@ -84,6 +98,7 @@ export function SkillsTab({ detail }: { detail: TaskDetailView }) {
                 key={ref.skill_id}
                 refRow={ref}
                 skill={byId.get(ref.skill_id)}
+                source={parentSkillIds.has(ref.skill_id) ? 'requirement' : 'task'}
                 onOpen={() => setDetailId(ref.skill_id)}
                 onUnbind={() => save(bound.filter((row) => row.skill_id !== ref.skill_id))}
                 busy={setSkills.isPending}
@@ -92,7 +107,38 @@ export function SkillsTab({ detail }: { detail: TaskDetailView }) {
           </ul>
         )}
         {setSkills.isError ? <InlineError text={<ErrorCopy error={setSkills.error} />} /> : null}
+        {detail.parent && parentOverview.isError ? (
+          <InlineError
+            text={
+              <ErrorText
+                text="所属需求加载失败，技能来源与继承技能这一轮无法标注"
+                error={parentOverview.error}
+              />
+            }
+          />
+        ) : null}
       </Section>
+
+      {inheritedOnly.length > 0 ? (
+        <Section title="继承自需求（只读）" meta={`(${inheritedOnly.length})`}>
+          <p className="text-aux text-text-tertiary">
+            这些技能由所属需求强制注入子任务执行，领取时快照；不能在子任务里解绑，请到需求抽屉调整。
+          </p>
+          <ul className="flex flex-col gap-1">
+            {inheritedOnly.map((ref) => (
+              <li key={ref.skill_id} className="flex min-w-0 items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-body text-text-primary">
+                  {byId.get(ref.skill_id)?.name ?? ref.skill_id}
+                  <span className="ml-2 font-mono text-aux text-text-tertiary">
+                    {ref.version ?? byId.get(ref.skill_id)?.current_version ?? '—'}
+                  </span>
+                </span>
+                <Badge tone="soft">需求强制</Badge>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      ) : null}
 
       <Section title="绑定技能">
         <SkillPicker
@@ -126,12 +172,15 @@ export function SkillsTab({ detail }: { detail: TaskDetailView }) {
 function SkillRow({
   refRow,
   skill,
+  source,
   onOpen,
   onUnbind,
   busy,
 }: {
   refRow: TaskSkillRefView;
   skill: Skill | undefined;
+  /** #8：需求技能优先于任务技能，来源为需求时不允许在子任务侧解绑。 */
+  source: 'requirement' | 'task';
   onOpen: () => void;
   onUnbind: () => void;
   busy: boolean;
@@ -150,14 +199,19 @@ function SkillRow({
         </span>
       </button>
       {skill ? <SkillTypeBadge skill={skill} /> : null}
-      <Button
-        size="iconSm"
-        variant="ghost"
-        aria-label={`解绑 ${skill?.name ?? refRow.skill_id}`}
-        icon={<X className="size-3.5" />}
-        disabled={busy}
-        onClick={onUnbind}
-      />
+      <Badge tone={source === 'requirement' ? 'soft' : 'outline'}>
+        {source === 'requirement' ? '需求强制' : '任务'}
+      </Badge>
+      {source === 'task' ? (
+        <Button
+          size="iconSm"
+          variant="ghost"
+          aria-label={`解绑 ${skill?.name ?? refRow.skill_id}`}
+          icon={<X className="size-3.5" />}
+          disabled={busy}
+          onClick={onUnbind}
+        />
+      ) : null}
     </li>
   );
 }

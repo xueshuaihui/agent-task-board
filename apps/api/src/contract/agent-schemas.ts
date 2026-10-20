@@ -3,6 +3,7 @@ import {
   AGENT_CONFIRMATION_MODES,
   ARTIFACT_TYPES,
   DEFAULT_TASK_TYPES,
+  REVIEW_MODES,
   TAG_MAX_LENGTH,
   TAGS_MAX_PER_TASK,
 } from './enums';
@@ -55,15 +56,39 @@ export const claimSchema = z.object({
 });
 export type ClaimInput = z.infer<typeof claimSchema>;
 
-export const progressSchema = leaseTripleSchema.extend({
-  progress: z
-    .number()
-    .int()
-    .min(0)
-    .max(100)
-    .describe('进度百分比，0-100 整数；服务端只单调不回退'),
-  message: z.string().trim().max(500).optional().describe('一句话进度说明，展示在执行流；可省'),
-});
+/**
+ * #6：进度上报支持 message-only。`progress` 可省，但 `progress` 与 `message` 至少要给一个
+ * （两个都缺是无意义调用，422 指名怎么改）。zod 4 的 `.superRefine` 返回同一 ZodObject、
+ * `.shape` 不丢，所以 agent-tools 注册工具照旧读 shape。
+ */
+export const progressSchema = leaseTripleSchema
+  .extend({
+    progress: z
+      .number()
+      .int()
+      .min(0)
+      .max(100)
+      .optional()
+      .describe('进度百分比，0-100 整数；可省（只报一句话时只传 message）；服务端只单调不回退'),
+    message: z.string().trim().max(500).optional().describe('一句话进度说明，展示在执行流；可省'),
+  })
+  .superRefine((value, ctx) => {
+    if (value.progress === undefined && value.message === undefined) {
+      ctx.addIssue({
+        path: [],
+        code: 'custom',
+        message: '至少提供 progress 或 message 之一（仅报一句话进度时只传 message）',
+      });
+    }
+  });
+
+/**
+ * #6 执行进度节奏（认领回执、update_progress 工具描述、MCP instructions 共用同一段话）：
+ * 领取后 0-5%；阶段推进 10-90%；完成前 100%；至少每 2-3 分钟或阶段变化时上报一次；
+ * message-only 上报不算回退；heartbeat 只续租、不算进度。
+ */
+export const PROGRESS_CONTRACT =
+  '领取后先报 0-5%；每个阶段推进按 10-90% 上报；调用 complete_task 前报 100%；至少每 2-3 分钟或阶段变化时用 update_progress 上报一次（可只传 message，progress 保持不变）；heartbeat 只续租、不算进度';
 
 export const appendLogSchema = leaseTripleSchema.extend({
   /** 单次调用的行数；单 Run 累计上限 5000 行（20.8），超限由服务端做首尾保留截断。 */
@@ -542,6 +567,40 @@ export const breakdownSessionActionSchema = z.object({
 export type BreakdownSessionActionInput = z.infer<typeof breakdownSessionActionSchema>;
 
 /**
+ * #4 `board.get_breakdown`：读取拆解会话全量状态（session + drafts + progress +
+ * skill_resolution）。重生成之后 Agent 先看最新草案再决定重报内容。
+ */
+export const breakdownGetSchema = z.object({
+  session_id: breakdownSessionId.describe(
+    '拆解会话 ID（begin_breakdown 返回的 UUID）；返回 session/drafts/progress/skill_resolution，草案含 regeneration_note/requested_at',
+  ),
+});
+export type BreakdownGetInput = z.infer<typeof breakdownGetSchema>;
+
+/**
+ * #4 `board.wait_for_breakdown`：finish 之后的长轮询，等用户确认 / 重生成 / 编辑 / 取消。
+ * after_revision 是调用方最后看到的 revision（finish 响应或上次 wait 返回）；省略则从
+ * 本次调用开始监听下一次变化。timeout_seconds 的 zod 面 5..55，服务层兜底 1..55。
+ */
+export const breakdownWaitSchema = z.object({
+  session_id: breakdownSessionId,
+  after_revision: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe('你最后看到的 revision（finish 响应/上次 wait 返回）。省略则从现在开始等下一次变化'),
+  timeout_seconds: z
+    .number()
+    .int()
+    .min(5)
+    .max(55)
+    .optional()
+    .describe('长轮询时长，默认 25 秒；服务端上限 55 秒'),
+});
+export type BreakdownWaitInput = z.infer<typeof breakdownWaitSchema>;
+
+/**
  * v0.0.4 W8 §8.7 `board.create_task` 入参（样例 JSON 的契约化）。
  * session_id 必填：§8.7 闭环语义要求每次 create_task 都在事务内按 session_id
  * upsert `agent_sessions` 并落 `task_creation_logs`，没有会话标识就无处记账。
@@ -558,6 +617,16 @@ export const createTaskSchema = z.object({
     .nullable()
     .describe('任务描述（≤20000 字符）：背景、验收标准、相关文件路径；可省，建议写'),
   group_id: idParam.optional().nullable().describe('归属分组 ID（grp_ 前缀）；缺省进「默认」分组（grp_default）'),
+  parent_task_id: idParam
+    .optional()
+    .nullable()
+    .describe('归属需求 ID：必须是未归档的「需求」类型顶层任务（层级最多两层）；缺省=不挂需求'),
+  requested_review_mode: z
+    .enum(REVIEW_MODES)
+    .optional()
+    .describe(
+      '向用户请求的审核方式（仅 light 模式允许）：human=人工审核 / none=免审核；最终由用户在轻确认卡决定。direct/silent 传本字段 422。不要传 review_mode',
+    ),
   type: z.string().trim().min(1).max(16).describe(CREATE_TASK_TYPE_DESC),
   priority: z
     .number()

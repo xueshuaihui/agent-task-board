@@ -34,8 +34,10 @@ export function keysForEvent(frame: WsFrame): readonly (readonly unknown[])[] {
     case 'breakdown.task_draft':
     case 'breakdown.finished':
     case 'breakdown.cancelled':
-      // v0.0.4 W7 §16.3 拆解五条：载荷带 session_id/ref 也只当失效信号，
-      // 会话列表与打开着的详情回 GET 拿真相（confirm 建的 task.created 走 default 分支刷看板）。
+    case 'breakdown.revision_requested':
+      // v0.0.4 W7 §16.3 拆解五条 + #4 `breakdown.revision_requested` 共六条：
+      // 载荷带 session_id/ref/note 也只当失效信号，会话列表与打开着的详情回 GET
+      // 拿真相（confirm 建的 task.created 走 default 分支刷看板）。
       return [qk.breakdownRoot];
     case 'agent.task_requested':
       // v0.0.4 W8 §8.7 r3 的例外：这条事件的载荷就是轻确认卡片本体（CreationRequestView），
@@ -88,7 +90,7 @@ export function refreshAfterReconnect(queryClient: QueryClient): void {
   void queryClient.invalidateQueries({ queryKey: qk.notificationsRoot, refetchType: 'active' });
   // W4：断线期间错过 group.archived/unarchived 时，分组集合（含归档折叠区）也要回服务端真相。
   void queryClient.invalidateQueries({ queryKey: qk.groupsRoot, refetchType: 'active' });
-  // W7：同理，断线期间错过的 breakdown.* 五条不补发——拆解会话列表与打开着的确认页一起重取。
+  // W7：同理，断线期间错过的 breakdown.* 六条（含 #4 重生成请求）不补发——拆解会话列表与打开着的确认页一起重取。
   void queryClient.invalidateQueries({ queryKey: qk.breakdownRoot, refetchType: 'active' });
   // W8 §8.7：断线期间漏掉的 `agent.task_requested` 靠 GET /creation-requests 补齐（含未决卡片）。
   void queryClient.invalidateQueries({ queryKey: qk.creationRoot, refetchType: 'active' });

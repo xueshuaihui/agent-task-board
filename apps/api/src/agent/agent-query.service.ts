@@ -12,9 +12,19 @@ import {
   buildTaskPayload,
   groupDependencies,
   toReviewFeedback,
+  type AgentEffectiveSkillPayload,
+  type AgentRequirementPayload,
   type AgentTaskPayload,
   type ReviewFeedbackItem,
 } from './agent-task.dto';
+import {
+  buildRequirementSnapshot,
+  hasExecutionRules,
+  mergeSkillRefs,
+  REQUIREMENT_TASK_TYPE,
+  type EffectiveSkillRef,
+  type RequirementParent,
+} from './requirement-context';
 
 type DependencyRow = { id: string; depends_on: string; type: string; title: string };
 
@@ -45,12 +55,34 @@ export class AgentQueryService {
   async payload(taskId: string): Promise<AgentTaskPayload> {
     const task = await this.prisma.task.findUnique({ where: { id: taskId } });
     if (!task) throw new ApiException('TASK_GONE', '任务已删除');
+    // #8：父任务即所属需求；合并口径只走 requirement-context 这一份（与 claim 快照同源）。
+    const snapshot = buildRequirementSnapshot(
+      task.skills,
+      await this.requirementParent(task.parentTaskId),
+    );
+
+    // 10.3：技能随任务下发（绑定引用补全为带内容的载荷）。
+    const taskSkills = await this.skillsService.resolveForTask(task.skills);
+    const requirementSkills = snapshot.requirement
+      ? await this.skillsService.resolveForTask(JSON.stringify(snapshot.requirement.skills))
+      : [];
+    const requirement: AgentRequirementPayload | null = snapshot.requirement
+      ? {
+          id: snapshot.requirement.id,
+          title: snapshot.requirement.title,
+          execution_rules: snapshot.requirement.execution_rules,
+          execution_rules_updated_at: snapshot.requirement.execution_rules_updated_at,
+          skills: requirementSkills,
+        }
+      : null;
+
     return buildTaskPayload(
       task,
       await this.deps(taskId),
       toReviewFeedback(await this.reviews(taskId, 5)),
-      // 10.3：技能随任务下发（绑定引用补全为带内容的载荷）。
-      await this.skillsService.resolveForTask(task.skills),
+      taskSkills,
+      requirement,
+      await this.resolveEffectiveSkills(snapshot.effective_skills),
     );
   }
 
@@ -58,6 +90,14 @@ export class AgentQueryService {
   async summary(taskId: string) {
     const task = await this.prisma.task.findUnique({ where: { id: taskId } });
     if (!task) throw new ApiException('TASK_GONE', '任务已删除');
+    // #8：摘要只带父需求的标识与「有没有规则」，规则全文留给 get_task/claim 载荷。
+    const parent = task.parentTaskId
+      ? await this.prisma.task.findUnique({
+          where: { id: task.parentTaskId },
+          select: { id: true, title: true, type: true, skills: true, executionRules: true },
+        })
+      : null;
+    const requirement = parent && parent.type === REQUIREMENT_TASK_TYPE ? parent : null;
     return {
       id: task.id,
       title: task.title,
@@ -71,8 +111,52 @@ export class AgentQueryService {
       required_capabilities: parseJsonArray(task.requiredCapabilities),
       // 10.3：ready 列表同样带技能载荷（Agent 决定领不领时就要看能力/依赖声明）。
       skills: await this.skillsService.resolveForTask(task.skills),
+      // #8：所属需求与规则有无；无父需求一律 null/null/false。
+      requirement_id: requirement?.id ?? null,
+      requirement_title: requirement?.title ?? null,
+      has_execution_rules: hasExecutionRules(requirement?.executionRules),
+      /** #8：合并后的技能 id 清单（需求优先），够 Agent 判断要不要细读载荷。 */
+      effective_skill_ids: mergeSkillRefs(
+        task.skills,
+        requirement ? requirement.skills : null,
+      ).map((ref) => ref.skill_id),
       created_at: toIso(task.createdAt),
     };
+  }
+
+  /** #8：父任务行按 buildRequirementSnapshot 需要的列取（缺列会在类型上暴露）。 */
+  private async requirementParent(parentTaskId: string | null): Promise<RequirementParent | null> {
+    if (!parentTaskId) return null;
+    return this.prisma.task.findUnique({
+      where: { id: parentTaskId },
+      select: {
+        id: true,
+        title: true,
+        type: true,
+        skills: true,
+        executionRules: true,
+        executionRulesUpdatedAt: true,
+      },
+    });
+  }
+
+  /**
+   * 有效技能引用 → 带内容/版本的载荷，并按 ref 表补 `source`。
+   * resolveForTask 对已失效技能是跳过而不是报错；这里同样跳过（与旧 `skills` 的宽容口径一致），
+   * 不以「解析丢项」为由让整个任务载荷失败。
+   */
+  private async resolveEffectiveSkills(
+    refs: EffectiveSkillRef[],
+  ): Promise<AgentEffectiveSkillPayload[]> {
+    const resolved = await this.skillsService.resolveForTask(JSON.stringify(refs));
+    const sourceById = new Map(refs.map((ref) => [ref.skill_id, ref.source] as const));
+    const payloads: AgentEffectiveSkillPayload[] = [];
+    for (const payload of resolved) {
+      const source = sourceById.get(payload.skill_id);
+      if (!source) continue;
+      payloads.push({ ...payload, source });
+    }
+    return payloads;
   }
 
   private async reviews(taskId: string, limit: number): Promise<Review[]> {

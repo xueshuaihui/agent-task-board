@@ -86,6 +86,8 @@ export const ERROR_CODE_COPY: Record<ErrorCode, string> = {
   BREAKDOWN_BAD_STATE: '拆解会话状态已变化，请刷新后重试',
   // v0.0.4 W7 遗留 b3 §7.4：显式带的 ref 在会话内已占用。
   BREAKDOWN_DRAFT_REF_TAKEN: '该编号在本次拆解会话里已被占用，请换一个',
+  // #4 重生成闭环：草案还在等 Agent 重报，确认会被服务端拒绝。
+  BREAKDOWN_REGENERATION_PENDING: '有草案正在等待重新生成，请等 Agent 重报或先取消会话',
   // v0.0.4 W8 §8.7 r3：卡片终态就地收口用（界面自己出文案，不走通用 Toast），兜底给一行说明。
   CREATION_REQUEST_RESOLVED: '该创建请求已终结，决策未生效',
   // 8.8：本期不实现的远程技能源。

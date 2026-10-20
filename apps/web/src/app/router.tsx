@@ -17,6 +17,9 @@ export const ROUTES = {
   // r6（§19.15·87，2026-09-28）：「分组」概念从 UI 整体下线，第二导航项改「需求」，
   // 页面主体是 type=需求 的任务列表（features/requirements/requirements-page.tsx）。
   requirements: { path: '/requirements', label: '需求' },
+  // #4.3 方案 B（2026-10）：拆解是需求下的二级页面（`#/requirements/breakdown`），
+  // 不进左侧主导航（`NAV_ORDER` 不变）；覆盖层仍负责未处理会话的快捷入口。
+  breakdown: { path: '/requirements/breakdown', label: '拆解' },
   review: { path: '/review', label: '审核' },
   // 0919 十四章 IA：任务列表不再占顶栏入口，但路由保留（看板工具栏「列表视图」跳这里）。
   tasks: { path: '/tasks', label: '任务' },

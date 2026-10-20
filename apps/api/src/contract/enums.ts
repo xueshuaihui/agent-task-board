@@ -138,6 +138,9 @@ export const AUDIT_ACTIONS = [
   // v0.0.4 W7 §7.2 阶段 7：拆解会话的两个用户动作（确认创建 / 取消）。
   'breakdown_confirm',
   'breakdown_cancel',
+  // #4 重生成闭环：用户把整份 reviewing 会话退回 receiving 重新拆解（单草案重生成走
+  // task_draft 既有读面，不单列审计动作）。
+  'breakdown_regenerate',
   // W7 遗留 b2 §7.7/20.3-10：定时收敛与 confirm 兜底把超期会话标 interrupted 的系统动作。
   'breakdown_timeout',
 ] as const;

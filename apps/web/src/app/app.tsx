@@ -2,6 +2,7 @@ import { useEffect, type ComponentType } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { useSettings } from '@/api';
 import { BoardPage } from '@/features/board';
+import { BreakdownPage } from '@/features/breakdown';
 import { RequirementsPage } from '@/features/requirements/requirements-page';
 import { ReviewPage } from '@/features/review';
 import { SettingsPage } from '@/features/settings';
@@ -34,6 +35,8 @@ import { NotificationCenter } from './notification-center';
 const PAGES: Record<RouteName, ComponentType> = {
   board: BoardPage,
   requirements: RequirementsPage,
+  // #4.3 方案 B：拆解二级页面（`#/requirements/breakdown`），不在左侧主导航里。
+  breakdown: BreakdownPage,
   review: ReviewPage,
   tasks: TaskListPage,
   skills: SkillLibraryPage,

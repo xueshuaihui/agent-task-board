@@ -8,7 +8,7 @@ import {
   STATUS_LABEL,
   type TaskStatus,
 } from '../contract/enums';
-import { durationMs, nowSql } from '../contract/time';
+import { durationMs, nowSql, toIso } from '../contract/time';
 import { newId } from '../contract/ids';
 import { parseJsonObject } from '../tasks/task.dto';
 import type { TaskDetailDto } from '../tasks/task.dto';
@@ -96,6 +96,41 @@ export class WritebackService {
     if (!task) {
       throw new ApiException('NOT_FOUND', '任务不存在', undefined, { task_id: input.task_id });
     }
+    // #8 权限守卫一：Agent 不得改任务归属。`parent_task_id` 虽在 `updateTaskSchema` 的可写键里
+    // （与 REST 共用基底派生），但它决定任务挂在哪个需求下，属于人对任务结构的调整；
+    // 守卫必须留在服务层——MCP 之外直连 `updateTask` 的通道也绕不过去。
+    if (input.parent_task_id !== undefined) {
+      throw new ApiException(
+        'VALIDATION_FAILED',
+        `Agent 不能修改任务 ${task.id} 的归属（parent_task_id）：挂到需求 / 脱离需求只能由用户在 UI 中调整`,
+        [
+          {
+            path: 'parent_task_id',
+            code: 'forbidden',
+            message: '任务归属只能由用户在 UI 中调整（挂到需求或脱离需求），update_task 不支持该字段',
+          },
+        ],
+        { task_id: task.id, status: task.status },
+      );
+    }
+    // #8 权限守卫二：需求的类型与强制技能属于用户写面（需求抽屉）。子任务仍可改自己的 skills
+    // （继承场景下修正绑定），这里只拦 `type='需求'` 这一行本身。
+    if (task.type === '需求' && (input.type !== undefined || input.skills !== undefined)) {
+      const details = [
+        ...(input.type !== undefined
+          ? [{ path: 'type', code: 'forbidden', message: '需求的类型只能由用户在需求抽屉修改' }]
+          : []),
+        ...(input.skills !== undefined
+          ? [{ path: 'skills', code: 'forbidden', message: '需求的强制技能只能由用户在需求抽屉修改' }]
+          : []),
+      ];
+      throw new ApiException(
+        'VALIDATION_FAILED',
+        `任务 ${task.id} 是需求：需求的类型与强制技能只能由用户在需求抽屉中修改（update_task 不能改 type / skills）`,
+        details,
+        { task_id: task.id, status: task.status, type: task.type },
+      );
+    }
     const patch = taskPatchFromUpdateInput(input);
 
     if (task.status === 'RUNNING') {
@@ -149,24 +184,51 @@ export class WritebackService {
     return this.tasks.patchAsAgent(task.id, patch, agent.tokenName);
   }
 
+  /**
+   * #6：进度上报支持 message-only 与服务端单调钳制。
+   *
+   *  - `progress` 可省：只传 `message` 时进度保持当前值（首次上报前可能是 null）。
+   *  - 单调：传入值低于当前值时按当前值落库并回 `clamped: true`，进度永不回退。
+   *  - `message` 只在传入时覆盖：progress-only 不得清空旧消息。
+   *  - 每次上报（无论带不带 progress）都刷新 `progress_updated_at`——
+   *    它回答的是「最近一次上报是什么时候」，消息型上报同样算一次。
+   */
   async updateProgress(input: ProgressInput, auth: RequestAuth) {
     const verdict = await this.leases.verify(input, auth);
+    const now = nowSql();
+    const currentProgress = verdict.run.progress ?? null;
+    const effectiveProgress =
+      input.progress === undefined ? currentProgress : Math.max(currentProgress ?? 0, input.progress);
+    const clamped = input.progress !== undefined && input.progress < (currentProgress ?? 0);
+    const effectiveMessage =
+      input.message !== undefined ? input.message : verdict.run.progressMsg;
+
     await this.prisma.taskRun.update({
       where: { id: verdict.run.id },
-      data: { progress: input.progress, progressMsg: input.message ?? null },
+      data: {
+        progress: effectiveProgress,
+        progressMsg: effectiveMessage,
+        progressUpdatedAt: now,
+      },
     });
     this.events.emit('run.progress', {
       task_id: verdict.task.id,
       run_id: verdict.run.id,
-      progress: input.progress,
-      message: input.message ?? null,
+      progress: effectiveProgress,
+      message: effectiveMessage,
+      progress_updated_at: toIso(now),
+      clamped,
     });
     this.events.emit('task.updated', { id: verdict.task.id });
     return {
       task_id: verdict.task.id,
       run_id: verdict.run.id,
-      progress: input.progress,
-      message: input.message ?? null,
+      // 兼容旧读法：progress 恒为真实生效值（不是入参原值）。
+      progress: effectiveProgress,
+      effective_progress: effectiveProgress,
+      clamped,
+      message: effectiveMessage,
+      progress_updated_at: toIso(now),
       orphaned: verdict.kind === 'orphan',
     };
   }

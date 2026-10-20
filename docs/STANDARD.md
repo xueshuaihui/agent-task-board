@@ -1,8 +1,8 @@
 # 贾维斯工作台（Jarvis Workbench）唯一标准文档
 
-**版本**: v0.0.4-beta.12  
-**更新日期**: 2026-10-18  
-**状态**: 主分支稳定，beta.12 批次（技能发现面重做：精简目录 / 打分候选 / 按名取正文）
+**版本**: v0.0.4-beta.13  
+**更新日期**: 2026-10-21  
+**状态**: 主分支稳定，beta.13 批次（#4–#8：拆解重生成闭环 / Agent 审核方式请求 / 进度契约 / 流程图运行态 / 需求执行规则）
 
 ---
 
@@ -171,9 +171,11 @@ apps/
 | group_id | TEXT FK | 归属分组 |
 | parent_task_id | TEXT FK | 父需求 ID |
 | tags | TEXT JSON | 标签数组 |
-| skills | TEXT JSON | 技能绑定 `[{skill_id, version}]` |
+| skills | TEXT JSON | 技能绑定 `[{skill_id, version}]`；需求任务上即「强制技能」 |
 | custom_fields | TEXT JSON | 自定义字段 |
 | review_mode | TEXT | 审核方式（human/none） |
+| execution_rules | TEXT | 需求级执行规则（≤20000 字；仅用户 REST create/PATCH 可写，Agent 不可写） |
+| execution_rules_updated_at | TEXT | 规则最后更新时间（仅用户改规则时刷新） |
 | archived_at | TEXT | 归档时间戳 |
 | current_run_id | TEXT | 当前执行 Run ID |
 | lease_id | TEXT | 当前租约 ID |
@@ -193,6 +195,9 @@ apps/
 | lease_expires_at | TEXT | 租约过期时间 |
 | started_at | TEXT | 开始时间 |
 | completed_at | TEXT | 完成时间 |
+| progress_updated_at | TEXT | 最后一次进度上报时间（message-only 也刷新） |
+| rules_snapshot | TEXT JSON | claim 时冻结的需求规则 / 技能快照 |
+| rules_digest | TEXT | 规则快照 SHA-256（与 claim 回执 `rules_digest` 同值） |
 
 #### TaskDependency（任务依赖）
 
@@ -237,6 +242,13 @@ apps/
 | is_default | INT | 是否默认分组 |
 | archived_at | TEXT | 归档时间戳 |
 
+#### 拆解会话补充列（0024）
+
+| 表 | 字段 | 说明 |
+|----|------|------|
+| breakdown_sessions | revision / revision_note / revision_requested_at | 重生成轮次（每次 +1）、用户改写说明、请求时刻 |
+| breakdown_drafts | regeneration_pending / regeneration_note / regeneration_requested_at | 待 Agent 重报标记 / 说明 / 时刻；旧 `depends_on` JSON 哨兵已迁移 |
+
 ### 4.2 索引策略
 
 - `tasks.status`：状态过滤
@@ -244,6 +256,7 @@ apps/
 - `tasks.parent_task_id`：子任务查询
 - `tasks.archived_at`：归档筛选
 - `task_dependencies.task_id`：依赖查询
+- `breakdown_sessions.parent_task_id`：按需求反查拆解会话 / 历史过滤（0024）
 
 ---
 
@@ -323,10 +336,10 @@ BLOCKED → READY（人工处理后转回）
 
 | 工具名 | 说明 | 入参 |
 |--------|------|------|
-| `list_ready_tasks` | 查询可领取任务 | limit, types, capabilities |
+| `list_ready_tasks` | 查询可领取任务（摘要带 `requirement_id/requirement_title/has_execution_rules`，规则全文走 `get_task`） | limit, types, capabilities |
 | `claim_next_task` | 原子认领下一个任务 | types, capabilities |
-| `get_task` | 获取任务详情 | task_id |
-| `update_progress` | 更新进度 | task_id, run_id, lease_id, step, total |
+| `get_task` | 获取任务详情（含 `requirement.execution_rules` / `requirement.skills` 与 `effective_skills`；后者带 `source=requirement/task`） | task_id |
+| `update_progress` | 更新进度（`message` 单报合法；`progress` 单调钳制、不回退，返回 `effective_progress/clamped`；每次上报刷新 `progress_updated_at`） | task_id, run_id, lease_id, progress?, message? |
 | `append_log` | 追加日志 | task_id, run_id, lease_id, lines |
 | `complete_task` | 完成任务 | task_id, run_id, lease_id, artifacts |
 | `fail_task` | 失败上报 | task_id, run_id, lease_id, reason |
@@ -335,6 +348,8 @@ BLOCKED → READY（人工处理后转回）
 | `block_task` | 上报人工阻塞 | task_id, run_id, lease_id, reason |
 | `wait_for_resume` | 等待人工处理完成 | task_id, timeout_seconds |
 | `update_task` | 全字段 PATCH 编辑 | task_id, [字段...] |
+
+> **进度节奏（#6）**：领取后先报 0–5%；阶段推进按 10–90% 上报；`complete_task` 前报 100%；至少每 2–3 分钟或阶段变化时上报一次（可只传 `message`）；`heartbeat` 只续租，不算进度。
 
 ### 7.3 技能工具
 
@@ -355,6 +370,10 @@ BLOCKED → READY（人工处理后转回）
 | `board.report_task_draft` | 上报单个任务草案 |
 | `board.finish_breakdown` | 完成拆解，依赖校验 |
 | `board.cancel_breakdown` | 取消拆解会话 |
+| `board.get_breakdown` | 读取拆解会话全量状态（session/drafts/progress/skill_resolution，含 revision 与重生成说明） |
+| `board.wait_for_breakdown` | finish 后长轮询用户动作（确认/重生成/编辑/取消），返回 action/refs/note/revision |
+
+> `board.finish_breakdown` 返回 `session.revision`，作为 `board.wait_for_breakdown` 的 `after_revision`；reviewing 期只有待重报 ref 能通过 `board.report_task_draft` 重报，其余 ref 回 409。
 
 ### 7.5 创建工具（board.*）
 
@@ -364,6 +383,10 @@ BLOCKED → READY（人工处理后转回）
 | `board.create_tasks_batch` | 批量创建任务（≤20 条） |
 | `board.get_creation_status` | 轮询创建请求结果 |
 | `board.wait_for_confirmation` | 阻塞等待轻确认决策 |
+
+> **#5 字段与限制**：`board.create_task` / `board.create_tasks_batch`（单条字段同）新增 `parent_task_id` 与 `requested_review_mode`。`requested_review_mode` 仅 light 模式可传（human/none），最终值由用户在轻确认卡决定；direct/silent 传了回 422。Agent 直接传 `review_mode` / `reviewMode` 一律 422（Q4：执行者不得自豁免）。
+>
+> creation 视图返回 `parent_task_id/requested_review_mode/review_mode`；决策 payload 可带 `review_mode/parent_task_id`，编辑弹窗可选 human/none，最终值以用户选择为准。
 
 ### 7.6 策略工具
 
@@ -398,6 +421,8 @@ BLOCKED → READY（人工处理后转回）
 | POST | `/api/v1/tasks/batch/transition` | 批量状态转换 |
 | POST | `/api/v1/tasks/batch/archive` | 批量归档 |
 | POST | `/api/v1/tasks/batch/tags` | 批量打标签 |
+
+> #8：`POST /tasks` 与 `PATCH /tasks/:id` 额外接受 `execution_rules`（≤20000 字，仅 UI 凭证组）；`PATCH` 传 null / 空白串清空规则。Agent 的 `update_task` 不可写该字段。
 
 ### 8.2 依赖端点
 
@@ -441,6 +466,30 @@ BLOCKED → READY（人工处理后转回）
 | POST | `/api/v1/data/export` | 导出数据（JSON/CSV） |
 | POST | `/api/v1/data/import` | 导入数据（JSON） |
 
+### 8.7 拆解端点（UI 凭证组）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/breakdown/sessions` | 会话列表；query：`scope=active\|history\|all`（默认 all）、`include_archived`（默认 false）、`requirement_id`、`limit`（默认 100，上限 500）、`cursor`（上一页最后一条会话 id）；行含 `revision/revision_note/revision_requested_at/parent_archived_at` |
+| GET | `/api/v1/breakdown/sessions/:id` | 会话详情（session + drafts + progress + skill_resolution） |
+| POST | `/api/v1/breakdown/sessions/:id/confirm` | 确认创建（仅 reviewing；有待重报草案回 409 `BREAKDOWN_REGENERATION_PENDING`） |
+| POST | `/api/v1/breakdown/sessions/:id/cancel` | 取消（receiving / reviewing） |
+| POST | `/api/v1/breakdown/sessions/:id/regenerate` | 整份重新生成（body `{note?}`；reviewing→receiving，所有草案挂待重报） |
+| POST | `/api/v1/breakdown/sessions/:id/drafts` | 添加草案（`ref` 可省略，服务端取号） |
+| PATCH | `/api/v1/breakdown/sessions/:id/drafts/:ref` | 修改草案（标题 / 描述 / 优先级 / 技能 / 验收 / 依赖边） |
+| DELETE | `/api/v1/breakdown/sessions/:id/drafts/:ref` | 删除草案（级联清悬空 `depends_on`） |
+| POST | `/api/v1/breakdown/sessions/:id/drafts/:ref/regenerate` | 单条重新生成（body `{note?}`，重置为待 Agent 重报） |
+
+> 用户侧写端点仅 reviewing 可写；每次写命中让会话 `revision+1`。`scope` 中 active = receiving/reviewing/creating，history = completed/cancelled/interrupted。
+
+### 8.8 创建请求端点（creation-requests）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/creation-requests` | 待决创建请求列表 |
+| POST | `/api/v1/creation-requests` | 生成待决请求：`title/description/group_id/type/priority/tags/skills/parent_task_id/requested_review_mode`；用户面可带 `review_mode`（Agent 只能请求，不能决定）；`session_id` 可省 |
+| POST | `/api/v1/creation-requests/:id/decision` | 决策 `create/edit/cancel`；`edit` 必须带 payload（可含 `review_mode/parent_task_id`），非 edit 带 payload 回 422 |
+
 ---
 
 ## 9. 前端特性
@@ -452,6 +501,8 @@ BLOCKED → READY（人工处理后转回）
 - **分组筛选**：按分组过滤卡片
 - **需求过滤**：只看某需求下的子任务
 - **置顶标记**：pinned 任务始终在列顶部
+- **执行中进度**：卡片显示当前进度与一句话说明；`progress` 为空时显示「等待 Agent 上报进度」的不确定态
+- **流程图运行态**：仅 RUNNING 节点呼吸光晕 / 流动虚线描边，相邻 `blocks` 连线流动；同屏 RUNNING >20 关闭连线动画；`prefers-reduced-motion` 下全部静止
 
 ### 9.2 任务列表
 
@@ -482,6 +533,13 @@ BLOCKED → READY（人工处理后转回）
 - **最小窗口宽度**：960px
 - **三档断点**：窄（<1200px）、中（1200-1600px）、宽（>1600px）
 - **窗口状态记忆**：记住上次关闭时的窗口尺寸与位置
+
+### 9.6 需求、拆解与执行规则（#4 / #8）
+
+- **拆解二级页面**：`#/requirements/breakdown`，不在左侧主导航；覆盖层保留为未处理会话的快捷入口。需求页头部「拆解记录」进页面，需求菜单「拆解历史」带 `?requirement=<id>` 过滤。
+- **进行中 / 历史**：`scope=active|history` + `include_archived`（默认不含父需求已归档的会话）+ 需求过滤；历史段 cursor 分页、只读。
+- **重生成闭环**：确认页可对单条草案或整份会话发起重新生成（可填说明）；单条重生成后待 Agent 重报期间 `confirm` 回 409 `BREAKDOWN_REGENERATION_PENDING`；整份重生成回 receiving，`finish` 同样硬性拒绝未重报草案，Agent 须逐条重报后再收尾。
+- **需求执行规则**：需求抽屉「执行规则」Tab 分「执行规则」（≤20000 字）与「强制技能」两个独立保存动作；需求卡显示「有执行规则」徽标；子任务详情「继承自需求（强制）」只读块，技能来源标注需求 / 任务。
 
 ---
 
@@ -525,7 +583,7 @@ npm run tauri build
 ### 10.3 发版流程
 
 1. **代码冻结**：确保 main 分支绿色（CI 全绿）
-2. **打 Tag**：`git tag -a v0.0.4-beta.12 -m "..." && git push origin v0.0.4-beta.12`
+2. **打 Tag**：`git tag -a v0.0.4-beta.13 -m "..." && git push origin v0.0.4-beta.13`
 3. **CI 自动构建**：GitHub Actions 自动构建三平台安装包
 4. **发布 Release**：上传 DMG/EXE 到 GitHub Releases
 5. **真机验证**：按 `docs/v0.0.4/beta真机验证清单.md` 逐项验收
@@ -543,10 +601,10 @@ npx prisma migrate deploy
 
 ### 10.5 当前版本水位
 
-- **最新 Tag**：v0.0.4-beta.12（批次：技能发现面重做——list 精简目录 / search 打分候选 / get 按名取正文）
-- **迁移版本**：0023（拆掉 Agent 审核链）
-- **API 代码行数**：215 文件 / 40617 行（含测试）
-- **Web 代码行数**：264 文件 / 45158 行（含测试）
+- **最新 Tag**：v0.0.4-beta.13（批次：#4–#8 收口——拆解重生成闭环 / Agent 审核方式请求 / 进度契约 / 流程图运行态 / 需求执行规则）
+- **迁移版本**：0024（拆解重生成 / 需求执行规则 / 进度与规则快照）
+- **API 代码行数**：223 文件 / 43773 行（含测试）
+- **Web 代码行数**：280 文件 / 48063 行（含测试）
 
 ---
 
@@ -586,6 +644,7 @@ npx prisma migrate deploy
 |`GROUP_ARCHIVED`|409|§5\.6 归档分组转只读：不能再向该组建任务或把任务移进来，`context.group_id` 指名分组|UI / Agent|
 |`BREAKDOWN_BAD_STATE`|409|§7\.7 拆解动作从表外状态发起（`confirm` 只允许 `reviewing`，`cancel` 只允许 `receiving`／`reviewing`）。`context` 带 `session_id/status/allowed`|Agent / UI|
 |`BREAKDOWN_DRAFT_REF_TAKEN`|409|§7\.4 用户侧「添加任务」显式带的 `ref` 在本会话内已占用（`UNIQUE(session_id, ref)`）。不传 `ref` 由服务端自动取号，走不到这一条。`context` 带 `session_id/ref`|Agent|
+|`BREAKDOWN_REGENERATION_PENDING`|409|#4 重生成闭环：存在待重新生成的草案时 `confirm` 与 `finish` 都被硬性拒绝（单草案重生成后未重报走 `confirm`；整份重生成后未逐条重报走 `finish`）。`context` 带 `session_id/refs`|UI / Agent|
 |`CREATION_REQUEST_RESOLVED`|409|§8\.7 r3 轻确认决策回传时请求已终结（已建／已取消／已超时含 30s＋5s 宽限）。`context.status` 带归宿，界面据此就地收口卡片|Agent|
 |`NOT_IMPLEMENTED`|501|§8\.8 技能源：git／http 远程源本期不实现|UI|
 |`DATA_STILL_REFERENCED`|409|2026\-09\-29「报错全部细化」：删除／更新撞上外键，且该外键不是 `CASCADE`（`ON DELETE` 动作为 `NO ACTION`／`SET NULL` 时走不到这里）。业务护栏本该先挡住（见 `ARCHIVE_BLOCKED_BY_DEPENDENCY`／`FIELD_IN_USE`），出现这一枚说明调用方绕过了护栏或库里存在设计外的引用者。`context` 带 `model/detail`|全部|

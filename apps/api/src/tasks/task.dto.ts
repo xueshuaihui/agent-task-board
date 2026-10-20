@@ -45,12 +45,19 @@ export interface TaskRawRow {
    * 读侧回落默认 'human'，与迁移里 `DEFAULT 'human'` 同一个口径）。
    */
   review_mode?: string | null;
+  /** #6：当前 Run 的最后一次进度上报时间（0024 新列；建列前的测试行可缺省）。 */
+  progress_updated_at?: string | null;
+  /** #8：需求级执行规则与规则更新时间（0024 新列；建列前的测试行可缺省）。 */
+  execution_rules?: string | null;
+  execution_rules_updated_at?: string | null;
 }
 
 /** tasks 行 + 卡片需要的聚合列（当前 Run 的进度、阻塞数、产物数、上一次时长）。 */
 export type TaskRow = TaskRawRow & {
   progress: number | null;
   progress_msg: string | null;
+  /** #6：当前 Run 最后一次进度上报时间（库内 SQL 文本，出参转 ISO）。 */
+  progress_updated_at: string | null;
   agent_name: string | null;
   /** SQLite 的 COUNT() 经原生查询回来是 BigInt，不进 JSON 前先降回 number。 */
   blocked_count: number | bigint | null;
@@ -72,7 +79,7 @@ export function toNumOrNull(
   return Number(value);
 }
 
-export const TASK_ROW_COLUMNS = `t.*, r.progress, r.progress_msg, r.agent_name,
+export const TASK_ROW_COLUMNS = `t.*, r.progress, r.progress_msg, r.progress_updated_at, r.agent_name,
   (SELECT COUNT(*) FROM task_dependencies d JOIN tasks dep ON dep.id = d.depends_on
     WHERE d.task_id = t.id AND d.type = 'blocks' AND dep.status != 'DONE') AS blocked_count,
   (SELECT COUNT(*) FROM artifacts a WHERE a.task_id = t.id) AS artifact_count,
@@ -114,6 +121,8 @@ export interface TaskCardDto {
   status_label: string;
   progress: number | null;
   progress_msg: string | null;
+  /** #6：最后一次进度上报时间（ISO；从未上报为 null）。 */
+  progress_updated_at: string | null;
   lease_expires_at: string | null;
   agent_name: string | null;
   run_count: number;
@@ -133,6 +142,11 @@ export interface TaskCardDto {
    * 看板角标读它决定是否显示「免审核」标记。审核轨道 `review_track` 随整链移除下线。
    */
   review_mode: ReviewMode;
+  /**
+   * #8：卡片只带「有没有规则」的布尔（规则全文最长 20000 字符，列表/看板不背全文）；
+   * 详情抽屉另给 `execution_rules` 全文与更新时间。
+   */
+  has_execution_rules: boolean;
 }
 
 export interface TaskDetailDto extends TaskCardDto {
@@ -157,6 +171,10 @@ export interface TaskDetailDto extends TaskCardDto {
     sort_order: number;
   }[];
   aggregate?: { total: number; done: number; status: 'DONE' | 'BACKLOG' | 'IN_PROGRESS' } | null;
+  /** #8：需求级强制规则全文（仅详情返回；卡片只给 `has_execution_rules`）。 */
+  execution_rules: string | null;
+  /** #8：规则最后一次由用户改动的时间（ISO；从未填过为 null）。 */
+  execution_rules_updated_at: string | null;
 }
 
 /** 聚合状态：全 DONE → DONE；全 BACKLOG → BACKLOG；其余一律 IN_PROGRESS。 */
@@ -245,6 +263,7 @@ export function toCardDto(
     status_label: statusLabel(row.status, extra.reportUnknownEnum),
     progress: toNumOrNull(row.progress),
     progress_msg: row.progress_msg ?? null,
+    progress_updated_at: toIso(row.progress_updated_at),
     lease_expires_at: toIso(row.lease_expires_at),
     agent_name: row.agent_name ?? null,
     run_count: toNum(row.run_count),
@@ -262,5 +281,7 @@ export function toCardDto(
     origin_type: row.origin_type ?? 'user',
     // 缺列只可能是 0020 之前造的测试行：回落库默认值，不凭空造第三种口径（同 origin_type）。
     review_mode: (row.review_mode ?? 'human') as ReviewMode,
+    // #8：卡片只暴露布尔，全文只走详情（列表/看板一次几十条，不背 20000 字符的规则）。
+    has_execution_rules: Boolean(row.execution_rules?.trim()),
   };
 }

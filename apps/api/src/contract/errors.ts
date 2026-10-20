@@ -39,6 +39,11 @@ export const ERROR_STATUS = {
   // v0.0.4 W7 遗留 b3 §7.4：用户侧「添加任务」显式带 ref 且会话内已占用（UNIQUE(session_id, ref)）。
   // 上下文带 session_id/ref。不传 ref 由服务端自动取号，不会走到这个码。
   BREAKDOWN_DRAFT_REF_TAKEN: 409,
+  // #4 重生成闭环：存在待重新生成的草案时 finish/confirm 被拒（409）。
+  // 单草案重生成后 Agent 尚未重报，用户点确认必须等重报或先取消；
+  // 会话级重生成后 finish 会自动剪掉未重报的空壳，不走这个码（否则会话级重生成会死锁）。
+  // 上下文带 session_id/refs。
+  BREAKDOWN_REGENERATION_PENDING: 409,
   // v0.0.4 W8-a2 §8.7：轻确认决策回传时请求已终结（已建/已取消/已超时/宽限期外）。
   CREATION_REQUEST_RESOLVED: 409,
   // v0.0.4 §16.1 `update_task`（MCP 全字段 PATCH）：任务停在 BLOCKED/REVIEW/DONE/FAILED

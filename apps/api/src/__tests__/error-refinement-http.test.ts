@@ -210,8 +210,9 @@ describe('review_mode 词表收窄后的三处写面出口（清单 §14 判据�
     for (const mode of ['auto', 'none']) {
       const res = await mcpCall('board.create_task', {
         title: `MCP 侧写 review_mode=${mode}`,
-        type: '需求',
-        session_id: 'conv-14-review-mode',
+        // 有效类型：确保拒绝来自 review_mode 本身，而不是「需求走拆解」的旁路校验。
+        type: '缺陷',
+        session_id: `conv-14-review-mode-${mode}`,
         agent_name: 'qoder-error-refinement',
         confirmation_mode: 'direct',
         review_mode: mode,
@@ -219,6 +220,10 @@ describe('review_mode 词表收窄后的三处写面出口（清单 §14 判据�
       expect(res.status).toBe(200);
       expect(res.body.result?.isError, res.text).toBe(true);
       expect((res.body.result?.structuredContent ?? {}).code).toBe('VALIDATION_FAILED');
+      const details = (res.body.result?.structuredContent ?? {}).details as
+        | { path: string; code: string }[]
+        | undefined;
+      expect(details).toEqual([expect.objectContaining({ path: 'review_mode', code: 'forbidden_key' })]);
     }
   });
 });

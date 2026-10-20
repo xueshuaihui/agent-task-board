@@ -5,7 +5,7 @@
  * Cursor 没有「到点自动调 MCP 工具」的调度器，其 MCP 工具只在会话内由模型调用。
  * 本脚本供系统级调度（macOS launchd / Windows 任务计划程序）周期执行：
  * 走 REST `POST /api/v1/tasks/claim` 认领任务 → 读取历史审核意见 → 执行工作命令
- * （默认调 Cursor Agent CLI，也可换成任何命令）→ 期间心跳续租、日志回传 →
+ * （默认调 Cursor Agent CLI，也可换成任何命令）→ 期间心跳续租、进度上报、日志回传 →
  * 成功 `complete` / 失败 `fail` 完成一次完整的认领→回写。
  *
  * 零依赖，Node ≥ 20。一次调用只处理一个任务：队列空时静默退出（exit 0），
@@ -78,6 +78,21 @@ async function api(method, pathname, body) {
     });
   }
   return json;
+}
+
+/**
+ * #6：上报执行进度（可只传 message）。失败只记日志、不中断执行——
+ * 租约失效的终止逻辑统一走心跳路径，进度上报不抢那条判定。
+ */
+async function reportProgress(key, progress, message) {
+  try {
+    const res = await api('POST', `/tasks/${key.task_id}/progress`, { ...key, progress, message });
+    if (res?.clamped) {
+      log(`进度被服务端钳制：上报 ${progress}%，生效 ${res.effective_progress}%`);
+    }
+  } catch (error) {
+    log('进度上报失败（不中断执行）：', error.message);
+  }
 }
 
 const MIME_BY_EXT = new Map([
@@ -158,6 +173,7 @@ async function main() {
     lease_id: claim.lease.lease_id,
   };
   log(`已认领 #${task.id}「${task.title}」`);
+  await reportProgress(key, 5, '已认领，开始执行');
 
   // 十四章步骤 6：领到任务先读历史审核意见，避免重蹈上一次驳回的覆辙。
   let feedback = '';
@@ -184,8 +200,12 @@ async function main() {
   // 心跳与日志回传：周期取服务端建议值（lease.service 返回 heartbeat_interval_seconds）。
   let heartbeatInterval = setInterval(() => {}, 1 << 30);
   let lastLogCount = 0;
+  let lastProgressAt = Date.now();
+  const startedAt = Date.now();
   const chunks = [];
   const child = spawn(command, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  await reportProgress(key, 10, '工作命令已启动');
+  lastProgressAt = Date.now();
   const beat = async () => {
     try {
       const res = await api('POST', `/tasks/${key.task_id}/heartbeat`, key);
@@ -213,6 +233,15 @@ async function main() {
     } catch (error) {
       log('日志回传失败：', error.message);
     }
+    // #6：执行期间按时间节流上报进度（≥60s 一次），公式随已运行时长单调递增、封顶 90；
+    // 完全无输出时上面的早退已经拦掉，不产生空进度。
+    const elapsedMs = Date.now() - startedAt;
+    if (Date.now() - lastProgressAt >= 60_000) {
+      lastProgressAt = Date.now();
+      const progress = Math.min(90, 10 + Math.floor(elapsedMs / 1000 / 30));
+      const seconds = Math.floor(elapsedMs / 1000);
+      await reportProgress(key, progress, `已输出 ${lines.length} 行，已运行 ${seconds}s`);
+    }
   };
   const logTimer = setInterval(flushLogs, 15_000);
 
@@ -234,6 +263,8 @@ async function main() {
   const output = lines.join('\n').slice(0, 65536);
 
   if (code === 0) {
+    // #6：收尾前先报 100，complete 之后任务已转待审核、租约清空，就再没有进度上报窗口。
+    await reportProgress(key, 100, '执行完成，准备回写');
     const artifacts = ARTIFACTS_DIR ? await uploadArtifacts(ARTIFACTS_DIR, key) : [];
     const res = await api('POST', `/tasks/${key.task_id}/complete`, {
       ...key,

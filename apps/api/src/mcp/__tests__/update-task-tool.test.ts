@@ -279,7 +279,9 @@ describe('update_task 守卫第三支：BLOCKED / REVIEW / DONE / FAILED 拒并�
 
 describe('update_task 的校验复用与越权面', () => {
   it('type 传词表外的值：422 的 details 与 REST 逐字一致（同一份 TasksService 校验，含「可选：…」全量词表）', async () => {
-    await seedTask(h.prisma, 'T-type', { status: 'BACKLOG' });
+    // #8 起「需求」行的 type 由用户写面守卫先拒（见 execution-rules.test.ts），
+    // 这条用例测的是**词表校验**，故用普通子任务（seedTask 缺省 type 是 Prisma 默认的「需求」）。
+    await seedTask(h.prisma, 'T-type', { status: 'BACKLOG', type: '子任务' });
 
     const result = await call('update_task', { task_id: 'T-type', type: 'TODO' });
     expect(result.isError).toBe(true);

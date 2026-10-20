@@ -208,6 +208,8 @@ export const ERROR_CODES = [
   'BREAKDOWN_BAD_STATE',
   // v0.0.4 W7 遗留 b3 §7.4：用户侧「添加任务」显式带 ref 且会话内已占用（context 带 session_id/ref）。
   'BREAKDOWN_DRAFT_REF_TAKEN',
+  // #4 重生成闭环：存在待重新生成的草案时 finish/confirm 被拒（context 带 session_id/refs）。
+  'BREAKDOWN_REGENERATION_PENDING',
   // v0.0.4 W8 §8.7 r3：轻确认请求已终结（含 30s+5s 宽限到期），decision 拒收；context.status 带归宿。
   'CREATION_REQUEST_RESOLVED',
   // 8.8 技能源：git/http 远程源本期不实现。
@@ -263,6 +265,8 @@ export interface TaskCard {
   /** 可为 null：从未上报进度时卡片不渲染进度条（原型 3.3）。 */
   progress: number | null;
   progress_msg: string | null;
+  /** #6：最后一次上报进度的时刻（ISO）；历史 Run 未记录该列，可能为 null。 */
+  progress_updated_at: string | null;
   lease_expires_at: string | null;
   agent_name: string | null;
   run_count: number;
@@ -280,6 +284,11 @@ export interface TaskCard {
   parent?: { id: string; title: string; done: number; total: number } | null;
   /** v0.0.4 §8.6（W8-a4）：任务来源（'user' | 'agent'），与 api TaskCardDto 对齐；agent 直建任务挂 5 秒撤销入口。 */
   origin_type: string;
+  /**
+   * #8：卡片只带「有没有执行规则」的布尔——规则全文最长 20000 字，列表/看板不背全文；
+   * 详情另给 `execution_rules` 全文与更新时间。
+   */
+  has_execution_rules: boolean;
 }
 
 export interface CardArtifact {
@@ -312,6 +321,10 @@ export interface TaskDetail extends TaskCard {
   children?: TaskChildRef[];
   /** 0919：聚合进度与聚合状态；无子任务为 null（与后端 `TaskDetailDto.aggregate` 同形）。 */
   aggregate?: TaskAggregate | null;
+  /** #8：需求级强制规则全文（仅详情返回；卡片只给 `has_execution_rules`）。 */
+  execution_rules: string | null;
+  /** #8：规则最后一次由用户改动的时间（ISO；从未填过为 null）。 */
+  execution_rules_updated_at: string | null;
 }
 
 /** 0919：`TaskDetail.children[]` 的元素（后端按 sort_order, created_at 排序）。 */
@@ -725,6 +738,11 @@ export interface TaskCreateInput {
    * `resolveReviewMode` 是唯一口径来源）；只有人这一侧能写，Agent 建单/改单没有这个入参位。
    */
   review_mode?: ReviewMode;
+  /**
+   * #8：需求级执行规则（≤20000 字）。仅用户面可写；空串由服务端归一为 null。
+   * 规则会在子任务被 Agent 领取时注入并冻结快照，运行中修改只影响下一次领取。
+   */
+  execution_rules?: string | null;
 }
 
 export type TaskPatchInput = Partial<Omit<TaskCreateInput, 'depends_on' | 'dependency_type'>> & {
@@ -852,10 +870,32 @@ export interface BreakdownSession {
   skill_used: string | null;
   estimated_tasks: number | null;
   actual_tasks: number | null;
+  /** #4：每次用户侧写/重生成 +1（0=从未），Agent 用 after_revision 续等。 */
+  revision: number;
+  /** #4：最近一次整份重生成的说明（可空）。 */
+  revision_note: string | null;
+  /** #4：最近一次整份重生成的请求时刻；无整份重生成时为 null。 */
+  revision_requested_at: string | null;
+  /** #4：父需求任务被归档的时间（无父任务/未归档为 null），历史列表据此标徽标。 */
+  parent_archived_at: string | null;
   created_at: string;
   finished_at: string | null;
   confirmed_at: string | null;
   cancelled_at: string | null;
+}
+
+/** GET /breakdown/sessions 的过滤与 keyset 分页参数（#4）。 */
+export interface BreakdownListQuery {
+  /** active=receiving/reviewing/creating；history=completed/cancelled/interrupted；缺省 all。 */
+  scope?: 'active' | 'history' | 'all';
+  /** 是否包含父需求已归档的会话（后端默认 false）。 */
+  include_archived?: boolean;
+  /** 按父需求任务 id 过滤（服务端匹配 parent_task_id）。 */
+  requirement_id?: string;
+  /** 本页条数（后端默认 100，最大 500）。 */
+  limit?: number;
+  /** 上一页最后一条会话 id（按 created_at DESC, id DESC 的 keyset 分页）。 */
+  cursor?: string;
 }
 
 /** 草案任务卡。`skill_ids` 可能残留未解析的技能名（§7.5：不阻断、确认页告警）。 */
@@ -870,8 +910,12 @@ export interface BreakdownDraft {
   /** 会话内稳定引用号（不是任务 id），依赖边以它为坐标。 */
   depends_on: string[];
   sort_order: number;
-  /** §7.4「重新生成」：草案已重置、待 Agent 重报（服务端 depends_on 哨兵映射；false 时字段省略）。 */
+  /** §7.4「重新生成」：草案已重置、待 Agent 重报（false 时字段省略）。 */
   regeneration_pending?: boolean;
+  /** #4：用户本次重生成想改什么（仅 pending 时出现，可空）。 */
+  regeneration_note?: string | null;
+  /** #4：重生成请求时刻（仅 pending 时出现；旧哨兵行为 null）。 */
+  regeneration_requested_at?: string | null;
 }
 
 /**
@@ -955,18 +999,36 @@ export interface CreationRequestView {
   priority: number;
   tags: string[];
   skills: string[];
+  /** #5：归属需求（parent_task_id）；旧请求/未挂需求为 null。 */
+  parent_task_id: string | null;
+  /**
+   * #5 Q4 硬不变量：Agent 只能经 `requested_review_mode` 在 light 模式「请求」审核方式，
+   * 永远不能直接写 `review_mode`。两字段并存是因为语义不同——
+   * 这里是 Agent 的请求（待决期提示用），`review_mode` 才是服务端拟用/最终值
+   * （用户直选 > Agent 请求 > 全局默认）；决策后 `review_mode` 即实际落库值。
+   */
+  requested_review_mode: ReviewMode | null;
+  /** 服务端拟用/最终审核方式：待决期=请求值或全局默认，决策后=实际落库值。 */
+  review_mode: ReviewMode;
   duplicates: CreationDuplicateHit[];
   created_at: string;
   expires_at: string;
   decision_deadline_at: string;
 }
 
-/** POST /creation-requests/{id}/decision 入参：edit 必带修改后载荷（§8.7 r3，api 侧 zod 同款约束）。 */
+/**
+ * POST /creation-requests/{id}/decision 入参：edit 必带修改后载荷（§8.7 r3，api 侧 zod 同款约束）。
+ * `review_mode` 是用户侧唯一能落值的地方（Q4：Agent 只能请求、不能决定）；
+ * `parent_task_id` 与后端 decision payload 同形，但本片弹窗不做归属编辑。
+ */
 export interface CreationDecisionInput {
   action: 'create' | 'edit' | 'cancel';
   payload?: Partial<
-    Pick<CreationRequestView, 'title' | 'description' | 'group_id' | 'type' | 'priority' | 'tags' | 'skills'>
-  >;
+    Pick<
+      CreationRequestView,
+      'title' | 'description' | 'group_id' | 'type' | 'priority' | 'tags' | 'skills' | 'parent_task_id'
+    >
+  > & { review_mode?: ReviewMode };
 }
 
 /* ------------------------------------------------------------- WS 事件载荷 */
@@ -984,11 +1046,14 @@ export const WS_EVENT_NAMES = [
   // v0.0.4 W4 §5.6 r3：分组归档/反归档，载荷只带分组 id（事件当失效信号的同一口径）。
   'group.archived',
   'group.unarchived',
-  // v0.0.4 W7 §16.3 拆解五条：服务端只带定位字段（session_id/ref/step…），读侧回 GET 拿真相。
+  // v0.0.4 W7 §16.3 拆解五条 + #4 重生成通知：服务端只带定位字段（session_id/ref/step…），
+  // 读侧回 GET 拿真相。
   'breakdown.started',
   'breakdown.progress',
   'breakdown.task_draft',
   'breakdown.finished',
+  // #4：用户请求重生成（单草案 / 整份）时广播，前端只当缓存失效信号。
+  'breakdown.revision_requested',
   'breakdown.cancelled',
   // v0.0.4 W8 §8.7 r3：轻确认卡片下发（这条是例外——载荷就是卡片本体，见 features/creation）。
   'agent.task_requested',
@@ -1025,6 +1090,17 @@ export interface WsEventPayloads {
   'breakdown.progress': { session_id: string; step: number; total: number };
   'breakdown.task_draft': { session_id: string; ref: string };
   'breakdown.finished': { session_id: string; actual_tasks: number };
+  /**
+   * #4：载荷与 `apps/api/src/breakdown/breakdown.service.ts` 的两处 emit 一致
+   * （单草案 scope=draft + refs=[ref]；整份 scope=session + 全部 refs）。
+   * 服务端不在这条事件里带 revision——需要基线时回 GET 详情读 `session.revision`。
+   */
+  'breakdown.revision_requested': {
+    session_id: string;
+    scope: 'draft' | 'session';
+    refs?: string[];
+    note: string | null;
+  };
   'breakdown.cancelled': { session_id: string };
   // §8.7 r3：轻确认卡片下发的是请求本体（含倒计时锚点），与 GET 列表同一份视图。
   'agent.task_requested': CreationRequestView;

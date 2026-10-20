@@ -1,6 +1,7 @@
 import type {
   AuditQuery,
   BoardQuery,
+  BreakdownListQuery,
   CommentsQuery,
   TaskListQuery,
   TaskTab,
@@ -73,8 +74,11 @@ export const qk = {
   groups: () => ['groups'] as const,
   groupsRoot: ['groups'] as const,
 
-  /** v0.0.4 W7 §7（features/breakdown）：详情是列表行的超集，前缀 `['breakdown']` 一并失效。 */
-  breakdownSessions: () => ['breakdown', 'sessions'] as const,
+  /** v0.0.4 W7 §7（features/breakdown）：详情是列表行的超集，前缀 `['breakdown']` 一并失效。
+   *  #4：列表带 scope/requirement/include_archived 过滤，参数整体进 key——active/history
+   *  两套缓存互不覆盖；`breakdownRoot` 仍覆盖全部分页。 */
+  breakdownSessions: (query?: BreakdownListQuery) =>
+    ['breakdown', 'sessions', withDefaults(query as Params)] as const,
   breakdownSession: (id: string) => ['breakdown', 'sessions', id] as const,
   breakdownRoot: ['breakdown'] as const,
 

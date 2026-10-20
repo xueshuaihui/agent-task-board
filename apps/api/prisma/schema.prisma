@@ -87,6 +87,11 @@ model Task {
   // default_review_mode——Agent 面 update_task 的可写键清单恒不含它（执行者不得自豁免，Q4）。
   // review_track（换轨位）与 review_batch（批次标记列）已随 2026-10-09 裁定整链移除（0023）。
   reviewMode       String @default("human") @map("review_mode")
+  // 需求级执行规则（0024 加列，#8）：JSON 文本，客户端 parse/stringify。
+  // 仅用户可写——REST create/PATCH 落库，Agent 面 update_task 的可写键清单恒不含它
+  // （执行者不得改自己的执行规则）；updatedAt 只在用户改动规则时刷新，与行 updated_at 解耦。
+  executionRules          String? @map("execution_rules")
+  executionRulesUpdatedAt String? @map("execution_rules_updated_at")
   currentRunId         String? @map("current_run_id")
   claimedAt            String? @map("claimed_at")
   runCount             Int     @default(0) @map("run_count")
@@ -173,6 +178,13 @@ model TaskRun {
   error       String?
   progress    Int?
   progressMsg String?    @map("progress_msg")
+  // 进度最后上报时间（0024 加列，#6）：Agent 每次 report_progress 覆盖写；历史 Run 为 NULL。
+  progressUpdatedAt String? @map("progress_updated_at")
+  // 领取时冻结的规则快照（0024 加列，#8）：JSON 文本（需求 id/title、规则、更新时间、技能引用），
+  // 服务端 claim 时写，运行中规则再改不影响本次执行；Agent 只读。
+  rulesSnapshot     String? @map("rules_snapshot")
+  // 规则 + 技能引用的 SHA-256（0024 加列，#8），服务端 claim 时计算；不建 CHECK。
+  rulesDigest       String? @map("rules_digest")
   task        Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
   token       ApiToken?  @relation(fields: [tokenId], references: [id])
   artifacts   Artifact[]
@@ -363,6 +375,11 @@ model BreakdownSession {
   skillUsed         String? @map("skill_used")
   estimatedTasks    Int?    @map("estimated_tasks")
   actualTasks       Int?    @map("actual_tasks")
+  // 重生成闭环（0024 加列，#4）：revision 每次“重新生成”+1（0=从未），
+  // note/requestedAt 记录用户这次要改什么与请求时刻。仅用户/服务端写，Agent 只读。
+  revision            Int     @default(0)
+  revisionNote        String? @map("revision_note")
+  revisionRequestedAt String? @map("revision_requested_at")
   createdAt         String  @default(dbgenerated("(datetime('now'))")) @map("created_at")
   finishedAt        String? @map("finished_at")
   confirmedAt       String? @map("confirmed_at")
@@ -370,6 +387,7 @@ model BreakdownSession {
   drafts            BreakdownDraft[]
   progress          BreakdownProgress[]
 
+  @@index([parentTaskId], map: "idx_breakdown_sessions_parent")
   @@map("breakdown_sessions")
 }
 
@@ -384,6 +402,11 @@ model BreakdownDraft {
   skillIds    String           @default("[]") @map("skill_ids")
   acceptance  String           @default("[]")
   dependsOn   String           @default("[]") @map("depends_on")
+  // 重生成闭环（0024 加列，#4）：接过 depends_on 里旧 JSON 哨兵的位置——1=用户点名这一行重生成、
+  // 等 Agent 重报；note/requestedAt 是用户给的说明与请求时刻。仅用户侧服务端写，Agent 重报覆盖时清零。
+  regenerationPending     Int     @default(0) @map("regeneration_pending")
+  regenerationNote        String? @map("regeneration_note")
+  regenerationRequestedAt String? @map("regeneration_requested_at")
   sortOrder   Int              @default(0) @map("sort_order")
 
   @@unique([sessionId, ref])

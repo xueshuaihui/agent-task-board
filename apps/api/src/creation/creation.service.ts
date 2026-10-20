@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ApiException } from '../contract/errors';
-import { DEFAULT_GROUP_ID, type AgentConfirmationMode } from '../contract/enums';
+import { DEFAULT_GROUP_ID, type AgentConfirmationMode, type ReviewMode } from '../contract/enums';
 import { newId, nextTaskId } from '../contract/ids';
 import type { CreateTaskToolInput, CreateTasksBatchInput } from '../contract/agent-schemas';
 import type { CreationDecisionInput, CreationRequestCreateInput } from './creation.dto';
@@ -57,6 +57,11 @@ export interface CreationRequestView {
   priority: number;
   tags: string[];
   skills: string[];
+  parent_task_id: string | null;
+  /** Agent 通过 requested_review_mode 请求的审核方式；待决期展示用，最终值见 review_mode。 */
+  requested_review_mode: ReviewMode | null;
+  /** 拟用/最终审核方式：待决期=请求值或全局默认，决策后=实际落库值。 */
+  review_mode: ReviewMode;
   duplicates: CreationDuplicateHit[];
   created_at: string;
   /** 卡片倒计时终点（超时→不创建的判定点）。 */
@@ -72,6 +77,8 @@ export interface CreateTaskResult {
   session_id: string | null;
   agent_name: string;
   confirmation_mode: CreationMode;
+  /** 落库的审核方式（final）：direct/silent 取全局默认，light 取用户确认卡最终值。 */
+  review_mode?: ReviewMode;
   /** §7.5 同口径：填了名字但库里无此技能 → 丢弃不阻断，原值进告警回显。 */
   skill_resolution: { unresolved: string[] };
 }
@@ -117,7 +124,11 @@ export interface CreateTasksBatchResult {
 }
 
 /** validate 的入参形状：REST/edit 载荷可能没有 session_id（或为 null），统一按可空收。 */
-type ValidateInput = Partial<Omit<CreateTaskToolInput, 'session_id'>> & { session_id?: string | null };
+type ValidateInput = Partial<Omit<CreateTaskToolInput, 'session_id'>> & {
+  session_id?: string | null;
+  /** 仅 REST/UI 决策面可带（用户直接指定拟用审核方式）；不进 draft。 */
+  review_mode?: ReviewMode;
+};
 
 /** create_task 入参与 REST 待决请求共用的内部任务草稿形状（session_id 允许为空）。 */
 interface CreationDraft {
@@ -128,6 +139,8 @@ interface CreationDraft {
   priority: number;
   tags: string[];
   skills: string[];
+  parent_task_id: string | null;
+  requested_review_mode: ReviewMode | null;
   session_id: string | null;
 }
 
@@ -137,6 +150,8 @@ interface PendingRequest {
   agentName: string;
   source: 'mcp' | 'rest';
   confirmationMode: CreationMode;
+  /** 拟用/最终审核方式：待决期=请求值或全局默认，决策后可被用户 payload 覆盖。 */
+  reviewMode: ReviewMode;
   status: CreationRequestStatus;
   taskId: string | null;
   unresolved: string[];
@@ -187,6 +202,22 @@ export class CreationService implements OnModuleDestroy {
     // §8.2 优先级：参数 > 设置「创建模式」> 默认轻确认（agent_creation_mode 缺省即 light）。
     const mode: CreationMode = input.confirmation_mode ?? (await this.settings.get('agent_creation_mode'));
 
+    // Q4 硬不变量：审核方式的最终决定权在用户。Agent 只能经 requested_review_mode 在
+    // light 模式提出请求；direct/silent 会在落库前直接拒，绝不允许「传了就被静默忽略」。
+    if (mode !== 'light' && draft.requested_review_mode) {
+      throw new ApiException(
+        'VALIDATION_FAILED',
+        '只有 light 模式可以请求审核方式：direct/silent 不接受 requested_review_mode，最终由用户在轻确认卡决定',
+        [
+          {
+            path: 'requested_review_mode',
+            code: 'not_allowed',
+            message: '仅 light 模式可请求审核方式，最终由用户在轻确认卡决定；direct/silent 不接受该字段',
+          },
+        ],
+      );
+    }
+
     if (mode === 'light') {
       return this.requestConfirmation(draft, agentName, 'mcp', 'light', input.wait !== false);
     }
@@ -197,13 +228,14 @@ export class CreationService implements OnModuleDestroy {
         return this.requestConfirmation(draft, agentName, 'mcp', 'light', input.wait !== false, duplicates);
       }
     }
-    const { taskId, unresolved } = await this.persistCreated(draft, agentName, mode);
+    const { taskId, unresolved, reviewMode } = await this.persistCreated(draft, agentName, mode);
     return {
       created: true,
       task_id: taskId,
       session_id: draft.session_id,
       agent_name: agentName,
       confirmation_mode: mode,
+      review_mode: reviewMode,
       skill_resolution: { unresolved },
     };
   }
@@ -257,7 +289,15 @@ export class CreationService implements OnModuleDestroy {
   async createLightRequest(input: CreationRequestCreateInput): Promise<CreationRequestView> {
     const agentName = input.agent_name?.trim() || 'board';
     const draft = await this.validate({ ...input, session_id: input.session_id ?? null });
-    const result = (await this.requestConfirmation(draft, agentName, 'rest', 'light', false)) as CreateTaskPendingResult;
+    const result = (await this.requestConfirmation(
+      draft,
+      agentName,
+      'rest',
+      'light',
+      false,
+      undefined,
+      input.review_mode,
+    )) as CreateTaskPendingResult;
     // requestConfirmation 的异步返回里必有 request_id，直接取回视图（含倒计时锚点）。
     return this.status(result.request_id);
   }
@@ -311,7 +351,17 @@ export class CreationService implements OnModuleDestroy {
       decision.action === 'edit'
         ? await this.validate(decision.payload as ValidateInput, entry.draft)
         : entry.draft;
-    const { taskId, unresolved } = await this.persistCreated(draft, entry.agentName, 'light', decision.action === 'edit' ? 'edited' : 'created', entry);
+    // 用户决策是唯一能落 review_mode 的地方：edit 载荷显式给了就用它，否则沿用待决期拟用值。
+    const finalReviewMode = decision.payload?.review_mode ?? entry.reviewMode;
+    const { taskId, unresolved } = await this.persistCreated(
+      draft,
+      entry.agentName,
+      'light',
+      decision.action === 'edit' ? 'edited' : 'created',
+      entry,
+      finalReviewMode,
+    );
+    entry.reviewMode = finalReviewMode;
     entry.taskId = taskId;
     entry.unresolved = unresolved;
     this.close(entry, decision.action === 'edit' ? 'edited' : 'created');
@@ -331,8 +381,13 @@ export class CreationService implements OnModuleDestroy {
     mode: CreationMode,
     wait: boolean,
     duplicates?: CreationDuplicateHit[],
+    reviewModeOverride?: ReviewMode,
   ): Promise<CreateTaskToolResult> {
     const timeoutSeconds = await this.settings.get('light_confirm_timeout_seconds');
+    // 拟用值：UI 直选 > Agent 的 requested_review_mode > 全局默认。settings 读取在事务外。
+    const reviewMode = await this.settings.resolveReviewMode(
+      reviewModeOverride ?? draft.requested_review_mode ?? undefined,
+    );
     const now = Date.now();
     let settled!: () => void;
     const done = new Promise<void>((resolve) => (settled = resolve));
@@ -342,6 +397,7 @@ export class CreationService implements OnModuleDestroy {
       agentName,
       source,
       confirmationMode: mode,
+      reviewMode,
       status: 'pending',
       taskId: null,
       unresolved: [],
@@ -388,6 +444,7 @@ export class CreationService implements OnModuleDestroy {
         session_id: entry.draft.session_id,
         agent_name: entry.agentName,
         confirmation_mode: entry.confirmationMode,
+        review_mode: entry.reviewMode,
         skill_resolution: { unresolved: entry.unresolved },
       };
     }
@@ -455,6 +512,9 @@ export class CreationService implements OnModuleDestroy {
       priority: entry.draft.priority,
       tags: entry.draft.tags,
       skills: entry.draft.skills,
+      parent_task_id: entry.draft.parent_task_id,
+      requested_review_mode: entry.draft.requested_review_mode,
+      review_mode: entry.reviewMode,
       duplicates: entry.duplicates,
       created_at: new Date(entry.createdAt).toISOString(),
       expires_at: new Date(entry.expiresAt).toISOString(),
@@ -488,7 +548,31 @@ export class CreationService implements OnModuleDestroy {
         { path: 'type', code: 'use_breakdown', message: '需求' },
       ]);
     }
-    const groupId = merged.group_id ?? base?.group_id ?? DEFAULT_GROUP_ID;
+    // 归属需求：必须是未归档的「需求」类型顶层任务（层级最多两层，与 TasksService.assertParent 同口径）。
+    const parentTaskId = merged.parent_task_id ?? base?.parent_task_id ?? null;
+    const parent = parentTaskId
+      ? await this.prisma.task.findUnique({ where: { id: parentTaskId } })
+      : null;
+    if (parentTaskId && !parent) {
+      throw new ApiException('NOT_FOUND', `父任务 ${parentTaskId} 不存在`);
+    }
+    if (parent?.archivedAt) {
+      throw new ApiException('VALIDATION_FAILED', `父需求 ${parentTaskId} 已归档，不能挂新子任务`, [
+        { path: 'parent_task_id', code: 'parent_archived', message: `父需求 ${parentTaskId} 已归档，不能挂子任务` },
+      ]);
+    }
+    if (parent && parent.type !== '需求') {
+      throw new ApiException('VALIDATION_FAILED', `父任务必须是「需求」类型，${parentTaskId} 的类型是「${parent.type}」`, [
+        { path: 'parent_task_id', code: 'parent_type', message: '父任务类型必须是需求' },
+      ]);
+    }
+    if (parent && parent.parentTaskId) {
+      throw new ApiException('VALIDATION_FAILED', '任务层级最多两层：子任务下不能再挂子任务', [
+        { path: 'parent_task_id', code: 'too_deep', message: `父任务 ${parentTaskId} 本身已是子任务` },
+      ]);
+    }
+    // 父需求有分组时子任务默认同组；显式 group_id 仍优先（含 null 归默认组的既有语义）。
+    const groupId = merged.group_id ?? base?.group_id ?? parent?.groupId ?? DEFAULT_GROUP_ID;
     await this.assertActiveGroup(groupId);
     return {
       title,
@@ -498,6 +582,8 @@ export class CreationService implements OnModuleDestroy {
       priority: merged.priority ?? 3,
       tags: merged.tags ?? [],
       skills: merged.skills ?? [],
+      parent_task_id: parentTaskId,
+      requested_review_mode: merged.requested_review_mode ?? base?.requested_review_mode ?? null,
       session_id: merged.session_id?.trim() ? merged.session_id.trim() : null,
     };
   }
@@ -509,7 +595,8 @@ export class CreationService implements OnModuleDestroy {
     mode: CreationMode,
     userAction: CreationUserAction = 'created',
     request?: PendingRequest,
-  ): Promise<{ taskId: string; unresolved: string[] }> {
+    reviewModeOverride?: ReviewMode,
+  ): Promise<{ taskId: string; unresolved: string[]; reviewMode: ReviewMode }> {
     // 技能解析（§7.5 r3 口径）：值已是 id 直通；否则按 name 精确匹配取最近更新者；
     // 无命中的丢弃并进 skill_resolution——与拆解确认页一样，不因坏引用阻断创建。
     const { skillIds, unresolved } = await this.resolveSkills(draft.skills);
@@ -517,20 +604,21 @@ export class CreationService implements OnModuleDestroy {
       skillIds.length === 0 ? '[]' : await this.skills.normalizeTaskBindings(skillIds.map((id) => ({ skill_id: id })));
 
     // 0020 草案 §3.1 + 2026-09-28 用户拍板：Agent 直建/轻确认建的单同样吃全局默认键。
-    // Agent 面**没有** review_mode 入参位（Q4：执行者不得自豁免），只能继承用户在设置页定的值，
-    // 所以这条继承递不出口子——豁免的决定权始终在人那一侧。
+    // Agent 面没有 review_mode 入参位（Q4：执行者不得自豁免）：direct/silent 只能继承用户在
+    // 设置页定的值；light 的最终值由用户在轻确认卡决定（reviewModeOverride 即决策后的最终值）。
     // 取数必须在事务**外**：settings 走主连接，SQLite 写事务持锁期间跨连接读会阻塞到超时
     // （缓存冷启时正是首条建单，生产同样会撞）。
-    const reviewMode = await this.settings.resolveReviewMode();
+    const reviewMode = reviewModeOverride ?? (await this.settings.resolveReviewMode());
 
     const taskId = await this.prisma.$transaction(async (tx) => {
       const id = await nextTaskId(tx);
       await tx.$executeRawUnsafe(
-        `INSERT INTO tasks (id, group_id, type, title, description, status, priority, tags, skills,
+        `INSERT INTO tasks (id, group_id, parent_task_id, type, title, description, status, priority, tags, skills,
                             origin_type, origin_agent, origin_session_id, confirmation_mode, review_mode)
-         VALUES (?, ?, ?, ?, ?, 'BACKLOG', ?, ?, ?, 'agent', ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, 'BACKLOG', ?, ?, ?, 'agent', ?, ?, ?, ?)`,
         id,
         draft.group_id,
+        draft.parent_task_id,
         draft.type,
         draft.title,
         draft.description,
@@ -574,7 +662,15 @@ export class CreationService implements OnModuleDestroy {
           action: 'task_create',
           targetType: 'task',
           targetId: id,
-          after: { id, type: draft.type, title: draft.title, origin: 'agent', confirmation_mode: mode },
+          after: {
+            id,
+            type: draft.type,
+            title: draft.title,
+            parent_task_id: draft.parent_task_id,
+            origin: 'agent',
+            confirmation_mode: mode,
+            review_mode: reviewMode,
+          },
         },
         tx,
       );
@@ -588,7 +684,7 @@ export class CreationService implements OnModuleDestroy {
     if (mode === 'direct' || mode === 'silent') {
       await this.notifications.push('creation_request', taskId, `🤖 ${agentName} 已创建任务 ${taskId} · ${draft.title}`);
     }
-    return { taskId, unresolved };
+    return { taskId, unresolved, reviewMode };
   }
 
   // ---------------------------------------------------------------- 重复检测（§8.5）

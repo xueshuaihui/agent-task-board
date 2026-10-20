@@ -46,6 +46,7 @@ function card(status: TaskStatus, pinned = false): TaskCard {
     status_label: status,
     progress: null,
     progress_msg: null,
+    progress_updated_at: null,
     lease_expires_at: null,
     agent_name: null,
     run_count: 1,
@@ -57,6 +58,7 @@ function card(status: TaskStatus, pinned = false): TaskCard {
     custom_fields: {},
     group_id: null,
     origin_type: 'user',
+    has_execution_rules: false,
   };
 }
 

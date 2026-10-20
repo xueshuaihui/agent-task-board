@@ -129,6 +129,8 @@ export class TasksService {
     // 0020 草案 §3.1：任务级审核方式选填，缺省取全局 `default_review_mode`。
     // 只在 REST 用户面生效——Agent 面不带 review_mode 入参位，越权面由契约层守住。
     const reviewMode = await this.settings.resolveReviewMode(input.review_mode);
+    // #8：需求级执行规则只在用户建单面出现；trim 后为空视同未填（库内存 NULL）。
+    const executionRules = input.execution_rules?.trim() ? input.execution_rules : null;
 
     const id = await this.prisma.$transaction(async (tx) => {
       const taskId = await nextTaskId(tx);
@@ -152,6 +154,9 @@ export class TasksService {
           pinned: input.pinned ? 1 : 0,
           dueAt: input.due_at ? toDateOnly(input.due_at) : null,
           reviewMode,
+          // #8：规则与「规则版本时间」一起落；没有规则时时间也保持 NULL（从未由用户填过）。
+          executionRules,
+          executionRulesUpdatedAt: executionRules ? nowSql() : null,
         },
       });
       for (const dependsOn of [...new Set(input.depends_on)]) {
@@ -240,6 +245,13 @@ export class TasksService {
     // 0020 草案 §3.1：审核方式只有这一条用户侧写入口（`patchAsAgent` 的入参类型里没这个键，
     // Agent 面 `update_task` 的可写清单也从基底 shape 派生），执行者改不了自己的豁免位。
     if (input.review_mode !== undefined) data.reviewMode = input.review_mode;
+    // #8：需求级执行规则同理只有用户能写（`patchAsAgent` 收到的 `TaskPatchInput` 不含该键，
+    // 运行中规则再改也不影响本次执行——claim 侧已把规则快照冻结进 Run）。
+    // null/空白 = 清空规则；即使清空也刷新时间，它表示「规则最后一次由用户改动」。
+    if (input.execution_rules !== undefined) {
+      data.executionRules = normalizeExecutionRules(input.execution_rules);
+      data.executionRulesUpdatedAt = nowSql();
+    }
     if (input.tags !== undefined) data.tags = JSON.stringify(input.tags);
     if (input.required_capabilities !== undefined) {
       data.requiredCapabilities = JSON.stringify(input.required_capabilities);
@@ -857,6 +869,9 @@ export class TasksService {
       claimed_at: toIso(source.claimed_at),
       // 卡片只带 show_on_card 的字段，详情抽屉要看到全部值（20.10）。
       custom_fields: parseJsonObject(source.custom_fields),
+      // #8：规则全文与规则版本时间只走详情；卡片/列表只带 `has_execution_rules` 布尔（toCardDto）。
+      execution_rules: source.execution_rules ?? null,
+      execution_rules_updated_at: toIso(source.execution_rules_updated_at),
       // 0919 10.3：技能绑定引用（前端据此渲染技能标签 Tab）。
       skills: parseSkillRefs(source.skills as string | null),
       depends_on: deps
@@ -1047,6 +1062,11 @@ export class TasksService {
         duration_ms: run.durationMs,
         progress: run.progress,
         progress_msg: run.progressMsg,
+        progress_updated_at: toIso(run.progressUpdatedAt),
+        // #8：领取时冻结的规则快照与 digest（claim 侧写入；历史 Run 没有这两列为 NULL）。
+        // 快照读取透出即可，本端点不写——运行中需求规则再改也不影响本次执行的证据在这一列。
+        rules_snapshot: run.rulesSnapshot ? parseJsonObject(run.rulesSnapshot) : null,
+        rules_digest: run.rulesDigest ?? null,
         summary: run.summary,
         error: run.error,
         log_count:
@@ -1642,6 +1662,18 @@ function parseFieldOptions(raw: string | null): FieldDefLike['options'] {
   } catch {
     return null;
   }
+}
+
+/**
+ * #8：需求级执行规则的写前归一。
+ *
+ * `null` / 纯空白 = 清空（库内存 NULL）；其余保留文本。入参 schema 已 `trim()`，
+ * 这里再归一是为了服务层被直接调用（测试/脚本）时同一条口径，不依赖调用方先过管道。
+ */
+function normalizeExecutionRules(value: string | null): string | null {
+  if (value === null) return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
 }
 
 function pickAudit(task: Task): Record<string, unknown> {
