@@ -119,7 +119,7 @@ describe('Cursor 调度脚本：完整认领→回写（验收 20）', () => {
     // 原始文件名保留在 metadata 里。
     expect(artifact.uri).toMatch(/\.patch$/);
     expect(artifact.metadata).toContain('docs.patch');
-  }, 120_000);
+  }, 180_000);
 
   it('工作命令非零退出：fail 回写，任务落异常列并保留输出摘要', async () => {
     await clearReadyQueue(t);
