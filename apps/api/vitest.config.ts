@@ -1,18 +1,20 @@
 import { defineConfig } from 'vitest/config';
 
+/**
+ * Windows runner（Defender 实时扫描 + 4 核）跑 76 个测试文件时，建临时库 / 全量重放迁移
+ * 的实际耗时远高于 mac。v0.0.4-beta.12 把闸门从 10s 提到 30s，beta.13 仍在 mcp-tools 的
+ * beforeAll（建库 + 24 条迁移）和 creation 的 0021 迁移演练上踩线；同轮 74/76 文件全绿，
+ * 属机器慢而非用例写错。这里只对 Windows 放宽并限制并行度，避免 worker 互相拖慢。
+ */
+const slowPlatform = process.platform === 'win32';
+
 /** 测试文件放在 `src/**\/__tests__/` 下，tsconfig.build.json 已把它们挡在 dist 之外。 */
 export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/__tests__/**/*.test.ts'],
-    testTimeout: 30_000,
-    /**
-     * hookTimeout 必须与 testTimeout 对齐。默认 10s 对「建临时库 + 跑 23 条迁移 +
-     * 造夹具」的 beforeAll 偏紧：Windows runner 上（Defender 实时扫描 + 70 个测试文件
-     * 并行）实测会踩线——v0.0.4-beta.12 的 win-x64 门禁就是 capability /
-     * breakdown-draft-replay 两个 beforeAll 卡在 10000ms 挂掉的，同批 68 个文件全绿。
-     * 这是机器慢，不是用例写错，所以放宽闸门本身，而不是给单个用例加参。
-     */
-    hookTimeout: 30_000,
+    testTimeout: slowPlatform ? 90_000 : 30_000,
+    hookTimeout: slowPlatform ? 90_000 : 30_000,
+    ...(slowPlatform ? { maxWorkers: 2 } : {}),
   },
 });
