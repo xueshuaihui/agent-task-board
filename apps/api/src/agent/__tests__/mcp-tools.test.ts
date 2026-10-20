@@ -678,9 +678,13 @@ describe('MCP 工具面', () => {
 
     const rows = await auditRows('mcp_call');
     expect(rows).toHaveLength(2);
-    const first = JSON.parse(rows.find((row) => row.after!.includes('240'))!.after!);
+    const firstRow = rows.find((row) => row.after?.includes('240'));
+    expect(firstRow, '未找到 duration_ms=240 的审计行').toBeDefined();
+    const first = JSON.parse(firstRow!.after!);
     expect(first).toMatchObject({ skill_id: skill.id, success: true, duration_ms: 240, policy_decision: 'allow' });
-    const second = JSON.parse(rows.find((row) => !row.after!.includes('240'))!.after!);
+    const secondRow = rows.find((row) => !row.after?.includes('240'));
+    expect(secondRow, '未找到不含 240 的审计行').toBeDefined();
+    const second = JSON.parse(secondRow!.after!);
     expect(second).toMatchObject({ success: false, error: 'upstream 500', policy_decision: 'unchecked' });
   });
 

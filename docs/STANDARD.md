@@ -1,8 +1,8 @@
 # 贾维斯工作台（Jarvis Workbench）唯一标准文档
 
-**版本**: v0.0.4-beta.14  
+**版本**: v0.0.4-beta.15  
 **更新日期**: 2026-10-21  
-**状态**: 主分支稳定，beta.14 批次（#4–#8 收口：拆解重生成闭环 / Agent 审核方式请求 / 进度契约 / 流程图运行态 / 需求执行规则；含 Windows 门禁超时修复）
+**状态**: 主分支稳定，beta.15 批次（#4–#8 收口 + 测试稳定性修复：Windows 门禁放宽超时并限制并发、mcp-tools 审计断言空安全）
 
 ---
 
@@ -583,7 +583,7 @@ npm run tauri build
 ### 10.3 发版流程
 
 1. **代码冻结**：确保 main 分支绿色（CI 全绿）
-2. **打 Tag**：`git tag -a v0.0.4-beta.14 -m "..." && git push origin v0.0.4-beta.14`
+2. **打 Tag**：`git tag -a v0.0.4-beta.15 -m "..." && git push origin v0.0.4-beta.15`
 3. **CI 自动构建**：GitHub Actions 自动构建三平台安装包
 4. **发布 Release**：上传 DMG/EXE 到 GitHub Releases
 5. **真机验证**：按 `docs/v0.0.4/beta真机验证清单.md` 逐项验收
@@ -601,7 +601,7 @@ npx prisma migrate deploy
 
 ### 10.5 当前版本水位
 
-- **最新 Tag**：v0.0.4-beta.14（批次：#4–#8 收口——拆解重生成闭环 / Agent 审核方式请求 / 进度契约 / 流程图运行态 / 需求执行规则；beta.13 因 Windows 门禁超时未出 Release）
+- **最新 Tag**：v0.0.4-beta.15（批次：#4–#8 收口 + 测试稳定性修复；beta.13/14 均因 CI 失败未出 Release）
 - **迁移版本**：0024（拆解重生成 / 需求执行规则 / 进度与规则快照）
 - **API 代码行数**：223 文件 / 43773 行（含测试）
 - **Web 代码行数**：280 文件 / 48063 行（含测试）
