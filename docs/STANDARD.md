@@ -2,7 +2,7 @@
 
 **版本**: v0.0.4-beta.17  
 **更新日期**: 2026-10-21  
-**状态**: 主分支稳定，beta.17 批次（#4–#8 收口 + 测试稳定性修复：Windows 门禁放宽超时并限制并发、mcp-tools 审计断言空安全、ws-gateway connectionCount 竞态宽松化、cursor-scheduler e2e 90s 超时）
+**状态**: 主分支稳定，beta.17 批次（#4–#8 收口 + 测试稳定性修复：Windows 门禁改为完全串行 maxWorkers=1、全局 timeout/hookTimeout 提到 180s、cursor-scheduler e2e 单用例 180s 超时）
 
 ---
 
