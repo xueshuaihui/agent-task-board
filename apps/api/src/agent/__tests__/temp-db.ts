@@ -13,6 +13,7 @@ import { PrismaService } from '../../infra/prisma.service';
 import { SettingsService } from '../../infra/settings.service';
 import { AgentQueryService } from '../agent-query.service';
 import { BreakdownService } from '../../breakdown/breakdown.service';
+import { WakeProbeService } from '../../client-entry/wake-probe.service';
 import { CreationService } from '../../creation/creation.service';
 import { SkillsService } from '../../skills/skills.service';
 import { ClaimService } from '../claim.service';
@@ -47,6 +48,8 @@ export interface AgentHarness {
   breakdown: BreakdownService;
   /** W8 §8.7：board.create_task 的会话创建闭环上下文（直建/静默；light 占位）。 */
   creation: CreationService;
+  /** 设置 → 客户端入口：wake_probe 的自检落库口（最近 50 条裁剪与生产同一实现）。 */
+  wake: WakeProbeService;
   /**
    * §16.1 `update_task`：Agent 侧编辑的落库与字段校验复用 TasksService 那一份 patch 实现，
    * 守卫在 WritebackService.updateTask（构造时注入进来，与真机 AgentModule import TasksModule 同形）。
@@ -90,6 +93,7 @@ export function createAgentHarness(): AgentHarness {
   const policy = new McpPolicyService(prisma, audit);
   const breakdown = new BreakdownService(prisma, settings, audit, events);
   const creation = new CreationService(prisma, settings, audit, events, skills, notifications);
+  const wake = new WakeProbeService(prisma);
 
   return {
     dir,
@@ -106,6 +110,7 @@ export function createAgentHarness(): AgentHarness {
     policy,
     breakdown,
     creation,
+    wake,
     tasks,
     agent: async (name: string, capabilities: string[] = []) => {
       const id = newId();

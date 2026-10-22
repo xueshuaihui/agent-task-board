@@ -41,6 +41,7 @@ beforeAll(async () => {
     breakdown: h.breakdown,
     creation: h.creation,
     settings: h.settings,
+    wake: h.wake,
   });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);

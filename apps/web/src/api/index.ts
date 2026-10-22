@@ -6,6 +6,7 @@ import { artifactsApi } from './resources/artifacts';
 import { creationApi } from './resources/creation';
 import { auditApi } from './resources/audit';
 import { breakdownApi } from './resources/breakdown';
+import { clientEntriesApi } from './resources/client-entries';
 import { dataApi } from './resources/data';
 import { fieldDefsApi } from './resources/field-defs';
 import { notificationsApi } from './resources/notifications';
@@ -24,6 +25,7 @@ export const api = {
   templates: templatesApi,
   tokens: tokensApi,
   settings: settingsApi,
+  clientEntries: clientEntriesApi,
   notifications: notificationsApi,
   audit: auditApi,
   artifacts: artifactsApi,

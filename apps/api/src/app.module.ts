@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { BackupModule } from './backup/backup.module';
 // v0.0.4 W7：需求拆解服务层（controller 端点在下一切片接入）。
 import { BreakdownModule } from './breakdown/breakdown.module';
+import { ClientEntryModule } from './client-entry/client-entry.module';
 // v0.0.4 W8：会话创建闭环服务层（board.create_task 直建/静默；决策端点在下一切片）。
 import { CreationModule } from './creation/creation.module';
 import { DataModule } from './data/data.module';
@@ -40,6 +41,8 @@ import { WsModule } from './ws/ws.module';
     CreationModule,
     TokensModule,
     SettingsApiModule,
+    // 设置 → 客户端入口：台账/预览/安装/校验/卸载 + wake_probe 自测落库。
+    ClientEntryModule,
     TemplatesModule,
     NotificationsApiModule,
     GroupsModule,

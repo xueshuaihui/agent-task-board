@@ -92,7 +92,9 @@ fn main() {
       // 8.5「关于」/「备份」：版本与目录（system_info）、打开目录。
       commands::system_info,
       commands::open_dir,
-      commands::save_text_file
+      commands::save_text_file,
+      // 客户端入口：项目目录选择（原生目录框，取消/失败回空串）。
+      commands::pick_folder
     ])
     .setup(move |app| {
       let handle = app.handle().clone();

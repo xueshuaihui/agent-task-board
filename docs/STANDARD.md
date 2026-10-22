@@ -242,6 +242,44 @@ apps/
 | is_default | INT | 是否默认分组 |
 | archived_at | TEXT | 归档时间戳 |
 
+#### ClientEntry（客户端入口台账，0025）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT PK | 台账行 ID |
+| client | TEXT | 客户端（qoder/cursor/cline/windsurf/claude_code/codex） |
+| scope | TEXT | 作用域（project/user） |
+| workspace_path | TEXT | 项目工作区绝对路径；表级 CHECK 保证 project 必填、user 必须为 NULL |
+| asset_type | TEXT | 资产类型（rule/skill） |
+| asset_name | TEXT | 资产名（入口规则与技能固定为 `jarvis-workbench`） |
+| target_path | TEXT | 目标文件绝对路径 |
+| write_mode | TEXT | 写入方式（file=整文件 / managed_block=托管块） |
+| content_hash | TEXT | 本应用写入内容的 SHA-256（托管块只算块内正文） |
+| file_hash | TEXT | 安装完成时目标文件全文的 SHA-256，用于识别用户改动 |
+| template_version | INTEGER | 模板版本，低于当前版本时校验回 `update_available` |
+| marker | TEXT | 托管块起始标记；整文件模式为空串 |
+| created_file | INTEGER | 目标文件是否由本应用新建（0/1），决定卸载时能否直接删除 |
+| backup_path | TEXT | 覆盖前的备份路径（可空，按台账保留最近 5 份） |
+| status | TEXT | 状态（installed/drifted/missing/error） |
+| last_error | TEXT | 最近一次校验或写入失败的原因（可空） |
+| installed_at | TEXT | 首次安装时间 |
+| verified_at | TEXT | 最近一次校验时间 |
+| updated_at | TEXT | 更新时间 |
+
+> 唯一约束 `uniq_client_entries_target` 保证同一客户端 / 作用域 / 资产 / 目标路径只有一行；`scope=project` 必须带 `workspace_path`、`scope=user` 必须为 NULL 由表级 CHECK 兜住。
+
+#### WakeProbe（唤醒自测，0025）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT PK | 自检记录 ID（uuidv7） |
+| source | TEXT | 来源标识（≤32 字符，剔除 CR/LF/TAB，可空；缺失时界面显示「收到自检（未标注客户端）」） |
+| token_id | TEXT | 调用方 Agent Token ID（可空） |
+| token_name | TEXT | 调用方 Token 名称（可空） |
+| received_at | TEXT | 收到时刻（ISO 8601） |
+
+> 服务端写入后只保留最近 50 条；设置页自测查询最多返回 20 条。
+
 #### 拆解会话补充列（0024）
 
 | 表 | 字段 | 说明 |
@@ -257,6 +295,10 @@ apps/
 - `tasks.archived_at`：归档筛选
 - `task_dependencies.task_id`：依赖查询
 - `breakdown_sessions.parent_task_id`：按需求反查拆解会话 / 历史过滤（0024）
+- `uniq_client_entries_target(client, scope, asset_type, asset_name, target_path)`：同一目标唯一（防重复台账，0025）
+- `idx_client_entries_client_scope(client, scope)`：按客户端 / 作用域查台账（0025）
+- `idx_client_entries_workspace(workspace_path)`：按工作区查项目级入口（0025）
+- `idx_wake_probes_received(received_at)`：自测按时间倒序（0025）
 
 ---
 
@@ -401,6 +443,14 @@ BLOCKED → READY（人工处理后转回）
 |--------|------|
 | `get_vocabulary` | 获取服务端当前全部词表口径（无入参） |
 
+### 7.8 自检工具
+
+| 工具名 | 说明 | 入参 |
+|--------|------|------|
+| `wake_probe` | 自检：确认唤醒规则与 MCP 工具链路可达；无业务副作用，不占任务、不建租约；落 `wake_probes` 供「设置 → 客户端入口」展示 | source? |
+
+> 自测只证明 MCP 工具链路可达，不代表某个客户端的入口规则一定已加载。`wake_probe` 不建任务、不建租约、不记审计；`wake_probes` 只保留最近 50 条，设置页自测查询最多返回 20 条。
+
 ---
 
 ## 8. REST API
@@ -490,6 +540,19 @@ BLOCKED → READY（人工处理后转回）
 | POST | `/api/v1/creation-requests` | 生成待决请求：`title/description/group_id/type/priority/tags/skills/parent_task_id/requested_review_mode`；用户面可带 `review_mode`（Agent 只能请求，不能决定）；`session_id` 可省 |
 | POST | `/api/v1/creation-requests/:id/decision` | 决策 `create/edit/cancel`；`edit` 必须带 payload（可含 `review_mode/parent_task_id`），非 edit 带 payload 回 422 |
 
+### 8.9 客户端入口端点（UI 凭证组）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/client-entries?workspace=` | 六端检测（只看配置锚点是否存在）+ 落点矩阵 + 台账 + 自测摘要；未选工作区时只展示用户级 |
+| GET | `/api/v1/client-entries/self-test?since=` | 最近 `wake_probes`（最多 20 条，`since` 为 ISO 时间戳） |
+| POST | `/api/v1/client-entries/plan` | 生成预览 actions（`contentChars` 本应用内容长度 / `limitChars` 写入后整文件字数 / `charLimit` 客户端上限）与 `plan_hash`，只读不写盘 |
+| POST | `/api/v1/client-entries/install` | 按预览结果落盘；body：`client/scope/workspace?/assets/plan_hash/confirm:true/allow_over_limit?` |
+| POST | `/api/v1/client-entries/verify` | body `ids?`，重读文件更新台账状态，不写文件；响应 `{entries, summary}`，每条 entry 含布尔 `updateAvailable` |
+| POST | `/api/v1/client-entries/:id/uninstall` | body `{confirm:true}`，只删本应用写入的内容；响应 `removed` + `kept?`（`drifted` / `missing` / `unmanaged`） |
+
+> `plan` 只读：actions 带每个落点的目标路径、写入方式、预览正文与 `plan_hash`。`install` 会重新生成计划并比对 `plan_hash`，不一致回 409 `CLIENT_ENTRY_PLAN_STALE`；`confirm` 必须为 `true`。`verify` 只重读文件、更新 installed/drifted/missing/error，不改文件。`uninstall` 只删本应用写入的整文件或托管块，用户改过的文件保留并标 `drifted`。
+
 ---
 
 ## 9. 前端特性
@@ -524,6 +587,7 @@ BLOCKED → READY（人工处理后转回）
 - **通用设置**：默认审核模式、创建模式、语言
 - **Token 管理**：生成/撤销 UI Token 与 Agent Token
 - **MCP 配置**：唤醒模式（单次/连续）、超时时间
+- **客户端入口**：六端规则/技能检测、预览、安装、校验、卸载与自测
 - **字段定义**：自定义字段的增删改查
 - **技能管理**：技能的创建、编辑、发布、分类
 - **数据管理**：导入导出、备份恢复
@@ -540,6 +604,35 @@ BLOCKED → READY（人工处理后转回）
 - **进行中 / 历史**：`scope=active|history` + `include_archived`（默认不含父需求已归档的会话）+ 需求过滤；历史段 cursor 分页、只读。
 - **重生成闭环**：确认页可对单条草案或整份会话发起重新生成（可填说明）；单条重生成后待 Agent 重报期间 `confirm` 回 409 `BREAKDOWN_REGENERATION_PENDING`；整份重生成回 receiving，`finish` 同样硬性拒绝未重报草案，Agent 须逐条重报后再收尾。
 - **需求执行规则**：需求抽屉「执行规则」Tab 分「执行规则」（≤20000 字）与「强制技能」两个独立保存动作；需求卡显示「有执行规则」徽标；子任务详情「继承自需求（强制）」只读块，技能来源标注需求 / 任务。
+
+### 9.7 客户端入口（Rules + Skills）
+
+- **分工**：rule 是 always-on 的入口触发器，只负责识别「贾维斯」并把请求路由到 MCP；skill 是按需加载的操作手册（`SKILL.md`），承载建单、认领、回写、拆解等细节。规则必须短，二者不可互相替代。
+- **能力矩阵**：项目级必须先由用户显式选择工作区；未选工作区时只展示用户级（用户级已覆盖 Qoder / Cline / Windsurf / Claude Code / Codex；Cursor 用户级无稳定落点，M2 才提供「仅复制」兜底）。检测只判断客户端配置锚点（文件或目录）是否存在，不代表客户端已安装。
+
+| 客户端 | 项目级 rule | 项目级 skill | 用户级 rule | 用户级 skill | 备注 |
+|--------|-------------|--------------|-------------|--------------|------|
+| Qoder | 支持（`.qoder/rules/`） | 支持（`.qoder/skills/`） | 支持（文件） | 支持（文件） | 用户根优先已存在的 `~/.qoder-cn`，其次 `~/.qoder`；都不存在时新建 `~/.qoder-cn` |
+| Cursor | 支持（`.cursor/rules/`，alwaysApply） | 支持（实验，`.cursor/skills/`） | M2：仅复制（无稳定落点，界面不展示自动写入） | 不支持 | 用户级规则需复制到 Cursor Settings → Rules（M2；当前只有项目级入口） |
+| Cline | 支持（`.clinerules` 目录或文件托管块） | 不支持 | 支持（`~/Documents/Cline/Rules/`） | 不支持 | 无 Agent Skills |
+| Windsurf | 支持（`.windsurf/rules/`） | 不支持 | 支持（`global_rules.md` 托管块） | 不支持 | 全局规则 6000 字上限 |
+| Claude Code | 支持（`CLAUDE.md` 托管块） | 支持（`.claude/skills/`） | 支持（`~/.claude/CLAUDE.md` 托管块） | 支持（`~/.claude/skills/`） | 规则块外内容逐字保留 |
+| Codex | 支持（`AGENTS.md` 托管块） | 支持（实验） | 支持（`~/.codex/AGENTS.md` 托管块） | 支持（实验） | 技能根优先已存在的 `.codex/skills`，否则 `.agents/skills`；用户级同理 |
+
+- **安全与写入边界**：
+  - 整文件模式绝不覆盖内容不同的已有文件（`CLIENT_ENTRY_CONFLICT`）；安装后被用户改过的文件也会在预览里判为冲突。安装前已存在、内容与本应用完全一致的文件按「接管」记台账（`created_file=0`），不写盘。
+  - 托管块模式只写 `<!-- jarvis-workbench:managed:begin -->` 与 `<!-- jarvis-workbench:managed:end -->` 之间的内容，块外用户内容逐字保留；标记不成对即拒绝写入。
+  - 卸载只删本应用写入的内容，分两档：
+    - 整文件：仅当台账 `created_file=1` 且文件哈希与安装时一致才删除；`created_file=0`（安装前已存在、内容相同被接管）一律保留原文件，响应 `kept: 'unmanaged'`，只删台账。
+    - 托管块：块内正文哈希与安装时 `content_hash` 一致才摘块；用户在块内改过（哈希不一致）则保留文件并标 `drifted`，不得摘块。
+    - 空技能目录会清理，但绝不删用户目录。
+  - 写盘前统一校验路径：必须是绝对路径、位于允许根内（项目级=所选工作区，用户级=home）、无 NUL 段，拒绝软链 / junction / ADS / `..`（`CLIENT_ENTRY_PATH_UNSAFE`）。
+  - 字符上限按写入后整份文件的字符数判断（托管块模式含块外用户内容），不只看本应用块正文：计划动作的 `contentChars` 只是本应用内容长度，`limitChars` 才是写入后整文件字数，超限判定用后者。Windsurf 全局规则上限 6000 字，超限需显式传 `allow_over_limit: true`（`CLIENT_ENTRY_LIMIT_EXCEEDED`）；写入采用同目录临时文件 + rename，占用类错误重试 3 次后报 `CLIENT_ENTRY_FILE_LOCKED`。
+- **自测与文案纪律**：
+  1. 安装后在客户端新开会话（或重载窗口）；
+  2. 对 Agent 说「贾维斯，自检」，Agent 调用 MCP `wake_probe`（`source` 带客户端标识）；
+  3. 记录落 `wake_probes`，设置页展示最近记录；`source` 缺失时显示「收到自检（未标注客户端）」。
+- 自测只证明 MCP 工具链路可达，不证明某个客户端的规则一定已加载。文案只写「规则已安装」「工具链路已验证」，不写「自动唤醒」「保证生效」。规则正文不写 URL、端口、token；单次 / 连续模式由工具响应末尾的「【贾维斯】当前会话模式」实时下发。
 
 ---
 
@@ -591,18 +684,27 @@ npm run tauri build
 
 ### 10.4 数据库迁移
 
-```bash
-# 应用迁移（生产环境）
-npx prisma migrate deploy
+迁移的权威定义是 `apps/api/prisma/migrations/{编号}_*/migration.sql`（含 CHECK 与索引），执行方不是 Prisma CLI：
 
-# 迁移水位记录在 _atb_migrations 表
-# 迁移文件位于 apps/api/prisma/migrations/
+```bash
+# 生产 / 安装包：sidecar 启动时由 bootstrap.ts 的 applyMigrations() 自动执行
+# - 按编号顺序执行未应用的 migration.sql，每个文件一个事务
+# - 成功后把编号写入 PRAGMA user_version（迁移水位）
+# - 既有 Prisma 库（无 user_version、有 _prisma_migrations 账本）先按账本对齐水位，不重放
+
+# 开发期：用包装脚本操作同一个库文件
+npm run prisma                    # 缺省执行 prisma generate
+npm run prisma -- migrate deploy  # 开发期走 Prisma CLI 应用迁移（生产不跑）
+
+# 禁止 prisma migrate dev：它会按 schema.prisma 重算迁移，丢掉手写 CHECK
 ```
+
+> `_prisma_migrations` 只用于既有 Prisma 库的水位对齐；新库与安装包只看 `PRAGMA user_version`。迁移随安装包内的 `prisma/migrations` 目录分发，生产 / 安装包不依赖 Prisma CLI。
 
 ### 10.5 当前版本水位
 
 - **最新 Tag**：v0.0.4-beta.17（批次：#4–#8 收口 + 测试稳定性修复；beta.13/14/15/16 均因 CI 失败未出 Release）
-- **迁移版本**：0024（拆解重生成 / 需求执行规则 / 进度与规则快照）
+- **迁移版本**：0025（客户端入口台账 / 唤醒自测）
 - **API 代码行数**：223 文件 / 43773 行（含测试）
 - **Web 代码行数**：280 文件 / 48063 行（含测试）
 
@@ -654,6 +756,14 @@ npx prisma migrate deploy
 |`STORAGE_LOCKED`|503|`SQLITE_BUSY`／`LOCKED`：另一个进程持写锁（同时开了两个本地服务、备份正在跑）。可重试|全部|
 |`STORAGE_CORRUPT`|500|`SQLITE_CORRUPT`／`NOTADB`（"file is not a database"）：库文件坏了或被截断，`message` 指向设置页「备份与恢复」|全部|
 |`STORAGE_READONLY`|500|`SQLITE_READONLY`／`PERM`、fs 的 `EACCES`／`EPERM`／`EROFS`：数据目录在只读卷上或权限不足|全部|
+|`CLIENT_ENTRY_UNSUPPORTED`|422|设置 →「客户端入口」：客户端／作用域／资产组合不受支持（如 Cline、Windsurf 不支持技能；Cursor 用户级不写文件，M2 才提供复制兜底）|UI|
+|`CLIENT_ENTRY_PATH_UNSAFE`|422|目标路径不是绝对路径、越出允许根、含 NUL 段，或目标文件是软链／junction；`message` 指名具体原因|UI|
+|`CLIENT_ENTRY_LIMIT_EXCEEDED`|422|内容超过客户端字符上限（Windsurf 全局规则 6000 字）且未显式传 `allow_over_limit`|UI|
+|`CLIENT_ENTRY_CONFLICT`|409|目标位置已有非本应用创建的内容，或托管标记不成对。绝不覆盖用户内容，`message` 指名冲突文件|UI|
+|`CLIENT_ENTRY_PLAN_STALE`|409|预览后目标文件被改动，`plan_hash` 与重新生成的计划不一致，需重新预览|UI|
+|`CLIENT_ENTRY_NOT_FOUND`|404|台账里的入口 id 不存在（已卸载，或库被恢复成更早的备份）|UI|
+|`CLIENT_ENTRY_FILE_LOCKED`|503|写入时撞上 `EBUSY`／`EPERM`／`EACCES`，重试 3 次后仍失败；提示关闭客户端后重试|UI|
+|`CLIENT_ENTRY_WRITE_FAILED`|500|其它 IO 失败，或写入后回读哈希与预期不符（已尽力用备份还原）；`context.detail` 带现场|UI|
 |`INTERNAL`|500|兜底：`contract/db-errors.ts` 也认不出的抛出（非数据层、非 fs）。`message` 给通用文案，`context.detail` 仍带引擎原文一行，界面折叠区可见——细化不允许吃掉现场|全部|
 
 ---

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AgentModule } from '../agent/agent.module';
 import { BreakdownModule } from '../breakdown/breakdown.module';
+import { ClientEntryModule } from '../client-entry/client-entry.module';
 import { CreationModule } from '../creation/creation.module';
 import { SkillsModule } from '../skills/skills.module';
 import { McpController } from './mcp.controller';
@@ -12,9 +13,10 @@ import { McpController } from './mcp.controller';
  * W6 §16.1 技能三工具直接注入 SkillsModule 的 SkillsService（AgentModule 只 import 未 re-export）。
  * W7 §16.1 board.* 拆解五工具注入 BreakdownModule 的 BreakdownService（与 REST 确认页同一实现）。
  * W8 §8.7 board.create_task 注入 CreationModule 的 CreationService（会话/流水落库在同一事务）。
+ * 设置 → 客户端入口：wake_probe 注入 ClientEntryModule 导出的 WakeProbeService（同一份裁剪逻辑）。
  */
 @Module({
-  imports: [AgentModule, SkillsModule, BreakdownModule, CreationModule],
+  imports: [AgentModule, SkillsModule, BreakdownModule, CreationModule, ClientEntryModule],
   controllers: [McpController],
 })
 export class McpModule {}

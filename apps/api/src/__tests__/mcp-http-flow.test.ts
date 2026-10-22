@@ -6,7 +6,7 @@ import { LATEST_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS } from '@modelcont
 import { appVersion } from '../common/version';
 import { USER_COPY } from '../contract/errors';
 import { toIso } from '../contract/time';
-import { MCP_SERVER_NAME, MCP_WAKE_EXIT, MCP_WAKE_WORD } from '../mcp/mcp.server';
+import { MCP_SERVER_NAME, MCP_WAKE_EXIT, MCP_WAKE_WORD } from '../mcp/wake';
 import {
   createTestApp,
   errorCode,
@@ -87,6 +87,7 @@ const CHAPTER_12_TOOLS = [
   'update_skill',
   'update_task',
   'wait_for_resume',
+  'wake_probe',
 ];
 
 /** 清单 §14 判据①：这两枚工具名必须从 tools/list 消失、调用即「未知工具」错。 */

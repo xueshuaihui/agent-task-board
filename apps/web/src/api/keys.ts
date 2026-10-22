@@ -85,4 +85,11 @@ export const qk = {
   /** v0.0.4 W8 §8.7（features/creation）：轻确认请求列表（断线重连补卡片的数据源）。 */
   creationRequests: () => ['creation-requests'] as const,
   creationRoot: ['creation-requests'] as const,
+
+  /** v0.0.4 W9（features/settings 客户端入口）：检测概览按 workspace 分键，自测轮询单独一个 key。 */
+  clientEntries: (workspace?: string) =>
+    ['client-entries', { workspace: workspace ?? null }] as const,
+  clientEntriesRoot: ['client-entries'] as const,
+  clientEntrySelfTest: (since?: string) =>
+    ['client-entries', 'self-test', { since: since ?? null }] as const,
 } as const;

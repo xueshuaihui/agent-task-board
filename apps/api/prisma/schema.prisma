@@ -269,6 +269,48 @@ model Setting {
   @@map("settings")
 }
 
+// 客户端入口台账（迁移 0025）：每装一份规则/技能落一行，卸载删行。
+// 词表（client/scope/asset_type/write_mode/status）与 scope↔workspace_path 的配对约束
+// 都以迁移 SQL 的 CHECK 为权威，本文件只做客户端映射。
+model ClientEntry {
+  id              String  @id
+  client          String
+  scope           String
+  workspacePath   String? @map("workspace_path")
+  assetType       String  @map("asset_type")
+  assetName       String  @map("asset_name")
+  targetPath      String  @map("target_path")
+  writeMode       String  @map("write_mode")
+  contentHash     String  @map("content_hash")
+  fileHash        String  @map("file_hash")
+  templateVersion Int     @map("template_version")
+  marker          String
+  createdFile     Int     @default(0) @map("created_file")
+  backupPath      String? @map("backup_path")
+  status          String  @default("installed")
+  lastError       String? @map("last_error")
+  installedAt     String  @map("installed_at")
+  verifiedAt      String? @map("verified_at")
+  updatedAt       String  @map("updated_at")
+
+  @@unique([client, scope, assetType, assetName, targetPath], map: "uniq_client_entries_target")
+  @@index([client, scope], map: "idx_client_entries_client_scope")
+  @@index([workspacePath], map: "idx_client_entries_workspace")
+  @@map("client_entries")
+}
+
+// `wake_probe` 自测落行（迁移 0025）：诊断行为，不记审计；只保留最近 50 条。
+model WakeProbe {
+  id         String  @id
+  source     String?
+  tokenId    String? @map("token_id")
+  tokenName  String? @map("token_name")
+  receivedAt String  @map("received_at")
+
+  @@index([receivedAt], map: "idx_wake_probes_received")
+  @@map("wake_probes")
+}
+
 model AuditLog {
   id         Int     @id @default(autoincrement())
   actorType  String  @map("actor_type")

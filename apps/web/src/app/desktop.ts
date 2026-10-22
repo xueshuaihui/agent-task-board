@@ -50,6 +50,8 @@ export interface DesktopCapability {
   openLogDir: () => Promise<void>;
   /** 6.12.1 导出落地：原生保存对话框，浏览器退回 `<a download>`。 */
   saveTextFile: (filename: string, contents: string) => Promise<void>;
+  /** 客户端入口：原生目录选择；取消/非桌面态返回 null。 */
+  pickFolder: () => Promise<string | null>;
 }
 
 const isDesktop =
@@ -139,6 +141,11 @@ export const desktop: DesktopCapability = {
   saveTextFile: async (filename, contents) => {
     const saved = await call<string>('save_text_file', { filename, contents });
     if (saved === null) downloadViaAnchor(filename, contents);
+  },
+
+  pickFolder: async () => {
+    const picked = await call<string>('pick_folder');
+    return picked ? picked : null;
   },
 };
 

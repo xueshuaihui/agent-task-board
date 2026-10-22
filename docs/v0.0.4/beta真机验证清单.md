@@ -130,7 +130,7 @@
 ### 6.5 B6 MCP 词表（Agent 侧，可与 §5 合跑）
 
 - [x] MCP 客户端列工具可见 `get_vocabulary`；调用一次返回 task_types/priority/confirmation_mode/状态流转等全词表（2026-09-24 R-C-1 **协议层**实测：对无状态 Streamable HTTP `POST /mcp`（Bearer agent token，JSON-RPC，非 mock）发 `tools/list` → 26 个工具含 `get_vocabulary`；`tools/call get_vocabulary {}` 一次拿全 `task_types.default/current=[需求,缺陷,子任务,巡检,重构]`、`priority.values=[0,1,2,3]`+中文档名+default、`confirmation_mode`（direct/light/silent + 语义 + 优先级）、`task_status.values=[BACKLOG,READY,RUNNING,BLOCKED,REVIEW,DONE,FAILED]` + `transitions` 全表（RUNNING 只能由 claim 产生、DONE 终态、REVIEW 出边需审核表单）、capability 命名空间规则、skill 类型/状态/来源、`artifact_types`+uri_rule、`log_level`、breakdown 会话状态。**仍待补**：在真实 MCP 客户端（Qoder）会话里肉眼确认工具列表可见——客户端只是渲染同一份 `tools/list`，随 §5 合跑时补一眼）
-> **现状注（2026-10-21）**：`agent-tools.ts` 当前注册工具数为 31（0020 曾加两条审核工具至 30，按 §14 裁定移除回到 28；S4 之后补 `create_skill` 至 29；#4 再追加 `board.get_breakdown` / `board.wait_for_breakdown` 至 31）。上文的 26/27 与 28 均为当时实测历史值，保留作账目。
+> **现状注（2026-10-23）**：`agent-tools.ts` 当前注册工具数为 32（0020 曾加两条审核工具至 30，按 §14 裁定移除回到 28；S4 之后补 `create_skill` 至 29；#4 再追加 `board.get_breakdown` / `board.wait_for_breakdown` 至 31；客户端入口批再补 `wake_probe` 至 32）。上文的 26/27/28/31 均为当时实测历史值，保留作账目。
 - [x] Agent 传错词表值（如不存在的任务类型）时 422 错误回显可接受值列表，Agent 能据此一次改对、不再试错刷测试数据（R-C-1 实测：REST `POST /tasks {"type":"TODO"}` → **422** `任务类型「TODO」不在词表内` + `details[{path:type,code:unknown_type,message:"可选：需求 / 缺陷 / 子任务 / 巡检 / 重构"}]`（`"数据同步"` 同形态）；`transition {"to":"TODO"}` → **422** `invalid_value` 且 message 直接列出 7 个合法状态；MCP `board.create_task type=TODO` → HTTP 200 信封 + `isError:true`，`content[0].text` 内有完整 422 体含可接受值。**同轮查出并修 2 处回显折损**：①`structuredContent` 只带 `{code,message}`，把可接受值整块丢了（`mcp.server.ts` 的 `toCallToolResult` catch 分支只并 `error.context` 不并 `details`），而只解析 structuredContent 通道的客户端正是 B6 要救的那类——已随本批补上 details（追加式，`code/message` 契约不变）；②`priority:9` 被 MCP SDK 自身 schema 先挡下（`-32602 Too big: expected number to be <=3`），走不到 B6 的 hint 路径、因此不产出可接受值列表——**已知现象，本轮不改**（改法是给 input schema 加字段描述/放宽到词表校验，属另行裁定））
 
 ## 7. beta.6 新增批（B8–B11 修复 + B12→B15 分组过滤重构 + B14 导航折叠）
@@ -214,8 +214,8 @@
 - [x] 字段面**逐字取 REST `taskPatchSchema.shape`**（13 个可写字段，同一批 zod 实例），字段级校验（type 词表 + 可接受值回显、priority 0-3、tags、skills 归属/版本、parent 层级 ≤2、group 存在、custom_fields 增量合并）与审计/事件只有 `TasksService.applyPatch` 一份实现，Agent 面走 `patchAsAgent` 窄入口。**REST 行为一字未动**：`PATCH /tasks/:id` 对 RUNNING 仍 `TASK_RUNNING`（既有 `state-machine.test.ts:205` + 本轮新增的 REST 红线用例双向锁住），审计 `actorType` 分 user/agent。
 - [x] 越权面：`status` / `assignee` / 租约列根本不在可写键里，状态机与执行权改不到（MCP 协议层按 inputSchema 先剥未声明键，非 HTTP 直连通道才由 `.strict()` 报 422）。
 - [ ] 待 beta 包/真机：Qoder 客户端里 27 个工具可见、`update_task` 实调一次（dev 只验到 `InMemoryTransport` 全链路 17 用例）。
-> **现状注（2026-10-21）**：`agent-tools.ts` 当前注册工具数为 31（0020 曾加两条审核工具至 30，按 §14 裁定移除回到 28；S4 之后补 `create_skill` 至 29；#4 再追加 `board.get_breakdown` / `board.wait_for_breakdown` 至 31）。上文的 26/27 与 28 均为当时实测历史值，保留作账目。
-- 已记档的两个已知边界（不在本片修）：①`updateTask` 读状态与写入之间是毫秒级窗口，人在这几毫秒里强制停止则守卫判的是旧状态——与 REST `patch()` **同风险面**（现有实现本来也是读后写），要收严应在 `applyPatch` 内做 `updateMany where status=before.status` 乐观并发，那是独立一条改动；②`parseToolInput` 的 `received` 回显对**所有**工具生效，若将来某工具的枚举字段承载凭证/隐私值，会把原值带进错误体（当前 31 个工具入参不含 token 类字段，判断为可接受；收紧口径可对 `*_token`/`secret` 路径掩码）。
+> **现状注（2026-10-23）**：`agent-tools.ts` 当前注册工具数为 32（0020 曾加两条审核工具至 30，按 §14 裁定移除回到 28；S4 之后补 `create_skill` 至 29；#4 再追加 `board.get_breakdown` / `board.wait_for_breakdown` 至 31；客户端入口批再补 `wake_probe` 至 32）。上文的 26/27/28/31 均为当时实测历史值，保留作账目。
+- 已记档的两个已知边界（不在本片修）：①`updateTask` 读状态与写入之间是毫秒级窗口，人在这几毫秒里强制停止则守卫判的是旧状态——与 REST `patch()` **同风险面**（现有实现本来也是读后写），要收严应在 `applyPatch` 内做 `updateMany where status=before.status` 乐观并发，那是独立一条改动；②`parseToolInput` 的 `received` 回显对**所有**工具生效，若将来某工具的枚举字段承载凭证/隐私值，会把原值带进错误体（当前 32 个工具入参不含 token 类字段，判断为可接受；收紧口径可对 `*_token`/`secret` 路径掩码）。
 
 ### 10.3 G-3 `update_skill`（`3ae627f`，27→28）
 
@@ -290,7 +290,46 @@
 
 - [ ] **拆除片的验收判据（拆完反向复验）**：①`tools/list` 不再含两个审核工具，Agent 调它得到未知工具错；②`review_mode` 词表只剩 `human`/`none`，`auto` 在建单/编辑/设置三处下拉消失；③`review_track`/`review_batch`/`reviewer_run_id` 三列与「审核」类型词在 schema、`sqlite_master`、界面、错误码表、手册里同步归零；④人工审核与 `none` 直通两条路行为不变（回归不得只测删除面）；⑤PRD 与两份草案的审核条款按裁定回写，作废处留原文。
 
+## 15. 客户端入口（Rules + Skills，2026-10-23 写回）
 
+**目标**：在六个客户端里各落一份 always-on 入口规则 + 一份按需加载的操作手册，让「贾维斯」能稳定触发 MCP 工具；规则只负责识别唤醒词并路由到 MCP，操作细节交给技能。**当前实现**：六端项目级 rule + Qoder/Cursor/Claude Code/Codex 项目级 skill；Qoder/Cline/Windsurf/Claude Code/Codex 用户级规则/技能；模板版本/漂移校验、备份保留 5 份与 Windsurf 6000 字上限；`wake_probe` 自测。**M2** 剩 Cursor 用户级「仅复制」兜底与模板升级交互收口；**M3** Windows 真机路径/junction/锁文件与清单收口。
+
+**当前状态**：已有 dev / 自动化验证（API e2e、web SSR）与 2026-10-23 临时 workspace/home 浏览器走查（六卡、Qoder 预览、Windsurf 6331/6000 豁免、Cursor 接管文件卸载保留、目录选择器浏览器提示）；**六端真机均未销账**；下列 checkbox 全部保持 `[ ]`，真机走查后再逐项勾销。
+
+### 15.1 六端真机矩阵
+
+| 客户端 | 项目级 rule | 项目级 skill | 用户级 rule | 用户级 skill |
+|--------|-------------|--------------|-------------|--------------|
+| Qoder | [ ] | [ ] | [ ] | [ ] |
+| Cursor | [ ] | [ ]（实验） | [ ]（仅复制，不写文件） | 不支持 |
+| Cline | [ ] | 不支持 | [ ] | 不支持 |
+| Windsurf | [ ] | 不支持 | [ ]（6000 字上限） | 不支持 |
+| Claude Code | [ ] | [ ] | [ ] | [ ] |
+| Codex | [ ] | [ ]（实验） | [ ] | [ ]（实验） |
+
+> Qoder 用户根优先已存在的 `~/.qoder-cn`，其次 `~/.qoder`；Codex 技能根优先已存在的 `.codex/skills`，否则 `.agents/skills`（用户级同理）。Cursor 用户级规则没有稳定文件落点，界面不展示自动写入，只提供复制到 Cursor Settings → Rules（M2；其余五端用户级当前已可用）。
+
+### 15.2 验收动作（每端各走一遍）
+
+- [ ] 设置 →「客户端入口」选择测试 workspace（项目级必填；未选时只展示用户级）
+- [ ] 勾选入口规则 / 操作技能 →「预览安装」，确认目标路径、写入方式（整文件 / 托管块）与预览正文
+- [ ] 「安装」后目标文件出现，台账显示「已安装」，审计记一条 `client_entry_install`
+- [ ] 打开或重载对应客户端，**新开一个会话**，说「贾维斯，自检」
+- [ ] 回设置页「自测」看到对应 source 的最近记录（缺失 source 显示「收到自检（未标注客户端）」）
+- [ ] 说「贾维斯，创建一个任务：明天发布」，确认任务落库（看板出现新任务，字段与词表一致）
+- [ ] 卸载后用户原有内容逐字保留（托管块只摘本应用块，整文件未被改动才删除），审计记一条 `client_entry_uninstall`
+- [ ] 再安装一次幂等：预览显示 unchanged，不重复写盘、不产生第二条台账
+
+### 15.3 Windows 追加
+
+- [ ] 客户端开着时安装：命中 `CLIENT_ENTRY_FILE_LOCKED` 的文案可读，提示关闭客户端后重试；重试成功后无半写文件（目标文件要么是旧内容，要么是完整新内容）
+- [ ] 关闭客户端后重试同一安装：写入成功、校验为「已安装」，目标文件内容完整、无临时文件残留
+
+### 15.4 文案纪律
+
+- 自测只证明 MCP 工具链路可达，不证明某客户端规则一定已加载；文案只写「规则已安装」「工具链路已验证」，不写「自动唤醒」「保证生效」。
+- 规则正文不写 URL、端口、token；MCP 端点示例只出现在设置页与文档中，例如 `http://127.0.0.1:7788/mcp`。
+- 检测只判断客户端配置锚点（文件或目录）是否存在，不宣称客户端已安装。
 
 ## 记录区（现象/截图/报错贴这里）
 
@@ -317,5 +356,6 @@
 | §10.3 G-3 `update_skill` | 协议层过（同上，16 用例），客户端实调待包 | 27→28。可写面 = UI `skillPatchSchema` 除 `status` 外全部；`status` **有意排除**（UI 发布=`POST /versions` 快照 + `PATCH {status}` 两步，agent 面无快照工具，只改状态会让 `current_version` 与 content 脱节），`mcp_dependencies` 与 UI PATCH 面一致不可写。守卫全复用 `SkillsService.patch`（默认技能 `SKILL_READONLY`、子技能自引用/成环 `SKILL_REF_SELF`/`SKILL_REF_CYCLE`），`@AuthScope('ui')` 未摘。词表回显补在 agent 入口层：`parseToolInput` details 追加 `received`、hint 拼「可接受值 + 当前收到」，`get_vocabulary` 新增 `skill_categories`；REST 的裸 zod 422 形状 UI 在用、锁进测试未改。 |
 | §11 G-5 看板列宽 | 过（2026-09-24 · dev 真机浏览器，非打包 dmg），打包环境待复验 | 用户拍板「全列常驻等分 + 暂无任务」，覆盖 PRD v1.5 §4.1/§5 的「空列折叠为 40px 竖条」。修法删概念：`model.ts::columnCollapsed` 连函数删除、`board-column.tsx` 的 `collapsed` prop/`w-column-collapsed` 分支/列头竖条形态/条件包裹全清、40px 定档 token 与随之失去对象的 `transition-[width]` 一并删；`total === 0 && defaultView` 那条整页空态规则未动。实测：1940px 真窗口无筛选 7×228 → 加 `P3 低` 后仍 7×228（修复前 698/698/40×5 且空列无「暂无任务」），5 个空列全部显示「暂无任务」；960/1280/1600 三档（同源 iframe 真视口，各跑无筛选与 P3 两态）列数恒 7、单列恒 180px、容器 clientW/scrollW = 848/1356、1032/1356、1352/1356（横滚只在列行内）、三档页面级 `scrollWidth === clientWidth` 零横向溢出；B4 列内竖滚未退化（需求池 clientH 1225 < scrollH 1450）。新增 7 例单测（`renderToStaticMarkup` 真渲列组件）。 |
 | §13 beta.9 批（报错细化 / 0022 删除根因 / 0021 A1） | dev 过（2026-09-29 · /tmp 副本走查 + 真故障注入，非打包 dmg），包内待复验 | 42 判定面（36 读 + 3 设置写 + 3 建单写）**42/42 细化文案**，泄漏「本地服务内部错误」0、引擎原文裸露主文案 0、念成空态 0，三档 960/1280/1600 各留截图；注入后均恢复 200。两条闸：`list-empty-vs-error.gate.test.ts`（128 `.tsx`、43 折叠点、offenders 0，豁免须写理由）+ REST/MCP/Web 码表一致性。门禁 api 70 files/778 tests + boot:smoke PASS、web 30 files/277 tests + build。两条硬事实入档：**WAL 库锁只挡写**（读面测锁必假绿）、**settings 有 memo**（`GET /settings` 不碰表）。0022 已验：删拆解产出的需求 → 200、会话与草案留、指针归空。**本批承诺边界（2026-10-09 纠错后口径）**：0020 的 Agent 审核队列（`9297c5f`：MCP 两工具 + `ReviewQueueService` + `auto` 分流）**已在包内可用**，未接线的只是第六版草案的批次形态（`review_batch` 恒 0、无批次抽屉、四键零消费者）；用户已裁定「Agent 当审核方」这条设计多余、要拆掉重设计（见 §0 追加块与 §13 待包⑤）。记档未改：设置「通用」写报错落在该列末尾（`general.tsx:254`，960 档 y≈1497 在折叠线下）。
+| §15 客户端入口 | dev 过（2026-10-23 · 临时 workspace/home 浏览器走查，非打包 dmg），六端真机未验 | 六卡渲染、Qoder 项目级预览（298/669 字）、Windsurf 用户级写入后 6331>6000 触发豁免且未勾选禁用、Cursor「安装前已存在」文件卸载后保留（toast 明示、sha256 不变）、浏览器态目录选择提示手动输入；console.error/pageerror/401/5xx 均为 0。installer 七项评审修复（托管块漂移不摘、整文件上限按合并后计算、接管文件不删、TOCTOU、事务、realpath、pickFolder）已随本轮收口。 |
 
 另记：**React Flow 归属水印**——流程图视图原先 `proOptions={{ hideAttribution: true }}`，控制台明确提示隐藏需订阅 Pro（本项目无订阅）。2026-09-24 拍板「恢复显示」，已随 `e27d26e` 改回 `hideAttribution: false`（与技能画布既有写法同风格），水印走 `globals.css` 既有的弱化配色（透明底 + `--color-text-tertiary`，深浅主题同一令牌），未加隐藏、未改色位。beta 包复验时确认深浅两套主题下不压内容即可。

@@ -3,7 +3,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { RequestAuth } from '../../auth/auth.scope';
 import { buildAgentTools } from '../../mcp/agent-tools';
-import { callAgentTool, createAgentMcpServer, MCP_SERVER_NAME } from '../../mcp/mcp.server';
+import { callAgentTool, createAgentMcpServer } from '../../mcp/mcp.server';
+import { MCP_SERVER_NAME } from '../../mcp/wake';
 import { skillCreateSchema, type SkillCreateInput, type SkillOrigin } from '../../skills/skills.dto';
 import { createAgentHarness, seedTask, type AgentHarness } from './temp-db';
 
@@ -23,7 +24,8 @@ let client: Client;
  * （board.create_task / get_creation_status / wait_for_confirmation，§8.7 r3）
  * + W8-a3 的 board.create_tasks_batch（§8.7 批量轻量版）
  * + B6 的 get_vocabulary（词表只读）+ §16.1 的 update_task / update_skill（全字段 PATCH：
- * 任务侧守卫三支、技能侧复用 SkillsService.patch 的只读与引用环守卫）。
+ * 任务侧守卫三支、技能侧复用 SkillsService.patch 的只读与引用环守卫）
+ * + 设置 → 客户端入口的 wake_probe（自检：只落诊断行，无业务副作用）。
  * 顺序不敏感但一条都不能多、不能少。
  */
 const W6_TOOL_NAMES = [
@@ -58,6 +60,7 @@ const W6_TOOL_NAMES = [
   'update_skill',
   'update_task',
   'wait_for_resume',
+  'wake_probe',
 ];
 
 beforeAll(async () => {
@@ -74,6 +77,7 @@ beforeAll(async () => {
     breakdown: h.breakdown,
     creation: h.creation,
     settings: h.settings,
+    wake: h.wake,
   });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
@@ -95,6 +99,7 @@ beforeEach(async () => {
   await h.prisma.task.deleteMany();
   await h.prisma.skillVersion.deleteMany();
   await h.prisma.skill.deleteMany();
+  await h.prisma.wakeProbe.deleteMany();
 });
 
 /** SDK 的返回类型是 CallToolResult 与兼容体的联合，这里按 12 章真正用到的三个字段收窄。 */
@@ -211,7 +216,7 @@ describe('MCP 工具面', () => {
   });
 
   it('工具表与服务层一一对应：MCP 不复制业务逻辑', () => {
-    expect(buildAgentTools({ claims: h.claims, leases: h.leases, writeback: h.writeback, query: h.query, skills: h.skills, policy: h.policy, breakdown: h.breakdown, creation: h.creation, settings: h.settings }).map((tool) => tool.name).sort()).toEqual(
+    expect(buildAgentTools({ claims: h.claims, leases: h.leases, writeback: h.writeback, query: h.query, skills: h.skills, policy: h.policy, breakdown: h.breakdown, creation: h.creation, settings: h.settings, wake: h.wake }).map((tool) => tool.name).sort()).toEqual(
       W6_TOOL_NAMES,
     );
   });
@@ -346,6 +351,7 @@ describe('MCP 工具面', () => {
     breakdown: h.breakdown,
     creation: h.creation,
     settings: h.settings,
+    wake: h.wake,
   });
   const ui: RequestAuth = { kind: 'ui' };
 
@@ -699,5 +705,53 @@ describe('MCP 工具面', () => {
       callAgentTool(skillCtx(), ui, 'report_mcp_call', { server: 'github', tool: 'x', success: true }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     expect(await auditRows('mcp_call')).toHaveLength(0);
+  });
+
+  // ------------------------- 设置 → 客户端入口：wake_probe 自检（证明唤醒规则 + 工具链可达）
+
+  it('wake_probe 返回 ok/server/version/source，并把来源与凭证落到 wake_probes', async () => {
+    if (agent.kind !== 'agent') throw new Error('用例前置：agent 必须是 Agent 凭证');
+    const payload = (await callAgentTool(skillCtx(), agent, 'wake_probe', {
+      source: 'qoder',
+    })) as Record<string, unknown>;
+    expect(payload).toMatchObject({ ok: true, server: 'jarvis-workbench', source: 'qoder' });
+    expect(typeof payload.version).toBe('string');
+
+    const rows = await h.prisma.wakeProbe.findMany();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      source: 'qoder',
+      tokenId: agent.tokenId,
+      tokenName: agent.tokenName,
+    });
+  });
+
+  it('wake_probe 不带 source 时响应 source=null，落库 source 也为 null', async () => {
+    const payload = (await callAgentTool(skillCtx(), agent, 'wake_probe', {})) as Record<
+      string,
+      unknown
+    >;
+    expect(payload).toMatchObject({ ok: true, source: null });
+    const rows = await h.prisma.wakeProbe.findMany();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.source).toBeNull();
+    // 自检不占任务、不建租约：只多一条诊断行。
+    expect(await h.prisma.taskRun.count()).toBe(0);
+  });
+
+  it('wake_probe 经已建 server 调用时，模式块仍作为末尾独立 text 块随行', async () => {
+    const result = await call('wake_probe', { source: 'cursor' });
+    expect(result.isError).toBeUndefined();
+    expect(structured(result)).toMatchObject({ ok: true, source: 'cursor' });
+    // 自检也必须携带「当前会话模式」：这是客户端唯一实时读到模式的通道。
+    expect(result.content.at(-1)!.text).toContain('【贾维斯】当前会话模式');
+    expect(await h.prisma.wakeProbe.count()).toBe(1);
+  });
+
+  it('wake_probe 拒绝 UI 会话 Token（agentOf 守卫），且一行诊断都不落', async () => {
+    await expect(
+      callAgentTool(skillCtx(), ui, 'wake_probe', { source: 'qoder' }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(await h.prisma.wakeProbe.count()).toBe(0);
   });
 });

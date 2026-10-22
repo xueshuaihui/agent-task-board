@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '../../contract/settings';
-import { buildMcpInstructions, MCP_WAKE_EXIT, MCP_WAKE_WORD, wakeModeNotice } from '../../mcp/mcp.server';
+import { buildMcpInstructions, MCP_WAKE_EXIT, MCP_WAKE_WORD, wakeModeNotice } from '../../mcp/wake';
 
 /**
  * #46 唤醒词口径的纯函数用例：两种模式只差「一轮即退」与「保持到退出指令」那一句，

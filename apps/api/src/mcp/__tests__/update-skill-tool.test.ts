@@ -81,6 +81,7 @@ beforeAll(async () => {
     breakdown: h.breakdown,
     creation: h.creation,
     settings: h.settings,
+    wake: h.wake,
   };
   const server = createAgentMcpServer(agent, toolCtx);
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();

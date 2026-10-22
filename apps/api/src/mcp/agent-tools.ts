@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { ApiException } from '../contract/errors';
 import { agentOf } from '../agent/agent-auth';
 import type { RequestAuth } from '../auth/auth.scope';
+import { appVersion } from '../common/version';
+import { sanitizeWakeSource, type WakeProbeRecorder } from '../contract/client-entry';
+import { MCP_SERVER_NAME } from './wake';
 import {
   appendLogSchema,
   blockedSchema,
@@ -109,6 +112,20 @@ const searchSkillsSchema = skillListQuerySchema.extend({
 /** B6 词表工具：无入参——一次调用返回服务端当前全部词表口径，agent 不再试错猜值。 */
 const getVocabularySchema = z.object({});
 
+/**
+ * 自检工具入参：`source` 只是归属标记（设置页按它区分是哪一端发起的自测），
+ * 不参与鉴权——服务端一律以 Token 上下文补 tokenId/tokenName，客户端自报不算数。
+ */
+const wakeProbeSchema = z.object({
+  source: z
+    .string()
+    .max(32)
+    .optional()
+    .describe(
+      '客户端标识（qoder/cursor/cline/windsurf/claude_code/codex 或自定义），用于设置页自测归属',
+    ),
+});
+
 export interface AgentToolContext {
   claims: ClaimService;
   leases: LeaseService;
@@ -124,6 +141,8 @@ export interface AgentToolContext {
   creation: CreationService;
   /** B6 词表工具：get_vocabulary 需要读设置现值（task_types / agent_creation_mode），与校验同源。 */
   settings: SettingsService;
+  /** 「设置 → 客户端入口」自测：wake_probe 的落库口（接口在 contract，实现归 client-entry 模块）。 */
+  wake: WakeProbeRecorder;
 }
 
 export interface AgentTool {
@@ -183,7 +202,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * + v0.0.4 §16.1 的 update_task（全字段 PATCH：RUNNING 需持当前租约、BACKLOG/READY 免租约、
  * 其余状态拒并在错误里回显该走的链路；字段校验复用 TasksService 那一份，不写第二套）
  * + v0.0.4 §16.1 的 update_skill（技能全字段 PATCH：字段与守卫复用 SkillsService.patch 那一份，
- * status/mcp_dependencies 不在可写面，默认技能 SKILL_READONLY，同样不写第二套）。
+ * status/mcp_dependencies 不在可写面，默认技能 SKILL_READONLY，同样不写第二套）
+ * + 设置 → 客户端入口的 wake_probe（自检：只落一条 wake_probes 诊断行，不占任务、不建租约）。
  * 0020 草案 §3.3（A2）曾加的自动审核队列两工具 claim_next_review / submit_review 已随
  * 2026-10-09 裁定「外部 Agent 当审核方整链移除」一并删除（见迁移 0023 头部）。
  * 业务逻辑全在 Agent 服务层，这里只做「工具名 → 服务方法」的映射，
@@ -526,6 +546,27 @@ export function buildAgentTools(ctx: AgentToolContext): AgentTool[] {
         agentOf(auth);
         const { request_id: requestId } = args as CreationRequestRefInput;
         return ctx.creation.waitFor(requestId);
+      },
+    },
+    // ------------------------------------------- 设置 → 客户端入口：自检工具（证明规则 + MCP 链路可达）
+    {
+      name: 'wake_probe',
+      description: '自检：确认唤醒规则与 MCP 工具链路可达。无业务副作用，不占任务、不建租约。',
+      input: wakeProbeSchema,
+      run: async (args, auth) => {
+        const { source } = args as { source?: string };
+        const identity = agentOf(auth);
+        await ctx.wake.record({
+          source,
+          tokenId: identity.tokenId,
+          tokenName: identity.tokenName,
+        });
+        return {
+          ok: true,
+          server: MCP_SERVER_NAME,
+          version: appVersion,
+          source: sanitizeWakeSource(source) ?? null,
+        };
       },
     },
   ];

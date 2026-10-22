@@ -215,7 +215,14 @@ describe('useBackupList：结构上不再吞掉 query.error', () => {
  * 读失败（`loadError`）单独渲染出来——只有写失败可见的话，读失败仍然整片隐身。
  */
 describe('设置页同类区域闸（报一个点=修整片同类区域）', () => {
-  const LIST_TABS = ['tokens.tsx', 'templates.tsx', 'fields.tsx', 'logs.tsx', 'backups.tsx'];
+  const LIST_TABS = [
+    'tokens.tsx',
+    'templates.tsx',
+    'fields.tsx',
+    'logs.tsx',
+    'backups.tsx',
+    'client-entry.tsx',
+  ];
   const SETTINGS_TABS = ['general.tsx', 'mcp.tsx', 'logs.tsx', 'data.tsx'];
 
   it('五个列表 Tab 都有列表错误面，且错误分支与加载分支都在', () => {

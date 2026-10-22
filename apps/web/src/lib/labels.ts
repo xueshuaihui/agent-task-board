@@ -171,6 +171,8 @@ export const AUDIT_ACTION_LABEL: Record<AuditAction, string> = {
   breakdown_confirm: '确认拆解',
   breakdown_cancel: '取消拆解',
   breakdown_timeout: '拆解超期中断',
+  client_entry_install: '客户端入口安装',
+  client_entry_uninstall: '客户端入口卸载',
 };
 
 /**

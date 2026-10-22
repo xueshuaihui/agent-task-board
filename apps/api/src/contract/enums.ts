@@ -143,6 +143,9 @@ export const AUDIT_ACTIONS = [
   'breakdown_regenerate',
   // W7 遗留 b2 §7.7/20.3-10：定时收敛与 confirm 兜底把超期会话标 interrupted 的系统动作。
   'breakdown_timeout',
+  // 客户端入口（规则/技能）的安装与卸载，每次动作各记一条；before/after 只放路径与哈希。
+  'client_entry_install',
+  'client_entry_uninstall',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -162,6 +165,8 @@ export const AUDIT_TARGET_TYPES = [
   'mcp',
   // v0.0.4 W7 §7.6：拆解会话（confirm/cancel 的审计目标）。
   'breakdown_session',
+  // 设置 →「客户端入口」的台账行（安装/卸载的审计目标）。
+  'client_entry',
 ] as const;
 export type AuditTargetType = (typeof AUDIT_TARGET_TYPES)[number];
 

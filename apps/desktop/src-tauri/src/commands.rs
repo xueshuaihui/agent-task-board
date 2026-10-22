@@ -256,6 +256,28 @@ pub async fn save_text_file(app: AppHandle, filename: String, contents: String) 
   }
 }
 
+/// 客户端入口：原生目录选择。取消/失败返回空串（与 save_text_file 同约定）。
+#[tauri::command]
+pub async fn pick_folder(app: AppHandle) -> String {
+  let task = tauri::async_runtime::spawn_blocking(move || {
+    app
+      .dialog()
+      .file()
+      .set_title("选择项目目录")
+      .blocking_pick_folder()
+      .and_then(|picked| picked.into_path().ok())
+      .map(|path| path.display().to_string())
+      .unwrap_or_default()
+  });
+  match task.await {
+    Ok(path) => path,
+    Err(error) => {
+      eprintln!("[desktop] pick_folder 任务失败：{error}");
+      String::new()
+    }
+  }
+}
+
 /// `blocking_save_file` 内部会跳主线程等结果，所以只能跑在非主线程上（这里由 spawn_blocking 保证）。
 fn save_blocking(app: &AppHandle, filename: &str, contents: &str) -> String {
   let shared = state::shared(app);

@@ -117,6 +117,9 @@ export const AUDIT_ACTIONS = [
   'breakdown_confirm',
   'breakdown_cancel',
   'breakdown_timeout',
+  // 客户端入口安装/卸载（client-entry.service.ts）。
+  'client_entry_install',
+  'client_entry_uninstall',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -130,6 +133,8 @@ export const AUDIT_TARGET_TYPES = [
   'token',
   'settings',
   'data',
+  // 客户端入口台账（安装/卸载的审计目标）。
+  'client_entry',
 ] as const;
 export type AuditTargetType = (typeof AUDIT_TARGET_TYPES)[number];
 
@@ -224,6 +229,15 @@ export const ERROR_CODES = [
   'STORAGE_LOCKED',
   'STORAGE_CORRUPT',
   'STORAGE_READONLY',
+  // ── 客户端入口八枚（设置 → 客户端入口）：预览/安装/校验/卸载共用。
+  'CLIENT_ENTRY_UNSUPPORTED',
+  'CLIENT_ENTRY_PATH_UNSAFE',
+  'CLIENT_ENTRY_LIMIT_EXCEEDED',
+  'CLIENT_ENTRY_CONFLICT',
+  'CLIENT_ENTRY_PLAN_STALE',
+  'CLIENT_ENTRY_NOT_FOUND',
+  'CLIENT_ENTRY_FILE_LOCKED',
+  'CLIENT_ENTRY_WRITE_FAILED',
   'INTERNAL',
   // 下面两枚是前端自己的，服务端不会下发：NETWORK_ERROR=没拿到响应，UNKNOWN=认不出的形状。
   'NETWORK_ERROR',
@@ -1126,3 +1140,167 @@ export const TASK_TABS = [
   'audit',
 ] as const;
 export type TaskTab = (typeof TASK_TABS)[number];
+
+/* ------------------------------------------------------ 客户端入口（v0.0.4 W9） */
+
+/**
+ * 设置 → 客户端入口：六家客户端的规则/技能安装台账。
+ * 词表与 `apps/api/src/contract/client-entry.ts` 同值（服务端值是 snake_case，
+ * resource 层 `resources/client-entries.ts` 统一映射成这里的 camelCase，UI 只见这一种风格）。
+ */
+export const CLIENT_IDS = ['qoder', 'cursor', 'cline', 'windsurf', 'claude_code', 'codex'] as const;
+export type ClientId = (typeof CLIENT_IDS)[number];
+
+export const CLIENT_ENTRY_SCOPES = ['project', 'user'] as const;
+export type ClientEntryScope = (typeof CLIENT_ENTRY_SCOPES)[number];
+
+export const CLIENT_ENTRY_ASSETS = ['rule', 'skill'] as const;
+export type ClientEntryAsset = (typeof CLIENT_ENTRY_ASSETS)[number];
+
+export const CLIENT_ENTRY_STATUSES = ['installed', 'drifted', 'missing', 'error'] as const;
+export type ClientEntryStatus = (typeof CLIENT_ENTRY_STATUSES)[number];
+
+/** 台账行：一次安装（客户端 × 作用域 × 资产）一条。 */
+export interface ClientEntry {
+  id: string;
+  client: ClientId;
+  scope: ClientEntryScope;
+  /** 项目级才有；用户级为 null（迁移里的 CHECK 同口径）。 */
+  workspacePath: string | null;
+  assetType: ClientEntryAsset;
+  assetName: string;
+  targetPath: string;
+  writeMode: 'file' | 'managed_block';
+  status: ClientEntryStatus;
+  /** 安装时的模板版本；低于当前版本时 `updateAvailable` 为 true。 */
+  templateVersion: number;
+  installedAt: string;
+  verifiedAt: string | null;
+  lastError: string | null;
+  /** 校验时由服务端按模板版本计算（不改状态）。 */
+  updateAvailable: boolean;
+}
+
+/** 检测结果里的目标候选（路径矩阵的一格；`exists` 只说明文件在不在，不宣称客户端已安装）。 */
+export interface ClientTarget {
+  scope: ClientEntryScope;
+  asset: ClientEntryAsset;
+  path: string;
+  writeMode: 'file' | 'managed_block';
+  confidence: 'confirmed' | 'probable';
+  exists: boolean;
+  note?: string;
+}
+
+export interface ClientDetectResult {
+  client: ClientId;
+  label: string;
+  /** 该客户端支持的资产类型（Cline / Windsurf 不含 skill）。 */
+  assets: ClientEntryAsset[];
+  scopes: ClientEntryScope[];
+  stability: Record<ClientEntryAsset, 'stable' | 'experimental'>;
+  notes: string[];
+  detected: { project: boolean; user: boolean };
+  targets: ClientTarget[];
+  entries: ClientEntry[];
+  /** 各作用域的生效提示（new session / reload window …）。 */
+  effectHint: Record<ClientEntryScope, string>;
+}
+
+export interface ClientEntryPlanAction {
+  assetType: ClientEntryAsset;
+  assetName: string;
+  targetPath: string;
+  writeMode: 'file' | 'managed_block';
+  action: 'create' | 'update' | 'unchanged' | 'conflict';
+  reason?: string;
+  content: string;
+  contentChars: number;
+  contentHash: string;
+  expectedPrevHash: string | null;
+  backupRequired: boolean;
+  warnings: string[];
+  /** Windsurf 全局规则等客户端自带的字符上限；超出时安装必须显式豁免。 */
+  charLimit?: number;
+  /**
+   * 写入后整份文件的字符数（服务端计算）：托管块模式含块外用户原有内容，
+   * 独立文件模式即整份文件；与 `contentChars`（本应用内容长度）不是一个口径。
+   * 超限判定只看这个值；旧响应缺该键时前端不自行推算。
+   */
+  limitChars?: number;
+}
+
+export interface ClientEntryPlan {
+  client: ClientId;
+  scope: ClientEntryScope;
+  planHash: string;
+  actions: ClientEntryPlanAction[];
+  warnings: string[];
+}
+
+/** 自测到达记录（MCP `wake_probe` 落行；只证明工具链路，不证明规则一定生效）。 */
+export interface WakeProbe {
+  id: string;
+  source: string | null;
+  tokenName: string | null;
+  receivedAt: string;
+}
+
+export interface ClientEntryOverview {
+  clients: ClientDetectResult[];
+  selfTest: {
+    serverName: string;
+    mcpEndpoint: string;
+    wakeMode: 'single' | 'continuous';
+    recent: WakeProbe[];
+  };
+}
+
+export interface ClientEntryInstallResult {
+  entries: ClientEntry[];
+  actions: ClientEntryPlanAction[];
+}
+
+export interface ClientEntryVerifyResult {
+  entries: ClientEntry[];
+  summary: Record<ClientEntryStatus, number>;
+}
+
+export interface ClientEntryUninstallResult {
+  removed: boolean;
+  /**
+   * 卸载结局的补充说明：
+   * - `drifted`：用户改过文件（托管块内正文哈希与安装时不一致）→ `removed=false`，保留并标记漂移；
+   * - `missing`：文件已不在 → `removed=false`，保留台账；
+   * - `unmanaged`：安装前已存在、内容相同被接管的文件（`created_file=0`）→ 保留原文件、
+   *   只删台账（`removed=true`）：本应用从未拥有这份文件。
+   */
+  kept?: 'drifted' | 'missing' | 'unmanaged';
+  entry?: ClientEntry;
+}
+
+/** 计划入参；请求体由 resource 层转成后端 snake_case（`assets` 显式空数组与缺省语义不同）。 */
+export interface ClientEntryPlanInput {
+  client: ClientId;
+  scope: ClientEntryScope;
+  /** 项目级必填；用户级不传（服务端只写白名单根）。 */
+  workspace?: string;
+  /** 不传 = 由服务端按客户端能力取默认资产。 */
+  assets?: ClientEntryAsset[];
+}
+
+/** 安装入参：`planHash` 来自预览，服务端重新计划后比对，不一致 → 409 `CLIENT_ENTRY_PLAN_STALE`。 */
+export interface ClientEntryInstallInput extends ClientEntryPlanInput {
+  planHash: string;
+  confirm: true;
+  /** Windsurf 全局规则超字符上限时的显式豁免（默认阻止）。 */
+  allowOverLimit?: boolean;
+}
+
+/** `GET /client-entries/self-test` 的响应；概览里的同一份数据叫 `recent`。 */
+export interface ClientEntrySelfTest {
+  serverName: string;
+  mcpEndpoint: string;
+  wakeMode: 'single' | 'continuous';
+  probes: WakeProbe[];
+}

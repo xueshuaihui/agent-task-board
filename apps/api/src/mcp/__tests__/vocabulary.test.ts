@@ -30,6 +30,7 @@ const toolCtx = () => ({
   breakdown: h.breakdown,
   creation: h.creation,
   settings: h.settings,
+  wake: h.wake,
 });
 
 beforeAll(async () => {

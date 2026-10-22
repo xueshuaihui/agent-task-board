@@ -79,6 +79,23 @@ export const ERROR_STATUS = {
   STORAGE_CORRUPT: 500,
   // SQLITE_READONLY / PERM：数据目录在只读卷上或权限不足。
   STORAGE_READONLY: 500,
+  // ── 客户端入口八枚（设置 → 客户端入口）──────────────────────────────────────
+  // 客户端/作用域/资产组合不受支持（如 Cline 不支持技能、Cursor 用户级不自动写）。
+  CLIENT_ENTRY_UNSUPPORTED: 422,
+  // 目标路径不是绝对路径、越出允许根、含 NUL，或目标文件是软链。
+  CLIENT_ENTRY_PATH_UNSAFE: 422,
+  // 内容超过客户端字符上限（Windsurf 全局规则 6000 字）且未传 allow_over_limit。
+  CLIENT_ENTRY_LIMIT_EXCEEDED: 422,
+  // 目标位置已有非本应用创建的内容，或托管标记不成对。
+  CLIENT_ENTRY_CONFLICT: 409,
+  // 预览后目标文件被改动，plan_hash 与重新生成的计划不一致，需重新预览。
+  CLIENT_ENTRY_PLAN_STALE: 409,
+  // 台账里没有这个入口 id（可能已被卸载）。
+  CLIENT_ENTRY_NOT_FOUND: 404,
+  // 文件被其它程序占用（EBUSY/EPERM/EACCES），重试 3 次后仍失败。
+  CLIENT_ENTRY_FILE_LOCKED: 503,
+  // 其它 IO 失败，或写入后回读哈希与预期不符（已尽力用备份还原）。
+  CLIENT_ENTRY_WRITE_FAILED: 500,
   INTERNAL: 500,
 } as const satisfies Record<string, number>;
 

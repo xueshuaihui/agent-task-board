@@ -9,6 +9,7 @@ import { LeaseService } from '../agent/lease.service';
 import { McpPolicyService } from '../agent/mcp-policy.service';
 import { WritebackService } from '../agent/writeback.service';
 import { BreakdownService } from '../breakdown/breakdown.service';
+import { WakeProbeService } from '../client-entry/wake-probe.service';
 import { CreationService } from '../creation/creation.service';
 import { SkillsService } from '../skills/skills.service';
 import { SettingsService } from '../infra/settings.service';
@@ -41,6 +42,8 @@ export class McpController {
     private readonly breakdown: BreakdownService,
     private readonly creation: CreationService,
     private readonly settings: SettingsService,
+    /** 设置 → 客户端入口：wake_probe 的落库口（ClientEntryModule 导出同一份服务）。 */
+    private readonly wake: WakeProbeService,
   ) {}
 
   @Post()
@@ -75,6 +78,7 @@ export class McpController {
       breakdown: this.breakdown,
       creation: this.creation,
       settings: this.settings,
+      wake: this.wake,
     };
     // 每请求一个 server：Token 上下文（tokenId / capabilities）是请求级的，复用会串能力集合。
     // 唤醒模式同样每请求现读：mcp_wake_mode 在 20.9 标了 hot，SettingsService 有进程内缓存，

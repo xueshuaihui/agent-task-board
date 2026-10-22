@@ -5,6 +5,7 @@ import { LeaseService } from '../../agent/lease.service';
 import { McpPolicyService } from '../../agent/mcp-policy.service';
 import { WritebackService } from '../../agent/writeback.service';
 import type { RequestAuth } from '../../auth/auth.scope';
+import { WakeProbeService } from '../../client-entry/wake-probe.service';
 import { CreationService } from '../../creation/creation.service';
 import { SettingsService } from '../../infra/settings.service';
 import { buildAgentTools, parseToolInput } from '../../mcp/agent-tools';
@@ -205,6 +206,7 @@ describe('MCP 工具面：board.get_breakdown / board.wait_for_breakdown', () =>
       breakdown: svc,
       creation: t.app.get(CreationService),
       settings: t.app.get(SettingsService),
+      wake: t.app.get(WakeProbeService),
     });
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
     const getTool = byName.get('board.get_breakdown');

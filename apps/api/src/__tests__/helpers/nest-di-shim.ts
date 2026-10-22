@@ -18,6 +18,10 @@ import { BackupService } from '../../backup/backup.service';
 import { BackupController } from '../../backup/backup.controller';
 import { BreakdownController } from '../../breakdown/breakdown.controller';
 import { BreakdownService } from '../../breakdown/breakdown.service';
+import { ClientEntryController } from '../../client-entry/client-entry.controller';
+import { ClientEntryRepository } from '../../client-entry/client-entry.repository';
+import { ClientEntryService } from '../../client-entry/client-entry.service';
+import { WakeProbeService } from '../../client-entry/wake-probe.service';
 import { CreationService } from '../../creation/creation.service';
 import { CreationController } from '../../creation/creation.controller';
 import { DataService } from '../../data/data.service';
@@ -102,7 +106,13 @@ export function applyDiShim(): void {
   // （真机侧由 AgentModule import TasksModule 提供，字段校验只有一份实现）。
   declare(WritebackService, [PrismaService, LeaseService, AuditService, EventsService, NotificationsService, AgentQueryService, TasksService]);
   declare(AgentController, [ClaimService, LeaseService, WritebackService, AgentQueryService]);
-  declare(McpController, [ClaimService, LeaseService, WritebackService, AgentQueryService, SkillsService, McpPolicyService, BreakdownService, CreationService, SettingsService]);
+  declare(McpController, [ClaimService, LeaseService, WritebackService, AgentQueryService, SkillsService, McpPolicyService, BreakdownService, CreationService, SettingsService, WakeProbeService]);
+
+  // ── 设置 → 客户端入口（wake_probe 的落库口与六条 UI 路由）
+  declare(WakeProbeService, [PrismaService]);
+  declare(ClientEntryRepository, [PrismaService]);
+  declare(ClientEntryService, [ClientEntryRepository, WakeProbeService, SettingsService, AuditService, AppLogger, PrismaService]);
+  declare(ClientEntryController, [ClientEntryService]);
 
   // ── tasks
   declare(TasksService, [
