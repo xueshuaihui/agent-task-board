@@ -1,8 +1,8 @@
 # 贾维斯工作台（Jarvis Workbench）唯一标准文档
 
-**版本**: v0.0.4-beta.17  
-**更新日期**: 2026-10-21  
-**状态**: 主分支稳定，beta.17 批次（#4–#8 收口 + 测试稳定性修复：Windows 门禁改为完全串行 maxWorkers=1、全局 timeout/hookTimeout 提到 180s、cursor-scheduler e2e 单用例 180s 超时）
+**版本**: v0.0.4-beta.18  
+**更新日期**: 2026-10-23  
+**状态**: 主分支稳定，beta.18 批次（客户端入口 M1：六端规则/技能管理、`wake_probe` 自测、0025 迁移；beta.13–16 因 CI 失败未出 Release，beta.17 恢复出包）
 
 ---
 
@@ -676,11 +676,11 @@ npm run tauri build
 ### 10.3 发版流程
 
 1. **代码冻结**：确保 main 分支绿色（CI 全绿）
-2. **打 Tag**：`git tag -a v0.0.4-beta.17 -m "..." && git push origin v0.0.4-beta.17`
+2. **打 Tag**：`git tag -a v0.0.4-beta.18 -m "..." && git push origin v0.0.4-beta.18`
 3. **CI 自动构建**：GitHub Actions 自动构建三平台安装包
 4. **发布 Release**：上传 DMG/EXE 到 GitHub Releases
 5. **真机验证**：按 `docs/v0.0.4/beta真机验证清单.md` 逐项验收
-6. **发布公告**：更新 `docs/发版记录.md`
+6. **发布公告**：更新 `docs/发版记录 v0.0.4.md`（v0.0.4 起按次版本一份，beta 批次持续追加）
 
 ### 10.4 数据库迁移
 
@@ -703,10 +703,10 @@ npm run prisma -- migrate deploy  # 开发期走 Prisma CLI 应用迁移（生�
 
 ### 10.5 当前版本水位
 
-- **最新 Tag**：v0.0.4-beta.17（批次：#4–#8 收口 + 测试稳定性修复；beta.13/14/15/16 均因 CI 失败未出 Release）
+- **最新 Tag**：v0.0.4-beta.18（客户端入口 M1；beta.17 为最近一次跑绿的发布批次，beta.13–16 因 CI 失败未出 Release）
 - **迁移版本**：0025（客户端入口台账 / 唤醒自测）
-- **API 代码行数**：223 文件 / 43773 行（含测试）
-- **Web 代码行数**：280 文件 / 48063 行（含测试）
+- **API 代码行数**：252 文件 / 49331 行（含测试）
+- **Web 代码行数**：287 文件 / 50420 行（含测试）
 
 ---
 

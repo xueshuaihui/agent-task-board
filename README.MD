@@ -496,7 +496,7 @@ mac `_x64.dmg` / `_arm64.dmg` + Windows `x64-setup.exe`，
 - `docs/系统操作使用手册.md` — 安装、配置与运维
 - `docs/发布手册.md` — Release SOP：推 tag → CI 三平台出包（mac 双架构 dmg + Windows x64 `setup.exe`）并发布 Release（本地打包为附录；Windows 口径集中在 §1.3）
 - `docs/任务创建模版（Agent 协助）.md` — 发给 AI 助手即可按约束代建任务
-- `docs/发版记录 v0.0.1.md` / `docs/发版记录 v0.0.3.md` — 各发布批次的产物清单、SHA-256、已知限制（尚未发布过正式版）
+- `docs/发版记录 v0.0.4.md` — v0.0.4 beta 批次（含 beta.18 客户端入口）的产物清单、SHA-256、已知限制；v0.0.3 及更早见 GitHub Releases 与 git tag（尚未发布过正式版）
 - `docs/开发计划-阶段一收尾与阶段二.md` — 当前状态快照与任务规划
 
 ---
