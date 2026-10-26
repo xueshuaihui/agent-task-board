@@ -247,7 +247,7 @@ apps/
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | TEXT PK | 台账行 ID |
-| client | TEXT | 客户端（qoder/cursor/cline/windsurf/claude_code/codex） |
+| client | TEXT | 客户端（qoder/cursor/cline/windsurf/claude_code/codex；0026 扩出第七种伪客户端 `custom` 兜底） |
 | scope | TEXT | 作用域（project/user） |
 | workspace_path | TEXT | 项目工作区绝对路径；表级 CHECK 保证 project 必填、user 必须为 NULL |
 | asset_type | TEXT | 资产类型（rule/skill） |
@@ -544,10 +544,10 @@ BLOCKED → READY（人工处理后转回）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/v1/client-entries?workspace=` | 六端检测（只看配置锚点是否存在）+ 落点矩阵 + 台账 + 自测摘要；未选工作区时只展示用户级 |
+| GET | `/api/v1/client-entries?workspace=` | 六端检测（只看配置锚点是否存在）+ custom 兜底卡 + 落点矩阵 + 台账 + 自测摘要；未选工作区时只展示用户级（custom 兜底卡恒展示，台账行不按 workspace 过滤） |
 | GET | `/api/v1/client-entries/self-test?since=` | 最近 `wake_probes`（最多 20 条，`since` 为 ISO 时间戳） |
-| POST | `/api/v1/client-entries/plan` | 生成预览 actions（`contentChars` 本应用内容长度 / `limitChars` 写入后整文件字数 / `charLimit` 客户端上限）与 `plan_hash`，只读不写盘 |
-| POST | `/api/v1/client-entries/install` | 按预览结果落盘；body：`client/scope/workspace?/assets/plan_hash/confirm:true/allow_over_limit?` |
+| POST | `/api/v1/client-entries/plan` | 生成预览 actions（`contentChars` 本应用内容长度 / `limitChars` 写入后整文件字数 / `charLimit` 客户端上限）与 `plan_hash`，只读不写盘；`target_dir` 仅 custom 必传 |
+| POST | `/api/v1/client-entries/install` | 按预览结果落盘；body：`client/scope/workspace?/target_dir?/assets/plan_hash/confirm:true/allow_over_limit?` |
 | POST | `/api/v1/client-entries/verify` | body `ids?`，重读文件更新台账状态，不写文件；响应 `{entries, summary}`，每条 entry 含布尔 `updateAvailable` |
 | POST | `/api/v1/client-entries/:id/uninstall` | body `{confirm:true}`，只删本应用写入的内容；响应 `removed` + `kept?`（`drifted` / `missing` / `unmanaged`） |
 
@@ -587,7 +587,7 @@ BLOCKED → READY（人工处理后转回）
 - **通用设置**：默认审核模式、创建模式、语言
 - **Token 管理**：生成/撤销 UI Token 与 Agent Token
 - **MCP 配置**：唤醒模式（单次/连续）、超时时间
-- **客户端入口**：六端规则/技能检测、预览、安装、校验、卸载与自测
+- **客户端入口**：六端 + custom 兜底规则/技能检测、预览、安装、校验、卸载与自测
 - **字段定义**：自定义字段的增删改查
 - **技能管理**：技能的创建、编辑、发布、分类
 - **数据管理**：导入导出、备份恢复
@@ -608,7 +608,18 @@ BLOCKED → READY（人工处理后转回）
 ### 9.7 客户端入口（Rules + Skills）
 
 - **分工**：rule 是 always-on 的入口触发器，只负责识别「贾维斯」并把请求路由到 MCP；skill 是按需加载的操作手册（`SKILL.md`），承载建单、认领、回写、拆解等细节。规则必须短，二者不可互相替代。
-- **能力矩阵**：项目级必须先由用户显式选择工作区；未选工作区时只展示用户级（用户级已覆盖 Qoder / Cline / Windsurf / Claude Code / Codex；Cursor 用户级无稳定落点，M2 才提供「仅复制」兜底）。检测只判断客户端配置锚点（文件或目录）是否存在，不代表客户端已安装。
+- **能力矩阵**：项目级必须先由用户显式选择工作区；未选工作区时只展示用户级（用户级已覆盖 Qoder / Cline / Windsurf / Claude Code / Codex；Cursor 用户级无稳定落点，M2 才提供「仅复制」兜底）。检测只判断客户端配置锚点（文件或目录）是否存在，不代表客户端已安装。客户端入口整体支持「六端 + custom 兜底（其他客户端手动指定目录安装，rule/skill 写入所选目录，进台账可校验/卸载）」。
+
+#### custom 兜底（非 adapter 伪客户端，0026 起）
+
+四条拍板口径：
+
+1. **custom 不是 adapter、没有固定落点**：概览恒追加一张合成兜底卡（targets 空、detected 恒 false）；plan/install 必须带 `target_dir`（绝对路径，允许目录尚不存在，例如客户端首次安装才会创建的规则目录）。内置六端必须不传 `target_dir`，传了按字段错误拒绝。
+2. **scope 恒为 project**：传其他 scope 一律 `CLIENT_ENTRY_UNSUPPORTED`；台账 `workspace_path` 即所选目录（由 `resolveInstallRoot` 归一为「最近存在祖先 realpath + 缺失尾巴」，macOS `/var → /private/var` 同基）。
+3. **落点**：rule 落 `<target_dir>/jarvis-workbench.md`（无 frontmatter 的通用 Markdown）；skill 落 `<target_dir>/jarvis-workbench/SKILL.md`。逐资产走与六端完全相同的冲突/托管块/校验/卸载逻辑（rule 为整文件模式）。
+4. **迁移 0026 只放宽 client 字段 CHECK**（六端扩成七值）：以后新增客户端不再动契约与迁移——词表与请求校验用 `CLIENT_ENTRY_CLIENTS`，内置端仍走 `CLIENT_IDS`。
+
+**WorkBuddy 实例指引**：目录选 `<workspace>/.codebuddy/rules`。WorkBuddy 5.9.2 实测从该目录读取项目规则，frontmatter 支持 `alwaysApply` / `paths` / `enabled`，无 frontmatter 默认常驻——本应用的 custom rule 即无 frontmatter 通用 Markdown，可直接生效。注意：此口径来源是 5.9.2 app 包反查 + 真机文件核查，非官方文档，升级后以实际行为为准。
 
 | 客户端 | 项目级 rule | 项目级 skill | 用户级 rule | 用户级 skill | 备注 |
 |--------|-------------|--------------|-------------|--------------|------|

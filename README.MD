@@ -79,7 +79,7 @@ hdiutil create -volname "Jarvis Workbench" \
 | **看板** | 六列任务流：需求池 → 待执行 → 执行中 → 待审核 → 已完成 / 异常；拖拽流转 |
 | **审核** | 待审核队列，逐条批（通过 / 驳回 + 意见），可自动跳下一条 |
 | **任务** | 列表视图：筛选、搜索、排序、分页 |
-| **设置** | Token 管理、客户端入口（六端规则/技能）、字段定义、模板、数据导入导出、备份、审计日志 |
+| **设置** | Token 管理、客户端入口（六端 + custom 兜底规则/技能）、字段定义、模板、数据导入导出、备份、审计日志 |
 | 🔔 铃铛 | 未读通知角标（审核待办、执行失败、租约过期…），点击直达 REVIEW 过滤 |
 
 ### 建任务的三种方式
@@ -97,7 +97,7 @@ hdiutil create -volname "Jarvis Workbench" \
    `list_ready_tasks` → `claim_next_task`（建租约）→ `update_progress` / `append_log` → `complete_task`；工具总面随版本增减，以 `tools/list` 返回为准；
 3. **执行协议**：`get_task` 先读 `requirement.execution_rules` 与 `effective_skills`（`source` 标来源，同 id 需求优先）；`update_progress` 按节奏真实上报（领取 0–5%、阶段 10–90%、完成前 100%、每 2–3 分钟或阶段变化一次；可只传 `message`，服务端单调不回退）；`heartbeat` 只续租，不代表进度；
 4. Cursor 用户可直接用现成调度脚本 `scripts/cursor-agent-poll.mjs`（轮询认领 + 进度上报，免写接入代码）；
-5. **设置 → 客户端入口**：M1 提供六端项目级入口规则（always-on：Qoder / Cursor / Cline / Windsurf / Claude Code / Codex），Qoder / Cursor / Claude Code / Codex 另有项目级操作技能（按需手册），项目级需先选工作区；Qoder / Cline / Windsurf / Claude Code / Codex 的用户级规则/技能也已支持（按各端能力），Cursor 用户级「仅复制」兜底随 M2 提供。装完新开一个客户端会话，说「贾维斯，自检」，设置页看到对应来源即表示 MCP 工具链路已验证（只证明链路可达，不承诺规则一定生效）。
+5. **设置 → 客户端入口**：M1 提供六端项目级入口规则（always-on：Qoder / Cursor / Cline / Windsurf / Claude Code / Codex），Qoder / Cursor / Claude Code / Codex 另有项目级操作技能（按需手册），项目级需先选工作区；Qoder / Cline / Windsurf / Claude Code / Codex 的用户级规则/技能也已支持（按各端能力），Cursor 用户级「仅复制」兜底随 M2 提供。不在内置六端里的客户端走 **custom 兜底**（其他客户端手动指定目录安装，rule/skill 写入所选目录，进台账可校验/卸载），详见 `docs/STANDARD.md` §9.7。装完新开一个客户端会话，说「贾维斯，自检」，设置页看到对应来源即表示 MCP 工具链路已验证（只证明链路可达，不承诺规则一定生效）。
 
 ### 数据在哪
 
