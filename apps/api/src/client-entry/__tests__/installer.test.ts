@@ -7,6 +7,7 @@ import {
   CLIENT_ENTRY_MARKER_BEGIN as BEGIN,
   CLIENT_ENTRY_MARKER_END as END,
   CLIENT_ENTRY_TEMPLATE_VERSION,
+  type ClientEntryAsset,
   type ClientEntryScope,
   type ClientId,
 } from '../../contract/client-entry';
@@ -662,5 +663,162 @@ describe('overLimitActions', () => {
 
     expect(overLimitActions([atLimit, over, noLimit, noMeasure])).toEqual([over]);
     expect(overLimitActions([atLimit, noLimit, noMeasure])).toEqual([]);
+  });
+});
+
+describe('planInstall / applyPlan：custom 伪客户端（兜底落点）', () => {
+  /** custom 的台账行构造：writeMode 恒 file，workspacePath 恒所选目录。 */
+  function customStoredFrom(action: PlanAction, applied: AppliedAction): StoredEntry {
+    return {
+      id: applied.entryId,
+      client: 'custom',
+      scope: 'project',
+      workspacePath: workspace,
+      assetType: action.assetType,
+      assetName: action.assetName,
+      targetPath: action.targetPath,
+      writeMode: action.writeMode,
+      contentHash: action.contentHash,
+      fileHash: applied.fileHash,
+      templateVersion: applied.templateVersion,
+      createdFile: applied.createdFile,
+      marker: applied.marker,
+    };
+  }
+
+  function customInput(targetDir: string, assets?: ClientEntryAsset[]): InstallPlanInput {
+    return {
+      client: 'custom',
+      scope: 'project',
+      target_dir: targetDir,
+      env,
+      ...(assets === undefined ? {} : { assets }),
+    };
+  }
+
+  it('target_dir 已存在：rule 无 frontmatter、skill 有 frontmatter，落盘后重跑 unchanged', async () => {
+    const dir = path.join(workspace, 'my-client', 'rules');
+    fs.mkdirSync(dir, { recursive: true });
+
+    const input = customInput(dir);
+    const plan = await planInstall(input);
+    expect(plan.workspacePath).toBe(dir);
+    expect(plan.actions).toHaveLength(2);
+
+    const rule = plan.actions.find((action) => action.assetType === 'rule');
+    const skill = plan.actions.find((action) => action.assetType === 'skill');
+    if (rule === undefined || skill === undefined) throw new Error('expected rule + skill actions');
+    expect(rule.targetPath).toBe(path.join(dir, `${MCP_SERVER_NAME}.md`));
+    expect(rule.writeMode).toBe('file');
+    expect(rule.action).toBe('create');
+    expect(rule.confidence).toBe('confirmed');
+    expect(rule.effectHint).toBe('以所选客户端的规则加载机制为准，通常新开会话后生效');
+    // 无 frontmatter 的通用 Markdown：正文以标题开头，且自检来源传 custom。
+    expect(rule.content.startsWith('---')).toBe(false);
+    expect(rule.content.startsWith('# Jarvis Workbench 唤醒入口')).toBe(true);
+    expect(rule.content).toContain('`source` 传 `custom`');
+    expect(rule.warnings).toContain('该落点为实验性支持，客户端版本可能不支持');
+    expect(rule.charLimit).toBeUndefined();
+
+    expect(skill.targetPath).toBe(path.join(dir, MCP_SERVER_NAME, 'SKILL.md'));
+    expect(skill.action).toBe('create');
+    expect(skill.content.startsWith('---\n')).toBe(true);
+    expect(skill.content).toContain('领取：');
+    expect(skill.warnings).toContain('该落点为实验性支持，客户端版本可能不支持');
+
+    const result = await install(input, plan);
+    expect(result.applied).toHaveLength(2);
+    expect(fs.readFileSync(rule.targetPath, 'utf8')).toBe(rule.content);
+    expect(fs.readFileSync(skill.targetPath, 'utf8')).toBe(skill.content);
+    expect(
+      await verifyEntry(customStoredFrom(rule, result.applied[0])),
+    ).toMatchObject({ status: 'installed' });
+    expect(
+      await verifyEntry(customStoredFrom(skill, result.applied[1])),
+    ).toMatchObject({ status: 'installed' });
+
+    const second = await planInstall(input);
+    expect(second.actions.map((action) => action.action)).toEqual(['unchanged', 'unchanged']);
+  });
+
+  it('target_dir 尚不存在：预览放行，落盘时自动建目录', async () => {
+    const dir = path.join(workspace, '.codebuddy', 'rules');
+    const input = customInput(dir);
+    const plan = await planInstall(input);
+    expect(plan.actions.map((action) => action.action)).toEqual(['create', 'create']);
+    expect(fs.existsSync(dir)).toBe(false);
+
+    await install(input, plan);
+    expect(fs.readFileSync(path.join(dir, `${MCP_SERVER_NAME}.md`), 'utf8')).toBe(
+      plan.actions[0].content,
+    );
+    expect(fs.readFileSync(path.join(dir, MCP_SERVER_NAME, 'SKILL.md'), 'utf8')).toBe(
+      plan.actions[1].content,
+    );
+  });
+
+  it('目录里已有无主同名文件 → conflict file_exists_unmanaged，apply 拒绝且原文件不动', async () => {
+    const dir = path.join(workspace, 'another-client');
+    fs.mkdirSync(dir, { recursive: true });
+    const existing = path.join(dir, `${MCP_SERVER_NAME}.md`);
+    fs.writeFileSync(existing, '用户自己的规则\n', 'utf8');
+
+    const input = customInput(dir);
+    const plan = await planInstall(input);
+    const rule = plan.actions.find((action) => action.targetPath === existing);
+    if (rule === undefined) throw new Error('expected rule action on existing file');
+    expect(rule.action).toBe('conflict');
+    expect(rule.reason).toBe('file_exists_unmanaged');
+
+    await expect(
+      applyPlan({ input, planHash: plan.planHash, entryIdFor: entryIdFor() }),
+    ).rejects.toMatchObject({ code: 'CLIENT_ENTRY_CONFLICT' });
+    expect(fs.readFileSync(existing, 'utf8')).toBe('用户自己的规则\n');
+  });
+
+  it('target_dir 指向文件或软链 → CLIENT_ENTRY_PATH_UNSAFE', async () => {
+    const file = path.join(workspace, 'not-a-dir');
+    fs.writeFileSync(file, 'x', 'utf8');
+    await expect(planInstall(customInput(file))).rejects.toMatchObject({
+      code: 'CLIENT_ENTRY_PATH_UNSAFE',
+    });
+
+    const link = path.join(workspace, 'dir-link');
+    fs.symlinkSync(workspace, link, 'dir');
+    await expect(planInstall(customInput(link))).rejects.toMatchObject({
+      code: 'CLIENT_ENTRY_PATH_UNSAFE',
+    });
+    // 软链下的尚不存在目录同样拒绝（父链软链逃逸）。
+    await expect(planInstall(customInput(path.join(link, 'missing-sub')))).rejects.toMatchObject({
+      code: 'CLIENT_ENTRY_PATH_UNSAFE',
+    });
+  });
+
+  it('非 project scope → CLIENT_ENTRY_UNSUPPORTED', async () => {
+    await expect(
+      planInstall({ client: 'custom', scope: 'user', target_dir: workspace, env }),
+    ).rejects.toMatchObject({ code: 'CLIENT_ENTRY_UNSUPPORTED' });
+  });
+
+  it('卸载后文件删除、技能空目录清掉', async () => {
+    const dir = path.join(workspace, 'uninstall-client');
+    fs.mkdirSync(dir, { recursive: true });
+    const input = customInput(dir);
+    const plan = await planInstall(input);
+    const result = await install(input, plan);
+
+    const ruleAction = plan.actions[0];
+    const skillAction = plan.actions[1];
+    expect(await uninstallEntry(customStoredFrom(ruleAction, result.applied[0]))).toEqual({
+      removed: true,
+    });
+    expect(await uninstallEntry(customStoredFrom(skillAction, result.applied[1]))).toEqual({
+      removed: true,
+    });
+    expect(fs.existsSync(ruleAction.targetPath)).toBe(false);
+    expect(fs.existsSync(skillAction.targetPath)).toBe(false);
+    // 技能的 jarvis-workbench 目录已空，一并清掉；所选目录本身保留。
+    expect(fs.existsSync(path.dirname(skillAction.targetPath))).toBe(false);
+    expect(fs.existsSync(dir)).toBe(true);
   });
 });

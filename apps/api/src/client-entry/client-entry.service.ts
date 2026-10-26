@@ -3,14 +3,17 @@ import { Injectable } from '@nestjs/common';
 import {
   CLIENT_ENTRY_MARKER_BEGIN,
   CLIENT_ENTRY_TEMPLATE_VERSION,
+  CUSTOM_CLIENT_EFFECT_HINT,
+  CUSTOM_CLIENT_ID,
+  CUSTOM_CLIENT_LABEL,
   type ClientEntryAsset,
+  type ClientEntryClientId,
   type ClientEntryInstallInput,
   type ClientEntryPlanInput,
   type ClientEntryScope,
   type ClientEntrySelfTestQuery,
   type ClientEntryStatus,
   type ClientEntryVerifyInput,
-  type ClientId,
 } from '../contract/client-entry';
 import { ApiException } from '../contract/errors';
 import { uuidv7 } from '../contract/ids';
@@ -33,7 +36,7 @@ import {
   type InstallPlanInput,
   type PlanAction,
 } from './installer';
-import { resolveWorkspaceDir } from './paths';
+import { resolveInstallRoot, resolveWorkspaceDir } from './paths';
 import {
   ClientEntryRepository,
   type ClientEntryRecord,
@@ -43,7 +46,7 @@ import { WakeProbeService, type WakeProbeDto } from './wake-probe.service';
 /** 台账 DTO：字段与 Prisma 模型同名（camelCase），`updateAvailable` 由模板版本算出。 */
 export interface ClientEntryDto {
   id: string;
-  client: ClientId;
+  client: ClientEntryClientId;
   scope: ClientEntryScope;
   workspacePath: string | null;
   assetType: ClientEntryAsset;
@@ -69,7 +72,7 @@ export interface ClientTargetDto {
 }
 
 export interface ClientDetectDto {
-  client: ClientId;
+  client: ClientEntryClientId;
   label: string;
   assets: ClientEntryAsset[];
   scopes: ClientEntryScope[];
@@ -92,7 +95,7 @@ export interface ClientEntryOverviewDto {
 }
 
 export interface ClientEntryPlanDto {
-  client: ClientId;
+  client: ClientEntryClientId;
   scope: ClientEntryScope;
   planHash: string;
   actions: PlanAction[];
@@ -129,13 +132,36 @@ interface InstallAudit {
   after: {
     path: string;
     scope: ClientEntryScope;
-    client: ClientId;
+    client: ClientEntryClientId;
     assetType: ClientEntryAsset;
     action: PlanAction['action'];
     contentHash: string;
     backupPath: string | null;
   };
 }
+
+/**
+ * custom 伪客户端（兜底卡）的固定展示口径：它没有 adapter，概览里恒追加一张合成卡——
+ * targets 恒空（没有固定落点可展示）、detected 恒 false，台账行不按 workspace 过滤
+ * （custom 没有工作区锚点，全量展示是兜底卡唯一的可见性来源）。
+ */
+const CUSTOM_CLIENT_CARD = {
+  client: CUSTOM_CLIENT_ID,
+  label: CUSTOM_CLIENT_LABEL,
+  assets: ['rule', 'skill'] as ClientEntryAsset[],
+  scopes: ['project'] as ClientEntryScope[],
+  stability: {
+    rule: 'experimental',
+    skill: 'experimental',
+  } as Record<ClientEntryAsset, 'stable' | 'experimental'>,
+  notes: [
+    '为不在内置清单里的客户端准备的兜底：选择客户端会读取的规则目录，安装后由该客户端自行加载；规则为无 frontmatter 的通用 Markdown；技能写到所选目录下 jarvis-workbench/SKILL.md。',
+  ],
+  effectHint: {
+    project: CUSTOM_CLIENT_EFFECT_HINT,
+    user: CUSTOM_CLIENT_EFFECT_HINT,
+  },
+} satisfies Omit<ClientDetectDto, 'detected' | 'targets' | 'entries'>;
 
 /**
  * 设置 → 客户端入口的编排层。
@@ -156,14 +182,14 @@ export class ClientEntryService {
     private readonly prisma: PrismaService,
   ) {}
 
-  /** 六端检测概览 + 台账 + 自测摘要；未选工作区时只展示用户级。 */
+  /** 六端检测概览 + custom 兜底卡 + 台账 + 自测摘要；未选工作区时只展示用户级。 */
   async overview(workspace?: string): Promise<ClientEntryOverviewDto> {
     const requested = workspace?.trim() ?? '';
     const workspacePath = requested === '' ? null : resolveWorkspaceDir(requested);
     const env = resolveClientEnv();
     const allEntries = await this.repository.listAll();
 
-    const clients = Object.values(CLIENT_ADAPTERS).map((adapter) => {
+    const clients: ClientDetectDto[] = Object.values(CLIENT_ADAPTERS).map((adapter) => {
       // 工作区未选时不展示项目级落点：路径无从计算，展示出来只会是假矩阵。
       const visibleScopes =
         workspacePath === null
@@ -212,6 +238,16 @@ export class ClientEntryService {
       } satisfies ClientDetectDto;
     });
 
+    // 兜底卡永远在末尾：web 侧按「内置六端 + custom」的顺序渲染。
+    clients.push({
+      ...CUSTOM_CLIENT_CARD,
+      detected: { project: false, user: false },
+      targets: [],
+      entries: allEntries
+        .filter((entry) => entry.client === CUSTOM_CLIENT_ID)
+        .map(toClientEntryDto),
+    } satisfies ClientDetectDto);
+
     const [wakeMode, recent] = await Promise.all([
       this.settings.get('mcp_wake_mode'),
       this.wakeProbe.recent(),
@@ -230,12 +266,13 @@ export class ClientEntryService {
 
   /** 预览只读：把当前 client+scope(+workspace) 的台账交给 installer 判断文件归属。 */
   async plan(input: ClientEntryPlanInput): Promise<ClientEntryPlanDto> {
-    const workspacePath = resolveScopeWorkspace(input.scope, input.workspace);
+    const workspacePath = this.resolvePlanWorkspace(input);
     const existingEntries = await this.ledger(input.client, input.scope, workspacePath);
     const plan = await planInstall({
       client: input.client,
       scope: input.scope,
-      workspace: workspacePath ?? undefined,
+      workspace: input.client === CUSTOM_CLIENT_ID ? undefined : (workspacePath ?? undefined),
+      target_dir: input.client === CUSTOM_CLIENT_ID ? (workspacePath ?? undefined) : undefined,
       assets: input.assets,
       existingEntries,
     });
@@ -249,7 +286,7 @@ export class ClientEntryService {
   }
 
   async install(input: ClientEntryInstallInput): Promise<ClientEntryInstallResultDto> {
-    const workspacePath = resolveScopeWorkspace(input.scope, input.workspace);
+    const workspacePath = this.resolvePlanWorkspace(input);
     const ledger = await this.ledger(input.client, input.scope, workspacePath);
 
     // installer 每写一条动作问一次 id；同一 targetPath 多次询问必须给同一个 id。
@@ -265,7 +302,8 @@ export class ClientEntryService {
     const planInput: InstallPlanInput = {
       client: input.client,
       scope: input.scope,
-      workspace: workspacePath ?? undefined,
+      workspace: input.client === CUSTOM_CLIENT_ID ? undefined : (workspacePath ?? undefined),
+      target_dir: input.client === CUSTOM_CLIENT_ID ? (workspacePath ?? undefined) : undefined,
       assets: input.assets,
       existingEntries: ledger,
     };
@@ -510,7 +548,7 @@ export class ClientEntryService {
   }
 
   private ledger(
-    client: ClientId,
+    client: ClientEntryClientId,
     scope: ClientEntryScope,
     workspacePath: string | null,
   ): Promise<ClientEntryRecord[]> {
@@ -519,6 +557,29 @@ export class ClientEntryService {
       scope,
       workspacePath: scope === 'project' ? workspacePath : null,
     });
+  }
+
+  /**
+   * plan/install 的目录解析分流：六端 project 走 resolveWorkspaceDir（目录必须已存在）；
+   * custom 走 resolveInstallRoot（target_dir 允许尚不存在），scope 恒按 project 记台账——
+   * 传其他 scope 一律 CLIENT_ENTRY_UNSUPPORTED（schema 只约束 target_dir 的有无）。
+   */
+  private resolvePlanWorkspace(
+    input: Pick<ClientEntryPlanInput, 'client' | 'scope' | 'workspace' | 'target_dir'>,
+  ): string | null {
+    if (input.client === CUSTOM_CLIENT_ID) {
+      if (input.scope !== 'project') {
+        throw new ApiException(
+          'CLIENT_ENTRY_UNSUPPORTED',
+          `「${CUSTOM_CLIENT_LABEL}」只支持项目级安装`,
+          undefined,
+          { client: input.client, scope: input.scope },
+        );
+      }
+      return resolveInstallRoot(input.target_dir ?? '');
+    }
+    // project 缺工作区时 resolveWorkspaceDir 会抛 CLIENT_ENTRY_PATH_UNSAFE，不在这里吞掉。
+    return input.scope === 'project' ? resolveWorkspaceDir(input.workspace ?? '') : null;
   }
 
   /** 安装成功后才写库，失败时按本次写盘记录逆序还原（备份优先，其次删掉新建文件）。 */
@@ -540,14 +601,6 @@ export class ClientEntryService {
       }
     }
   }
-}
-
-function resolveScopeWorkspace(
-  scope: ClientEntryScope,
-  workspace: string | undefined,
-): string | null {
-  // project 缺工作区时 resolveWorkspaceDir 会抛 CLIENT_ENTRY_PATH_UNSAFE，不在这里吞掉。
-  return scope === 'project' ? resolveWorkspaceDir(workspace ?? '') : null;
 }
 
 function mcpEndpoint(): string {

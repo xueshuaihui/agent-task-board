@@ -7,6 +7,7 @@ import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js';
 import {
   CLIENT_ENTRY_MARKER_BEGIN,
   CLIENT_ENTRY_MARKER_END,
+  CLIENT_ENTRY_CLIENTS,
   CLIENT_IDS,
 } from '../contract/client-entry';
 import {
@@ -196,9 +197,14 @@ describe('客户端入口 API 端到端', () => {
     const res = await ui.get(overviewUrl(workspace));
     expect(res.status).toBe(200);
 
-    expect(res.body.clients).toHaveLength(6);
+    // 六端 + 末尾追加的 custom 兜底卡。
+    expect(res.body.clients).toHaveLength(7);
+    expect(res.body.clients.map((item: any) => item.client)).toEqual([
+      ...CLIENT_IDS,
+      'custom',
+    ]);
     expect(res.body.clients.map((item: any) => item.client).sort()).toEqual(
-      [...CLIENT_IDS].sort(),
+      [...CLIENT_ENTRY_CLIENTS].sort(),
     );
 
     const qoder = findClient(res.body, 'qoder');
@@ -231,6 +237,23 @@ describe('客户端入口 API 端到端', () => {
     expect(after.status).toBe(200);
     expect(findClient(after.body, 'cline').detected.user).toBe(true);
     expect(findClient(after.body, 'windsurf').detected.user).toBe(false);
+
+    // custom 兜底卡：固定在末尾，没有固定落点可展示，检测恒 false，台账不按 workspace 过滤。
+    const custom = findClient(res.body, 'custom');
+    expect(custom).toMatchObject({
+      label: '其他客户端（手动指定目录）',
+      assets: ['rule', 'skill'],
+      scopes: ['project'],
+      targets: [],
+      detected: { project: false, user: false },
+      stability: { rule: 'experimental', skill: 'experimental' },
+      effectHint: {
+        project: '以所选客户端的规则加载机制为准，通常新开会话后生效',
+        user: '以所选客户端的规则加载机制为准，通常新开会话后生效',
+      },
+    });
+    expect(custom.notes[0]).toContain('兜底');
+    expect(custom.entries).toEqual([]);
   });
 
   it('Qoder 项目级 rule + skill：预览两个 create，安装落盘并记账', async () => {
@@ -553,6 +576,106 @@ describe('客户端入口 API 端到端', () => {
     const qoder = findClient(overview.body, 'qoder');
     expect(qoder.entries.some((entry: any) => entry.id === row!.id)).toBe(true);
     expect(qoder.targets.every((item: any) => item.scope === 'user')).toBe(true);
+  });
+
+  it('custom 兜底全链路：plan → install → verify → overview → uninstall 走 HTTP，台账记所选目录', async () => {
+    // 目录选择器给的目录可能尚不存在（如 <workspace>/.codebuddy/rules）；
+    // 已存在的父目录先取 realpath，避免 macOS /var → /private/var 与台账口径分叉。
+    const base = fs.realpathSync(fs.mkdtempSync(path.join(root, 'custom-client-')));
+    const targetDir = path.join(base, '.codebuddy', 'rules');
+
+    // 校验面：custom 缺 target_dir / 六端多 target_dir → 422 字段错误；custom 传 user scope → 422 UNSUPPORTED。
+    const missingDir = await ui.post(`${API}/client-entries/plan`, {
+      client: 'custom',
+      scope: 'project',
+    });
+    expect(missingDir.status).toBe(422);
+    expect(errorCode(missingDir)).toBe('VALIDATION_FAILED');
+
+    const builtinWithDir = await ui.post(`${API}/client-entries/plan`, {
+      ...planBody('qoder', 'project', ['rule']),
+      target_dir: targetDir,
+    });
+    expect(builtinWithDir.status).toBe(422);
+    expect(errorCode(builtinWithDir)).toBe('VALIDATION_FAILED');
+
+    const wrongScope = await ui.post(`${API}/client-entries/plan`, {
+      client: 'custom',
+      scope: 'user',
+      target_dir: targetDir,
+    });
+    expect(wrongScope.status).toBe(422);
+    expect(errorCode(wrongScope)).toBe('CLIENT_ENTRY_UNSUPPORTED');
+
+    const planRes = await ui.post(`${API}/client-entries/plan`, {
+      client: 'custom',
+      scope: 'project',
+      target_dir: targetDir,
+      assets: ['rule', 'skill'],
+    });
+    expect(planRes.status).toBe(201);
+    expect(planRes.body.client).toBe('custom');
+    expect(planRes.body.actions.map((action: any) => action.action)).toEqual([
+      'create',
+      'create',
+    ]);
+    const ruleAction = planRes.body.actions.find((action: any) => action.assetType === 'rule');
+    const skillAction = planRes.body.actions.find((action: any) => action.assetType === 'skill');
+    expect(ruleAction.targetPath).toBe(path.join(targetDir, 'jarvis-workbench.md'));
+    expect(skillAction.targetPath).toBe(path.join(targetDir, 'jarvis-workbench', 'SKILL.md'));
+    // rule 是无 frontmatter 的通用 Markdown，自检来源传 custom；skill 沿用通用手册。
+    expect(ruleAction.content.startsWith('---')).toBe(false);
+    expect(ruleAction.content).toContain('`source` 传 `custom`');
+    expect(skillAction.content).toContain('领取：');
+
+    const installRes = await ui.post(`${API}/client-entries/install`, {
+      client: 'custom',
+      scope: 'project',
+      target_dir: targetDir,
+      assets: ['rule', 'skill'],
+      plan_hash: planRes.body.planHash,
+      confirm: true,
+    });
+    expect(installRes.status).toBe(201);
+    expect(installRes.body.entries).toHaveLength(2);
+    const ruleEntry = installRes.body.entries.find((entry: any) => entry.assetType === 'rule');
+    const skillEntry = installRes.body.entries.find((entry: any) => entry.assetType === 'skill');
+    // 目录尚不存在也照常落盘（writeFileAtomic 自建父目录）。
+    expect(fs.existsSync(ruleAction.targetPath)).toBe(true);
+    expect(fs.existsSync(skillAction.targetPath)).toBe(true);
+
+    const rows = await t.prisma.clientEntry.findMany({ where: { client: 'custom' } });
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.scope).toBe('project');
+      expect(row.workspacePath).toBe(targetDir);
+    }
+
+    const verifyRes = await ui.post(`${API}/client-entries/verify`, {
+      ids: [ruleEntry.id, skillEntry.id],
+    });
+    expect(verifyRes.status).toBe(201);
+    expect(verifyRes.body.summary).toMatchObject({ installed: 2, drifted: 0, missing: 0 });
+
+    // 兜底卡不按 workspace 过滤：不传 workspace 也看得到 custom 台账。
+    const overview = await ui.get(overviewUrl());
+    const custom = findClient(overview.body, 'custom');
+    expect(custom.entries.map((entry: any) => entry.id).sort()).toEqual(
+      [ruleEntry.id, skillEntry.id].sort(),
+    );
+    expect(custom.targets).toEqual([]);
+
+    // 卸载：文件删除、台账清空、兜底卡 entries 归零。
+    for (const id of [ruleEntry.id, skillEntry.id]) {
+      const removed = await ui.post(`${API}/client-entries/${id}/uninstall`, { confirm: true });
+      expect(removed.status).toBe(201);
+      expect(removed.body).toEqual({ removed: true });
+    }
+    expect(fs.existsSync(ruleAction.targetPath)).toBe(false);
+    expect(fs.existsSync(skillAction.targetPath)).toBe(false);
+    expect(await t.prisma.clientEntry.count({ where: { client: 'custom' } })).toBe(0);
+    const finalOverview = await ui.get(overviewUrl());
+    expect(findClient(finalOverview.body, 'custom').entries).toEqual([]);
   });
 
   it('错误面：随机 id 404、缺 confirm 422、Agent Token 403', async () => {

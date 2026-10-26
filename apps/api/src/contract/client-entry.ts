@@ -1,7 +1,7 @@
 /**
  * 客户端入口（Rules + Skills）契约。
  *
- * 下面四个词表与迁移 `0025_client_entries/migration.sql` 的 CHECK 同值：
+ * 下面四个词表与迁移 `0026_client_entries_custom/migration.sql` 的 CHECK 同值：
  * 改这里必须同步迁移（SQL 是权威 DDL），反之亦然。
  */
 import { z } from 'zod';
@@ -9,6 +9,21 @@ import { z } from 'zod';
 /** 六家客户端。`claude_code` 用下划线，与目录/适配器文件名保持同一口径。 */
 export const CLIENT_IDS = ['qoder', 'cursor', 'cline', 'windsurf', 'claude_code', 'codex'] as const;
 export type ClientId = (typeof CLIENT_IDS)[number];
+
+/**
+ * 第七种「伪客户端」：其他客户端手动指定目录安装的兜底形态。它没有 adapter
+ * （没有固定落点，plan/install 必须带 `target_dir`），以后新增客户端不再动契约——
+ * 内置端仍走 `CLIENT_IDS`/`ClientId`，台账词表与请求校验用 `CLIENT_ENTRY_CLIENTS`。
+ */
+export const CUSTOM_CLIENT_ID = 'custom';
+export const CLIENT_ENTRY_CLIENTS = [...CLIENT_IDS, CUSTOM_CLIENT_ID] as const;
+export type ClientEntryClientId = ClientId | typeof CUSTOM_CLIENT_ID;
+
+/** custom 伪客户端在概览卡/错误信息里的展示名（唯一权威定义，别处一律 import）。 */
+export const CUSTOM_CLIENT_LABEL = '其他客户端（手动指定目录）';
+
+/** custom 的落点没有客户端文档背书，两种资产都按实验性支持提示。 */
+export const CUSTOM_CLIENT_EFFECT_HINT = '以所选客户端的规则加载机制为准，通常新开会话后生效';
 
 /** 写入作用域：项目级需要用户显式选目录；用户级只写固定白名单根。 */
 export const CLIENT_ENTRY_SCOPES = ['project', 'user'] as const;
@@ -58,16 +73,38 @@ export function sanitizeWakeSource(input: unknown): string | undefined {
 /**
  * 预览/安装的计划入参。`assets` 缺省时由 service 按客户端能力决定（不支持 skill 的端不补）；
  * 显式传入则去重后按清单执行，空数组表示“什么都不装”（由 service 决定是否拒绝）。
+ *
+ * `target_dir` 只属于 `custom` 伪客户端：内置六端必须不传（按字段错误拒绝），
+ * custom 必传（绝对路径，允许目录尚不存在）。
  */
-export const clientEntryPlanSchema = z.object({
-  client: z.enum(CLIENT_IDS),
-  scope: z.enum(CLIENT_ENTRY_SCOPES),
-  workspace: z.string().trim().min(1).optional(),
-  assets: z
-    .array(z.enum(CLIENT_ENTRY_ASSETS))
-    .transform((list) => [...new Set(list)])
-    .optional(),
-});
+export const clientEntryPlanSchema = z
+  .object({
+    client: z.enum(CLIENT_ENTRY_CLIENTS),
+    scope: z.enum(CLIENT_ENTRY_SCOPES),
+    workspace: z.string().trim().min(1).optional(),
+    target_dir: z.string().trim().min(1).optional(),
+    assets: z
+      .array(z.enum(CLIENT_ENTRY_ASSETS))
+      .transform((list) => [...new Set(list)])
+      .optional(),
+  })
+  .superRefine((data, ctx) => {
+    const isCustom = data.client === CUSTOM_CLIENT_ID;
+    if (isCustom && data.target_dir === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['target_dir'],
+        message: '「其他客户端」安装必须指定 target_dir（客户端会读取的规则目录）',
+      });
+    }
+    if (!isCustom && data.target_dir !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['target_dir'],
+        message: '内置客户端不支持 target_dir，落点由客户端适配器决定',
+      });
+    }
+  });
 export type ClientEntryPlanInput = z.infer<typeof clientEntryPlanSchema>;
 
 /**

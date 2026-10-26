@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { ApiException } from '../../contract/errors';
-import { assertSafeTarget, isPathInside, resolveWorkspaceDir } from '../paths';
+import { assertSafeTarget, isPathInside, resolveInstallRoot, resolveWorkspaceDir } from '../paths';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atb-client-entry-paths-'));
 const allowed = path.join(root, 'allowed');
@@ -144,5 +144,41 @@ describe('resolveWorkspaceDir', () => {
     const file = path.join(root, 'workspace-file');
     fs.writeFileSync(file, 'x', 'utf8');
     expectUnsafeReason(() => resolveWorkspaceDir(file), 'workspace_not_dir');
+  });
+});
+
+describe('resolveInstallRoot（custom 兜底安装根）', () => {
+  it('已存在的目录：与 workspace 同口径返回 realpath', () => {
+    expect(resolveInstallRoot(allowed)).toBe(fs.realpathSync(allowed));
+    expect(resolveInstallRoot(path.relative(process.cwd(), allowed))).toBe(
+      fs.realpathSync(allowed),
+    );
+  });
+
+  it('目录尚不存在：沿父链找最近存在祖先校验，缺失尾巴接到祖先 realpath 上', () => {
+    const missing = path.join(allowed, '.codebuddy', 'rules');
+    expect(resolveInstallRoot(missing)).toBe(
+      path.join(fs.realpathSync(allowed), '.codebuddy', 'rules'),
+    );
+    // 空串/NUL 沿用 unsafe 报错风格。
+    expectUnsafeReason(() => resolveInstallRoot(''), 'install_root_not_dir');
+    expectUnsafeReason(() => resolveInstallRoot(`a\0b`), 'install_root_not_dir');
+  });
+
+  it('指向文件：拒绝（install_root_not_dir）', () => {
+    const file = path.join(root, 'install-root-file');
+    fs.writeFileSync(file, 'x', 'utf8');
+    expectUnsafeReason(() => resolveInstallRoot(file), 'install_root_not_dir');
+  });
+
+  it.skipIf(isWindows)('目标到最近存在祖先这段出现软链：拒绝（install_root_symlink）', () => {
+    // 目标本身是软链。
+    const link = path.join(allowed, 'root-link');
+    fs.symlinkSync(allowed, link, 'dir');
+    expectUnsafeReason(() => resolveInstallRoot(link), 'install_root_symlink');
+
+    // 最近存在祖先是软链（目标目录本身尚不存在也要拦住）。
+    const missingUnderLink = path.join(link, 'missing-sub');
+    expectUnsafeReason(() => resolveInstallRoot(missingUnderLink), 'install_root_symlink');
   });
 });

@@ -2,9 +2,9 @@ import { Injectable } from '@nestjs/common';
 import type { ClientEntry as ClientEntryRow, Prisma } from '@prisma/client';
 import type {
   ClientEntryAsset,
+  ClientEntryClientId,
   ClientEntryScope,
   ClientEntryStatus,
-  ClientId,
 } from '../contract/client-entry';
 import { PrismaService } from '../infra/prisma.service';
 import type { StoredEntry } from './installer';
@@ -26,7 +26,7 @@ export interface ClientEntryRecord extends StoredEntry {
 }
 
 export interface ClientEntryFilter {
-  client?: ClientId;
+  client?: ClientEntryClientId;
   scope?: ClientEntryScope;
   /** 缺省 = 不过滤；`null` = 只取用户级（`workspace_path IS NULL`）。 */
   workspacePath?: string | null;
@@ -127,7 +127,7 @@ export class ClientEntryRepository {
 function toRecord(row: ClientEntryRow): ClientEntryRecord {
   return {
     id: row.id,
-    client: row.client as ClientId,
+    client: row.client as ClientEntryClientId,
     scope: row.scope as ClientEntryScope,
     workspacePath: row.workspacePath,
     assetType: row.assetType as ClientEntryAsset,

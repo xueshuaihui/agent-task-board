@@ -1,10 +1,13 @@
-import type { ClientId } from '../contract/client-entry';
+import type { ClientEntryClientId } from '../contract/client-entry';
 import { MCP_SERVER_NAME, MCP_WAKE_WORD } from '../mcp/wake';
 
 /**
  * 入口模板只有一份来源：唤醒词与服务名取自 `mcp/wake.ts`，避免规则里的「贾维斯」
  * 和 MCP initialize 下发的口径分叉。模板本身不含托管标记与 frontmatter 顺序，
  * installer 负责把它们拼成最终文件（frontmatter 永远在最前）。
+ *
+ * `custom` 伪客户端与 Qoder 等同口径：rule 无 frontmatter（通用 Markdown），
+ * skill 共用 SKILL_FRONTMATTER + SKILL_BODY——落点不同，正文没有理由不同。
  */
 
 export interface RenderedAsset {
@@ -33,7 +36,7 @@ const SKILL_FRONTMATTER = [
  * 模式听谁的、什么时候不要调用」，操作细节全部留给按需加载的技能。
  * 特别不能写 URL/端口/token——那些随安装环境变化，写死就会过期。
  */
-function renderRuleBody(client: ClientId): string {
+function renderRuleBody(client: ClientEntryClientId): string {
   return [
     '# Jarvis Workbench 唤醒入口',
     '',
@@ -57,16 +60,16 @@ const SKILL_BODY = [
   '- 错误：按 structuredContent 的 code/message 处理；不要自行猜字段或审核方式。',
 ].join('\n');
 
-export function renderRule(client: ClientId): RenderedAsset {
+export function renderRule(client: ClientEntryClientId): RenderedAsset {
   const body = renderRuleBody(client);
   if (client === 'cursor') return { body, frontmatter: CURSOR_FRONTMATTER };
   if (client === 'windsurf') return { body, frontmatter: WINDSURF_FRONTMATTER };
-  // Qoder / Cline / Claude Code / Codex 的 markdown 不需要前置 frontmatter；
+  // Qoder / Cline / Claude Code / Codex / custom 的 markdown 不需要前置 frontmatter；
   // 后两者整份文件由 installer 用托管块包起来。
   return { body };
 }
 
-export function renderSkill(client: ClientId): RenderedAsset {
+export function renderSkill(client: ClientEntryClientId): RenderedAsset {
   if (client === 'cline' || client === 'windsurf') {
     throw new Error(`${client} 不支持技能资产，调用方应先检查 adapter.assets`);
   }

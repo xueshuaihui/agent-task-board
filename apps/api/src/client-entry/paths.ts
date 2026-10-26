@@ -137,3 +137,48 @@ export function resolveWorkspaceDir(input: string): string {
     unsafe(resolved, resolved, 'workspace_not_dir');
   }
 }
+
+/**
+ * custom 伪客户端的安装根：与 resolveWorkspaceDir 的差异是允许目标目录尚不存在
+ * （例如客户端的 `<workspace>/.codebuddy/rules` 要等首次安装才创建）。
+ *
+ * 返回值是「最近存在祖先的 realpath + 缺失尾巴」：目录已存在时即 realpath，
+ * 尚不存在时把所选目录接到祖先 realpath 上（macOS /var → /private/var 也同基）。
+ * 台账 workspace_path 记它、assertSafeTarget 拿它当允许根。
+ * 校验顺序：目标到最近存在祖先这一段出现软链即拒绝（否则软链会把安装点悄悄换到别处，
+ * 台账里的目录与真实落点分叉）；已存在部分由 realpath 归一，台账不因入口写法分叉。
+ * 最近存在祖先必须目录且 realpath 可解析，其余 IO 异常沿用 unsafe 报错风格。
+ */
+export function resolveInstallRoot(input: string): string {
+  if (typeof input !== 'string' || input.trim() === '' || input.includes('\0')) {
+    unsafe(input, input, 'install_root_not_dir');
+  }
+  const resolved = path.resolve(input);
+  let probe = resolved;
+  for (;;) {
+    let stat: fs.Stats | undefined;
+    try {
+      stat = fs.lstatSync(probe);
+    } catch (error) {
+      if (errnoCode(error) !== 'ENOENT') unsafe(resolved, resolved, 'install_root_stat_failed');
+    }
+    if (stat !== undefined) {
+      if (stat.isSymbolicLink()) unsafe(resolved, resolved, 'install_root_symlink');
+      if (!stat.isDirectory()) unsafe(resolved, resolved, 'install_root_not_dir');
+      let real: string;
+      try {
+        real = fs.realpathSync(probe);
+      } catch {
+        // 目录刚被删或权限变化：与「不是目录」一样拒绝，不带着不可解析的根继续。
+        unsafe(resolved, resolved, 'install_root_not_dir');
+      }
+      // 缺失尾巴接到祖先 realpath 上（macOS /var → /private/var 也成立）：返回值与
+      // 后续 assertSafeTarget 的词法/realpath 两条检查同基，台账不因入口写法分叉。
+      const tail = path.relative(probe, resolved);
+      return tail === '' ? real : path.join(real, tail);
+    }
+    const parent = path.dirname(probe);
+    if (parent === probe) unsafe(resolved, resolved, 'install_root_no_ancestor');
+    probe = parent;
+  }
+}

@@ -5,7 +5,11 @@ import path from 'node:path';
 import {
   CLIENT_ENTRY_MARKER_BEGIN,
   CLIENT_ENTRY_TEMPLATE_VERSION,
+  CUSTOM_CLIENT_EFFECT_HINT,
+  CUSTOM_CLIENT_ID,
+  CUSTOM_CLIENT_LABEL,
   type ClientEntryAsset,
+  type ClientEntryClientId,
   type ClientEntryScope,
   type ClientEntryStatus,
   type ClientId,
@@ -24,7 +28,7 @@ import {
 } from './atomic-write';
 import { resolveClientEnv, type ClientEnv } from './client-env';
 import { mergeManagedBlock, readManagedBlock, stripManagedBlock } from './managed-block';
-import { assertSafeTarget, resolveWorkspaceDir } from './paths';
+import { assertSafeTarget, resolveInstallRoot, resolveWorkspaceDir } from './paths';
 import { renderRule, renderSkill, type RenderedAsset } from './templates';
 
 /**
@@ -34,11 +38,14 @@ import { renderRule, renderSkill, type RenderedAsset } from './templates';
  * 1. 不碰 Prisma/HTTP——台账（StoredEntry）由 service 传入，entry id 由 service 生成；
  * 2. 所有写盘前都重新 assertSafeTarget，绝不绕开 paths.ts 的软链/越界检查；
  * 3. 预览（planInstall）只读不写；写盘只发生在 applyPlan，且每一步都可回滚。
+ *
+ * `custom` 伪客户端在这里分流：它没有 adapter，planCustomInstall 直接按 target_dir
+ * 合成落点，逐资产走与六端完全相同的校验/判定逻辑（见 planFileAction）。
  */
 
 export interface StoredEntry {
   id: string;
-  client: ClientId;
+  client: ClientEntryClientId;
   scope: ClientEntryScope;
   workspacePath: string | null;
   assetType: ClientEntryAsset;
@@ -53,9 +60,11 @@ export interface StoredEntry {
 }
 
 export interface InstallPlanInput {
-  client: ClientId;
+  client: ClientEntryClientId;
   scope: ClientEntryScope;
   workspace?: string;
+  /** 仅 `custom` 使用：安装根（客户端会读取的规则目录），允许尚不存在。 */
+  target_dir?: string;
   /** 显式 `[]` = 什么都不装；缺省时按 adapter 支持的资产全装。 */
   assets?: ClientEntryAsset[];
   /** 缺省 `resolveClientEnv()`：测试可换成临时 home，不碰真机目录。 */
@@ -92,7 +101,7 @@ export interface PlanAction {
 }
 
 export interface InstallPlan {
-  client: ClientId;
+  client: ClientEntryClientId;
   scope: ClientEntryScope;
   workspacePath: string | null;
   planHash: string;
@@ -144,7 +153,7 @@ function shortError(error: unknown): string {
 
 /** 沿用 adapter 的资产顺序；显式清单去重但保持用户给定顺序。 */
 function resolveAssets(
-  client: ClientId,
+  client: ClientEntryClientId,
   label: string,
   sources: readonly ClientEntryAsset[],
   requested: ClientEntryAsset[] | undefined,
@@ -184,7 +193,7 @@ function pickCandidate(candidates: TargetCandidate[]): TargetCandidate | undefin
 }
 
 function renderContent(
-  client: ClientId,
+  client: ClientEntryClientId,
   asset: ClientEntryAsset,
   writeMode: 'file' | 'managed_block',
 ): string {
@@ -299,7 +308,78 @@ function computePlanHash(actions: PlanAction[]): string {
   );
 }
 
+/**
+ * 单个落点的预览：校验 → 读现状 → 渲染 → 判定 → 上限与警告。
+ * 六端（adapter 产出的固定落点）与 custom（target_dir 合成落点）共用，行为一字不差。
+ */
+function planTargetAction(args: {
+  client: ClientEntryClientId;
+  asset: ClientEntryAsset;
+  target: Pick<TargetCandidate, 'path' | 'writeMode' | 'confidence' | 'charLimit' | 'note'>;
+  allowedRoot: string;
+  stability: 'stable' | 'experimental';
+  effectHint: string;
+  existingEntries?: StoredEntry[];
+}): PlanAction {
+  const { asset, target } = args;
+
+  // 预览也校验：路径不安全的落点必须在看到内容前就报错。
+  assertSafeTarget(target.path, args.allowedRoot);
+  const existing = readForPlan(target.path);
+  const content = renderContent(args.client, asset, target.writeMode);
+  const contentHash = sha256(content);
+  const judgement =
+    target.writeMode === 'file'
+      ? judgeFile(existing, contentHash, findLedgerEntry(args.existingEntries, target.path))
+      : judgeManaged(existing, contentHash);
+
+  const actionWarnings: string[] = [];
+  if (target.note !== undefined) actionWarnings.push(target.note);
+  if (args.stability === 'experimental') {
+    actionWarnings.push('该落点为实验性支持，客户端版本可能不支持');
+  }
+  // 上限按「写入后整份文件」算：Windsurf 用户级写的是共享的 global_rules.md，
+  // 块外用户内容同样占额度，只量本应用正文会漏报。
+  const limitChars =
+    target.charLimit === undefined
+      ? undefined
+      : target.writeMode === 'file'
+        ? content.length
+        : mergedChars(existing, content);
+  if (
+    target.charLimit !== undefined &&
+    limitChars !== undefined &&
+    limitChars > target.charLimit
+  ) {
+    actionWarnings.push(
+      `超过客户端 ${target.charLimit} 字上限（写入后 ${limitChars} 字，其中本应用内容 ${content.length} 字），安装需显式确认`,
+    );
+  }
+
+  return {
+    assetType: asset,
+    assetName: MCP_SERVER_NAME,
+    targetPath: target.path,
+    writeMode: target.writeMode,
+    action: judgement.action,
+    ...(judgement.reason === undefined ? {} : { reason: judgement.reason }),
+    content,
+    contentChars: content.length,
+    contentHash,
+    expectedPrevHash: judgement.expectedPrevHash,
+    backupRequired: judgement.backupRequired,
+    warnings: actionWarnings,
+    ...(target.charLimit === undefined ? {} : { charLimit: target.charLimit }),
+    ...(limitChars === undefined ? {} : { limitChars }),
+    confidence: target.confidence,
+    effectHint: args.effectHint,
+  };
+}
+
 export async function planInstall(input: InstallPlanInput): Promise<InstallPlan> {
+  // custom 伪客户端没有 adapter：到 getAdapter 之前就分流（getAdapter 传 'custom' 仍抛错）。
+  if (input.client === CUSTOM_CLIENT_ID) return planCustomInstall(input);
+
   const adapter = getAdapter(input.client);
   if (!adapter.scopes.includes(input.scope)) {
     throw new ApiException(
@@ -347,58 +427,79 @@ export async function planInstall(input: InstallPlanInput): Promise<InstallPlan>
       continue;
     }
 
-    // 预览也校验：路径不安全的落点必须在看到内容前就报错。
-    assertSafeTarget(candidate.path, allowedRoot);
-    const existing = readForPlan(candidate.path);
-    const content = renderContent(input.client, asset, candidate.writeMode);
-    const contentHash = sha256(content);
-    const judgement =
-      candidate.writeMode === 'file'
-        ? judgeFile(existing, contentHash, findLedgerEntry(input.existingEntries, candidate.path))
-        : judgeManaged(existing, contentHash);
-
-    const actionWarnings: string[] = [];
-    if (candidate.note !== undefined) actionWarnings.push(candidate.note);
-    if (adapter.stability[asset] === 'experimental') {
-      actionWarnings.push('该落点为实验性支持，客户端版本可能不支持');
-    }
-    // 上限按「写入后整份文件」算：Windsurf 用户级写的是共享的 global_rules.md，
-    // 块外用户内容同样占额度，只量本应用正文会漏报。
-    const limitChars =
-      candidate.charLimit === undefined
-        ? undefined
-        : candidate.writeMode === 'file'
-          ? content.length
-          : mergedChars(existing, content);
-    if (
-      candidate.charLimit !== undefined &&
-      limitChars !== undefined &&
-      limitChars > candidate.charLimit
-    ) {
-      actionWarnings.push(
-        `超过客户端 ${candidate.charLimit} 字上限（写入后 ${limitChars} 字，其中本应用内容 ${content.length} 字），安装需显式确认`,
-      );
-    }
-
-    actions.push({
-      assetType: asset,
-      assetName: MCP_SERVER_NAME,
-      targetPath: candidate.path,
-      writeMode: candidate.writeMode,
-      action: judgement.action,
-      ...(judgement.reason === undefined ? {} : { reason: judgement.reason }),
-      content,
-      contentChars: content.length,
-      contentHash,
-      expectedPrevHash: judgement.expectedPrevHash,
-      backupRequired: judgement.backupRequired,
-      warnings: actionWarnings,
-      ...(candidate.charLimit === undefined ? {} : { charLimit: candidate.charLimit }),
-      ...(limitChars === undefined ? {} : { limitChars }),
-      confidence: candidate.confidence,
-      effectHint: adapter.effectHint(input.scope),
-    });
+    actions.push(
+      planTargetAction({
+        client: input.client,
+        asset,
+        target: candidate,
+        allowedRoot,
+        stability: adapter.stability[asset],
+        effectHint: adapter.effectHint(input.scope),
+        existingEntries: input.existingEntries,
+      }),
+    );
   }
+
+  return {
+    client: input.client,
+    scope: input.scope,
+    workspacePath,
+    planHash: computePlanHash(actions),
+    actions,
+    warnings,
+  };
+}
+
+/**
+ * custom 的计划：没有固定落点，scope 恒为 project（台账 CHECK 的
+ * `scope='project' AND workspace_path IS NOT NULL` 由 target_dir 兑现），
+ * 落点按资产合成——rule 写所选目录下的 jarvis-workbench.md（无 frontmatter 的
+ * 通用 Markdown），skill 写 jarvis-workbench/SKILL.md。
+ */
+function planCustomInstall(input: InstallPlanInput): InstallPlan {
+  if (input.scope !== 'project') {
+    throw new ApiException(
+      'CLIENT_ENTRY_UNSUPPORTED',
+      `${CUSTOM_CLIENT_LABEL}只支持项目级安装`,
+      undefined,
+      { client: input.client, scope: input.scope },
+    );
+  }
+
+  const workspacePath = resolveInstallRoot(input.target_dir ?? '');
+  const assets = resolveAssets(
+    input.client,
+    CUSTOM_CLIENT_LABEL,
+    ['rule', 'skill'],
+    input.assets,
+    input.scope,
+  );
+
+  const warnings: string[] = [];
+  if (input.assets !== undefined && input.assets.length === 0) {
+    warnings.push('未选择任何资产');
+  }
+
+  const actions = assets.map((asset) =>
+    planTargetAction({
+      client: input.client,
+      asset,
+      // 目录由用户显式选定，落点虽无客户端文档背书，预览仍按 confirmed 给出。
+      target: {
+        path:
+          asset === 'rule'
+            ? path.join(workspacePath, `${MCP_SERVER_NAME}.md`)
+            : path.join(workspacePath, MCP_SERVER_NAME, 'SKILL.md'),
+        writeMode: 'file',
+        confidence: 'confirmed',
+      },
+      allowedRoot: workspacePath,
+      // 兜底形态按实验性支持提示：预览警告「该落点为实验性支持」自动出现。
+      stability: 'experimental',
+      effectHint: CUSTOM_CLIENT_EFFECT_HINT,
+      existingEntries: input.existingEntries,
+    }),
+  );
 
   return {
     client: input.client,
