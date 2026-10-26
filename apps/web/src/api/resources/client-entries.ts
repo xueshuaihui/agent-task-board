@@ -4,6 +4,7 @@ import type {
   ClientDetectResult,
   ClientEntry,
   ClientEntryAsset,
+  ClientEntryClientId,
   ClientEntryInstallInput,
   ClientEntryInstallResult,
   ClientEntryOverview,
@@ -15,14 +16,13 @@ import type {
   ClientEntryStatus,
   ClientEntryUninstallResult,
   ClientEntryVerifyResult,
-  ClientId,
   ClientTarget,
   WakeProbe,
 } from '../types';
 
 /**
  * 设置 → 客户端入口（v0.0.4 W9）的 REST 面：
- *   GET  /client-entries?workspace=     六端检测概览 + 台账 + 自测摘要
+ *   GET  /client-entries?workspace=     六端 + custom 合成卡概览 + 台账 + 自测摘要
  *   POST /client-entries/plan           预览（不写盘）
  *   POST /client-entries/install        按 plan_hash 落盘（confirm: true）
  *   POST /client-entries/verify         重读台账文件
@@ -87,7 +87,7 @@ function mapWakeProbe(raw: RawObject): WakeProbe {
 function mapClientEntry(raw: RawObject): ClientEntry {
   return {
     id: text(raw.id),
-    client: text(raw.client) as ClientId,
+    client: text(raw.client) as ClientEntryClientId,
     scope: text(raw.scope) as ClientEntryScope,
     workspacePath: textOrNull(field(raw, 'workspacePath', 'workspace_path')),
     assetType: text(field(raw, 'assetType', 'asset_type')) as ClientEntryAsset,
@@ -136,7 +136,7 @@ function mapDetectResult(raw: RawObject): ClientDetectResult {
   const detected = obj(raw.detected);
   const hints = obj(field(raw, 'effectHint', 'effect_hint'));
   return {
-    client: text(raw.client) as ClientId,
+    client: text(raw.client) as ClientEntryClientId,
     label: text(raw.label) || text(raw.client),
     assets: strings(raw.assets) as ClientEntryAsset[],
     scopes: strings(raw.scopes) as ClientEntryScope[],
@@ -182,7 +182,7 @@ function mapPlanAction(raw: RawObject): ClientEntryPlanAction {
 
 function mapPlan(raw: RawObject): ClientEntryPlan {
   return {
-    client: text(raw.client) as ClientId,
+    client: text(raw.client) as ClientEntryClientId,
     scope: text(raw.scope) as ClientEntryScope,
     planHash: text(field(raw, 'planHash', 'plan_hash')),
     actions: list(raw.actions).map(mapPlanAction),
@@ -229,6 +229,10 @@ function planBody(input: ClientEntryPlanInput): Record<string, unknown> {
   const body: Record<string, unknown> = { client: input.client, scope: input.scope };
   const workspace = input.workspace?.trim();
   if (workspace) body.workspace = workspace;
+  // `target_dir` 只属于 custom 伪客户端（内置六端传了会被 422 拒绝）；空串不发，
+  // 让服务端按「缺 target_dir」报字段错误，而不是发一个会过 trim 校验的假值。
+  const targetDir = input.targetDir?.trim();
+  if (targetDir) body.target_dir = targetDir;
   // 显式空数组也要发：契约里「什么都不装」与「不传=按客户端能力取默认」是两种语义。
   if (input.assets !== undefined) body.assets = input.assets;
   return body;

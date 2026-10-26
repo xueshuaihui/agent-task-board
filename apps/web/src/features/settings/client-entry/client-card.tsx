@@ -5,10 +5,13 @@ import type {
   ClientEntry,
   ClientEntryAsset,
   ClientEntryScope,
-  ClientEntryStatus,
 } from '@/api/types';
-import { formatDateTime } from '@/lib/time';
-import { cn } from '@/lib/cn';
+import {
+  ASSET_LABEL,
+  EntryMeta,
+  stabilityClass,
+  stabilityLabel,
+} from './labels';
 
 /**
  * 六端检测结果里的一张卡。
@@ -19,30 +22,12 @@ import { cn } from '@/lib/cn';
  *
  * 作用域与资产选择都是卡片本地状态：作用域只展示 `client.scopes` 里有的档位，
  * 未选目录时只允许用户级（客户端没有用户级时整卡提示先选目录并禁用安装）。
+ * 状态/资产徽章等共用映射在 `./labels`，custom 兜底卡同源。
  */
-
-const ASSET_LABEL: Record<ClientEntryAsset, string> = {
-  rule: '入口规则',
-  skill: '操作技能',
-};
 
 const SCOPE_LABEL: Record<ClientEntryScope, string> = {
   project: '项目级',
   user: '用户级',
-};
-
-const STATUS_LABEL: Record<ClientEntryStatus, string> = {
-  installed: '已安装',
-  drifted: '已漂移',
-  missing: '文件缺失',
-  error: '校验失败',
-};
-
-const STATUS_CLASS: Record<ClientEntryStatus, string> = {
-  installed: 'bg-status-done-soft text-status-done',
-  drifted: 'bg-status-running-soft text-status-running',
-  missing: 'bg-status-failed-soft text-status-failed',
-  error: 'bg-status-failed-soft text-status-failed',
 };
 
 export interface ClientCardProps {
@@ -54,14 +39,6 @@ export interface ClientCardProps {
   onSelfTest: () => void;
   onCopyRule: (scope: ClientEntryScope) => void;
   busy?: boolean;
-}
-
-function stabilityClass(value: 'stable' | 'experimental'): string | undefined {
-  return value === 'experimental' ? 'bg-status-running-soft text-status-running' : undefined;
-}
-
-function stabilityLabel(value: 'stable' | 'experimental'): string {
-  return value === 'experimental' ? '实验' : '稳定';
 }
 
 function detectedText(client: ClientDetectResult, scope: ClientEntryScope): string {
@@ -195,30 +172,7 @@ export function ClientCard({
                   </p>
                 )}
 
-                {entry ? (
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-aux">
-                    <Badge className={cn(STATUS_CLASS[entry.status])}>
-                      {STATUS_LABEL[entry.status]}
-                    </Badge>
-                    <span className="text-text-tertiary">模板 v{entry.templateVersion}</span>
-                    {entry.updateAvailable ? (
-                      <Badge className="bg-primary-light text-primary">可更新</Badge>
-                    ) : null}
-                    {entry.verifiedAt ? (
-                      <span className="text-text-tertiary">
-                        最近校验 {formatDateTime(entry.verifiedAt)}
-                      </span>
-                    ) : null}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => onUninstall(entry)}
-                    >
-                      卸载
-                    </Button>
-                  </div>
-                ) : null}
+                {entry ? <EntryMeta entry={entry} busy={busy} onUninstall={onUninstall} /> : null}
               </div>
             </div>
           );

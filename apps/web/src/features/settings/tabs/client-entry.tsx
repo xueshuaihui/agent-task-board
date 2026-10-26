@@ -28,9 +28,11 @@ import { SettingSection, TabHeader } from '../components/settings-ui';
 import { settingsTabSearch } from '../tabs';
 import { useCopy } from '../use-copy';
 import { ClientCard } from '../client-entry/client-card';
+import { CustomCard } from '../client-entry/custom-card';
 import { PlanDialog, type PlanConfirmOptions } from '../client-entry/plan-dialog';
 import { SelfTestDialog } from '../client-entry/self-test-dialog';
 import { useClientEntryOverview } from '../client-entry/client-entry-queries';
+import { CUSTOM_CLIENT_ID } from '@/api/types';
 
 /**
  * 设置 → 客户端入口（v0.0.4 W9）。
@@ -49,6 +51,8 @@ interface PreviewState {
   scope: ClientEntryScope;
   /** 预览时的目录快照：弹窗打开后即使用户改了工具条，也按这份计划安装。 */
   workspace: string;
+  /** custom 伪客户端的安装目录（六端为 undefined；快照语义同 workspace）。 */
+  targetDir?: string;
   assets: ClientEntryAsset[];
   plan: ClientEntryPlan;
 }
@@ -57,6 +61,7 @@ interface PreviewVars {
   detected: ClientDetectResult;
   scope: ClientEntryScope;
   workspace: string;
+  targetDir?: string;
   assets: ClientEntryAsset[];
 }
 
@@ -82,7 +87,15 @@ export function ClientEntryTab({ initialWorkspace = '' }: ClientEntryTabProps) {
       api.clientEntries.plan({
         client: vars.detected.client,
         scope: vars.scope,
-        workspace: vars.scope === 'project' ? vars.workspace || undefined : undefined,
+        // custom 走 target_dir、不带 workspace（服务端按目录解析安装根）；
+        // 内置六端相反：传 target_dir 会被字段错误拒绝。
+        workspace:
+          vars.targetDir === undefined
+            ? vars.scope === 'project'
+              ? vars.workspace || undefined
+              : undefined
+            : undefined,
+        targetDir: vars.targetDir,
         assets: vars.assets,
       }),
     {
@@ -92,6 +105,7 @@ export function ClientEntryTab({ initialWorkspace = '' }: ClientEntryTabProps) {
           client: vars.detected,
           scope: vars.scope,
           workspace: vars.workspace,
+          targetDir: vars.targetDir,
           assets: vars.assets,
           plan,
         });
@@ -118,7 +132,12 @@ export function ClientEntryTab({ initialWorkspace = '' }: ClientEntryTabProps) {
         client: vars.preview.client.client,
         scope: vars.preview.scope,
         workspace:
-          vars.preview.scope === 'project' ? vars.preview.workspace || undefined : undefined,
+          vars.preview.targetDir === undefined
+            ? vars.preview.scope === 'project'
+              ? vars.preview.workspace || undefined
+              : undefined
+            : undefined,
+        targetDir: vars.preview.targetDir,
         assets: vars.preview.assets,
         planHash: vars.preview.plan.planHash,
         confirm: true,
@@ -140,6 +159,7 @@ export function ClientEntryTab({ initialWorkspace = '' }: ClientEntryTabProps) {
           detected: vars.preview.client,
           scope: vars.preview.scope,
           workspace: vars.preview.workspace,
+          targetDir: vars.preview.targetDir,
           assets: vars.preview.assets,
         });
       },
@@ -213,6 +233,16 @@ export function ClientEntryTab({ initialWorkspace = '' }: ClientEntryTabProps) {
   ) => {
     install.reset();
     planPreview.mutate({ detected, scope, workspace: workspace.trim(), assets });
+  };
+
+  /** custom 兜底卡的预览：scope 恒按 project（服务端口径），落点由卡片选的目录决定。 */
+  const handlePreviewCustom = (
+    detected: ClientDetectResult,
+    assets: ClientEntryAsset[],
+    targetDir: string,
+  ) => {
+    install.reset();
+    planPreview.mutate({ detected, scope: 'project', workspace: '', assets, targetDir });
   };
 
   const handleReplan = () => {
@@ -336,19 +366,32 @@ export function ClientEntryTab({ initialWorkspace = '' }: ClientEntryTabProps) {
         />
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
-          {clients.map((detected) => (
-            <ClientCard
-              key={`${detected.client}:${workspace.trim()}`}
-              client={detected}
-              workspace={workspace.trim()}
-              busy={planPreview.isPending || copyRule.isPending || verify.isPending}
-              onPreview={(scope, assets) => handlePreview(detected, scope, assets)}
-              onVerify={() => handleVerify(detected)}
-              onUninstall={(entry) => setUninstallTarget(entry)}
-              onSelfTest={() => setSelfTestFor(detected)}
-              onCopyRule={(scope) => handleCopyRule(detected, scope)}
-            />
-          ))}
+          {clients.map((detected) =>
+            // custom 合成卡走兜底组件（无 workspace 依赖、无作用域切换）；六端卡一字不动。
+            // custom 的 key 不掺 workspace：它的目录是卡片本地状态，切换项目目录不应重置。
+            detected.client === CUSTOM_CLIENT_ID ? (
+              <CustomCard
+                key={detected.client}
+                client={detected}
+                busy={planPreview.isPending || verify.isPending}
+                onPreview={(assets, targetDir) => handlePreviewCustom(detected, assets, targetDir)}
+                onVerify={() => handleVerify(detected)}
+                onUninstall={(entry) => setUninstallTarget(entry)}
+              />
+            ) : (
+              <ClientCard
+                key={`${detected.client}:${workspace.trim()}`}
+                client={detected}
+                workspace={workspace.trim()}
+                busy={planPreview.isPending || copyRule.isPending || verify.isPending}
+                onPreview={(scope, assets) => handlePreview(detected, scope, assets)}
+                onVerify={() => handleVerify(detected)}
+                onUninstall={(entry) => setUninstallTarget(entry)}
+                onSelfTest={() => setSelfTestFor(detected)}
+                onCopyRule={(scope) => handleCopyRule(detected, scope)}
+              />
+            ),
+          )}
         </div>
       )}
 

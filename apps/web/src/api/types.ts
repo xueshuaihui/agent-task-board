@@ -1151,6 +1151,15 @@ export type TaskTab = (typeof TASK_TABS)[number];
 export const CLIENT_IDS = ['qoder', 'cursor', 'cline', 'windsurf', 'claude_code', 'codex'] as const;
 export type ClientId = (typeof CLIENT_IDS)[number];
 
+/**
+ * 第七种「伪客户端」custom：其他客户端手动指定目录安装的兜底形态（与 API 契约同值）。
+ * 它没有 adapter、没有固定落点（plan/install 必须带 `targetDir`），概览里恒追加一张合成卡；
+ * 以后新增客户端不再动 UI——内置端仍用 `CLIENT_IDS`/`ClientId`，台账与请求用 `CLIENT_ENTRY_CLIENTS`。
+ */
+export const CUSTOM_CLIENT_ID = 'custom';
+export const CLIENT_ENTRY_CLIENTS = [...CLIENT_IDS, CUSTOM_CLIENT_ID] as const;
+export type ClientEntryClientId = (typeof CLIENT_ENTRY_CLIENTS)[number];
+
 export const CLIENT_ENTRY_SCOPES = ['project', 'user'] as const;
 export type ClientEntryScope = (typeof CLIENT_ENTRY_SCOPES)[number];
 
@@ -1160,10 +1169,10 @@ export type ClientEntryAsset = (typeof CLIENT_ENTRY_ASSETS)[number];
 export const CLIENT_ENTRY_STATUSES = ['installed', 'drifted', 'missing', 'error'] as const;
 export type ClientEntryStatus = (typeof CLIENT_ENTRY_STATUSES)[number];
 
-/** 台账行：一次安装（客户端 × 作用域 × 资产）一条。 */
+/** 台账行：一次安装（客户端 × 作用域 × 资产）一条；`custom` 的行也在这个词表里。 */
 export interface ClientEntry {
   id: string;
-  client: ClientId;
+  client: ClientEntryClientId;
   scope: ClientEntryScope;
   /** 项目级才有；用户级为 null（迁移里的 CHECK 同口径）。 */
   workspacePath: string | null;
@@ -1192,8 +1201,12 @@ export interface ClientTarget {
   note?: string;
 }
 
+/**
+ * 检测结果卡：内置六端各一张，`custom` 合成卡恒在末尾（targets 空、detected 两项 false、
+ * entries 为全部 custom 台账行，不按 workspace 过滤）。
+ */
 export interface ClientDetectResult {
-  client: ClientId;
+  client: ClientEntryClientId;
   label: string;
   /** 该客户端支持的资产类型（Cline / Windsurf 不含 skill）。 */
   assets: ClientEntryAsset[];
@@ -1231,7 +1244,7 @@ export interface ClientEntryPlanAction {
 }
 
 export interface ClientEntryPlan {
-  client: ClientId;
+  client: ClientEntryClientId;
   scope: ClientEntryScope;
   planHash: string;
   actions: ClientEntryPlanAction[];
@@ -1279,12 +1292,18 @@ export interface ClientEntryUninstallResult {
   entry?: ClientEntry;
 }
 
-/** 计划入参；请求体由 resource 层转成后端 snake_case（`assets` 显式空数组与缺省语义不同）。 */
+/**
+ * 计划入参；请求体由 resource 层转成后端 snake_case（`assets` 显式空数组与缺省语义不同）。
+ * `targetDir` 只属于 `custom` 伪客户端（必填，用户选的绝对路径）；内置六端必须不传，
+ * 传了服务端按字段错误拒绝（path=`target_dir` 的 422）。
+ */
 export interface ClientEntryPlanInput {
-  client: ClientId;
+  client: ClientEntryClientId;
   scope: ClientEntryScope;
-  /** 项目级必填；用户级不传（服务端只写白名单根）。 */
+  /** 项目级必填；用户级不传（服务端只写白名单根）。custom 走 `targetDir`，不带它。 */
   workspace?: string;
+  /** custom 的安装根目录（绝对路径，允许目录尚不存在）；内置六端不传。 */
+  targetDir?: string;
   /** 不传 = 由服务端按客户端能力取默认资产。 */
   assets?: ClientEntryAsset[];
 }

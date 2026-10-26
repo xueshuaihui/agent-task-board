@@ -8,6 +8,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 import { api, qk, setUiToken } from '@/api';
 import type {
   ClientDetectResult,
+  ClientEntry,
   ClientEntryPlan,
   ClientEntryPlanAction,
 } from '@/api/types';
@@ -53,6 +54,7 @@ vi.stubGlobal('window', {
 
 const { ClientEntryTab } = await import('../tabs/client-entry');
 const { ClientCard } = await import('../client-entry/client-card');
+const { CustomCard } = await import('../client-entry/custom-card');
 const { PlanDialog } = await import('../client-entry/plan-dialog');
 const { SelfTestDialog } = await import('../client-entry/self-test-dialog');
 const { ToastProvider } = await import('@/components/ui');
@@ -257,6 +259,49 @@ const RAW_CLIENTS = [
 ];
 
 const OVERVIEW_200 = { clients: RAW_CLIENTS, self_test: SELF_TEST_RAW };
+
+/**
+ * custom 伪客户端的合成卡 fixture：与 service 的 `CUSTOM_CLIENT_CARD` 同口径——
+ * targets 恒空、detected 两项恒 false、entries 为全部 custom 台账行（不按 workspace 过滤）。
+ */
+const CUSTOM_DIR = '/tmp/atb-custom-client';
+const RAW_CUSTOM_CLIENT = {
+  client: 'custom',
+  label: '其他客户端（手动指定目录）',
+  assets: ['rule', 'skill'],
+  scopes: ['project'],
+  stability: { rule: 'experimental', skill: 'experimental' },
+  notes: ['为不在内置清单里的客户端准备的兜底：安装后由该客户端自行加载。'],
+  detected: { project: false, user: false },
+  targets: [],
+  entries: [
+    {
+      id: 'ce-custom-rule',
+      client: 'custom',
+      scope: 'project',
+      workspace_path: null,
+      asset_type: 'rule',
+      asset_name: 'jarvis',
+      target_path: `${CUSTOM_DIR}/jarvis-workbench.md`,
+      write_mode: 'file',
+      status: 'installed',
+      template_version: 1,
+      installed_at: '2026-10-22T08:00:00.000Z',
+      verified_at: '2026-10-23T08:00:00.000Z',
+      last_error: null,
+      update_available: true,
+    },
+  ],
+  effect_hint: {
+    project: '以所选客户端的规则加载机制为准，通常新开会话后生效',
+    user: '以所选客户端的规则加载机制为准，通常新开会话后生效',
+  },
+};
+
+const OVERVIEW_WITH_CUSTOM = {
+  clients: [...RAW_CLIENTS, RAW_CUSTOM_CLIENT],
+  self_test: SELF_TEST_RAW,
+};
 
 const OVERVIEW_500 = {
   error: {
@@ -495,6 +540,126 @@ describe('ClientCard：作用域与资产能力边界', () => {
       expect(html, `${label} 应显示入口规则`).toContain('入口规则');
       expect(html, `${label} 不应显示操作技能`).not.toContain('操作技能');
     }
+  });
+});
+
+/* ================================================================== 2.5 CustomCard 兜底卡 */
+
+/** custom 合成卡的前端形状（camelCase，已过 resource 层映射）。 */
+const CUSTOM_ENTRY_RULE: ClientEntry = {
+  id: 'ce-custom-rule',
+  client: 'custom',
+  scope: 'project',
+  workspacePath: null,
+  assetType: 'rule',
+  assetName: 'jarvis',
+  targetPath: `${CUSTOM_DIR}/jarvis-workbench.md`,
+  writeMode: 'file',
+  status: 'installed',
+  templateVersion: 1,
+  installedAt: '2026-10-22T08:00:00.000Z',
+  verifiedAt: '2026-10-23T08:00:00.000Z',
+  lastError: null,
+  updateAvailable: true,
+};
+
+const CUSTOM_ENTRY_SKILL: ClientEntry = {
+  ...CUSTOM_ENTRY_RULE,
+  id: 'ce-custom-skill',
+  assetType: 'skill',
+  targetPath: `${CUSTOM_DIR}/jarvis-workbench/SKILL.md`,
+  status: 'drifted',
+  verifiedAt: null,
+  updateAvailable: false,
+};
+
+const NOOP_CUSTOM_PROPS = {
+  onPreview: () => {},
+  onVerify: () => {},
+  onUninstall: () => {},
+};
+
+function customDetected(
+  overrides: Partial<ClientDetectResult> = {},
+): ClientDetectResult {
+  return detectResult({
+    client: 'custom',
+    label: '其他客户端（手动指定目录）',
+    scopes: ['project'],
+    stability: { rule: 'experimental', skill: 'experimental' },
+    notes: ['为不在内置清单里的客户端准备的兜底：安装后由该客户端自行加载。'],
+    ...overrides,
+  });
+}
+
+describe('CustomCard：custom 兜底卡（手动指定目录）', () => {
+  it('未选目录 → 按钮是「先选择目录」且禁用；台账行带状态/版本/可更新/最近校验/卸载', () => {
+    const html = renderNode(
+      newClient(),
+      createElement(CustomCard, {
+        client: customDetected({ entries: [CUSTOM_ENTRY_RULE, CUSTOM_ENTRY_SKILL] }),
+        ...NOOP_CUSTOM_PROPS,
+      }),
+    );
+
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>先选择目录<\/button>/);
+    expect(html).not.toContain('>预览安装<');
+    // 两条资产都渲染（custom 恒双资产），落点不写死、只承诺「写入所选目录」。
+    expect(html).toContain('入口规则');
+    expect(html).toContain('操作技能');
+    expect(html).toContain('写入所选目录，由该客户端自行加载');
+    // 台账行元信息（复用 labels.tsx 的共享映射，与六端卡同一套文案）。
+    expect(html).toContain('已安装');
+    expect(html).toContain('已漂移');
+    expect(html).toContain('模板 v1');
+    expect(html).toContain('可更新');
+    expect(html).toContain('最近校验');
+    expect(html).toContain('卸载');
+    // 实验性徽章：两种资产都是 experimental。
+    expect(html).toContain('实验');
+    // 文案纪律：不写死任何客户端名，notes 由 API 下发。
+    expect(html).toContain('由该客户端自行加载');
+    expect(html).not.toContain('WorkBuddy');
+  });
+
+  it('注入初始目录（SSR 口径）→ 预览安装可点、显示目录路径，不再提示先选择目录', () => {
+    const html = renderNode(
+      newClient(),
+      createElement(CustomCard, {
+        client: customDetected({ entries: [CUSTOM_ENTRY_RULE] }),
+        initialTargetDir: CUSTOM_DIR,
+        ...NOOP_CUSTOM_PROPS,
+      }),
+    );
+
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>预览安装<\/button>/);
+    expect(html).toContain('>预览安装<');
+    expect(html).not.toContain('先选择目录');
+    expect(html).toContain(CUSTOM_DIR);
+  });
+
+  it('概览第 7 张合成卡 → tab 渲染兜底卡且六端卡不受影响；未选目录时兜底卡预览禁用', async () => {
+    stubFetch({ '/client-entries': { status: 200, body: OVERVIEW_WITH_CUSTOM } });
+    const client = newClient();
+    await client.prefetchQuery({
+      queryKey: qk.clientEntries(WORKSPACE),
+      queryFn: () => api.clientEntries.detect(WORKSPACE),
+    });
+
+    const html = renderNode(client, createElement(ClientEntryTab, { initialWorkspace: WORKSPACE }));
+
+    // 六端断言不变：六张卡照常渲染。
+    for (const label of ['Qoder', 'Cursor', 'Cline', 'Windsurf', 'Claude Code', 'Codex']) {
+      expect(html, `应渲染 ${label} 卡片`).toContain(label);
+    }
+    // 兜底卡：label、API 下发的 notes、台账行都在；custom 台账不按 workspace 过滤。
+    expect(html).toContain('其他客户端（手动指定目录）');
+    expect(html).toContain('为不在内置清单里的客户端准备的兜底：安装后由该客户端自行加载。');
+    expect(html).toContain('已安装');
+    expect(html).toContain('可更新');
+    expect(html).toContain('最近校验');
+    // 兜底卡的目录是卡片本地状态、服务端没给固定落点：预览按钮禁用并提示先选目录。
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>先选择目录<\/button>/);
   });
 });
 
@@ -769,6 +934,65 @@ describe('api.clientEntries：请求体契约与 snake_case → camelCase 映射
     expect(body.assets).toEqual(['rule']);
     expect(body).not.toHaveProperty('plan_hash');
     expect(body).not.toHaveProperty('confirm');
+  });
+
+  it('custom 伪客户端 plan：target_dir 必发（trim）且不带 workspace；内置六端相反不带 target_dir', async () => {
+    const calls = captureFetch({
+      client: 'custom',
+      scope: 'project',
+      plan_hash: 'plan-custom-1',
+      actions: [],
+      warnings: [],
+    });
+
+    await api.clientEntries.plan({
+      client: 'custom',
+      scope: 'project',
+      targetDir: ` ${CUSTOM_DIR} `,
+      assets: ['rule', 'skill'],
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toContain('/api/v1/client-entries/plan');
+    const body = calls[0]?.body as Record<string, unknown>;
+    expect(body.client).toBe('custom');
+    expect(body.scope).toBe('project');
+    // custom 的落点只看 target_dir；workspace 发了也是多余（服务端忽略），不发保持契约干净。
+    expect(body.target_dir).toBe(CUSTOM_DIR);
+    expect(body.assets).toEqual(['rule', 'skill']);
+    expect(body).not.toHaveProperty('workspace');
+
+    const sixEndCalls = captureFetch({
+      client: 'qoder',
+      scope: 'project',
+      plan_hash: 'plan-six-1',
+      actions: [],
+      warnings: [],
+    });
+    await api.clientEntries.plan({ client: 'qoder', scope: 'project', workspace: WORKSPACE });
+    expect((sixEndCalls[0]?.body as Record<string, unknown>)).not.toHaveProperty('target_dir');
+  });
+
+  it('custom install 请求体：plan_hash / confirm / target_dir，且不带 workspace', async () => {
+    const calls = captureFetch({ entries: [], actions: [] });
+
+    await api.clientEntries.install({
+      client: 'custom',
+      scope: 'project',
+      targetDir: CUSTOM_DIR,
+      assets: ['rule'],
+      planHash: 'abc123',
+      confirm: true,
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toContain('/api/v1/client-entries/install');
+    const body = calls[0]?.body as Record<string, unknown>;
+    expect(body.client).toBe('custom');
+    expect(body.target_dir).toBe(CUSTOM_DIR);
+    expect(body.plan_hash).toBe('abc123');
+    expect(body.confirm).toBe(true);
+    expect(body).not.toHaveProperty('workspace');
   });
 
   it('plan 回包：plan_hash / content_chars / target_path 映射为 camelCase', async () => {
